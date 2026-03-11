@@ -3,6 +3,8 @@
 import asyncio
 import json
 import logging
+import os
+from collections import OrderedDict
 from pathlib import Path
 
 from agentscope.pipeline import stream_printing_messages
@@ -26,6 +28,8 @@ from ...agents.react_agent import CoPawAgent
 from ...agents.tools import read_file, write_file, edit_file
 from ...agents.utils.token_counting import _get_token_counter
 from ...config import load_config
+from ...config.utils import get_config_path
+from ...providers.store import get_providers_json_path
 from ...constant import (
     MEMORY_COMPACT_RATIO,
     get_runtime_working_dir,
@@ -36,6 +40,9 @@ from ...constant import (
 
 logger = logging.getLogger(__name__)
 
+# Environment variable for MemoryManager cache max size
+COPAW_MM_CACHE_MAX_SIZE = int(os.environ.get("COPAW_MM_CACHE_MAX_SIZE", "50"))
+
 
 class AgentRunner(Runner):
     def __init__(self) -> None:
@@ -44,6 +51,10 @@ class AgentRunner(Runner):
         self._chat_manager = None  # Store chat_manager reference
         self._mcp_manager = None  # MCP client manager for hot-reload
         self.memory_manager: MemoryManager | None = None
+        # Per-user MemoryManager cache for performance optimization
+        self._memory_manager_cache: OrderedDict[str, MemoryManager] = OrderedDict()
+        self._mm_cache_lock = asyncio.Lock()
+        self._mm_cache_max_size = COPAW_MM_CACHE_MAX_SIZE
 
     def set_chat_manager(self, chat_manager):
         """Set chat manager for auto-registration.
@@ -60,6 +71,64 @@ class AgentRunner(Runner):
             mcp_manager: MCPClientManager instance
         """
         self._mcp_manager = mcp_manager
+
+    async def _get_memory_manager_for_user(
+        self,
+        user_id: str,
+        working_dir: Path,
+    ) -> MemoryManager:
+        """Get or create MemoryManager for user with LRU caching.
+
+        This method caches MemoryManager instances per user to avoid the
+        ~500ms initialization overhead on subsequent requests from the same user.
+        Uses LRU eviction to limit memory usage.
+
+        Args:
+            user_id: User identifier
+            working_dir: User's working directory
+
+        Returns:
+            MemoryManager instance for the user
+        """
+        async with self._mm_cache_lock:
+            if user_id in self._memory_manager_cache:
+                # Move to end for LRU
+                self._memory_manager_cache.move_to_end(user_id)
+                logger.debug("Cache hit: MemoryManager for user %s", user_id)
+                return self._memory_manager_cache[user_id]
+
+            # Create new MemoryManager for user
+            config = load_config()
+            chat_model, formatter = create_model_and_formatter()
+            token_counter = _get_token_counter()
+            toolkit = Toolkit()
+            toolkit.register_tool_function(read_file)
+            toolkit.register_tool_function(write_file)
+            toolkit.register_tool_function(edit_file)
+
+            mm = MemoryManager(
+                working_dir=str(working_dir),
+                chat_model=chat_model,
+                formatter=formatter,
+                token_counter=token_counter,
+                toolkit=toolkit,
+                max_input_length=config.agents.running.max_input_length,
+                memory_compact_ratio=MEMORY_COMPACT_RATIO,
+            )
+            await mm.start()
+            self._memory_manager_cache[user_id] = mm
+            logger.info("Created and cached MemoryManager for user: %s", user_id)
+
+            # Evict oldest if over limit
+            while len(self._memory_manager_cache) > self._mm_cache_max_size:
+                oldest_user, oldest_mm = self._memory_manager_cache.popitem(last=False)
+                try:
+                    await oldest_mm.close()
+                    logger.info("Evicted MemoryManager from cache for user: %s", oldest_user)
+                except Exception as e:
+                    logger.warning("Failed to close evicted MemoryManager: %s", e)
+
+            return mm
 
     async def query_handler(
         self,
@@ -115,23 +184,25 @@ class AgentRunner(Runner):
         agent = None
         chat = None
         session_state_loaded = False
-        # Temporarily override MemoryManager's working_path for this request
-        original_memory_manager_paths = None
+        request_memory_manager = None  # Per-request MemoryManager (for LRU cache)
+        # Note: We no longer override the shared MemoryManager's working_path.
+        # Instead, we use per-user cached MemoryManager instances for better performance.
         if self.memory_manager is not None:
-            original_memory_manager_paths = (
-                self.memory_manager.working_path,
-                self.memory_manager.memory_path,
-                self.memory_manager.tool_result_path,
-            )
-            request_wd = get_request_working_dir()
-            self.memory_manager.working_path = request_wd
-            self.memory_manager.memory_path = request_wd / "memory"
-            self.memory_manager.tool_result_path = request_wd / "tool_result"
+            # Global memory_manager is deprecated, close it if exists
+            try:
+                await self.memory_manager.close()
+                logger.info("Closed deprecated global MemoryManager")
+            except Exception as e:
+                logger.warning("Failed to close global MemoryManager: %s", e)
+            self.memory_manager = None
         try:
             session_id = request.session_id
             user_id = request.user_id
             channel = getattr(request, "channel", DEFAULT_CHANNEL)
 
+            # Debug: Log config path and providers.json path
+            config_path = get_config_path()
+            providers_path = get_providers_json_path()
             logger.info(
                 "Handle agent query:\n%s",
                 json.dumps(
@@ -140,6 +211,9 @@ class AgentRunner(Runner):
                         "user_id": user_id,
                         "channel": channel,
                         "msgs_len": len(msgs) if msgs else 0,
+                        "config_path": str(config_path),
+                        "providers_path": str(providers_path),
+                        "working_dir": str(get_request_working_dir()),
                         "msgs_str": str(msgs)[:300] + "...",
                     },
                     ensure_ascii=False,
@@ -163,10 +237,32 @@ class AgentRunner(Runner):
             max_iters = config.agents.running.max_iters
             max_input_length = config.agents.running.max_input_length
 
+            # Create per-request chat_model and formatter using request-scoped config
+            # This ensures each user's API keys and model settings are used
+            chat_model, formatter = create_model_and_formatter()
+
+            # Create per-request toolkit
+            toolkit = Toolkit()
+            toolkit.register_tool_function(read_file)
+            toolkit.register_tool_function(write_file)
+            toolkit.register_tool_function(edit_file)
+
+            # Get token counter
+            token_counter = _get_token_counter()
+
+            # Get MemoryManager for user from LRU cache (or create new one)
+            # This avoids ~500ms initialization overhead for returning users
+            working_dir = get_request_working_dir()
+            memory_manager_to_use = await self._get_memory_manager_for_user(
+                user_id=user_id,
+                working_dir=working_dir,
+            )
+            logger.debug("Using MemoryManager for user: %s", user_id)
+
             agent = CoPawAgent(
                 env_context=env_context,
                 mcp_clients=mcp_clients,
-                memory_manager=self.memory_manager,
+                memory_manager=memory_manager_to_use,
                 max_iters=max_iters,
                 max_input_length=max_input_length,
             )
@@ -256,13 +352,6 @@ class AgentRunner(Runner):
                 if self._chat_manager is not None and chat is not None:
                     await self._chat_manager.update_chat(chat)
             finally:
-                # Restore MemoryManager's working_path
-                if original_memory_manager_paths is not None and self.memory_manager is not None:
-                    (
-                        self.memory_manager.working_path,
-                        self.memory_manager.memory_path,
-                        self.memory_manager.tool_result_path,
-                    ) = original_memory_manager_paths
                 # Always restore previous context
                 reset_request_user_id(user_token)
 
@@ -285,43 +374,26 @@ class AgentRunner(Runner):
         session_dir = str(get_runtime_working_dir() / "sessions")
         self.session = SafeJSONSession(save_dir=session_dir)
 
-        try:
-            if self.memory_manager is None:
-                # Get config for memory manager
-                config = load_config()
-                max_input_length = config.agents.running.max_input_length
-
-                # Create model and formatter
-                chat_model, formatter = create_model_and_formatter()
-
-                # Get token counter
-                token_counter = _get_token_counter()
-
-                # Create toolkit for memory manager
-                toolkit = Toolkit()
-                toolkit.register_tool_function(read_file)
-                toolkit.register_tool_function(write_file)
-                toolkit.register_tool_function(edit_file)
-
-                # Initialize MemoryManager with new parameters
-                # Note: MemoryManager now uses request-scoped directories internally
-                self.memory_manager = MemoryManager(
-                    working_dir=str(get_runtime_working_dir()),  # Base path, overridden per-request
-                    chat_model=chat_model,
-                    formatter=formatter,
-                    token_counter=token_counter,
-                    toolkit=toolkit,
-                    max_input_length=max_input_length,
-                    memory_compact_ratio=MEMORY_COMPACT_RATIO,
-                )
-            await self.memory_manager.start()
-        except Exception as e:
-            logger.exception(f"MemoryManager start failed: {e}")
+        # Note: MemoryManager instances are now created on-demand per user
+        # via _get_memory_manager_for_user() with LRU caching, rather than
+        # a single global instance. This provides better performance and
+        # full user isolation.
 
     async def shutdown_handler(self, *args, **kwargs):
         """
         Shutdown handler.
         """
+        # Close all cached MemoryManager instances
+        async with self._mm_cache_lock:
+            for user_id, mm in list(self._memory_manager_cache.items()):
+                try:
+                    await mm.close()
+                    logger.info("Closed MemoryManager for user: %s", user_id)
+                except Exception as e:
+                    logger.warning("Failed to close MemoryManager for user %s: %s", user_id, e)
+            self._memory_manager_cache.clear()
+
+        # Also close the legacy shared memory_manager if exists
         try:
             await self.memory_manager.close()
         except Exception as e:

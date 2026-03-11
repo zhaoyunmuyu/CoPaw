@@ -737,5 +737,160 @@ class TestMemoryManagerIsolation:
             reset_request_user_id(token)
 
 
+class TestMemoryManagerLRUCache:
+    """Test MemoryManager LRU cache optimization."""
+
+    @pytest.mark.asyncio
+    async def test_cache_miss_creates_new_memory_manager(self, tmp_copaw_dirs):
+        """Test that cache miss creates new MemoryManager."""
+        from copaw.app.runner.runner import AgentRunner
+
+        working_dir, _ = tmp_copaw_dirs
+
+        runner = AgentRunner()
+
+        # Set user context
+        token = set_request_user_id("cacheuser1")
+        try:
+            # Get MemoryManager for user (should create new one)
+            mm = await runner._get_memory_manager_for_user(
+                user_id="cacheuser1",
+                working_dir=working_dir / "cacheuser1",
+            )
+
+            # Should be in cache now
+            assert "cacheuser1" in runner._memory_manager_cache
+            assert runner._memory_manager_cache["cacheuser1"] is mm
+        finally:
+            reset_request_user_id(token)
+            # Cleanup
+            await runner.shutdown_handler()
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_returns_existing_memory_manager(self, tmp_copaw_dirs):
+        """Test that cache hit returns existing MemoryManager."""
+        from copaw.app.runner.runner import AgentRunner
+
+        working_dir, _ = tmp_copaw_dirs
+
+        runner = AgentRunner()
+
+        try:
+            # First request - should create new
+            mm1 = await runner._get_memory_manager_for_user(
+                user_id="cacheuser2",
+                working_dir=working_dir / "cacheuser2",
+            )
+
+            # Second request - should return cached
+            mm2 = await runner._get_memory_manager_for_user(
+                user_id="cacheuser2",
+                working_dir=working_dir / "cacheuser2",
+            )
+
+            # Should be same instance
+            assert mm1 is mm2
+            assert len(runner._memory_manager_cache) == 1
+        finally:
+            await runner.shutdown_handler()
+
+    @pytest.mark.asyncio
+    async def test_lru_eviction_when_cache_full(self, tmp_copaw_dirs, monkeypatch):
+        """Test LRU eviction when cache exceeds max size."""
+        from copaw.app.runner.runner import AgentRunner
+
+        working_dir, _ = tmp_copaw_dirs
+
+        # Set small cache size for testing
+        monkeypatch.setattr("copaw.app.runner.runner.COPAW_MM_CACHE_MAX_SIZE", 3)
+
+        runner = AgentRunner()
+        # Override cache max size
+        runner._mm_cache_max_size = 3
+
+        try:
+            # Fill cache
+            mm1 = await runner._get_memory_manager_for_user(
+                user_id="user1",
+                working_dir=working_dir / "user1",
+            )
+            mm2 = await runner._get_memory_manager_for_user(
+                user_id="user2",
+                working_dir=working_dir / "user2",
+            )
+            mm3 = await runner._get_memory_manager_for_user(
+                user_id="user3",
+                working_dir=working_dir / "user3",
+            )
+
+            assert len(runner._memory_manager_cache) == 3
+
+            # Add one more - should evict oldest (user1)
+            mm4 = await runner._get_memory_manager_for_user(
+                user_id="user4",
+                working_dir=working_dir / "user4",
+            )
+
+            # user1 should be evicted
+            assert "user1" not in runner._memory_manager_cache
+            assert "user2" in runner._memory_manager_cache
+            assert "user3" in runner._memory_manager_cache
+            assert "user4" in runner._memory_manager_cache
+        finally:
+            await runner.shutdown_handler()
+
+    @pytest.mark.asyncio
+    async def test_lru_order_updated_on_access(self, tmp_copaw_dirs):
+        """Test that LRU order is updated when accessing existing items."""
+        from copaw.app.runner.runner import AgentRunner
+
+        working_dir, _ = tmp_copaw_dirs
+
+        runner = AgentRunner()
+        runner._mm_cache_max_size = 3
+
+        try:
+            # Add users in order
+            await runner._get_memory_manager_for_user("userA", working_dir / "userA")
+            await runner._get_memory_manager_for_user("userB", working_dir / "userB")
+            await runner._get_memory_manager_for_user("userC", working_dir / "userC")
+
+            # Access userA again - moves to end
+            await runner._get_memory_manager_for_user("userA", working_dir / "userA")
+
+            # Now add userD - should evict userB (oldest)
+            await runner._get_memory_manager_for_user("userD", working_dir / "userD")
+
+            # userB should be evicted, userA should remain
+            assert "userB" not in runner._memory_manager_cache
+            assert "userA" in runner._memory_manager_cache
+        finally:
+            await runner.shutdown_handler()
+
+    @pytest.mark.asyncio
+    async def test_shutdown_closes_all_cached_memory_managers(self, tmp_copaw_dirs):
+        """Test that shutdown closes all cached MemoryManager instances."""
+        from copaw.app.runner.runner import AgentRunner
+
+        working_dir, _ = tmp_copaw_dirs
+
+        runner = AgentRunner()
+
+        try:
+            # Create multiple MemoryManagers
+            await runner._get_memory_manager_for_user("shutdownuser1", working_dir / "shutdownuser1")
+            await runner._get_memory_manager_for_user("shutdownuser2", working_dir / "shutdownuser2")
+
+            assert len(runner._memory_manager_cache) == 2
+
+            # Shutdown should close all
+            await runner.shutdown_handler()
+
+            # Cache should be empty
+            assert len(runner._memory_manager_cache) == 0
+        finally:
+            pass  # Already cleaned up by shutdown_handler
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
