@@ -13,7 +13,7 @@ from typing import Optional
 from agentscope.tool import ToolResponse
 from agentscope.message import TextBlock
 
-from copaw.constant import WORKING_DIR
+from ...constant import get_runtime_working_dir
 
 
 def _execute_subprocess_sync(
@@ -97,7 +97,7 @@ async def execute_shell_command(
     cmd = (command or "").strip()
 
     # Set working directory
-    working_dir = cwd if cwd is not None else WORKING_DIR
+    working_dir = cwd if cwd is not None else get_runtime_working_dir()
 
     try:
         if sys.platform == "win32":

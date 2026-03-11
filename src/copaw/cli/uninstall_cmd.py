@@ -8,7 +8,7 @@ from pathlib import Path
 
 import click
 
-from ..constant import WORKING_DIR
+from ..constant import get_runtime_working_dir
 
 
 # Directories created by the installer (relative to WORKING_DIR).
@@ -52,7 +52,7 @@ def _remove_path_entry(profile: Path) -> bool:
 @click.option("--yes", is_flag=True, help="Do not prompt for confirmation")
 def uninstall_cmd(purge: bool, yes: bool) -> None:
     """Remove CoPaw environment, CLI wrapper, and shell PATH entries."""
-    wd = WORKING_DIR
+    wd = get_runtime_working_dir()
 
     if purge:
         click.echo(f"This will remove ALL CoPaw data in {wd}")

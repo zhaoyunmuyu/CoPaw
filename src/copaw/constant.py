@@ -1,22 +1,91 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
 import os
 from pathlib import Path
 
-WORKING_DIR = (
+# Default working directory (used when no user_id is specified)
+DEFAULT_WORKING_DIR = (
     Path(os.environ.get("COPAW_WORKING_DIR", "~/.copaw"))
     .expanduser()
     .resolve()
 )
-SECRET_DIR = (
-    Path(
-        os.environ.get(
-            "COPAW_SECRET_DIR",
-            f"{WORKING_DIR}.secret",
-        ),
-    )
+
+# Default secret directory (used when no user_id is specified)
+DEFAULT_SECRET_DIR = (
+    Path(os.environ.get("COPAW_SECRET_DIR", f"{DEFAULT_WORKING_DIR}.secret"))
     .expanduser()
     .resolve()
 )
+
+# Runtime state for user-specific directory
+_current_user_id: str | None = None
+_runtime_working_dir: Path = DEFAULT_WORKING_DIR
+_runtime_secret_dir: Path = DEFAULT_SECRET_DIR
+
+
+def get_working_dir(user_id: str | None = None) -> Path:
+    """获取工作目录，支持用户隔离。
+
+    Args:
+        user_id: 用户标识，None 表示使用当前运行时设置
+
+    Returns:
+        工作目录路径
+    """
+    if user_id is None:
+        return _runtime_working_dir
+    return DEFAULT_WORKING_DIR / user_id
+
+
+def get_secret_dir(user_id: str | None = None) -> Path:
+    """获取敏感信息目录，支持用户隔离。
+
+    Args:
+        user_id: 用户标识，None 表示使用当前运行时设置
+
+    Returns:
+        敏感信息目录路径
+    """
+    if user_id is None:
+        return _runtime_secret_dir
+    return DEFAULT_SECRET_DIR / user_id
+
+
+def set_current_user(user_id: str | None) -> None:
+    """设置当前用户标识。
+
+    Args:
+        user_id: 用户标识，None 表示使用默认目录
+    """
+    global _current_user_id, _runtime_working_dir, _runtime_secret_dir
+    _current_user_id = user_id
+    if user_id:
+        _runtime_working_dir = DEFAULT_WORKING_DIR / user_id
+        _runtime_secret_dir = DEFAULT_SECRET_DIR / user_id
+    else:
+        _runtime_working_dir = DEFAULT_WORKING_DIR
+        _runtime_secret_dir = DEFAULT_SECRET_DIR
+
+
+def get_runtime_working_dir() -> Path:
+    """获取运行时工作目录（考虑 set_current_user 后的值）。"""
+    return _runtime_working_dir
+
+
+def get_runtime_secret_dir() -> Path:
+    """获取运行时敏感目录（考虑 set_current_user 后的值）。"""
+    return _runtime_secret_dir
+
+
+def get_current_user_id() -> str | None:
+    """获取当前用户标识。"""
+    return _current_user_id
+
+
+# Backward compatibility aliases - these now point to runtime values
+WORKING_DIR = DEFAULT_WORKING_DIR
+SECRET_DIR = DEFAULT_SECRET_DIR
 
 JOBS_FILE = os.environ.get("COPAW_JOBS_FILE", "jobs.json")
 
@@ -57,19 +126,19 @@ DOCS_ENABLED = os.environ.get("COPAW_OPENAPI_DOCS", "false").lower() in (
 
 # Skills directories
 # Active skills directory (activated skills that agents use)
-ACTIVE_SKILLS_DIR = WORKING_DIR / "active_skills"
+ACTIVE_SKILLS_DIR = get_runtime_working_dir() / "active_skills"
 # Customized skills directory (user-created skills)
-CUSTOMIZED_SKILLS_DIR = WORKING_DIR / "customized_skills"
+CUSTOMIZED_SKILLS_DIR = get_runtime_working_dir() / "customized_skills"
 
 # Memory directory
-MEMORY_DIR = WORKING_DIR / "memory"
+MEMORY_DIR = get_runtime_working_dir() / "memory"
 
 # Custom channel modules (installed via `copaw channels install`); manager
 # loads BaseChannel subclasses from here.
-CUSTOM_CHANNELS_DIR = WORKING_DIR / "custom_channels"
+CUSTOM_CHANNELS_DIR = get_runtime_working_dir() / "custom_channels"
 
 # Local models directory
-MODELS_DIR = WORKING_DIR / "models"
+MODELS_DIR = get_runtime_working_dir() / "models"
 
 # Memory compaction configuration
 MEMORY_COMPACT_KEEP_RECENT = int(

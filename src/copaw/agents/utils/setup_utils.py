@@ -24,7 +24,7 @@ def copy_md_files(
     Returns:
         List of copied file names.
     """
-    from ...constant import WORKING_DIR
+    from ...constant import get_runtime_working_dir
 
     # Get md_files directory path with language subdirectory
     md_files_dir = Path(__file__).parent.parent / "md_files" / language
@@ -41,12 +41,13 @@ def copy_md_files(
             return []
 
     # Ensure working directory exists
-    WORKING_DIR.mkdir(parents=True, exist_ok=True)
+    working_dir = get_runtime_working_dir()
+    working_dir.mkdir(parents=True, exist_ok=True)
 
     # Copy all .md files to working directory
     copied_files: list[str] = []
     for md_file in md_files_dir.glob("*.md"):
-        target_file = WORKING_DIR / md_file.name
+        target_file = working_dir / md_file.name
         if skip_existing and target_file.exists():
             logger.debug("Skipped existing md file: %s", md_file.name)
             continue
@@ -66,7 +67,7 @@ def copy_md_files(
             "Copied %d md file(s) [%s] to %s",
             len(copied_files),
             language,
-            WORKING_DIR,
+            working_dir,
         )
 
     return copied_files

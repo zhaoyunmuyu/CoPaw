@@ -115,9 +115,19 @@ def log_init_timings() -> None:
     type=int,
     help="API Port",
 )
+@click.option(
+    "--user-id",
+    default=None,
+    help="User-specific subdirectory for multi-user isolation.",
+)
 @click.pass_context
-def cli(ctx: click.Context, host: str | None, port: int | None) -> None:
+def cli(ctx: click.Context, host: str | None, port: int | None, user_id: str | None) -> None:
     """CoPaw CLI."""
+    # Set runtime user directory
+    from ..constant import set_current_user
+
+    set_current_user(user_id)
+
     # default from last run if not provided
     last = read_last_api()
     if host is None or port is None:
@@ -132,6 +142,7 @@ def cli(ctx: click.Context, host: str | None, port: int | None) -> None:
     ctx.ensure_object(dict)
     ctx.obj["host"] = host
     ctx.obj["port"] = port
+    ctx.obj["user_id"] = user_id
 
 
 cli.add_command(app_cmd)

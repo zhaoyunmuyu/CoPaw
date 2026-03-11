@@ -8,7 +8,7 @@ from typing import Optional
 from agentscope.message import TextBlock
 from agentscope.tool import ToolResponse
 
-from ...constant import WORKING_DIR
+from ...constant import get_runtime_working_dir
 
 
 def _resolve_file_path(file_path: str) -> str:
@@ -25,7 +25,7 @@ def _resolve_file_path(file_path: str) -> str:
     if path.is_absolute():
         return str(path)
     else:
-        return str(WORKING_DIR / file_path)
+        return str(get_runtime_working_dir() / file_path)
 
 
 async def read_file(  # pylint: disable=too-many-return-statements

@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 
-from ...constant import WORKING_DIR
+from ...constant import get_runtime_working_dir
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
 
@@ -55,6 +55,7 @@ def _zip_directory(root: Path) -> io.BytesIO:
 
 def _validate_zip_data(data: bytes) -> None:
     """Ensure *data* is a valid zip without path-traversal entries."""
+    working_dir = get_runtime_working_dir()
     if not zipfile.is_zipfile(io.BytesIO(data)):
         raise HTTPException(
             status_code=400,
@@ -62,8 +63,8 @@ def _validate_zip_data(data: bytes) -> None:
         )
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         for name in zf.namelist():
-            resolved = (WORKING_DIR / name).resolve()
-            if not str(resolved).startswith(str(WORKING_DIR)):
+            resolved = (working_dir / name).resolve()
+            if not str(resolved).startswith(str(working_dir)):
                 raise HTTPException(
                     status_code=400,
                     detail=f"Zip contains unsafe path: {name}",
@@ -91,13 +92,14 @@ def _validate_zip_data(data: bytes) -> None:
 )
 async def download_workspace():
     """Stream WORKING_DIR as a zip file."""
-    if not WORKING_DIR.is_dir():
+    working_dir = get_runtime_working_dir()
+    if not working_dir.is_dir():
         raise HTTPException(
             status_code=404,
-            detail=f"WORKING_DIR does not exist: {WORKING_DIR}",
+            detail=f"WORKING_DIR does not exist: {working_dir}",
         )
 
-    buf = _zip_directory(WORKING_DIR)
+    buf = _zip_directory(working_dir)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     filename = f"copaw_workspace_{timestamp}.zip"
@@ -160,6 +162,7 @@ async def upload_workspace(  # pylint: disable=too-many-branches
         if len(top_entries) == 1 and top_entries[0].is_dir():
             extract_root = top_entries[0]
 
+        WORKING_DIR = get_runtime_working_dir()
         WORKING_DIR.mkdir(parents=True, exist_ok=True)
 
         # Merge: overwrite paths present in zip; leave others untouched

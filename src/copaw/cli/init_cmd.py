@@ -106,12 +106,29 @@ DEFAULT_HEARTBEAT_MDS = {
     is_flag=True,
     help="Skip security confirmation (use with --defaults for scripts/Docker).",
 )
+@click.option(
+    "--user-id",
+    default=None,
+    help="User-specific subdirectory for multi-user isolation.",
+)
 # pylint: disable=too-many-branches,too-many-statements
-def init_cmd(force: bool, use_defaults: bool, accept_security: bool) -> None:
+def init_cmd(
+    force: bool,
+    use_defaults: bool,
+    accept_security: bool,
+    user_id: str | None,
+) -> None:
     """Create working dir with config.json and HEARTBEAT.md (interactive)."""
-    config_path = get_config_path()
+    # Set runtime user directory
+    from ..constant import set_current_user
+
+    set_current_user(user_id)
+
+    if user_id:
+        click.echo(f"User ID: {user_id}")
+    config_path = get_config_path(user_id)
     working_dir = config_path.parent
-    heartbeat_path = get_heartbeat_query_path()
+    heartbeat_path = get_heartbeat_query_path(user_id)
 
     click.echo(f"Working dir: {working_dir}")
 

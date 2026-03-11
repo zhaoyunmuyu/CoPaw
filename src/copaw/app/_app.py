@@ -19,7 +19,7 @@ from ..config import (  # pylint: disable=no-name-in-module
     ConfigWatcher,
 )
 from ..config.utils import get_jobs_path, get_chats_path, get_config_path
-from ..constant import DOCS_ENABLED, LOG_LEVEL_ENV, CORS_ORIGINS, WORKING_DIR
+from ..constant import DOCS_ENABLED, LOG_LEVEL_ENV, CORS_ORIGINS, get_runtime_working_dir
 from ..__version__ import __version__
 from ..utils.logging import setup_logger, add_copaw_file_handler
 from .channels import ChannelManager  # pylint: disable=no-name-in-module
@@ -61,7 +61,7 @@ agent_app = AgentApp(
 async def lifespan(
     app: FastAPI,
 ):  # pylint: disable=too-many-statements,too-many-branches
-    add_copaw_file_handler(WORKING_DIR / "copaw.log")
+    add_copaw_file_handler(get_runtime_working_dir() / "copaw.log")
     await runner.start()
 
     # --- MCP client manager init (independent module, hot-reloadable) ---

@@ -16,13 +16,13 @@ from typing import Optional
 from agentscope.message import Msg
 
 from ...config import load_config
-from ...constant import WORKING_DIR
+from ...constant import get_runtime_working_dir
 from .file_handling import download_file_from_base64, download_file_from_url
 
 logger = logging.getLogger(__name__)
 
 # Only allow local paths under this dir (channels save media here).
-_ALLOWED_MEDIA_ROOT = WORKING_DIR / "media"
+_ALLOWED_MEDIA_ROOT = get_runtime_working_dir() / "media"
 
 
 def _is_allowed_media_path(path: str) -> bool:

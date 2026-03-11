@@ -6,7 +6,7 @@ from pathlib import Path
 
 import click
 
-from ..constant import WORKING_DIR
+from ..constant import get_runtime_working_dir
 
 
 def _iter_children(p: Path) -> list[Path]:
@@ -24,7 +24,7 @@ def _iter_children(p: Path) -> list[Path]:
 )
 def clean_cmd(yes: bool, dry_run: bool) -> None:
     """Clear CoPaw WORKING_DIR (~/.copaw by default)."""
-    wd = WORKING_DIR
+    wd = get_runtime_working_dir()
 
     if not wd.exists():
         click.echo(f"WORKING_DIR does not exist: {wd}")

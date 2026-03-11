@@ -43,7 +43,7 @@ from ..config import load_config
 from ..constant import (
     MEMORY_COMPACT_KEEP_RECENT,
     MEMORY_COMPACT_RATIO,
-    WORKING_DIR,
+    get_runtime_working_dir,
 )
 
 logger = logging.getLogger(__name__)
@@ -295,7 +295,7 @@ class CoPawAgent(ReActAgent):
         # Bootstrap hook - checks BOOTSTRAP.md on first interaction
         config = load_config()
         bootstrap_hook = BootstrapHook(
-            working_dir=WORKING_DIR,
+            working_dir=get_runtime_working_dir(),
             language=config.agents.language,
         )
         self.register_instance_hook(

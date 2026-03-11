@@ -15,7 +15,7 @@ from typing import Any, Awaitable, Callable, Optional
 
 from agentscope.message import Msg, TextBlock
 
-from ...constant import WORKING_DIR
+from ...constant import get_runtime_working_dir
 from ...config import load_config
 
 RestartCallback = Callable[[], Awaitable[None]]
@@ -45,7 +45,11 @@ DAEMON_SHORT_ALIASES = {
 class DaemonContext:
     """Context for daemon commands (inject deps from runner or CLI)."""
 
-    working_dir: Path = WORKING_DIR
+    working_dir: Path = None  # type: ignore  # Set at runtime
+
+    def __post_init__(self):
+        if self.working_dir is None:
+            self.working_dir = get_runtime_working_dir()
     load_config_fn: Callable[[], Any] = load_config
     memory_manager: Optional[Any] = None
     # Optional: async restart (channels, cron, MCP) in-process.

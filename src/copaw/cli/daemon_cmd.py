@@ -17,12 +17,12 @@ from ..app.runner.daemon_commands import (
     run_daemon_status,
     run_daemon_version,
 )
-from ..constant import WORKING_DIR
+from ..constant import get_runtime_working_dir
 
 
 def _context() -> DaemonContext:
     return DaemonContext(
-        working_dir=WORKING_DIR,
+        working_dir=get_runtime_working_dir(),
         memory_manager=None,
         restart_callback=None,
     )

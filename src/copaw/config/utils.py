@@ -15,7 +15,7 @@ from ..constant import (
     CHATS_FILE,
     PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH_ENV,
     RUNNING_IN_CONTAINER,
-    WORKING_DIR,
+    get_runtime_working_dir,
 )
 from .config import Config, HeartbeatConfig, LastApiConfig, LastDispatchConfig
 
@@ -324,14 +324,25 @@ def is_running_in_container() -> bool:
         return False
 
 
-def get_config_path() -> Path:
-    """Get the path to the config file."""
-    return WORKING_DIR.joinpath("config.json")
+def get_config_path(user_id: str | None = None) -> Path:
+    """Get the path to the config file.
+
+    Args:
+        user_id: User identifier for subdirectory isolation.
+                 None uses the current runtime working directory.
+    """
+    from ..constant import get_working_dir
+    base = get_working_dir(user_id)
+    return base / "config.json"
 
 
-def get_heartbeat_query_path() -> Path:
-    """Get path to heartbeat query file (HEARTBEAT.md in working dir)."""
-    return get_config_path().parent.joinpath(HEARTBEAT_FILE)
+def get_heartbeat_query_path(user_id: str | None = None) -> Path:
+    """Get path to heartbeat query file (HEARTBEAT.md in working dir).
+
+    Args:
+        user_id: User identifier for subdirectory isolation.
+    """
+    return get_config_path(user_id).parent / HEARTBEAT_FILE
 
 
 def load_config(config_path: Optional[Path] = None) -> Config:
@@ -401,12 +412,21 @@ def write_last_api(host: str, port: int) -> None:
     save_config(config)
 
 
-def get_jobs_path() -> Path:
-    """Return cron jobs.json path."""
+def get_jobs_path(user_id: str | None = None) -> Path:
+    """Return cron jobs.json path.
 
-    return (WORKING_DIR / JOBS_FILE).expanduser()
+    Args:
+        user_id: User identifier for subdirectory isolation.
+    """
+    from ..constant import get_working_dir
+    return get_working_dir(user_id) / JOBS_FILE
 
 
-def get_chats_path() -> Path:
-    """Return chats.json path."""
-    return (WORKING_DIR / CHATS_FILE).expanduser()
+def get_chats_path(user_id: str | None = None) -> Path:
+    """Return chats.json path.
+
+    Args:
+        user_id: User identifier for subdirectory isolation.
+    """
+    from ..constant import get_working_dir
+    return get_working_dir(user_id) / CHATS_FILE

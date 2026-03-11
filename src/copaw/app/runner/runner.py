@@ -28,7 +28,7 @@ from ...agents.utils.token_counting import _get_token_counter
 from ...config import load_config
 from ...constant import (
     MEMORY_COMPACT_RATIO,
-    WORKING_DIR,
+    get_runtime_working_dir,
 )
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,7 @@ class AgentRunner(Runner):
                 session_id=session_id,
                 user_id=user_id,
                 channel=channel,
-                working_dir=str(WORKING_DIR),
+                working_dir=str(get_runtime_working_dir()),
             )
 
             # Get MCP clients from manager (hot-reloadable)
@@ -221,7 +221,7 @@ class AgentRunner(Runner):
                 "using existing environment variables",
             )
 
-        session_dir = str(WORKING_DIR / "sessions")
+        session_dir = str(get_runtime_working_dir() / "sessions")
         self.session = SafeJSONSession(save_dir=session_dir)
 
         try:
@@ -244,7 +244,7 @@ class AgentRunner(Runner):
 
                 # Initialize MemoryManager with new parameters
                 self.memory_manager = MemoryManager(
-                    working_dir=str(WORKING_DIR),
+                    working_dir=str(get_runtime_working_dir()),
                     chat_model=chat_model,
                     formatter=formatter,
                     token_counter=token_counter,
