@@ -67,13 +67,20 @@ class AgentRunner(Runner):
         request: AgentRequest = None,
         **kwargs,
     ):
-        """Handle agent query with per-request user isolation."""
+        """Handle agent query with per-request user isolation.
+
+        For HTTP requests, user directory auto-initialization is handled
+        by the HTTP middleware. For Channel requests (which bypass the
+        HTTP middleware), initialization happens here.
+        """
         from ...agents.utils.setup_utils import initialize_user_directory
 
         # Set request context for user-specific directory routing
         user_token = set_request_user_id(request.user_id if request else None)
 
-        # Auto-initialize user directory if this is a new user
+        # Auto-initialize user directory if this is a new user.
+        # Channel requests bypass HTTP middleware, so initialization
+        # happens here. HTTP requests already initialized in middleware.
         user_id = request.user_id if request else None
         if user_id:
             try:
@@ -83,7 +90,7 @@ class AgentRunner(Runner):
                     language=config.agents.language,
                 )
                 if initialized:
-                    logger.info("Auto-initialized directory for new user: %s", user_id)
+                    logger.info("Auto-initialized directory for user: %s (via query_handler)", user_id)
             except Exception as e:
                 logger.warning(
                     "Auto-initialization failed for user %s: %s",
@@ -108,6 +115,18 @@ class AgentRunner(Runner):
         agent = None
         chat = None
         session_state_loaded = False
+        # Temporarily override MemoryManager's working_path for this request
+        original_memory_manager_paths = None
+        if self.memory_manager is not None:
+            original_memory_manager_paths = (
+                self.memory_manager.working_path,
+                self.memory_manager.memory_path,
+                self.memory_manager.tool_result_path,
+            )
+            request_wd = get_request_working_dir()
+            self.memory_manager.working_path = request_wd
+            self.memory_manager.memory_path = request_wd / "memory"
+            self.memory_manager.tool_result_path = request_wd / "tool_result"
         try:
             session_id = request.session_id
             user_id = request.user_id
@@ -237,6 +256,13 @@ class AgentRunner(Runner):
                 if self._chat_manager is not None and chat is not None:
                     await self._chat_manager.update_chat(chat)
             finally:
+                # Restore MemoryManager's working_path
+                if original_memory_manager_paths is not None and self.memory_manager is not None:
+                    (
+                        self.memory_manager.working_path,
+                        self.memory_manager.memory_path,
+                        self.memory_manager.tool_result_path,
+                    ) = original_memory_manager_paths
                 # Always restore previous context
                 reset_request_user_id(user_token)
 

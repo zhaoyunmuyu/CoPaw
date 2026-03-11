@@ -461,7 +461,12 @@ async def user_context_middleware(request, call_next):
     支持多个可能的 Header 名称，按优先级：
     1. X-User-ID (标准)
     2. X-CoPaw-User-Id (项目特定)
+
+    如果用户目录不存在，会自动初始化。
     """
+    from ..agents.utils.setup_utils import initialize_user_directory
+    from ..config import load_config
+
     # 从 Header 获取 user_id
     user_id = request.headers.get("X-User-ID") or request.headers.get("X-CoPaw-User-Id")
 
@@ -469,6 +474,26 @@ async def user_context_middleware(request, call_next):
         # 设置请求上下文
         token = set_request_user_id(user_id)
         try:
+            # Auto-initialize user directory if this is a new user
+            # This runs before any HTTP endpoint handler, ensuring the
+            # user directory exists for all API calls
+            try:
+                config = load_config()  # Uses request-scoped directory
+                initialized = initialize_user_directory(
+                    user_id=user_id,
+                    language=config.agents.language,
+                )
+                if initialized:
+                    logger.info("Auto-initialized directory for user: %s (via HTTP middleware)", user_id)
+            except Exception as e:
+                logger.warning(
+                    "Auto-initialization failed for user %s: %s",
+                    user_id,
+                    e,
+                )
+                # Continue anyway - let the request proceed and fail naturally
+                # if config is truly missing
+
             response = await call_next(request)
             return response
         finally:
