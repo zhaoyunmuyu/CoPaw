@@ -12,7 +12,19 @@ logger = logging.getLogger(__name__)
 
 
 class SandboxExecutor:
-    """Shell 命令沙箱执行器，使用 bubblewrap 实现系统级隔离。"""
+    """Shell 命令沙箱执行器，使用 bubblewrap 实现系统级隔离。
+
+    TODO: Resource limits enforcement (SandboxLimitsConfig) is planned for a
+    future iteration. This includes:
+    - max_memory_mb: Memory limit via cgroups or prlimit
+    - max_pids: Process count limit
+    - max_cpu_percent: CPU usage limit
+    - max_file_size_mb: File size limit
+    - max_open_files: Open file descriptor limit
+
+    These limits prevent resource exhaustion attacks. Current implementation
+    provides core isolation (filesystem + network namespace separation).
+    """
 
     def __init__(
         self,
