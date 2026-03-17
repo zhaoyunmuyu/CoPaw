@@ -40,6 +40,29 @@ class SandboxExecutor:
         self.readonly_system = readonly_system
         self.fallback = fallback
 
+    def _validate_command(self, command: str) -> None:
+        """Basic command validation for fallback mode.
+
+        Raises:
+            ValueError: If command contains obvious injection patterns.
+        """
+        dangerous_patterns = [
+            "$(",  # Command substitution
+            "`",  # Backtick command substitution
+            ";",  # Command chaining
+            "&&",  # Command chaining
+            "||",  # Command chaining
+            "|",  # Pipe
+            ">",  # Redirect
+            "<",  # Redirect
+        ]
+        for pattern in dangerous_patterns:
+            if pattern in command:
+                raise ValueError(
+                    f"Command contains potentially dangerous pattern: {pattern}. "
+                    "Use bubblewrap for full sandboxing."
+                )
+
     @staticmethod
     def is_available() -> bool:
         """检查 bubblewrap 是否可用。"""
@@ -81,6 +104,7 @@ class SandboxExecutor:
                     "Install it with: apt-get install bubblewrap"
                 )
             else:
+                self._validate_command(command)
                 logger.warning(
                     "bubblewrap not available, executing without sandbox."
                 )
@@ -143,11 +167,15 @@ class SandboxExecutor:
             )
         except asyncio.TimeoutError:
             proc.terminate()
-            await proc.wait()
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=1)
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
             return (
-                    -1,
-                    "",
-                    f"Command timed out after {self.timeout} seconds",
-                )
+                -1,
+                "",
+                f"Command timed out after {self.timeout} seconds",
+            )
         except Exception as e:
             return (-1, "", str(e))
