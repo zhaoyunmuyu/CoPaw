@@ -2,30 +2,27 @@
 # flake8: noqa: E501
 # pylint: disable=line-too-long
 import os
-from pathlib import Path
 from typing import Optional
 
 from agentscope.message import TextBlock
 from agentscope.tool import ToolResponse
 
-from ...constant import get_request_working_dir
+from .path_validator import PathValidator
 
 
 def _resolve_file_path(file_path: str) -> str:
-    """Resolve file path: use absolute path as-is,
-    resolve relative path from WORKING_DIR.
+    """Resolve and validate file path.
 
     Args:
-        file_path: The input file path (absolute or relative).
+        file_path: Input file path (absolute or relative)
 
     Returns:
-        The resolved absolute file path as string.
+        str: Resolved absolute path
+
+    Raises:
+        PermissionError: When path is outside user directory
     """
-    path = Path(file_path)
-    if path.is_absolute():
-        return str(path)
-    else:
-        return str(get_request_working_dir() / file_path)  # Use request-scoped
+    return str(PathValidator.resolve_and_validate(file_path))
 
 
 async def read_file(  # pylint: disable=too-many-return-statements
@@ -47,7 +44,17 @@ async def read_file(  # pylint: disable=too-many-return-statements
             Last line to read (1-based, inclusive).
     """
 
-    file_path = _resolve_file_path(file_path)
+    try:
+        file_path = _resolve_file_path(file_path)
+    except PermissionError as e:
+        return ToolResponse(
+            content=[
+                TextBlock(
+                    type="text",
+                    text=str(e),
+                ),
+            ],
+        )
 
     if not os.path.exists(file_path):
         return ToolResponse(
@@ -162,7 +169,17 @@ async def write_file(
             ],
         )
 
-    file_path = _resolve_file_path(file_path)
+    try:
+        file_path = _resolve_file_path(file_path)
+    except PermissionError as e:
+        return ToolResponse(
+            content=[
+                TextBlock(
+                    type="text",
+                    text=str(e),
+                ),
+            ],
+        )
 
     try:
         with open(file_path, "w", encoding="utf-8") as file:
@@ -206,7 +223,9 @@ async def edit_file(
     response = await read_file(file_path=file_path)
     if response.content and len(response.content) > 0:
         error_text = response.content[0].get("text", "")
-        if error_text.startswith("Error:"):
+        if error_text.startswith("Error:") or error_text.startswith(
+            "Permission denied"
+        ):
             return response
     if not response.content or len(response.content) == 0:
         return ToolResponse(
@@ -234,7 +253,9 @@ async def edit_file(
 
     if write_response.content and len(write_response.content) > 0:
         write_text = write_response.content[0].get("text", "")
-        if write_text.startswith("Error:"):
+        if write_text.startswith("Error:") or write_text.startswith(
+            "Permission denied"
+        ):
             return write_response
 
     return ToolResponse(
@@ -271,7 +292,17 @@ async def append_file(
             ],
         )
 
-    file_path = _resolve_file_path(file_path)
+    try:
+        file_path = _resolve_file_path(file_path)
+    except PermissionError as e:
+        return ToolResponse(
+            content=[
+                TextBlock(
+                    type="text",
+                    text=str(e),
+                ),
+            ],
+        )
 
     try:
         with open(file_path, "a", encoding="utf-8") as file:
