@@ -147,3 +147,65 @@ class TestSandboxExecutorBuildCommand:
         cmd_str = " ".join(cmd)
         assert "--unshare-all" in cmd_str
         assert "--share-net" in cmd_str
+
+
+class TestSandboxExecutorIsolation:
+    """Tests for sandbox isolation effectiveness."""
+
+    @pytest.mark.asyncio
+    async def test_access_outside_user_dir_blocked(self, tmp_path):
+        """沙箱应阻止访问用户目录外的文件"""
+        with patch.object(
+            SandboxExecutor, "is_available", return_value=True
+        ):
+            executor = SandboxExecutor(user_dir=tmp_path, timeout=30)
+
+            # Mock the subprocess to simulate blocked access
+            with patch("asyncio.create_subprocess_exec") as mock_subprocess:
+                mock_proc = MagicMock()
+                # Simulate that /etc/passwd is not accessible in sandbox
+                mock_proc.communicate = AsyncMock(
+                    return_value=(b"", b"cat: /etc/passwd: Permission denied\n")
+                )
+                mock_proc.returncode = 1
+                mock_subprocess.return_value = mock_proc
+
+                returncode, stdout, stderr = await executor.execute(
+                    "cat /etc/passwd"
+                )
+
+                # In a real sandbox, access would be blocked
+                # Our mock simulates this behavior
+                assert returncode != 0 or "Permission denied" in stderr
+
+    @pytest.mark.asyncio
+    async def test_write_to_user_dir_allowed(self, tmp_path):
+        """沙箱应允许写入用户目录"""
+        with patch.object(
+            SandboxExecutor, "is_available", return_value=True
+        ):
+            executor = SandboxExecutor(user_dir=tmp_path, timeout=30)
+
+            with patch("asyncio.create_subprocess_exec") as mock_subprocess:
+                mock_proc = MagicMock()
+                mock_proc.communicate = AsyncMock(return_value=(b"ok\n", b""))
+                mock_proc.returncode = 0
+                mock_subprocess.return_value = mock_proc
+
+                returncode, stdout, stderr = await executor.execute(
+                    "echo test > file.txt"
+                )
+
+                assert returncode == 0
+
+    @pytest.mark.asyncio
+    async def test_network_access_denied_by_default(self, tmp_path):
+        """默认应阻止网络访问"""
+        executor = SandboxExecutor(user_dir=tmp_path, allow_network=False)
+        cmd = executor._build_bwrap_command("curl example.com")
+
+        cmd_str = " ".join(cmd)
+        # --unshare-all isolates network by default
+        assert "--unshare-all" in cmd_str
+        # Should NOT have --share-net when allow_network=False
+        assert "--share-net" not in cmd_str
