@@ -5,7 +5,12 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch
 
-from copaw.agents.tools.file_io import read_file, write_file
+from copaw.agents.tools.file_io import (
+    read_file,
+    write_file,
+    edit_file,
+    append_file,
+)
 
 
 class TestFileIOPermissionIsolation:
@@ -53,3 +58,49 @@ class TestFileIOPermissionIsolation:
         ):
             result = await read_file("../../../etc/passwd")
             assert "Permission denied" in result.content[0].get("text", "")
+
+    @pytest.mark.asyncio
+    async def test_edit_file_outside_user_dir_denied(self, tmp_path):
+        """Editing files outside user directory should be denied."""
+        with patch(
+            "copaw.agents.tools.path_validator.get_request_working_dir",
+            return_value=tmp_path,
+        ):
+            result = await edit_file("/etc/malicious.txt", "old", "new")
+            assert "Permission denied" in result.content[0].get("text", "")
+
+    @pytest.mark.asyncio
+    async def test_append_file_outside_user_dir_denied(self, tmp_path):
+        """Appending to files outside user directory should be denied."""
+        with patch(
+            "copaw.agents.tools.path_validator.get_request_working_dir",
+            return_value=tmp_path,
+        ):
+            result = await append_file("/etc/malicious.txt", "data")
+            assert "Permission denied" in result.content[0].get("text", "")
+
+    @pytest.mark.asyncio
+    async def test_edit_file_inside_user_dir_allowed(self, tmp_path):
+        """Editing files inside user directory should succeed."""
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("hello world")
+
+        with patch(
+            "copaw.agents.tools.path_validator.get_request_working_dir",
+            return_value=tmp_path,
+        ):
+            result = await edit_file("test.txt", "world", "universe")
+            assert "Successfully replaced" in result.content[0].get("text", "")
+
+    @pytest.mark.asyncio
+    async def test_append_file_inside_user_dir_allowed(self, tmp_path):
+        """Appending to files inside user directory should succeed."""
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("hello")
+
+        with patch(
+            "copaw.agents.tools.path_validator.get_request_working_dir",
+            return_value=tmp_path,
+        ):
+            result = await append_file("test.txt", " world")
+            assert "Appended" in result.content[0].get("text", "")
