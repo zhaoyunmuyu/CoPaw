@@ -19,6 +19,7 @@ src/copaw/
 ├── agents/tools/
 │   ├── path_validator.py    # NEW: 路径验证器
 │   ├── sandbox.py           # NEW: Shell 沙箱执行器
+│   ├── audit.py             # NEW: 审计日志工具
 │   ├── file_io.py           # MODIFY: 添加路径验证
 │   ├── file_search.py       # MODIFY: 添加路径验证
 │   └── shell.py             # MODIFY: 使用沙箱执行
@@ -27,7 +28,8 @@ src/copaw/
 tests/
 └── agents/tools/
     ├── test_path_validator.py  # NEW: PathValidator 测试
-    └── test_sandbox.py          # NEW: SandboxExecutor 测试
+    ├── test_sandbox.py          # NEW: SandboxExecutor 测试
+    └── test_audit.py            # NEW: 审计日志测试
 ```
 
 ---
@@ -365,7 +367,7 @@ git commit -m "feat: add PathValidator for user permission isolation
 import asyncio
 import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 from copaw.agents.tools.sandbox import SandboxExecutor
 
@@ -398,9 +400,7 @@ class TestSandboxExecutorExecute:
             # Mock the subprocess execution
             with patch("asyncio.create_subprocess_exec") as mock_subprocess:
                 mock_proc = MagicMock()
-                mock_proc.communicate = asyncio.coroutine(
-                    lambda: (b"hello\n", b"")
-                )
+                mock_proc.communicate = AsyncMock(return_value=(b"hello\n", b""))
                 mock_proc.returncode = 0
                 mock_subprocess.return_value = mock_proc
 
@@ -419,13 +419,15 @@ class TestSandboxExecutorExecute:
 
             with patch("asyncio.create_subprocess_exec") as mock_subprocess:
                 mock_proc = MagicMock()
-                # Simulate timeout
-                mock_proc.communicate = asyncio.coroutine(
-                    lambda: asyncio.sleep(10) or (b"", b"")
-                )
+                # Simulate timeout using AsyncMock
+                async def slow_communicate():
+                    await asyncio.sleep(10)
+                    return (b"", b"")
+
+                mock_proc.communicate = slow_communicate
                 mock_proc.terminate = MagicMock()
                 mock_proc.kill = MagicMock()
-                mock_proc.wait = asyncio.coroutine(lambda: None)
+                mock_proc.wait = AsyncMock(return_value=None)
                 mock_subprocess.return_value = mock_proc
 
                 with pytest.raises(asyncio.TimeoutError):
@@ -444,7 +446,7 @@ class TestSandboxExecutorFallback:
             executor = SandboxExecutor(
                 user_dir=tmp_path,
                 timeout=30,
-                fallback_mode="deny",
+                fallback="deny",
             )
 
             with pytest.raises(RuntimeError) as exc_info:
@@ -464,15 +466,13 @@ class TestSandboxExecutorFallback:
             executor = SandboxExecutor(
                 user_dir=tmp_path,
                 timeout=30,
-                fallback_mode="warn",
+                fallback="warn",
             )
 
             # Mock subprocess for fallback execution
             with patch("asyncio.create_subprocess_shell") as mock_subprocess:
                 mock_proc = MagicMock()
-                mock_proc.communicate = asyncio.coroutine(
-                    lambda: (b"output\n", b"")
-                )
+                mock_proc.communicate = AsyncMock(return_value=(b"output\n", b""))
                 mock_proc.returncode = 0
                 mock_subprocess.return_value = mock_proc
 
@@ -543,7 +543,7 @@ class SandboxExecutor:
         timeout: int = 60,
         allow_network: bool = False,
         readonly_system: bool = True,
-        fallback_mode: Literal["deny", "warn"] = "deny",
+        fallback: Literal["deny", "warn"] = "deny",
     ):
         """初始化沙箱执行器。
 
@@ -552,13 +552,13 @@ class SandboxExecutor:
             timeout: 命令超时时间（秒）
             allow_network: 是否允许网络访问
             readonly_system: 系统目录是否只读
-            fallback_mode: bubblewrap 不可用时的处理策略
+            fallback: bubblewrap 不可用时的处理策略
         """
         self.user_dir = Path(user_dir).resolve()
         self.timeout = timeout
         self.allow_network = allow_network
         self.readonly_system = readonly_system
-        self.fallback_mode = fallback_mode
+        self.fallback = fallback
 
     @staticmethod
     def is_available() -> bool:
@@ -633,11 +633,11 @@ class SandboxExecutor:
             tuple[int, str, str]: (返回码, 标准输出, 标准错误)
 
         Raises:
-            RuntimeError: 当 bubblewrap 不可用且 fallback_mode="deny" 时
+            RuntimeError: 当 bubblewrap 不可用且 fallback="deny" 时
         """
         # 检查 bubblewrap 可用性
         if not self.is_available():
-            if self.fallback_mode == "deny":
+            if self.fallback == "deny":
                 raise RuntimeError(
                     "bubblewrap (bwrap) is not available. "
                     "Install it with: apt-get install bubblewrap"
@@ -748,6 +748,190 @@ git commit -m "feat: add SandboxExecutor for shell command isolation
 
 ---
 
+## Task 2.5: 实现审计日志模块
+
+**Files:**
+- Create: `src/copaw/agents/tools/audit.py`
+- Test: `tests/agents/tools/test_audit.py`
+
+### 2.5.1 编写审计日志测试（RED）
+
+- [ ] **Step 1: 创建测试文件**
+
+```python
+# tests/agents/tools/test_audit.py
+# -*- coding: utf-8 -*-
+"""Tests for audit logging module."""
+
+import logging
+import pytest
+from unittest.mock import patch
+
+from copaw.agents.tools.audit import AuditEvent, log_audit
+
+
+class TestAuditEvent:
+    """Tests for AuditEvent constants."""
+
+    def test_audit_event_constants_exist(self):
+        """审计事件常量应存在"""
+        assert hasattr(AuditEvent, "PATH_VALIDATION_FAILED")
+        assert hasattr(AuditEvent, "SANDBOX_EXECUTE")
+        assert hasattr(AuditEvent, "SANDBOX_UNAVAILABLE")
+        assert hasattr(AuditEvent, "PERMISSION_DENIED")
+
+
+class TestLogAudit:
+    """Tests for log_audit function."""
+
+    def test_log_audit_path_validation_failed(self, caplog):
+        """记录路径验证失败事件"""
+        with caplog.at_level(logging.INFO, logger="copaw.audit"):
+            log_audit(
+                event=AuditEvent.PATH_VALIDATION_FAILED,
+                user_id="test_user",
+                details={"path_hint": "outside_user_dir"},
+            )
+
+        assert any(
+            "test_user" in record.message or "test_user" in str(record.__dict__)
+            for record in caplog.records
+        )
+
+    def test_log_audit_sandbox_execute(self, caplog):
+        """记录沙箱执行事件"""
+        with caplog.at_level(logging.INFO, logger="copaw.audit"):
+            log_audit(
+                event=AuditEvent.SANDBOX_EXECUTE,
+                user_id="test_user",
+                details={"command_hash": "abc123", "returncode": 0},
+            )
+
+        assert len(caplog.records) >= 1
+
+    def test_log_audit_does_not_leak_full_paths(self, caplog):
+        """审计日志不应泄露完整路径"""
+        with caplog.at_level(logging.INFO, logger="copaw.audit"):
+            log_audit(
+                event=AuditEvent.PATH_VALIDATION_FAILED,
+                user_id="test_user",
+                details={"path": "/etc/passwd"},  # 不应该这样传递
+            )
+
+        # 验证日志中没有完整路径
+        for record in caplog.records:
+            msg = record.getMessage()
+            assert "/etc/passwd" not in msg
+```
+
+- [ ] **Step 2: 运行测试验证失败**
+
+Run: `pytest tests/agents/tools/test_audit.py -v`
+Expected: FAIL (module not found)
+
+### 2.5.2 实现审计日志模块（GREEN）
+
+- [ ] **Step 3: 创建审计日志模块**
+
+```python
+# src/copaw/agents/tools/audit.py
+# -*- coding: utf-8 -*-
+"""Audit logging for security events.
+
+This module provides audit logging for security-relevant events
+like path validation failures and sandbox executions.
+"""
+
+import hashlib
+import logging
+from typing import Any
+
+# 审计日志专用 logger
+audit_logger = logging.getLogger("copaw.audit")
+
+
+class AuditEvent:
+    """审计事件类型常量。"""
+
+    PATH_VALIDATION_FAILED = "path_validation_failed"
+    SANDBOX_EXECUTE = "sandbox_execute"
+    SANDBOX_UNAVAILABLE = "sandbox_unavailable"
+    PERMISSION_DENIED = "permission_denied"
+
+
+def _sanitize_details(details: dict[str, Any]) -> dict[str, Any]:
+    """清理详情字典，移除敏感信息。
+
+    Args:
+        details: 原始详情字典
+
+    Returns:
+        清理后的详情字典
+    """
+    sanitized = {}
+    sensitive_keys = {"path", "file_path", "full_path", "absolute_path"}
+
+    for key, value in details.items():
+        if key.lower() in sensitive_keys:
+            # 不记录完整路径，只记录提示
+            sanitized[f"{key}_hint"] = "provided_but_redacted"
+        elif isinstance(value, str) and len(value) > 100:
+            # 截断过长的字符串
+            sanitized[key] = value[:100] + "..."
+        else:
+            sanitized[key] = value
+
+    return sanitized
+
+
+def log_audit(event: str, user_id: str, details: dict[str, Any]) -> None:
+    """记录审计日志。
+
+    Args:
+        event: 事件类型（使用 AuditEvent 常量）
+        user_id: 用户标识
+        details: 事件详情（会被清理以移除敏感信息）
+    """
+    sanitized_details = _sanitize_details(details)
+
+    audit_logger.info(
+        f"event={event} user={user_id} details={sanitized_details}"
+    )
+
+
+def hash_command(command: str) -> str:
+    """计算命令的哈希值用于审计日志。
+
+    Args:
+        command: 要哈希的命令
+
+    Returns:
+        命令哈希的前 16 个字符
+    """
+    return hashlib.sha256(command.encode()).hexdigest()[:16]
+```
+
+- [ ] **Step 4: 运行测试验证通过**
+
+Run: `pytest tests/agents/tools/test_audit.py -v`
+Expected: PASS
+
+### 2.5.3 提交审计日志模块
+
+- [ ] **Step 5: 提交代码**
+
+```bash
+git add src/copaw/agents/tools/audit.py tests/agents/tools/test_audit.py
+git commit -m "feat: add audit logging for security events
+
+- Add AuditEvent constants for event types
+- Add log_audit function with sensitive data sanitization
+- Add hash_command utility for command hashing
+- Add comprehensive unit tests"
+```
+
+---
+
 ## Task 3: 添加沙箱配置到 config.py
 
 **Files:**
@@ -815,17 +999,93 @@ git commit -m "feat: add SandboxConfig to configuration
 
 **Files:**
 - Modify: `src/copaw/agents/tools/file_io.py`
+- Test: `tests/agents/tools/test_file_io.py` (新增权限测试)
 
-### 4.1 修改 _resolve_file_path 函数
+### 4.1 编写权限隔离测试（RED）
 
-- [ ] **Step 1: 替换 _resolve_file_path 函数**
+- [ ] **Step 1: 创建 file_io 权限测试**
 
-找到现有的 `_resolve_file_path` 函数（约第 14-28 行），替换为：
+在 `tests/agents/tools/test_file_io.py` 中添加：
+
+```python
+# tests/agents/tools/test_file_io.py
+# -*- coding: utf-8 -*-
+"""Tests for file_io permission isolation."""
+
+import pytest
+from pathlib import Path
+from unittest.mock import patch
+
+from copaw.agents.tools.file_io import read_file, write_file
+
+
+class TestFileIOPermissionIsolation:
+    """Tests for file_io permission isolation."""
+
+    @pytest.mark.asyncio
+    async def test_read_file_outside_user_dir_denied(self, tmp_path):
+        """读取用户目录外文件 - 应拒绝"""
+        with patch(
+            "copaw.agents.tools.path_validator.get_request_working_dir",
+            return_value=tmp_path,
+        ):
+            result = await read_file("/etc/passwd")
+            assert "Permission denied" in result.content[0].get("text", "")
+
+    @pytest.mark.asyncio
+    async def test_write_file_outside_user_dir_denied(self, tmp_path):
+        """写入用户目录外 - 应拒绝"""
+        with patch(
+            "copaw.agents.tools.path_validator.get_request_working_dir",
+            return_value=tmp_path,
+        ):
+            result = await write_file("/etc/malicious.txt", "data")
+            assert "Permission denied" in result.content[0].get("text", "")
+
+    @pytest.mark.asyncio
+    async def test_read_file_inside_user_dir_allowed(self, tmp_path):
+        """读取用户目录内文件 - 应成功"""
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("hello world")
+
+        with patch(
+            "copaw.agents.tools.path_validator.get_request_working_dir",
+            return_value=tmp_path,
+        ):
+            result = await read_file("test.txt")
+            assert "hello world" in result.content[0].get("text", "")
+
+    @pytest.mark.asyncio
+    async def test_read_file_traversal_attack_denied(self, tmp_path):
+        """路径遍历攻击 - 应拒绝"""
+        with patch(
+            "copaw.agents.tools.path_validator.get_request_working_dir",
+            return_value=tmp_path,
+        ):
+            result = await read_file("../../../etc/passwd")
+            assert "Permission denied" in result.content[0].get("text", "")
+```
+
+- [ ] **Step 2: 运行测试验证失败**
+
+Run: `pytest tests/agents/tools/test_file_io.py -v`
+Expected: FAIL (路径遍历未被阻止)
+
+### 4.2 修改 _resolve_file_path 函数（GREEN）
+
+- [ ] **Step 3: 在文件顶部添加导入**
+
+在 `src/copaw/agents/tools/file_io.py` 的导入部分（约第 11 行后）添加：
 
 ```python
 from .path_validator import PathValidator
+```
 
+- [ ] **Step 4: 替换 _resolve_file_path 函数**
 
+找到现有的 `_resolve_file_path` 函数（搜索 `def _resolve_file_path`），替换为：
+
+```python
 def _resolve_file_path(file_path: str) -> str:
     """解析并验证路径，失败时抛出 PermissionError。
 
@@ -841,7 +1101,7 @@ def _resolve_file_path(file_path: str) -> str:
     return str(PathValidator.resolve_and_validate(file_path))
 ```
 
-- [ ] **Step 2: 在各函数中捕获 PermissionError**
+- [ ] **Step 5: 在各函数中捕获 PermissionError**
 
 在 `read_file`、`write_file`、`edit_file`、`append_file` 函数开头添加 try-except：
 
@@ -861,24 +1121,23 @@ async def read_file(...):
     # ... 原有逻辑 ...
 ```
 
-### 4.2 运行测试验证
+- [ ] **Step 6: 运行测试验证通过**
 
-- [ ] **Step 3: 运行 file_io 相关测试**
-
-Run: `pytest tests/agents/tools/test_file_io.py -v 2>/dev/null || pytest -k "file_io or read_file or write_file" -v`
-Expected: PASS 或测试文件不存在时创建新测试
+Run: `pytest tests/agents/tools/test_file_io.py -v`
+Expected: PASS
 
 ### 4.3 提交更改
 
-- [ ] **Step 4: 提交代码**
+- [ ] **Step 7: 提交代码**
 
 ```bash
-git add src/copaw/agents/tools/file_io.py
+git add src/copaw/agents/tools/file_io.py tests/agents/tools/test_file_io.py
 git commit -m "feat: add path validation to file_io tools
 
 - Replace _resolve_file_path with PathValidator integration
 - Add PermissionError handling in all file operations
-- Ensure users can only access files in their directory"
+- Ensure users can only access files in their directory
+- Add permission isolation tests"
 ```
 
 ---
@@ -887,17 +1146,83 @@ git commit -m "feat: add path validation to file_io tools
 
 **Files:**
 - Modify: `src/copaw/agents/tools/file_search.py`
+- Test: `tests/agents/tools/test_file_search.py` (新增权限测试)
 
-### 5.1 修改 grep_search 和 glob_search
+### 5.1 编写权限隔离测试（RED）
 
-- [ ] **Step 1: 在 grep_search 中添加路径验证**
+- [ ] **Step 1: 创建 file_search 权限测试**
 
-找到 `grep_search` 函数（约第 82 行），修改路径处理部分：
+在 `tests/agents/tools/test_file_search.py` 中添加：
+
+```python
+# tests/agents/tools/test_file_search.py
+# -*- coding: utf-8 -*-
+"""Tests for file_search permission isolation."""
+
+import pytest
+from pathlib import Path
+from unittest.mock import patch
+
+from copaw.agents.tools.file_search import grep_search, glob_search
+
+
+class TestFileSearchPermissionIsolation:
+    """Tests for file_search permission isolation."""
+
+    @pytest.mark.asyncio
+    async def test_grep_search_outside_user_dir_denied(self, tmp_path):
+        """搜索用户目录外 - 应拒绝"""
+        with patch(
+            "copaw.agents.tools.path_validator.get_request_working_dir",
+            return_value=tmp_path,
+        ):
+            result = await grep_search("pattern", path="/etc")
+            assert "Permission denied" in result.content[0].get("text", "")
+
+    @pytest.mark.asyncio
+    async def test_glob_search_outside_user_dir_denied(self, tmp_path):
+        """glob 搜索用户目录外 - 应拒绝"""
+        with patch(
+            "copaw.agents.tools.path_validator.get_request_working_dir",
+            return_value=tmp_path,
+        ):
+            result = await glob_search("*.txt", path="/etc")
+            assert "Permission denied" in result.content[0].get("text", "")
+
+    @pytest.mark.asyncio
+    async def test_grep_search_inside_user_dir_allowed(self, tmp_path):
+        """搜索用户目录内 - 应成功"""
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("hello world")
+
+        with patch(
+            "copaw.agents.tools.path_validator.get_request_working_dir",
+            return_value=tmp_path,
+        ):
+            result = await grep_search("hello")
+            assert "hello" in result.content[0].get("text", "")
+```
+
+- [ ] **Step 2: 运行测试验证失败**
+
+Run: `pytest tests/agents/tools/test_file_search.py -v`
+Expected: FAIL (路径验证未生效)
+
+### 5.2 修改 grep_search 和 glob_search（GREEN）
+
+- [ ] **Step 3: 在文件顶部添加导入**
+
+在 `src/copaw/agents/tools/file_search.py` 的导入部分添加：
 
 ```python
 from .path_validator import PathValidator
+```
 
+- [ ] **Step 4: 修改 grep_search 函数**
 
+找到 `grep_search` 函数（搜索 `async def grep_search`），修改路径处理部分：
+
+```python
 async def grep_search(...):
     # ... 现有参数检查 ...
 
@@ -922,27 +1247,26 @@ async def grep_search(...):
     # ... 后续逻辑不变 ...
 ```
 
-- [ ] **Step 2: 在 glob_search 中添加路径验证**
+- [ ] **Step 5: 修改 glob_search 函数**
 
 同样修改 `glob_search` 函数的路径处理部分。
 
-### 5.2 运行测试验证
+- [ ] **Step 6: 运行测试验证通过**
 
-- [ ] **Step 3: 运行测试**
-
-Run: `pytest tests/agents/tools/test_file_search.py -v 2>/dev/null || pytest -k "grep_search or glob_search" -v`
+Run: `pytest tests/agents/tools/test_file_search.py -v`
 Expected: PASS
 
 ### 5.3 提交更改
 
-- [ ] **Step 4: 提交代码**
+- [ ] **Step 7: 提交代码**
 
 ```bash
-git add src/copaw/agents/tools/file_search.py
+git add src/copaw/agents/tools/file_search.py tests/agents/tools/test_file_search.py
 git commit -m "feat: add path validation to file_search tools
 
 - Validate search paths with PathValidator
-- Ensure grep_search and glob_search are restricted to user directory"
+- Ensure grep_search and glob_search are restricted to user directory
+- Add permission isolation tests"
 ```
 
 ---
@@ -951,19 +1275,82 @@ git commit -m "feat: add path validation to file_search tools
 
 **Files:**
 - Modify: `src/copaw/agents/tools/shell.py`
+- Test: `tests/agents/tools/test_shell.py` (新增沙箱测试)
 
-### 6.1 使用 SandboxExecutor 替换直接执行
+### 6.1 编写沙箱集成测试（RED）
 
-- [ ] **Step 1: 导入 SandboxExecutor 和 PathValidator**
+- [ ] **Step 1: 创建 shell 沙箱测试**
 
-在文件顶部添加导入：
+在 `tests/agents/tools/test_shell.py` 中添加：
+
+```python
+# tests/agents/tools/test_shell.py (追加内容)
+# -*- coding: utf-8 -*-
+"""Tests for shell sandbox integration."""
+
+import pytest
+from pathlib import Path
+from unittest.mock import patch, MagicMock, AsyncMock
+
+from copaw.agents.tools.shell import execute_shell_command
+from copaw.agents.tools.sandbox import SandboxExecutor
+
+
+class TestShellSandboxIntegration:
+    """Tests for shell sandbox integration."""
+
+    @pytest.mark.asyncio
+    async def test_shell_cwd_outside_user_dir_denied(self, tmp_path):
+        """指定外部 cwd - 应拒绝"""
+        with patch(
+            "copaw.agents.tools.path_validator.get_request_working_dir",
+            return_value=tmp_path,
+        ):
+            result = await execute_shell_command(
+                "echo hello",
+                cwd=Path("/etc"),
+            )
+            assert "Permission denied" in result.content[0].get("text", "")
+
+    @pytest.mark.asyncio
+    async def test_shell_with_sandbox_disabled(self, tmp_path):
+        """沙箱禁用 - 直接执行"""
+        with patch(
+            "copaw.agents.tools.path_validator.get_request_working_dir",
+            return_value=tmp_path,
+        ):
+            with patch(
+                "copaw.agents.tools.shell._get_sandbox_config"
+            ) as mock_config:
+                mock_config.return_value = MagicMock(
+                    enabled=False,
+                    allow_network=False,
+                    fallback="deny",
+                )
+                result = await execute_shell_command("echo hello")
+                # 应该执行成功（无沙箱）
+                assert "hello" in result.content[0].get("text", "") or "success" in result.content[0].get("text", "").lower()
+```
+
+- [ ] **Step 2: 运行测试验证失败**
+
+Run: `pytest tests/agents/tools/test_shell.py -v`
+Expected: FAIL (沙箱集成未实现)
+
+### 6.2 实现 SandboxExecutor 集成（GREEN）
+
+- [ ] **Step 3: 在文件顶部添加导入**
+
+在 `src/copaw/agents/tools/shell.py` 的现有导入后添加：
 
 ```python
 from .path_validator import PathValidator
 from .sandbox import SandboxExecutor
 ```
 
-- [ ] **Step 2: 添加获取沙箱配置的辅助函数**
+- [ ] **Step 4: 添加获取沙箱配置的辅助函数**
+
+在文件中添加辅助函数（可放在 `_execute_subprocess_sync` 函数之前）：
 
 ```python
 def _get_sandbox_config():
@@ -974,12 +1361,26 @@ def _get_sandbox_config():
     return config.sandbox
 ```
 
-- [ ] **Step 3: 修改 execute_shell_command 函数**
+- [ ] **Step 5: 修改 execute_shell_command 函数**
 
-替换 `execute_shell_command` 函数的主要逻辑：
+替换 `execute_shell_command` 函数的主要逻辑。找到函数定义（搜索 `async def execute_shell_command`），替换为：
 
 ```python
-async def execute_shell_command(...):
+async def execute_shell_command(
+    command: str,
+    timeout: int = 60,
+    cwd: Optional[Path] = None,
+) -> ToolResponse:
+    """Execute given command in sandbox and return the result.
+
+    Args:
+        command: The shell command to execute.
+        timeout: Maximum time (in seconds) for command execution.
+        cwd: Working directory. If None, defaults to user directory.
+
+    Returns:
+        ToolResponse with returncode, stdout, and stderr.
+    """
     cmd = (command or "").strip()
 
     # 获取用户目录并验证 cwd
@@ -1012,7 +1413,7 @@ async def execute_shell_command(...):
         user_dir=working_dir,
         timeout=timeout,
         allow_network=sandbox_config.allow_network,
-        fallback_mode=sandbox_config.fallback,
+        fallback=sandbox_config.fallback,
     )
 
     try:
@@ -1050,29 +1451,103 @@ async def execute_shell_command(...):
 
 
 async def _execute_directly(cmd: str, working_dir: Path, timeout: int):
-    """直接执行命令（沙箱禁用时使用）。"""
-    # 保持原有的直接执行逻辑
-    # ... (复制原有的 subprocess 执行代码)
+    """直接执行命令（沙箱禁用时使用）。
+
+    保持原有的 subprocess 执行逻辑。
+    """
+    import sys
+    import locale
+
+    try:
+        if sys.platform == "win32":
+            returncode, stdout_str, stderr_str = await asyncio.to_thread(
+                _execute_subprocess_sync,
+                cmd,
+                str(working_dir),
+                timeout,
+            )
+        else:
+            proc = await asyncio.create_subprocess_shell(
+                cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                bufsize=0,
+                cwd=str(working_dir),
+            )
+
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(),
+                    timeout=timeout,
+                )
+                encoding = locale.getpreferredencoding(False) or "utf-8"
+                stdout_str = stdout.decode(encoding, errors="replace").strip("\n")
+                stderr_str = stderr.decode(encoding, errors="replace").strip("\n")
+                returncode = proc.returncode
+
+            except asyncio.TimeoutError:
+                stderr_suffix = (
+                    f"TimeoutError: Command exceeded {timeout} seconds."
+                )
+                proc.terminate()
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=1)
+                except asyncio.TimeoutError:
+                    proc.kill()
+                    await proc.wait()
+                returncode = -1
+                stdout_str = ""
+                stderr_str = stderr_suffix
+
+        # 格式化响应
+        if returncode == 0:
+            response_text = stdout_str if stdout_str else "Command executed successfully."
+        else:
+            response_parts = [f"Command failed with exit code {returncode}."]
+            if stdout_str:
+                response_parts.append(f"\n[stdout]\n{stdout_str}")
+            if stderr_str:
+                response_parts.append(f"\n[stderr]\n{stderr_str}")
+            response_text = "".join(response_parts)
+
+        return ToolResponse(
+            content=[
+                TextBlock(
+                    type="text",
+                    text=response_text,
+                ),
+            ],
+        )
+
+    except Exception as e:
+        return ToolResponse(
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: Shell command execution failed due to\n{e}",
+                ),
+            ],
+        )
 ```
 
-### 6.2 运行测试验证
+- [ ] **Step 6: 运行测试验证通过**
 
-- [ ] **Step 4: 运行测试**
-
-Run: `pytest tests/agents/tools/test_shell.py -v 2>/dev/null || pytest -k "shell" -v`
+Run: `pytest tests/agents/tools/test_shell.py -v`
 Expected: PASS
 
 ### 6.3 提交更改
 
-- [ ] **Step 5: 提交代码**
+- [ ] **Step 7: 提交代码**
 
 ```bash
-git add src/copaw/agents/tools/shell.py
+git add src/copaw/agents/tools/shell.py tests/agents/tools/test_shell.py
 git commit -m "feat: integrate SandboxExecutor into shell command execution
 
 - Replace direct subprocess execution with sandboxed execution
 - Add path validation for cwd parameter
-- Support sandbox configuration (enabled, fallback, allow_network)"
+- Support sandbox configuration (enabled, fallback, allow_network)
+- Add _execute_directly for fallback when sandbox disabled
+- Add sandbox integration tests"
 ```
 
 ---
