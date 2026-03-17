@@ -5,8 +5,8 @@
 
 import asyncio
 import locale
+import logging
 import subprocess
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +14,16 @@ from agentscope.tool import ToolResponse
 from agentscope.message import TextBlock
 
 from ...constant import get_request_working_dir
+from .path_validator import PathValidator
+from .sandbox import SandboxExecutor
+
+
+def _get_sandbox_config():
+    """Get sandbox configuration."""
+    from ...config import load_config
+
+    config = load_config()
+    return config.sandbox
 
 
 def _execute_subprocess_sync(
@@ -73,145 +83,94 @@ async def execute_shell_command(
     timeout: int = 60,
     cwd: Optional[Path] = None,
 ) -> ToolResponse:
-    """Execute given command and return the return code, standard output and
-    error within <returncode></returncode>, <stdout></stdout> and
-    <stderr></stderr> tags.
+    """Execute given command in sandbox and return the result.
 
     Args:
-        command (`str`):
-            The shell command to execute.
-        timeout (`int`, defaults to `10`):
-            The maximum time (in seconds) allowed for the command to run.
-            Default is 60 seconds.
-        cwd (`Optional[Path]`, defaults to `None`):
-            The working directory for the command execution.
-            If None, defaults to WORKING_DIR.
+        command: The shell command to execute.
+        timeout: Maximum time (in seconds) for command execution.
+        cwd: Working directory. If None, defaults to user directory.
 
     Returns:
-        `ToolResponse`:
-            The tool response containing the return code, standard output, and
-            standard error of the executed command. If timeout occurs, the
-            return code will be -1 and stderr will contain timeout information.
+        ToolResponse with returncode, stdout, and stderr.
     """
-
     cmd = (command or "").strip()
 
-    # Set working directory
-    working_dir = cwd if cwd is not None else get_request_working_dir()  # Use request-scoped
+    # Get user directory and validate cwd
+    user_dir = PathValidator.get_user_dir()
 
-    try:
-        if sys.platform == "win32":
-            # Windows: use thread pool to avoid asyncio subprocess limitations
-            returncode, stdout_str, stderr_str = await asyncio.to_thread(
-                _execute_subprocess_sync,
-                cmd,
-                str(working_dir),
-                timeout,
+    if cwd is not None:
+        is_valid, resolved, error = PathValidator.validate_path(cwd)
+        if not is_valid:
+            return ToolResponse(
+                content=[
+                    TextBlock(
+                        type="text",
+                        text=error,
+                    ),
+                ],
             )
-        else:
-            proc = await asyncio.create_subprocess_shell(
-                cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                bufsize=0,
-                cwd=str(working_dir),
+        working_dir = Path(resolved)
+    else:
+        working_dir = user_dir
+
+    # Get sandbox config
+    sandbox_config = _get_sandbox_config()
+
+    if sandbox_config.enabled and SandboxExecutor.is_available():
+        # Execute in sandbox
+        executor = SandboxExecutor(
+            user_dir=working_dir,
+            timeout=timeout,
+            allow_network=sandbox_config.allow_network,
+            fallback=sandbox_config.fallback,
+        )
+        try:
+            returncode, stdout, stderr = await executor.execute(cmd)
+        except RuntimeError as e:
+            # Sandbox unavailable with deny fallback
+            return ToolResponse(
+                content=[
+                    TextBlock(
+                        type="text",
+                        text=str(e),
+                    ),
+                ],
+            )
+    else:
+        # Fallback: direct execution (when sandbox disabled)
+        if sandbox_config.enabled:
+            # Sandbox enabled but unavailable
+            if sandbox_config.fallback == "deny":
+                return ToolResponse(
+                    content=[
+                        TextBlock(
+                            type="text",
+                            text="Sandbox is not available. "
+                            "Install bubblewrap: apt-get install bubblewrap",
+                        ),
+                    ],
+                )
+            # fallback == "warn": log warning and continue
+            logging.getLogger(__name__).warning(
+                "Sandbox unavailable, executing without isolation"
             )
 
-            try:
-                # Apply timeout to communicate directly; wait()+communicate()
-                # can hang if descendants keep stdout/stderr pipes open.
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(),
-                    timeout=timeout,
-                )
-                encoding = locale.getpreferredencoding(False) or "utf-8"
-                stdout_str = stdout.decode(encoding, errors="replace").strip(
-                    "\n",
-                )
-                stderr_str = stderr.decode(encoding, errors="replace").strip(
-                    "\n",
-                )
-                returncode = proc.returncode
-
-            except asyncio.TimeoutError:
-                # Handle timeout
-                stderr_suffix = (
-                    f"⚠️ TimeoutError: The command execution exceeded "
-                    f"the timeout of {timeout} seconds. "
-                    f"Please consider increasing the timeout value if this command "
-                    f"requires more time to complete."
-                )
-                returncode = -1
-                try:
-                    proc.terminate()
-                    # Wait a bit for graceful termination
-                    try:
-                        await asyncio.wait_for(proc.wait(), timeout=1)
-                    except asyncio.TimeoutError:
-                        # Force kill if graceful termination fails
-                        proc.kill()
-                        await proc.wait()
-
-                    # Avoid hanging forever while draining pipes after timeout.
-                    try:
-                        stdout, stderr = await asyncio.wait_for(
-                            proc.communicate(),
-                            timeout=1,
-                        )
-                    except asyncio.TimeoutError:
-                        stdout, stderr = b"", b""
-                    encoding = locale.getpreferredencoding(False) or "utf-8"
-                    stdout_str = stdout.decode(
-                        encoding,
-                        errors="replace",
-                    ).strip(
-                        "\n",
-                    )
-                    stderr_str = stderr.decode(
-                        encoding,
-                        errors="replace",
-                    ).strip(
-                        "\n",
-                    )
-                    if stderr_str:
-                        stderr_str += f"\n{stderr_suffix}"
-                    else:
-                        stderr_str = stderr_suffix
-                except ProcessLookupError:
-                    stdout_str = ""
-                    stderr_str = stderr_suffix
-
-        # Format the response in a human-friendly way
-        if returncode == 0:
-            # Success case: just show the output
-            if stdout_str:
-                response_text = stdout_str
-            else:
-                response_text = "Command executed successfully (no output)."
-        else:
-            # Error case: show detailed information
-            response_parts = [f"Command failed with exit code {returncode}."]
-            if stdout_str:
-                response_parts.append(f"\n[stdout]\n{stdout_str}")
-            if stderr_str:
-                response_parts.append(f"\n[stderr]\n{stderr_str}")
-            response_text = "".join(response_parts)
-
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=response_text,
-                ),
-            ],
+        # Direct execution
+        returncode, stdout, stderr = _execute_subprocess_sync(
+            cmd,
+            str(working_dir),
+            timeout,
         )
 
-    except Exception as e:
-        return ToolResponse(
-            content=[
-                TextBlock(
-                    type="text",
-                    text=f"Error: Shell command execution failed due to \n{e}",
+    return ToolResponse(
+        content=[
+            TextBlock(
+                type="text",
+                text=(
+                    f"<returncode>{returncode}</returncode>\n"
+                    f"<stdout>\n{stdout}\n</stdout>\n"
+                    f"<stderr>\n{stderr}\n</stderr>"
                 ),
-            ],
-        )
+            ),
+        ],
+    )
