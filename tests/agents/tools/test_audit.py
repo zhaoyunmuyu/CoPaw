@@ -1,12 +1,10 @@
-# tests/agents/tools/test_audit.py
 # -*- coding: utf-8 -*-
 """Tests for audit logging module."""
 
 import logging
-import pytest
 from io import StringIO
 
-from copaw.agents.tools.audit import AuditEvent, log_audit, hash_command
+from copaw.agents.tools.audit import AuditEvent, hash_command, log_audit
 
 
 class TestAuditEvent:
@@ -197,3 +195,32 @@ class TestHashCommand:
         result1 = hash_command("ls -la")
         result2 = hash_command("rm -rf")
         assert result1 != result2
+
+
+class TestAuditEdgeCases:
+    """Tests for edge cases in audit logging."""
+
+    def test_sanitize_empty_details(self):
+        """空详情字典应返回空"""
+        from copaw.agents.tools.audit import _sanitize_details
+
+        result = _sanitize_details({})
+        assert result == {}
+
+    def test_sanitize_none_values(self):
+        """None 值应保留"""
+        from copaw.agents.tools.audit import _sanitize_details
+
+        result = _sanitize_details({"key": None})
+        assert result == {"key": None}
+
+    def test_sanitize_non_string_values(self):
+        """非字符串值应保留"""
+        from copaw.agents.tools.audit import _sanitize_details
+
+        result = _sanitize_details(
+            {"count": 42, "items": ["a", "b"], "config": {"nested": True}}
+        )
+        assert result["count"] == 42
+        assert result["items"] == ["a", "b"]
+        assert result["config"] == {"nested": True}

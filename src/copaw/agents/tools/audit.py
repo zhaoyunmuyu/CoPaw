@@ -1,4 +1,3 @@
-# src/copaw/agents/tools/audit.py
 # -*- coding: utf-8 -*-
 """Audit logging for security events."""
 
@@ -28,6 +27,8 @@ def _sanitize_details(details: dict[str, Any]) -> dict[str, Any]:
     for key, value in details.items():
         if key.lower() in sensitive_keys:
             sanitized[f"{key}_hint"] = "provided_but_redacted"
+        elif value is None:
+            sanitized[key] = None
         elif isinstance(value, str) and len(value) > 100:
             sanitized[key] = value[:100] + "..."
         else:
@@ -40,7 +41,7 @@ def log_audit(event: str, user_id: str, details: dict[str, Any]) -> None:
     """记录审计日志。"""
     sanitized_details = _sanitize_details(details)
     audit_logger.info(
-        f"event={event} user={user_id} details={sanitized_details}"
+        f"event={event} user={user_id} details={sanitized_details}",
     )
 
 
