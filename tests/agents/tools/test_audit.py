@@ -224,3 +224,10 @@ class TestAuditEdgeCases:
         assert result["count"] == 42
         assert result["items"] == ["a", "b"]
         assert result["config"] == {"nested": True}
+
+    def test_sanitize_none_details(self):
+        """None 详情应返回空字典"""
+        from copaw.agents.tools.audit import _sanitize_details
+
+        result = _sanitize_details(None)
+        assert result == {}

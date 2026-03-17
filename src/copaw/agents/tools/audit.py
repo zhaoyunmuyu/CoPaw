@@ -21,6 +21,8 @@ class AuditEvent:
 
 def _sanitize_details(details: dict[str, Any]) -> dict[str, Any]:
     """清理详情字典，移除敏感信息。"""
+    if details is None:
+        return {}
     sanitized = {}
     sensitive_keys = {"path", "file_path", "full_path", "absolute_path"}
 
