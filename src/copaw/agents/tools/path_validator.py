@@ -63,7 +63,7 @@ class PathValidator:
                     "Permission denied: path is outside allowed directory",
                 )
 
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             logger.error(f"Path validation error: {e}")
             return False, Path(), f"Invalid path: {e}"
 

@@ -177,3 +177,32 @@ class TestPathValidatorSymlinkHandling:
 
             assert is_valid is False
             assert "Permission denied" in error
+
+
+class TestPathValidatorEdgeCases:
+    """Tests for edge cases and error handling."""
+
+    def test_none_path_returns_invalid(self, tmp_path):
+        """None 输入应返回无效"""
+        with patch(
+            "copaw.agents.tools.path_validator.get_request_working_dir",
+            return_value=tmp_path,
+        ):
+            is_valid, resolved, error = PathValidator.validate_path(None)
+
+            assert is_valid is False
+            assert "Invalid path" in error or "empty" in error.lower()
+
+    def test_exception_during_resolve(self, tmp_path):
+        """resolve() 抛出异常时应正确处理"""
+        with patch(
+            "copaw.agents.tools.path_validator.get_request_working_dir",
+            return_value=tmp_path,
+        ):
+            with patch("pathlib.Path.resolve") as mock_resolve:
+                mock_resolve.side_effect = OSError("permission denied")
+
+                is_valid, resolved, error = PathValidator.validate_path("test.txt")
+
+                assert is_valid is False
+                assert "Invalid path" in error
