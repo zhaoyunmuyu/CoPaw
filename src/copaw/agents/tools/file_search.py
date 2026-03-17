@@ -10,8 +10,7 @@ from typing import Optional
 from agentscope.message import TextBlock
 from agentscope.tool import ToolResponse
 
-from ...constant import get_request_working_dir
-from .file_io import _resolve_file_path
+from .path_validator import PathValidator
 
 # Skip binary / large files
 _BINARY_EXTENSIONS = frozenset(
@@ -112,7 +111,23 @@ async def grep_search(  # pylint: disable=too-many-branches
             ],
         )
 
-    search_root = Path(_resolve_file_path(path)) if path else get_request_working_dir()  # Use request-scoped
+    # Get user directory and validate path
+    user_dir = PathValidator.get_user_dir()
+
+    if path:
+        is_valid, search_root, error = PathValidator.validate_path(path)
+        if not is_valid:
+            return ToolResponse(
+                content=[
+                    TextBlock(
+                        type="text",
+                        text=error,
+                    ),
+                ],
+            )
+        search_root = Path(search_root)
+    else:
+        search_root = user_dir
 
     if not search_root.exists():
         return ToolResponse(
@@ -236,7 +251,23 @@ async def glob_search(
             ],
         )
 
-    search_root = Path(_resolve_file_path(path)) if path else get_request_working_dir()  # Use request-scoped
+    # Get user directory and validate path
+    user_dir = PathValidator.get_user_dir()
+
+    if path:
+        is_valid, search_root, error = PathValidator.validate_path(path)
+        if not is_valid:
+            return ToolResponse(
+                content=[
+                    TextBlock(
+                        type="text",
+                        text=error,
+                    ),
+                ],
+            )
+        search_root = Path(search_root)
+    else:
+        search_root = user_dir
 
     if not search_root.exists():
         return ToolResponse(
