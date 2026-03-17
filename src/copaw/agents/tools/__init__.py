@@ -21,6 +21,9 @@ from .browser_control import browser_use
 from .desktop_screenshot import desktop_screenshot
 from .memory_search import create_memory_search_tool
 from .get_current_time import get_current_time
+from .path_validator import PathValidator
+from .sandbox import SandboxExecutor
+from .audit import AuditEvent, log_audit, hash_command
 
 __all__ = [
     "execute_python_code",
@@ -38,4 +41,9 @@ __all__ = [
     "browser_use",
     "create_memory_search_tool",
     "get_current_time",
+    "PathValidator",
+    "SandboxExecutor",
+    "AuditEvent",
+    "log_audit",
+    "hash_command",
 ]
