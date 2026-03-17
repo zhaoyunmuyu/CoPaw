@@ -13,7 +13,6 @@ from typing import Optional
 from agentscope.tool import ToolResponse
 from agentscope.message import TextBlock
 
-from ...constant import get_request_working_dir
 from .path_validator import PathValidator
 from .sandbox import SandboxExecutor
 
@@ -60,7 +59,6 @@ def _execute_subprocess_sync(
             timeout=timeout,
             encoding=locale.getpreferredencoding(False) or "utf-8",
             errors="replace",
-            check=True,
         )
         return (
             result.returncode,
