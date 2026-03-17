@@ -300,6 +300,27 @@ class MCPConfig(BaseModel):
     )
 
 
+class SandboxLimitsConfig(BaseModel):
+    """沙箱资源限制配置。"""
+
+    max_memory_mb: int = 512
+    max_cpu_percent: int = 50
+    max_pids: int = 100
+    max_file_size_mb: int = 100
+    max_open_files: int = 1000
+
+
+class SandboxConfig(BaseModel):
+    """沙箱配置。"""
+
+    enabled: bool = True
+    backend: Literal["bubblewrap"] = "bubblewrap"
+    fallback: Literal["deny", "warn"] = "deny"
+    allow_network: bool = False
+    timeout: int = 60
+    limits: SandboxLimitsConfig = SandboxLimitsConfig()
+
+
 class Config(BaseModel):
     """Root config (config.json)."""
 
@@ -310,6 +331,7 @@ class Config(BaseModel):
     last_dispatch: Optional[LastDispatchConfig] = None
     # When False, channel output hides tool call/result details (show "...").
     show_tool_details: bool = True
+    sandbox: SandboxConfig = SandboxConfig()
 
 
 ChannelConfigUnion = Union[
