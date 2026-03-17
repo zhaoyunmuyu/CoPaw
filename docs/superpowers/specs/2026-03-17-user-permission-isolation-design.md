@@ -297,7 +297,7 @@ resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
 resource.setrlimit(resource.RLIMIT_NPROC, (100, 100))
 ```
 
-### 4.3 隔离效果
+### 4.4 隔离效果
 
 | 隔离项 | 效果 |
 |--------|------|
@@ -307,7 +307,7 @@ resource.setrlimit(resource.RLIMIT_NPROC, (100, 100))
 | 进程命名空间 | 隔离，无法看到其他进程 |
 | IPC 命名空间 | 隔离，无法访问共享内存等 |
 
-### 4.4 降级策略
+### 4.5 降级策略
 
 ```
 执行命令时检查 bubblewrap 是否可用
@@ -323,7 +323,7 @@ resource.setrlimit(resource.RLIMIT_NPROC, (100, 100))
                                                 └── 使用基础路径过滤执行
 ```
 
-### 4.5 路径映射
+### 4.6 路径映射
 
 | 用户视角 | 实际路径 |
 |----------|----------|
@@ -766,7 +766,8 @@ spec:
 
 | 限制 | 说明 | 缓解措施 |
 |------|------|----------|
-| 符号链接 | 暂不处理，可能被利用访问外部 | 后续迭代添加检测 |
+| 符号链接 | 基础保护已实现（见 1.5 节），TOCTOU 风险仍存在 | 后续迭代添加路径锁定 |
+| 硬链接 | 无法检测，可能被利用访问外部 | 检查链接数 `st_nlink` |
 | 容器内运行 | 需要特权或 sys_admin capability | 使用 `--privileged` 或配置 capability |
 | macOS 不支持 | bubblewrap 仅支持 Linux | macOS 环境降级为基础过滤 |
 
