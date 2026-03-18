@@ -82,11 +82,13 @@ class CronManager:
             self._scheduler.start()
             self._started = True
 
-            # Immediately scan and load users
-            await self._scan_and_load_users()
+        # Release lock before calling _scan_and_load_users to avoid deadlock
+        # (start_user() also acquires the same lock)
+        await self._scan_and_load_users()
 
-            # Add periodic scan job
-            if self._scan_interval_minutes > 0:
+        # Add periodic scan job
+        if self._scan_interval_minutes > 0:
+            async with self._lock:
                 self._scheduler.add_job(
                     self._scan_and_load_users,
                     trigger=IntervalTrigger(
