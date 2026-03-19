@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from agentscope.message import TextBlock
@@ -28,6 +29,8 @@ from ...config import (
     get_system_default_browser,
     is_running_in_container,
 )
+
+from ...constant import get_request_user_id
 
 from .browser_snapshot import build_role_snapshot_from_aria
 
@@ -67,90 +70,204 @@ else:
         return await func(*args, **kwargs)
 
 
-# Process-global browser state (one browser, multiple pages by page_id)
-_state: dict[str, Any] = {
-    "playwright": None,
-    "browser": None,
-    "context": None,
-    "pages": {},
-    "refs": {},  # page_id -> ref -> {role, name?, nth?}
-    "refs_frame": {},  # page_id -> frame for last snapshot
-    "console_logs": {},  # page_id -> list of {level, text}
-    "network_requests": {},  # page_id -> list of request dicts
-    "pending_dialogs": {},  # page_id -> dialog handlers
-    "pending_file_choosers": {},  # page_id -> FileChooser list
-    "headless": True,
-    "current_page_id": None,
-    "page_counter": 0,  # monotonic counter for page_N ids, avoids reuse after close
-    "last_activity_time": 0.0,  # monotonic timestamp of last browser activity
-    "_idle_task": None,  # background asyncio.Task for idle watchdog
-    "_last_browser_error": None,  # message when launch failed (for user-facing error)
-    "_sync_browser": None,  # sync browser handle for hybrid mode
-    "_sync_context": None,  # sync context handle for hybrid mode
-    "_sync_playwright": None,  # sync playwright handle for hybrid mode
-}
+@dataclass
+class UserBrowserState:
+    """Per-user browser state for complete isolation between users.
+
+    Each user gets their own browser instance, context, and pages.
+    This ensures cookie/session data, localStorage, and caches are isolated.
+    """
+
+    playwright: Any = None
+    browser: Any = None
+    context: Any = None
+    pages: dict = field(default_factory=dict)
+    refs: dict = field(default_factory=dict)
+    refs_frame: dict = field(default_factory=dict)
+    console_logs: dict = field(default_factory=dict)
+    network_requests: dict = field(default_factory=dict)
+    pending_dialogs: dict = field(default_factory=dict)
+    pending_file_choosers: dict = field(default_factory=dict)
+    headless: bool = True
+    current_page_id: str | None = None
+    page_counter: int = 0
+    last_activity_time: float = 0.0
+    _idle_task: Any = None
+    _last_browser_error: str | None = None
+    # Sync mode handles
+    _sync_playwright: Any = None
+    _sync_browser: Any = None
+    _sync_context: Any = None
+    _sync_headless: bool = True
+
+
+# Maximum pages per user to prevent resource exhaustion
+_MAX_PAGES_PER_USER = 10
+
+# Global state: user_id -> UserBrowserState
+_state: dict[str, Any] = {"users": {}}
 
 # Stop the browser after this many seconds of inactivity (default 30 minutes).
 _BROWSER_IDLE_TIMEOUT = 1800.0
 
 
-def _touch_activity() -> None:
-    """Record the current time as the last browser activity timestamp."""
-    _state["last_activity_time"] = time.monotonic()
+def _get_current_user_id() -> str:
+    """Get the current user ID from request context or return 'default'."""
+    return get_request_user_id() or "default"
 
 
-def _is_browser_running() -> bool:
-    """Check if browser is currently running (sync or async mode)."""
+def _get_user_state() -> UserBrowserState:
+    """Get or create browser state for the current user."""
+    user_id = _get_current_user_id()
+    if user_id not in _state["users"]:
+        _state["users"][user_id] = UserBrowserState()
+    return _state["users"][user_id]
+
+
+def _is_browser_running_for_user(user_id: str | None = None) -> bool:
+    """Check if browser is running for a specific user (or current user)."""
+    if user_id is None:
+        user_id = _get_current_user_id()
+    user_state = _state["users"].get(user_id)
+    if not user_state:
+        return False
     if _USE_SYNC_PLAYWRIGHT:
-        return _state.get("_sync_browser") is not None
-    return _state.get("browser") is not None
+        return user_state._sync_browser is not None
+    return user_state.browser is not None
 
 
-def _reset_browser_state() -> None:
-    """Reset all browser-related state variables."""
+def _touch_activity_user(user_id: str | None = None) -> None:
+    """Record activity timestamp for a specific user (or current user)."""
+    if user_id is None:
+        user_state = _get_user_state()
+    else:
+        user_state = _state["users"].get(user_id)
+    if user_state:
+        user_state.last_activity_time = time.monotonic()
+
+
+def _reset_browser_state_user(user_id: str | None = None) -> None:
+    """Reset browser state for a specific user (or current user)."""
+    if user_id is None:
+        user_id = _get_current_user_id()
+    user_state = _state["users"].get(user_id)
+    if not user_state:
+        return
+
     # Clear sync/async specific state
-    _state["playwright"] = None
-    _state["browser"] = None
-    _state["context"] = None
-    _state["_sync_playwright"] = None
-    _state["_sync_browser"] = None
-    _state["_sync_context"] = None
+    user_state.playwright = None
+    user_state.browser = None
+    user_state.context = None
+    user_state._sync_playwright = None
+    user_state._sync_browser = None
+    user_state._sync_context = None
+
     # Clear shared state
-    _state["pages"].clear()
-    _state["refs"].clear()
-    _state["refs_frame"].clear()
-    _state["console_logs"].clear()
-    _state["network_requests"].clear()
-    _state["pending_dialogs"].clear()
-    _state["pending_file_choosers"].clear()
-    _state["current_page_id"] = None
-    _state["page_counter"] = 0
-    _state["last_activity_time"] = 0.0
-    _state["headless"] = True
+    user_state.pages.clear()
+    user_state.refs.clear()
+    user_state.refs_frame.clear()
+    user_state.console_logs.clear()
+    user_state.network_requests.clear()
+    user_state.pending_dialogs.clear()
+    user_state.pending_file_choosers.clear()
+    user_state.current_page_id = None
+    user_state.page_counter = 0
+    user_state.last_activity_time = 0.0
+    user_state.headless = True
+    user_state._idle_task = None
+    user_state._last_browser_error = None
 
 
-async def _idle_watchdog(idle_seconds: float = _BROWSER_IDLE_TIMEOUT) -> None:
-    """Background task: stop the browser after it has been idle for *idle_seconds*.
+def _get_page(page_id: str, user_id: str | None = None) -> Any:
+    """Return page for page_id or None if not found."""
+    if user_id is None:
+        user_state = _get_user_state()
+    else:
+        user_state = _state["users"].get(user_id)
+    if not user_state:
+        return None
+    return user_state.pages.get(page_id)
 
-    This reclaims Chrome renderer processes that accumulate when pages are
-    opened during agent tasks but never explicitly closed.
+
+def _get_refs(page_id: str, user_id: str | None = None) -> dict[str, dict]:
+    """Return refs map for page_id (ref -> {role, name?, nth?})."""
+    if user_id is None:
+        user_state = _get_user_state()
+    else:
+        user_state = _state["users"].get(user_id)
+    if not user_state:
+        return {}
+    return user_state.refs.setdefault(page_id, {})
+
+
+async def _idle_watchdog_user(
+    user_id: str,
+    idle_seconds: float = _BROWSER_IDLE_TIMEOUT,
+) -> None:
+    """Background task: stop the browser for a specific user after idle period.
+
+    Each user has their own watchdog that monitors only their browser activity.
     """
     try:
         while True:
             await asyncio.sleep(60)  # check every minute
-            if not _is_browser_running():
-                return
-            idle = time.monotonic() - _state.get("last_activity_time", 0.0)
+            user_state = _state["users"].get(user_id)
+            if not user_state:
+                return  # User state cleaned up
+            if not _is_browser_running_for_user(user_id):
+                return  # Browser already stopped
+            idle = time.monotonic() - user_state.last_activity_time
             if idle >= idle_seconds:
                 logger.info(
-                    "Browser idle for %.0fs (limit %.0fs), stopping to release resources",
+                    "User %s browser idle for %.0fs (limit %.0fs), stopping to release resources",
+                    user_id,
                     idle,
                     idle_seconds,
                 )
-                await _action_stop()
+                await _action_stop_user(user_id)
                 return
     except asyncio.CancelledError:
         pass
+
+
+def _start_idle_watchdog_user(user_id: str | None = None) -> None:
+    """Start idle watchdog for a specific user (or current user)."""
+    if user_id is None:
+        user_id = _get_current_user_id()
+    user_state = _state["users"].get(user_id)
+    if not user_state:
+        return
+
+    # Cancel any existing watchdog for this user
+    old_task = user_state._idle_task
+    if old_task and not old_task.done():
+        old_task.cancel()
+
+    # Start new watchdog
+    user_state._idle_task = asyncio.ensure_future(_idle_watchdog_user(user_id))
+
+
+def _cancel_idle_watchdog_user(user_id: str | None = None) -> None:
+    """Cancel the idle watchdog for a specific user (or current user)."""
+    if user_id is None:
+        user_id = _get_current_user_id()
+    user_state = _state["users"].get(user_id)
+    if not user_state:
+        return
+    task = user_state._idle_task
+    if task and not task.done():
+        task.cancel()
+    user_state._idle_task = None
+
+
+async def _cleanup_all_user_browsers() -> None:
+    """Clean up all user browsers on shutdown."""
+    user_ids = list(_state["users"].keys())
+    for user_id in user_ids:
+        try:
+            await _action_stop_user(user_id)
+        except Exception:
+            pass
 
 
 def _atexit_cleanup() -> None:
@@ -160,13 +277,10 @@ def _atexit_cleanup() -> None:
     exits, but this gives Playwright a chance to flush any pending I/O and
     close Chrome gracefully before the process disappears.
     """
-    if not _is_browser_running():
-        return
-
     try:
         loop = asyncio.get_event_loop()
         if not loop.is_running() and not loop.is_closed():
-            loop.run_until_complete(_action_stop())
+            loop.run_until_complete(_cleanup_all_user_browsers())
     except Exception:
         pass
 
@@ -269,16 +383,16 @@ def _sync_browser_launch(headless: bool):
     return pw, browser, context
 
 
-def _sync_browser_close():
-    """Close browser using sync Playwright (for hybrid mode)."""
-    if _state["_sync_browser"] is not None:
+def _sync_browser_close_user(user_state: UserBrowserState) -> None:
+    """Close browser for a specific user using sync Playwright (for hybrid mode)."""
+    if user_state._sync_browser is not None:
         try:
-            _state["_sync_browser"].close()
+            user_state._sync_browser.close()
         except Exception:
             pass
-    if _state["_sync_playwright"] is not None:
+    if user_state._sync_playwright is not None:
         try:
-            _state["_sync_playwright"].stop()
+            user_state._sync_playwright.stop()
         except Exception:
             pass
 
@@ -462,23 +576,27 @@ async def browser_use(  # pylint: disable=R0911,R0912
             ),
         )
 
+    # Get current user state for this request
+    user_id = _get_current_user_id()
+    user_state = _get_user_state()
+
     page_id = (page_id or "default").strip() or "default"
-    current = _state.get("current_page_id")
-    pages = _state.get("pages") or {}
+    current = user_state.current_page_id
+    pages = user_state.pages
     if page_id == "default" and current and current in pages:
         page_id = current
 
     try:
         if action == "start":
-            return await _action_start(headed=headed)
+            return await _action_start_user(user_id=user_id, headed=headed)
         if action == "stop":
-            return await _action_stop()
+            return await _action_stop_user(user_id=user_id)
         if action == "open":
-            return await _action_open(url, page_id)
+            return await _action_open(url, page_id, user_id=user_id)
         if action == "navigate":
-            return await _action_navigate(url, page_id)
+            return await _action_navigate(url, page_id, user_id=user_id)
         if action == "navigate_back":
-            return await _action_navigate_back(page_id)
+            return await _action_navigate_back(page_id, user_id=user_id)
         if action in ("screenshot", "take_screenshot"):
             return await _action_screenshot(
                 page_id,
@@ -488,12 +606,14 @@ async def browser_use(  # pylint: disable=R0911,R0912
                 ref,
                 element,
                 frame_selector,
+                user_id=user_id,
             )
         if action == "snapshot":
             return await _action_snapshot(
                 page_id,
                 snapshot_filename or filename,
                 frame_selector,
+                user_id=user_id,
             )
         if action == "click":
             return await _action_click(
@@ -506,6 +626,7 @@ async def browser_use(  # pylint: disable=R0911,R0912
                 button,
                 modifiers_json,
                 frame_selector,
+                user_id=user_id,
             )
         if action == "type":
             return await _action_type(
@@ -517,9 +638,10 @@ async def browser_use(  # pylint: disable=R0911,R0912
                 submit,
                 slowly,
                 frame_selector,
+                user_id=user_id,
             )
         if action == "eval":
-            return await _action_eval(page_id, code)
+            return await _action_eval(page_id, code, user_id=user_id)
         if action == "evaluate":
             return await _action_evaluate(
                 page_id,
@@ -527,33 +649,54 @@ async def browser_use(  # pylint: disable=R0911,R0912
                 ref,
                 element,
                 frame_selector,
+                user_id=user_id,
             )
         if action == "resize":
-            return await _action_resize(page_id, width, height)
+            return await _action_resize(
+                page_id,
+                width,
+                height,
+                user_id=user_id,
+            )
         if action == "console_messages":
             return await _action_console_messages(
                 page_id,
                 level,
                 filename or path,
+                user_id=user_id,
             )
         if action == "handle_dialog":
-            return await _action_handle_dialog(page_id, accept, prompt_text)
+            return await _action_handle_dialog(
+                page_id,
+                accept,
+                prompt_text,
+                user_id=user_id,
+            )
         if action == "file_upload":
-            return await _action_file_upload(page_id, paths_json)
+            return await _action_file_upload(
+                page_id,
+                paths_json,
+                user_id=user_id,
+            )
         if action == "fill_form":
-            return await _action_fill_form(page_id, fields_json)
+            return await _action_fill_form(
+                page_id,
+                fields_json,
+                user_id=user_id,
+            )
         if action == "install":
             return await _action_install()
         if action == "press_key":
-            return await _action_press_key(page_id, key)
+            return await _action_press_key(page_id, key, user_id=user_id)
         if action == "network_requests":
             return await _action_network_requests(
                 page_id,
                 include_static,
                 filename or path,
+                user_id=user_id,
             )
         if action == "run_code":
-            return await _action_run_code(page_id, code)
+            return await _action_run_code(page_id, code, user_id=user_id)
         if action == "drag":
             return await _action_drag(
                 page_id,
@@ -564,6 +707,7 @@ async def browser_use(  # pylint: disable=R0911,R0912
                 start_element,
                 end_element,
                 frame_selector,
+                user_id=user_id,
             )
         if action == "hover":
             return await _action_hover(
@@ -572,6 +716,7 @@ async def browser_use(  # pylint: disable=R0911,R0912
                 element,
                 selector,
                 frame_selector,
+                user_id=user_id,
             )
         if action == "select_option":
             return await _action_select_option(
@@ -580,15 +725,27 @@ async def browser_use(  # pylint: disable=R0911,R0912
                 element,
                 values_json,
                 frame_selector,
+                user_id=user_id,
             )
         if action == "tabs":
-            return await _action_tabs(page_id, tab_action, index)
+            return await _action_tabs(
+                page_id,
+                tab_action,
+                index,
+                user_id=user_id,
+            )
         if action == "wait_for":
-            return await _action_wait_for(page_id, wait_time, text, text_gone)
+            return await _action_wait_for(
+                page_id,
+                wait_time,
+                text,
+                text_gone,
+                user_id=user_id,
+            )
         if action == "pdf":
-            return await _action_pdf(page_id, path)
+            return await _action_pdf(page_id, path, user_id=user_id)
         if action == "close":
-            return await _action_close(page_id)
+            return await _action_close(page_id, user_id=user_id)
         return _tool_response(
             json.dumps(
                 {"ok": False, "error": f"Unknown action: {action}"},
@@ -607,16 +764,6 @@ async def browser_use(  # pylint: disable=R0911,R0912
         )
 
 
-def _get_page(page_id: str):
-    """Return page for page_id or None if not found."""
-    return _state["pages"].get(page_id)
-
-
-def _get_refs(page_id: str) -> dict[str, dict]:
-    """Return refs map for page_id (ref -> {role, name?, nth?})."""
-    return _state["refs"].setdefault(page_id, {})
-
-
 def _get_root(page, _page_id: str, frame_selector: str = ""):
     """Return page or frame for frame_selector (ref/selector)."""
     if not (frame_selector and frame_selector.strip()):
@@ -629,9 +776,10 @@ def _get_locator_by_ref(
     page_id: str,
     ref: str,
     frame_selector: str = "",
+    user_id: str | None = None,
 ):
     """Resolve snapshot ref to locator; frame_selector for iframe."""
-    refs = _get_refs(page_id)
+    refs = _get_refs(page_id, user_id)
     info = refs.get(ref)
     if not info:
         return None
@@ -645,15 +793,19 @@ def _get_locator_by_ref(
     return locator
 
 
-def _attach_page_listeners(page, page_id: str) -> None:
+def _attach_page_listeners(
+    page,
+    page_id: str,
+    user_state: UserBrowserState,
+) -> None:
     """Attach console and request listeners for a page."""
-    logs = _state["console_logs"].setdefault(page_id, [])
+    logs = user_state.console_logs.setdefault(page_id, [])
 
     def on_console(msg):
         logs.append({"level": msg.type, "text": msg.text})
 
     page.on("console", on_console)
-    requests_list = _state["network_requests"].setdefault(page_id, [])
+    requests_list = user_state.network_requests.setdefault(page_id, [])
 
     def on_request(req):
         requests_list.append(
@@ -672,13 +824,13 @@ def _attach_page_listeners(page, page_id: str) -> None:
 
     page.on("request", on_request)
     page.on("response", on_response)
-    dialogs = _state["pending_dialogs"].setdefault(page_id, [])
+    dialogs = user_state.pending_dialogs.setdefault(page_id, [])
 
     def on_dialog(dialog):
         dialogs.append(dialog)
 
     page.on("dialog", on_dialog)
-    choosers = _state["pending_file_choosers"].setdefault(page_id, [])
+    choosers = user_state.pending_file_choosers.setdefault(page_id, [])
 
     def on_filechooser(chooser):
         choosers.append(chooser)
@@ -686,48 +838,58 @@ def _attach_page_listeners(page, page_id: str) -> None:
     page.on("filechooser", on_filechooser)
 
 
-def _next_page_id() -> str:
-    """Return a unique page_id (page_N).
+def _next_page_id(user_state: UserBrowserState) -> str:
+    """Return a unique page_id (page_N) for the user.
     Uses monotonic counter so IDs are not reused after close."""
-    _state["page_counter"] = _state.get("page_counter", 0) + 1
-    return f"page_{_state['page_counter']}"
+    user_state.page_counter += 1
+    return f"page_{user_state.page_counter}"
 
 
-def _attach_context_listeners(context) -> None:
+def _attach_context_listeners(context, user_state: UserBrowserState) -> None:
     """When the page opens a new tab (e.g. target=_blank, window.open),
     register it and set as current."""
 
     def on_page(page):
-        new_id = _next_page_id()
-        _state["refs"][new_id] = {}
-        _state["console_logs"][new_id] = []
-        _state["network_requests"][new_id] = []
-        _state["pending_dialogs"][new_id] = []
-        _state["pending_file_choosers"][new_id] = []
-        _attach_page_listeners(page, new_id)
-        _state["pages"][new_id] = page
-        _state["current_page_id"] = new_id
+        new_id = _next_page_id(user_state)
+        user_state.refs[new_id] = {}
+        user_state.console_logs[new_id] = []
+        user_state.network_requests[new_id] = []
+        user_state.pending_dialogs[new_id] = []
+        user_state.pending_file_choosers[new_id] = []
+        _attach_page_listeners(page, new_id, user_state)
+        user_state.pages[new_id] = page
+        user_state.current_page_id = new_id
         logger.debug(
-            "New tab opened by page, registered as page_id=%s",
+            "New tab opened by page, registered as page_id=%s for user",
             new_id,
         )
 
     context.on("page", on_page)
 
 
-async def _ensure_browser() -> bool:  # pylint: disable=too-many-branches
-    """Start browser if not running. Return True if ready, False on failure."""
+async def _ensure_browser_for_user(
+    user_id: str | None = None,
+) -> bool:  # pylint: disable=too-many-branches
+    """Start browser for a specific user if not running. Return True if ready."""
+    if user_id is None:
+        user_id = _get_current_user_id()
+
+    user_state = _state["users"].get(user_id)
+    if not user_state:
+        user_state = UserBrowserState()
+        _state["users"][user_id] = user_state
+
     # Check browser state based on mode
     if _USE_SYNC_PLAYWRIGHT:
         if (
-            _state["_sync_browser"] is not None
-            and _state["_sync_context"] is not None
+            user_state._sync_browser is not None
+            and user_state._sync_context is not None
         ):
-            _touch_activity()
+            _touch_activity_user(user_id)
             return True
     else:
-        if _state["browser"] is not None and _state["context"] is not None:
-            _touch_activity()
+        if user_state.browser is not None and user_state.context is not None:
+            _touch_activity_user(user_id)
             return True
 
     try:
@@ -736,11 +898,11 @@ async def _ensure_browser() -> bool:  # pylint: disable=too-many-branches
             loop = asyncio.get_event_loop()
             pw, browser, context = await loop.run_in_executor(
                 _get_executor(),
-                lambda: _sync_browser_launch(_state["headless"]),
+                lambda: _sync_browser_launch(user_state.headless),
             )
-            _state["_sync_playwright"] = pw
-            _state["_sync_browser"] = browser
-            _state["_sync_context"] = context
+            user_state._sync_playwright = pw
+            user_state._sync_browser = browser
+            user_state._sync_context = context
         else:
             # Standard mode: use async Playwright
             async_playwright = _ensure_playwright_async()
@@ -761,7 +923,7 @@ async def _ensure_browser() -> bool:  # pylint: disable=too-many-branches
             if exe:
                 # System Chrome/Edge/Chromium (default or discovered)
                 launch_kwargs: dict[str, Any] = {
-                    "headless": _state["headless"],
+                    "headless": user_state.headless,
                 }
                 extra_args = _chromium_launch_args()
                 if extra_args:
@@ -771,64 +933,58 @@ async def _ensure_browser() -> bool:  # pylint: disable=too-many-branches
             elif default_kind == "webkit" or sys.platform == "darwin":
                 # macOS: default Safari or no Chromium → use WebKit (Safari)
                 pw_browser = await pw.webkit.launch(
-                    headless=_state["headless"],
+                    headless=user_state.headless,
                 )
             else:
                 # Windows/Linux without system Chromium → Playwright's Chromium
-                launch_kwargs = {"headless": _state["headless"]}
+                launch_kwargs = {"headless": user_state.headless}
                 extra_args = _chromium_launch_args()
                 if extra_args:
                     launch_kwargs["args"] = extra_args
                 pw_browser = await pw.chromium.launch(**launch_kwargs)
             context = await pw_browser.new_context()
-            _attach_context_listeners(context)
-            _state["playwright"] = pw
-            _state["browser"] = pw_browser
-            _state["context"] = context
-        _state["_last_browser_error"] = None
-        _touch_activity()
-        _start_idle_watchdog()
+            _attach_context_listeners(context, user_state)
+            user_state.playwright = pw
+            user_state.browser = pw_browser
+            user_state.context = context
+        user_state._last_browser_error = None
+        _touch_activity_user(user_id)
+        _start_idle_watchdog_user(user_id)
         return True
     except Exception as e:
-        _state["_last_browser_error"] = str(e)
+        user_state._last_browser_error = str(e)
         return False
 
 
-def _start_idle_watchdog() -> None:
-    """Cancel any existing idle watchdog and start a fresh one."""
-    old_task = _state.get("_idle_task")
-    if old_task and not old_task.done():
-        old_task.cancel()
-    _state["_idle_task"] = asyncio.ensure_future(_idle_watchdog())
-
-
-def _cancel_idle_watchdog() -> None:
-    """Cancel the idle watchdog, if running."""
-    task = _state.get("_idle_task")
-    if task and not task.done():
-        task.cancel()
-    _state["_idle_task"] = None
-
-
 # pylint: disable=R0912,R0915
-async def _action_start(
+async def _action_start_user(
+    user_id: str | None = None,
     headed: bool = False,
 ) -> ToolResponse:
+    """Start browser for a specific user."""
+    if user_id is None:
+        user_id = _get_current_user_id()
+
+    user_state = _state["users"].get(user_id)
+    if not user_state:
+        user_state = UserBrowserState()
+        _state["users"][user_id] = user_state
+
     # Check browser state based on mode
     if _USE_SYNC_PLAYWRIGHT:
-        browser_exists = _state["_sync_browser"] is not None
-        current_headless = not _state.get("_sync_headless", True)
+        browser_exists = user_state._sync_browser is not None
+        current_headless = not user_state._sync_headless
     else:
-        browser_exists = _state["browser"] is not None
-        current_headless = _state["headless"]
+        browser_exists = user_state.browser is not None
+        current_headless = user_state.headless
 
     # If user asks for visible window (headed=True)
     # but browser is already running headless, restart with headed
     if browser_exists:
         if headed and current_headless:
-            _cancel_idle_watchdog()
+            _cancel_idle_watchdog_user(user_id)
             try:
-                await _action_stop()
+                await _action_stop_user(user_id)
             except Exception:
                 pass
         else:
@@ -839,20 +995,22 @@ async def _action_start(
                     indent=2,
                 ),
             )
-    # Default: headless (background). Only headed=True (e.g. browser_visible skill) shows window.
-    _state["headless"] = not headed
+    # Default: headless (background). Only headed=True shows window.
+    user_state.headless = not headed
+    if _USE_SYNC_PLAYWRIGHT:
+        user_state._sync_headless = not headed
 
     try:
         if _USE_SYNC_PLAYWRIGHT:
             loop = asyncio.get_event_loop()
             pw, browser, context = await loop.run_in_executor(
                 _get_executor(),
-                lambda: _sync_browser_launch(_state["headless"]),
+                lambda: _sync_browser_launch(user_state.headless),
             )
-            _state["_sync_playwright"] = pw
-            _state["_sync_browser"] = browser
-            _state["_sync_context"] = context
-            _state["_sync_headless"] = not headed
+            user_state._sync_playwright = pw
+            user_state._sync_browser = browser
+            user_state._sync_context = context
+            user_state._sync_headless = not headed
         else:
             async_playwright = _ensure_playwright_async()
             pw = await async_playwright().start()
@@ -869,7 +1027,7 @@ async def _action_start(
             elif default_kind != "webkit":
                 exe = _chromium_executable_path()
             if exe:
-                launch_kwargs = {"headless": _state["headless"]}
+                launch_kwargs = {"headless": user_state.headless}
                 extra_args = _chromium_launch_args()
                 if extra_args:
                     launch_kwargs["args"] = extra_args
@@ -877,24 +1035,24 @@ async def _action_start(
                 pw_browser = await pw.chromium.launch(**launch_kwargs)
             elif default_kind == "webkit" or sys.platform == "darwin":
                 pw_browser = await pw.webkit.launch(
-                    headless=_state["headless"],
+                    headless=user_state.headless,
                 )
             else:
-                launch_kwargs = {"headless": _state["headless"]}
+                launch_kwargs = {"headless": user_state.headless}
                 extra_args = _chromium_launch_args()
                 if extra_args:
                     launch_kwargs["args"] = extra_args
                 pw_browser = await pw.chromium.launch(**launch_kwargs)
             context = await pw_browser.new_context()
-            _attach_context_listeners(context)
-            _state["playwright"] = pw
-            _state["browser"] = pw_browser
-            _state["context"] = context
-        _touch_activity()
-        _start_idle_watchdog()
+            _attach_context_listeners(context, user_state)
+            user_state.playwright = pw
+            user_state.browser = pw_browser
+            user_state.context = context
+        _touch_activity_user(user_id)
+        _start_idle_watchdog_user(user_id)
         msg = (
             "Browser started (visible window)"
-            if not _state["headless"]
+            if not user_state.headless
             else "Browser started"
         )
         return _tool_response(
@@ -914,11 +1072,31 @@ async def _action_start(
         )
 
 
-async def _action_stop() -> ToolResponse:
-    _cancel_idle_watchdog()
+async def _action_stop_user(user_id: str | None = None) -> ToolResponse:
+    """Stop browser for a specific user."""
+    if user_id is None:
+        user_id = _get_current_user_id()
+
+    _cancel_idle_watchdog_user(user_id)
+
+    user_state = _state["users"].get(user_id)
+    if not user_state:
+        return _tool_response(
+            json.dumps(
+                {"ok": True, "message": "Browser not running"},
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
 
     # Check browser state based on mode
-    if not _is_browser_running():
+    if _USE_SYNC_PLAYWRIGHT:
+        browser_exists = user_state._sync_browser is not None
+    else:
+        browser_exists = user_state.browser is not None
+
+    if not browser_exists:
+        _reset_browser_state_user(user_id)
         return _tool_response(
             json.dumps(
                 {"ok": True, "message": "Browser not running"},
@@ -933,7 +1111,7 @@ async def _action_stop() -> ToolResponse:
         try:
             await loop.run_in_executor(
                 _get_executor(),
-                _sync_browser_close,
+                lambda: _sync_browser_close_user(user_state),
             )
         except Exception as e:
             return _tool_response(
@@ -944,13 +1122,14 @@ async def _action_stop() -> ToolResponse:
                 ),
             )
         finally:
-            _reset_browser_state()
+            _reset_browser_state_user(user_id)
     else:
         # Standard async mode
         try:
-            await _state["browser"].close()
-            if _state["playwright"] is not None:
-                await _state["playwright"].stop()
+            if user_state.browser:
+                await user_state.browser.close()
+            if user_state.playwright is not None:
+                await user_state.playwright.stop()
         except Exception as e:
             return _tool_response(
                 json.dumps(
@@ -960,7 +1139,7 @@ async def _action_stop() -> ToolResponse:
                 ),
             )
         finally:
-            _reset_browser_state()
+            _reset_browser_state_user(user_id)
 
     return _tool_response(
         json.dumps(
@@ -971,7 +1150,12 @@ async def _action_stop() -> ToolResponse:
     )
 
 
-async def _action_open(url: str, page_id: str) -> ToolResponse:
+async def _action_open(
+    url: str,
+    page_id: str,
+    user_id: str | None = None,
+) -> ToolResponse:
+    """Open a URL in a new page for a specific user."""
     url = (url or "").strip()
     if not url:
         return _tool_response(
@@ -981,8 +1165,15 @@ async def _action_open(url: str, page_id: str) -> ToolResponse:
                 indent=2,
             ),
         )
-    if not await _ensure_browser():
-        err = _state.get("_last_browser_error") or "Browser not started"
+
+    if user_id is None:
+        user_id = _get_current_user_id()
+
+    if not await _ensure_browser_for_user(user_id):
+        user_state = _state["users"].get(user_id)
+        err = (
+            user_state._last_browser_error if user_state else None
+        ) or "Browser not started"
         return _tool_response(
             json.dumps(
                 {"ok": False, "error": err},
@@ -990,6 +1181,22 @@ async def _action_open(url: str, page_id: str) -> ToolResponse:
                 indent=2,
             ),
         )
+
+    user_state = _state["users"][user_id]
+
+    # Check page limit for this user
+    if len(user_state.pages) >= _MAX_PAGES_PER_USER:
+        return _tool_response(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": f"Maximum page limit reached ({_MAX_PAGES_PER_USER}). Close some pages first.",
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
+
     try:
         if _USE_SYNC_PLAYWRIGHT:
             # Hybrid mode: create page in thread pool
@@ -997,18 +1204,18 @@ async def _action_open(url: str, page_id: str) -> ToolResponse:
             # pylint: disable=unnecessary-lambda
             page = await loop.run_in_executor(
                 _get_executor(),
-                lambda: _state["_sync_context"].new_page(),
+                lambda: user_state._sync_context.new_page(),
             )
         else:
             # Standard async mode
-            page = await _state["context"].new_page()
+            page = await user_state.context.new_page()
 
-        _state["refs"][page_id] = {}
-        _state["console_logs"][page_id] = []
-        _state["network_requests"][page_id] = []
-        _state["pending_dialogs"][page_id] = []
-        _state["pending_file_choosers"][page_id] = []
-        _attach_page_listeners(page, page_id)
+        user_state.refs[page_id] = {}
+        user_state.console_logs[page_id] = []
+        user_state.network_requests[page_id] = []
+        user_state.pending_dialogs[page_id] = []
+        user_state.pending_file_choosers[page_id] = []
+        _attach_page_listeners(page, page_id, user_state)
 
         if _USE_SYNC_PLAYWRIGHT:
             loop = asyncio.get_event_loop()
@@ -1019,8 +1226,9 @@ async def _action_open(url: str, page_id: str) -> ToolResponse:
         else:
             await page.goto(url)
 
-        _state["pages"][page_id] = page
-        _state["current_page_id"] = page_id
+        user_state.pages[page_id] = page
+        user_state.current_page_id = page_id
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {
@@ -1043,7 +1251,12 @@ async def _action_open(url: str, page_id: str) -> ToolResponse:
         )
 
 
-async def _action_navigate(url: str, page_id: str) -> ToolResponse:
+async def _action_navigate(
+    url: str,
+    page_id: str,
+    user_id: str | None = None,
+) -> ToolResponse:
+    """Navigate to a URL in an existing page for a specific user."""
     url = (url or "").strip()
     if not url:
         return _tool_response(
@@ -1053,7 +1266,21 @@ async def _action_navigate(url: str, page_id: str) -> ToolResponse:
                 indent=2,
             ),
         )
-    page = _get_page(page_id)
+
+    if user_id is None:
+        user_id = _get_current_user_id()
+
+    user_state = _state["users"].get(user_id)
+    if not user_state:
+        return _tool_response(
+            json.dumps(
+                {"ok": False, "error": "Browser not started"},
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
+
+    page = user_state.pages.get(page_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -1071,7 +1298,8 @@ async def _action_navigate(url: str, page_id: str) -> ToolResponse:
             )
         else:
             await page.goto(url)
-        _state["current_page_id"] = page_id
+        user_state.current_page_id = page_id
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {
@@ -1101,12 +1329,13 @@ async def _action_screenshot(
     ref: str = "",
     element: str = "",  # pylint: disable=unused-argument
     frame_selector: str = "",
+    user_id: str | None = None,
 ) -> ToolResponse:
     path = (path or "").strip()
     if not path:
         ext = "jpeg" if screenshot_type == "jpeg" else "png"
         path = f"page-{int(time.time())}.{ext}"
-    page = _get_page(page_id)
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -1122,6 +1351,7 @@ async def _action_screenshot(
                 page_id,
                 ref.strip(),
                 frame_selector,
+                user_id,
             )
             if locator is None:
                 return _tool_response(
@@ -1183,6 +1413,7 @@ async def _action_screenshot(
                         if screenshot_type == "jpeg"
                         else "png",
                     )
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {
@@ -1214,6 +1445,7 @@ async def _action_click(  # pylint: disable=too-many-branches
     button: str = "left",
     modifiers_json: str = "",
     frame_selector: str = "",
+    user_id: str | None = None,
 ) -> ToolResponse:
     ref = (ref or "").strip()
     selector = (selector or "").strip()
@@ -1225,7 +1457,7 @@ async def _action_click(  # pylint: disable=too-many-branches
                 indent=2,
             ),
         )
-    page = _get_page(page_id)
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -1347,6 +1579,7 @@ async def _action_type(
     submit: bool = False,
     slowly: bool = False,
     frame_selector: str = "",
+    user_id: str | None = None,
 ) -> ToolResponse:
     ref = (ref or "").strip()
     selector = (selector or "").strip()
@@ -1358,7 +1591,7 @@ async def _action_type(
                 indent=2,
             ),
         )
-    page = _get_page(page_id)
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -1369,7 +1602,13 @@ async def _action_type(
         )
     try:
         if ref:
-            locator = _get_locator_by_ref(page, page_id, ref, frame_selector)
+            locator = _get_locator_by_ref(
+                page,
+                page_id,
+                ref,
+                frame_selector,
+                user_id,
+            )
             if locator is None:
                 return _tool_response(
                     json.dumps(
@@ -1429,6 +1668,7 @@ async def _action_type(
                     await loc.fill(text or "")
                 if submit:
                     await loc.press("Enter")
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {"ok": True, "message": f"Typed into {ref or selector}"},
@@ -1446,7 +1686,11 @@ async def _action_type(
         )
 
 
-async def _action_eval(page_id: str, code: str) -> ToolResponse:
+async def _action_eval(
+    page_id: str,
+    code: str,
+    user_id: str | None = None,
+) -> ToolResponse:
     code = (code or "").strip()
     if not code:
         return _tool_response(
@@ -1456,7 +1700,7 @@ async def _action_eval(page_id: str, code: str) -> ToolResponse:
                 indent=2,
             ),
         )
-    page = _get_page(page_id)
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -1491,6 +1735,7 @@ async def _action_eval(page_id: str, code: str) -> ToolResponse:
                 ensure_ascii=False,
                 indent=2,
             )
+        _touch_activity_user(user_id)
         return _tool_response(out)
     except Exception as e:
         return _tool_response(
@@ -1502,9 +1747,13 @@ async def _action_eval(page_id: str, code: str) -> ToolResponse:
         )
 
 
-async def _action_pdf(page_id: str, path: str) -> ToolResponse:
+async def _action_pdf(
+    page_id: str,
+    path: str,
+    user_id: str | None = None,
+) -> ToolResponse:
     path = (path or "page.pdf").strip() or "page.pdf"
-    page = _get_page(page_id)
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -1518,6 +1767,7 @@ async def _action_pdf(page_id: str, path: str) -> ToolResponse:
             await _run_sync(page.pdf, path=path)
         else:
             await page.pdf(path=path)
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {"ok": True, "message": f"PDF saved to {path}", "path": path},
@@ -1535,8 +1785,25 @@ async def _action_pdf(page_id: str, path: str) -> ToolResponse:
         )
 
 
-async def _action_close(page_id: str) -> ToolResponse:
-    page = _get_page(page_id)
+async def _action_close(
+    page_id: str,
+    user_id: str | None = None,
+) -> ToolResponse:
+    """Close a page for a specific user."""
+    if user_id is None:
+        user_id = _get_current_user_id()
+
+    user_state = _state["users"].get(user_id)
+    if not user_state:
+        return _tool_response(
+            json.dumps(
+                {"ok": False, "error": f"Page '{page_id}' not found"},
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
+
+    page = user_state.pages.get(page_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -1550,7 +1817,7 @@ async def _action_close(page_id: str) -> ToolResponse:
             await _run_sync(page.close)
         else:
             await page.close()
-        del _state["pages"][page_id]
+        del user_state.pages[page_id]
         for key in (
             "refs",
             "refs_frame",
@@ -1559,10 +1826,11 @@ async def _action_close(page_id: str) -> ToolResponse:
             "pending_dialogs",
             "pending_file_choosers",
         ):
-            _state[key].pop(page_id, None)
-        if _state.get("current_page_id") == page_id:
-            remaining = list(_state["pages"].keys())
-            _state["current_page_id"] = remaining[0] if remaining else None
+            getattr(user_state, key).pop(page_id, None)
+        if user_state.current_page_id == page_id:
+            remaining = list(user_state.pages.keys())
+            user_state.current_page_id = remaining[0] if remaining else None
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {"ok": True, "message": f"Closed page '{page_id}'"},
@@ -1584,8 +1852,20 @@ async def _action_snapshot(
     page_id: str,
     filename: str,
     frame_selector: str = "",
+    user_id: str | None = None,
 ) -> ToolResponse:
-    page = _get_page(page_id)
+    user_state = (
+        _get_user_state() if user_id is None else _state["users"].get(user_id)
+    )
+    if not user_state:
+        return _tool_response(
+            json.dumps(
+                {"ok": False, "error": "Browser not started"},
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -1615,8 +1895,8 @@ async def _action_snapshot(
             interactive=False,
             compact=False,
         )
-        _state["refs"][page_id] = refs
-        _state["refs_frame"][page_id] = (
+        user_state.refs[page_id] = refs
+        user_state.refs_frame[page_id] = (
             frame_selector.strip() if frame_selector else ""
         )
         out = {
@@ -1631,6 +1911,7 @@ async def _action_snapshot(
             with open(filename.strip(), "w", encoding="utf-8") as f:
                 f.write(snapshot)
             out["filename"] = filename.strip()
+        _touch_activity_user(user_id)
         return _tool_response(json.dumps(out, ensure_ascii=False, indent=2))
     except Exception as e:
         return _tool_response(
@@ -1642,8 +1923,11 @@ async def _action_snapshot(
         )
 
 
-async def _action_navigate_back(page_id: str) -> ToolResponse:
-    page = _get_page(page_id)
+async def _action_navigate_back(
+    page_id: str,
+    user_id: str | None = None,
+) -> ToolResponse:
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -1680,6 +1964,7 @@ async def _action_evaluate(
     ref: str = "",
     element: str = "",  # pylint: disable=unused-argument
     frame_selector: str = "",
+    user_id: str | None = None,
 ) -> ToolResponse:
     code = (code or "").strip()
     if not code:
@@ -1690,7 +1975,7 @@ async def _action_evaluate(
                 indent=2,
             ),
         )
-    page = _get_page(page_id)
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -1706,6 +1991,7 @@ async def _action_evaluate(
                 page_id,
                 ref.strip(),
                 frame_selector,
+                user_id,
             )
             if locator is None:
                 return _tool_response(
@@ -1749,6 +2035,7 @@ async def _action_evaluate(
                 ensure_ascii=False,
                 indent=2,
             )
+        _touch_activity_user(user_id)
         return _tool_response(out)
     except Exception as e:
         return _tool_response(
@@ -1764,6 +2051,7 @@ async def _action_resize(
     page_id: str,
     width: int,
     height: int,
+    user_id: str | None = None,
 ) -> ToolResponse:
     if width <= 0 or height <= 0:
         return _tool_response(
@@ -1773,7 +2061,7 @@ async def _action_resize(
                 indent=2,
             ),
         )
-    page = _get_page(page_id)
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -1790,6 +2078,7 @@ async def _action_resize(
             )
         else:
             await page.set_viewport_size({"width": width, "height": height})
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {"ok": True, "message": f"Resized to {width}x{height}"},
@@ -1811,11 +2100,23 @@ async def _action_console_messages(
     page_id: str,
     level: str,
     filename: str,
+    user_id: str | None = None,
 ) -> ToolResponse:
+    user_state = (
+        _get_user_state() if user_id is None else _state["users"].get(user_id)
+    )
+    if not user_state:
+        return _tool_response(
+            json.dumps(
+                {"ok": False, "error": "Browser not started"},
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
     level = (level or "info").strip().lower()
     order = ("error", "warning", "info", "debug")
     idx = order.index(level) if level in order else 2
-    page = _get_page(page_id)
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -1824,7 +2125,7 @@ async def _action_console_messages(
                 indent=2,
             ),
         )
-    logs = _state["console_logs"].get(page_id, [])
+    logs = user_state.console_logs.get(page_id, [])
     filtered = (
         [m for m in logs if order.index(m["level"]) <= idx]
         if level in order
@@ -1835,6 +2136,7 @@ async def _action_console_messages(
     if filename and filename.strip():
         with open(filename.strip(), "w", encoding="utf-8") as f:
             f.write(text)
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {
@@ -1846,6 +2148,7 @@ async def _action_console_messages(
                 indent=2,
             ),
         )
+    _touch_activity_user(user_id)
     return _tool_response(
         json.dumps(
             {"ok": True, "messages": filtered, "text": text},
@@ -1859,8 +2162,20 @@ async def _action_handle_dialog(
     page_id: str,
     accept: bool,
     prompt_text: str,
+    user_id: str | None = None,
 ) -> ToolResponse:
-    page = _get_page(page_id)
+    user_state = (
+        _get_user_state() if user_id is None else _state["users"].get(user_id)
+    )
+    if not user_state:
+        return _tool_response(
+            json.dumps(
+                {"ok": False, "error": "Browser not started"},
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -1869,7 +2184,7 @@ async def _action_handle_dialog(
                 indent=2,
             ),
         )
-    dialogs = _state["pending_dialogs"].get(page_id, [])
+    dialogs = user_state.pending_dialogs.get(page_id, [])
     if not dialogs:
         return _tool_response(
             json.dumps(
@@ -1896,6 +2211,7 @@ async def _action_handle_dialog(
                 await _run_sync(dialog.dismiss)
             else:
                 await dialog.dismiss()
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {"ok": True, "message": "Dialog handled"},
@@ -1913,8 +2229,23 @@ async def _action_handle_dialog(
         )
 
 
-async def _action_file_upload(page_id: str, paths_json: str) -> ToolResponse:
-    page = _get_page(page_id)
+async def _action_file_upload(
+    page_id: str,
+    paths_json: str,
+    user_id: str | None = None,
+) -> ToolResponse:
+    user_state = (
+        _get_user_state() if user_id is None else _state["users"].get(user_id)
+    )
+    if not user_state:
+        return _tool_response(
+            json.dumps(
+                {"ok": False, "error": "Browser not started"},
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -1927,7 +2258,7 @@ async def _action_file_upload(page_id: str, paths_json: str) -> ToolResponse:
     if not isinstance(paths, list):
         paths = []
     try:
-        choosers = _state["pending_file_choosers"].get(page_id, [])
+        choosers = user_state.pending_file_choosers.get(page_id, [])
         if not choosers:
             return _tool_response(
                 json.dumps(
@@ -1945,6 +2276,7 @@ async def _action_file_upload(page_id: str, paths_json: str) -> ToolResponse:
                 await _run_sync(chooser.set_files, paths)
             else:
                 await chooser.set_files(paths)
+            _touch_activity_user(user_id)
             return _tool_response(
                 json.dumps(
                     {"ok": True, "message": f"Uploaded {len(paths)} file(s)"},
@@ -1956,6 +2288,7 @@ async def _action_file_upload(page_id: str, paths_json: str) -> ToolResponse:
             await _run_sync(chooser.set_files, [])
         else:
             await chooser.set_files([])
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {"ok": True, "message": "File chooser cancelled"},
@@ -1973,8 +2306,23 @@ async def _action_file_upload(page_id: str, paths_json: str) -> ToolResponse:
         )
 
 
-async def _action_fill_form(page_id: str, fields_json: str) -> ToolResponse:
-    page = _get_page(page_id)
+async def _action_fill_form(
+    page_id: str,
+    fields_json: str,
+    user_id: str | None = None,
+) -> ToolResponse:
+    user_state = (
+        _get_user_state() if user_id is None else _state["users"].get(user_id)
+    )
+    if not user_state:
+        return _tool_response(
+            json.dumps(
+                {"ok": False, "error": "Browser not started"},
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -1992,9 +2340,9 @@ async def _action_fill_form(page_id: str, fields_json: str) -> ToolResponse:
                 indent=2,
             ),
         )
-    refs = _get_refs(page_id)
+    refs = _get_refs(page_id, user_id)
     # Use last snapshot's frame so fill_form works after iframe snapshot
-    frame = _state["refs_frame"].get(page_id, "")
+    frame = user_state.refs_frame.get(page_id, "")
     try:
         for f in fields:
             ref = (f.get("ref") or "").strip()
@@ -2042,6 +2390,7 @@ async def _action_fill_form(page_id: str, fields_json: str) -> ToolResponse:
                     )
                 else:
                     await locator.fill(str(value) if value is not None else "")
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {"ok": True, "message": f"Filled {len(fields)} field(s)"},
@@ -2134,7 +2483,11 @@ async def _action_install() -> ToolResponse:
         )
 
 
-async def _action_press_key(page_id: str, key: str) -> ToolResponse:
+async def _action_press_key(
+    page_id: str,
+    key: str,
+    user_id: str | None = None,
+) -> ToolResponse:
     key = (key or "").strip()
     if not key:
         return _tool_response(
@@ -2144,7 +2497,7 @@ async def _action_press_key(page_id: str, key: str) -> ToolResponse:
                 indent=2,
             ),
         )
-    page = _get_page(page_id)
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -2158,6 +2511,7 @@ async def _action_press_key(page_id: str, key: str) -> ToolResponse:
             await _run_sync(page.keyboard.press, key)
         else:
             await page.keyboard.press(key)
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {"ok": True, "message": f"Pressed key {key}"},
@@ -2179,8 +2533,20 @@ async def _action_network_requests(
     page_id: str,
     include_static: bool,
     filename: str,
+    user_id: str | None = None,
 ) -> ToolResponse:
-    page = _get_page(page_id)
+    user_state = (
+        _get_user_state() if user_id is None else _state["users"].get(user_id)
+    )
+    if not user_state:
+        return _tool_response(
+            json.dumps(
+                {"ok": False, "error": "Browser not started"},
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -2189,7 +2555,7 @@ async def _action_network_requests(
                 indent=2,
             ),
         )
-    requests = _state["network_requests"].get(page_id, [])
+    requests = user_state.network_requests.get(page_id, [])
     if not include_static:
         static = ("image", "stylesheet", "font", "media")
         requests = [r for r in requests if r.get("resourceType") not in static]
@@ -2201,6 +2567,7 @@ async def _action_network_requests(
     if filename and filename.strip():
         with open(filename.strip(), "w", encoding="utf-8") as f:
             f.write(text)
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {
@@ -2212,6 +2579,7 @@ async def _action_network_requests(
                 indent=2,
             ),
         )
+    _touch_activity_user(user_id)
     return _tool_response(
         json.dumps(
             {"ok": True, "requests": requests, "text": text},
@@ -2221,7 +2589,11 @@ async def _action_network_requests(
     )
 
 
-async def _action_run_code(page_id: str, code: str) -> ToolResponse:
+async def _action_run_code(
+    page_id: str,
+    code: str,
+    user_id: str | None = None,
+) -> ToolResponse:
     """Run JS in page (like eval). Use evaluate for element (ref)."""
     code = (code or "").strip()
     if not code:
@@ -2232,7 +2604,7 @@ async def _action_run_code(page_id: str, code: str) -> ToolResponse:
                 indent=2,
             ),
         )
-    page = _get_page(page_id)
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -2267,6 +2639,7 @@ async def _action_run_code(page_id: str, code: str) -> ToolResponse:
                 ensure_ascii=False,
                 indent=2,
             )
+        _touch_activity_user(user_id)
         return _tool_response(out)
     except Exception as e:
         return _tool_response(
@@ -2287,6 +2660,7 @@ async def _action_drag(
     start_element: str = "",  # pylint: disable=unused-argument
     end_element: str = "",  # pylint: disable=unused-argument
     frame_selector: str = "",
+    user_id: str | None = None,
 ) -> ToolResponse:
     start_ref = (start_ref or "").strip()
     end_ref = (end_ref or "").strip()
@@ -2307,7 +2681,7 @@ async def _action_drag(
                 indent=2,
             ),
         )
-    page = _get_page(page_id)
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -2324,12 +2698,14 @@ async def _action_drag(
                 page_id,
                 start_ref,
                 frame_selector,
+                user_id,
             )
             end_locator = _get_locator_by_ref(
                 page,
                 page_id,
                 end_ref,
                 frame_selector,
+                user_id,
             )
             if start_locator is None or end_locator is None:
                 return _tool_response(
@@ -2346,6 +2722,7 @@ async def _action_drag(
             await _run_sync(start_locator.drag_to, end_locator)
         else:
             await start_locator.drag_to(end_locator)
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {"ok": True, "message": "Drag completed"},
@@ -2369,6 +2746,7 @@ async def _action_hover(
     element: str = "",  # pylint: disable=unused-argument
     selector: str = "",
     frame_selector: str = "",
+    user_id: str | None = None,
 ) -> ToolResponse:
     ref = (ref or "").strip()
     selector = (selector or "").strip()
@@ -2380,7 +2758,7 @@ async def _action_hover(
                 indent=2,
             ),
         )
-    page = _get_page(page_id)
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -2391,7 +2769,13 @@ async def _action_hover(
         )
     try:
         if ref:
-            locator = _get_locator_by_ref(page, page_id, ref, frame_selector)
+            locator = _get_locator_by_ref(
+                page,
+                page_id,
+                ref,
+                frame_selector,
+                user_id,
+            )
             if locator is None:
                 return _tool_response(
                     json.dumps(
@@ -2407,6 +2791,7 @@ async def _action_hover(
             await _run_sync(locator.hover)
         else:
             await locator.hover()
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {"ok": True, "message": f"Hovered {ref or selector}"},
@@ -2430,6 +2815,7 @@ async def _action_select_option(
     element: str = "",  # pylint: disable=unused-argument
     values_json: str = "",
     frame_selector: str = "",
+    user_id: str | None = None,
 ) -> ToolResponse:
     ref = (ref or "").strip()
     values = _parse_json_param(values_json, [])
@@ -2454,7 +2840,7 @@ async def _action_select_option(
                 indent=2,
             ),
         )
-    page = _get_page(page_id)
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -2477,6 +2863,7 @@ async def _action_select_option(
             await _run_sync(locator.select_option, value=values)
         else:
             await locator.select_option(value=values)
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {"ok": True, "message": f"Selected {values}"},
@@ -2498,7 +2885,30 @@ async def _action_tabs(  # pylint: disable=too-many-return-statements
     page_id: str,
     tab_action: str,
     index: int,
+    user_id: str | None = None,
 ) -> ToolResponse:
+    """Manage tabs for a specific user."""
+    if user_id is None:
+        user_id = _get_current_user_id()
+
+    user_state = _state["users"].get(user_id)
+    if not user_state:
+        if tab_action == "list":
+            return _tool_response(
+                json.dumps(
+                    {"ok": True, "tabs": [], "count": 0},
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+            )
+        return _tool_response(
+            json.dumps(
+                {"ok": False, "error": "Browser not started"},
+                ensure_ascii=False,
+                indent=2,
+            ),
+        )
+
     tab_action = (tab_action or "").strip().lower()
     if not tab_action:
         return _tool_response(
@@ -2511,7 +2921,7 @@ async def _action_tabs(  # pylint: disable=too-many-return-statements
                 indent=2,
             ),
         )
-    pages = _state["pages"]
+    pages = user_state.pages
     page_ids = list(pages.keys())
     if tab_action == "list":
         return _tool_response(
@@ -2522,13 +2932,24 @@ async def _action_tabs(  # pylint: disable=too-many-return-statements
             ),
         )
     if tab_action == "new":
+        # Check page limit for this user
+        if len(user_state.pages) >= _MAX_PAGES_PER_USER:
+            return _tool_response(
+                json.dumps(
+                    {
+                        "ok": False,
+                        "error": f"Maximum page limit reached ({_MAX_PAGES_PER_USER}). Close some pages first.",
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+            )
         if _USE_SYNC_PLAYWRIGHT:
-            if not _state["_sync_context"]:
-                ok = await _ensure_browser()
+            if not user_state._sync_context:
+                ok = await _ensure_browser_for_user(user_id)
                 if not ok:
                     err = (
-                        _state.get("_last_browser_error")
-                        or "Browser not started"
+                        user_state._last_browser_error or "Browser not started"
                     )
                     return _tool_response(
                         json.dumps(
@@ -2538,12 +2959,11 @@ async def _action_tabs(  # pylint: disable=too-many-return-statements
                         ),
                     )
         else:
-            if not _state["context"]:
-                ok = await _ensure_browser()
+            if not user_state.context:
+                ok = await _ensure_browser_for_user(user_id)
                 if not ok:
                     err = (
-                        _state.get("_last_browser_error")
-                        or "Browser not started"
+                        user_state._last_browser_error or "Browser not started"
                     )
                     return _tool_response(
                         json.dumps(
@@ -2554,23 +2974,24 @@ async def _action_tabs(  # pylint: disable=too-many-return-statements
                     )
         try:
             if _USE_SYNC_PLAYWRIGHT:
-                page = await _run_sync(_state["_sync_context"].new_page)
+                page = await _run_sync(user_state._sync_context.new_page)
             else:
-                page = await _state["context"].new_page()
-            new_id = _next_page_id()
-            _state["refs"][new_id] = {}
-            _state["console_logs"][new_id] = []
-            _state["network_requests"][new_id] = []
-            _state["pending_dialogs"][new_id] = []
-            _attach_page_listeners(page, new_id)
-            _state["pages"][new_id] = page
-            _state["current_page_id"] = new_id
+                page = await user_state.context.new_page()
+            new_id = _next_page_id(user_state)
+            user_state.refs[new_id] = {}
+            user_state.console_logs[new_id] = []
+            user_state.network_requests[new_id] = []
+            user_state.pending_dialogs[new_id] = []
+            _attach_page_listeners(page, new_id, user_state)
+            user_state.pages[new_id] = page
+            user_state.current_page_id = new_id
+            _touch_activity_user(user_id)
             return _tool_response(
                 json.dumps(
                     {
                         "ok": True,
                         "page_id": new_id,
-                        "tabs": list(_state["pages"].keys()),
+                        "tabs": list(user_state.pages.keys()),
                     },
                     ensure_ascii=False,
                     indent=2,
@@ -2586,10 +3007,11 @@ async def _action_tabs(  # pylint: disable=too-many-return-statements
             )
     if tab_action == "close":
         target_id = page_ids[index] if 0 <= index < len(page_ids) else page_id
-        return await _action_close(target_id)
+        return await _action_close(target_id, user_id=user_id)
     if tab_action == "select":
         target_id = page_ids[index] if 0 <= index < len(page_ids) else page_id
-        _state["current_page_id"] = target_id
+        user_state.current_page_id = target_id
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {
@@ -2615,8 +3037,9 @@ async def _action_wait_for(
     wait_time: float,
     text: str,
     text_gone: str,
+    user_id: str | None = None,
 ) -> ToolResponse:
-    page = _get_page(page_id)
+    page = _get_page(page_id, user_id)
     if not page:
         return _tool_response(
             json.dumps(
@@ -2656,6 +3079,7 @@ async def _action_wait_for(
                     state="hidden",
                     timeout=30000,
                 )
+        _touch_activity_user(user_id)
         return _tool_response(
             json.dumps(
                 {"ok": True, "message": "Wait completed"},

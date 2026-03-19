@@ -31,6 +31,16 @@ class MdFileContent(BaseModel):
     content: str = Field(..., description="File content")
 
 
+class InitFileRequest(BaseModel):
+    """Request model for initializing a markdown file."""
+
+    filename: str = Field(
+        ...,
+        description="Markdown file name (with or without .md extension)",
+    )
+    text: str = Field(..., description="Content to append to the file")
+
+
 @router.get(
     "/files",
     response_model=list[MdFileInfo],
@@ -82,6 +92,33 @@ async def write_working_file(
     try:
         get_agent_md_manager().write_working_md(md_name, request.content)
         return {"written": True}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post(
+    "/init",
+    response_model=dict,
+    summary="Initialize/Append to a working file",
+    description="Append text to a working directory markdown file. Creates the file if it doesn't exist.",
+)
+async def init_working_file(request: InitFileRequest) -> dict:
+    """Append text to a working directory markdown file."""
+    try:
+        manager = get_agent_md_manager()
+        manager.append_working_md(request.filename, request.text)
+
+        # Construct full file path for response
+        filename = request.filename
+        if not filename.endswith(".md"):
+            filename += ".md"
+        file_path = manager.working_dir / filename
+
+        return {
+            "success": True,
+            "file_path": str(file_path),
+            "filename": filename,
+        }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

@@ -50,11 +50,13 @@ class SafeJSONSession(JSONSession):
         if safe_uid:
             # Use request-scoped directory for user isolation
             from ...constant import get_request_working_dir
+
             sessions_dir = get_request_working_dir() / "sessions"
             sessions_dir.mkdir(parents=True, exist_ok=True)
         else:
             # Fallback to global sessions directory for backward compatibility
             from ...constant import get_runtime_working_dir
+
             sessions_dir = get_runtime_working_dir() / "sessions"
             sessions_dir.mkdir(parents=True, exist_ok=True)
 

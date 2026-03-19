@@ -2,7 +2,7 @@
 
 from typing import Any, List
 
-from fastapi import APIRouter, Body, HTTPException, Path, Request
+from fastapi import APIRouter, Body, Header, HTTPException, Path, Request
 
 from ...config import (
     load_config,
@@ -11,6 +11,7 @@ from ...config import (
     ChannelConfig,
     ChannelConfigUnion,
     get_available_channels,
+    get_config_path,
 )
 from ..channels.registry import BUILTIN_CHANNEL_KEYS
 from ...config.config import AgentsLLMRoutingConfig, HeartbeatConfig
@@ -25,9 +26,13 @@ router = APIRouter(prefix="/config", tags=["config"])
     summary="List all channels",
     description="Retrieve configuration for all available channels",
 )
-async def list_channels() -> dict:
+async def list_channels(
+    x_user_id: str | None = Header(None, alias="X-User-ID")
+) -> dict:
     """List all channel configs (filtered by available channels)."""
-    config = load_config()
+    user_id = x_user_id or "default"
+    config_path = get_config_path(user_id)
+    config = load_config(config_path)
     available = get_available_channels()
 
     # Get all channel configs from model_dump and __pydantic_extra__
@@ -75,11 +80,14 @@ async def put_channels(
         ...,
         description="Complete channel configuration",
     ),
+    x_user_id: str | None = Header(None, alias="X-User-ID"),
 ) -> ChannelConfig:
     """Update all channel configs."""
-    config = load_config()
+    user_id = x_user_id or "default"
+    config_path = get_config_path(user_id)
+    config = load_config(config_path)
     config.channels = channels_config
-    save_config(config)
+    save_config(config, config_path)
     return channels_config
 
 
@@ -95,15 +103,18 @@ async def get_channel(
         description="Name of the channel to retrieve",
         min_length=1,
     ),
+    x_user_id: str | None = Header(None, alias="X-User-ID"),
 ) -> ChannelConfigUnion:
     """Get a specific channel config by name."""
+    user_id = x_user_id or "default"
     available = get_available_channels()
     if channel_name not in available:
         raise HTTPException(
             status_code=404,
             detail=f"Channel '{channel_name}' not found",
         )
-    config = load_config()
+    config_path = get_config_path(user_id)
+    config = load_config(config_path)
     single_channel_config = getattr(config.channels, channel_name, None)
     if single_channel_config is None:
         extra = getattr(config.channels, "__pydantic_extra__", None) or {}
@@ -132,15 +143,18 @@ async def put_channel(
         ...,
         description="Updated channel configuration",
     ),
+    x_user_id: str | None = Header(None, alias="X-User-ID"),
 ) -> ChannelConfigUnion:
     """Update a specific channel config by name."""
+    user_id = x_user_id or "default"
     available = get_available_channels()
     if channel_name not in available:
         raise HTTPException(
             status_code=404,
             detail=f"Channel '{channel_name}' not found",
         )
-    config = load_config()
+    config_path = get_config_path(user_id)
+    config = load_config(config_path)
 
     # Create the appropriate config object based on channel_name
     if channel_name == "telegram":
@@ -181,7 +195,7 @@ async def put_channel(
 
     # Allow setting extra (plugin) channel config
     setattr(config.channels, channel_name, channel_config)
-    save_config(config)
+    save_config(config, config_path)
     return channel_config
 
 
@@ -190,9 +204,19 @@ async def put_channel(
     summary="Get heartbeat config",
     description="Return current heartbeat config (interval, target, etc.)",
 )
-async def get_heartbeat() -> Any:
+async def get_heartbeat(
+    x_user_id: str | None = Header(None, alias="X-User-ID")
+) -> Any:
     """Return effective heartbeat config (from file or default)."""
-    hb = get_heartbeat_config()
+    user_id = x_user_id or "default"
+    config_path = get_config_path(user_id)
+    hb = (
+        get_heartbeat_config()
+        if not config_path.exists()
+        else load_config(config_path).agents.defaults.heartbeat
+    )
+    if hb is None:
+        hb = get_heartbeat_config()
     return hb.model_dump(mode="json", by_alias=True)
 
 
@@ -204,9 +228,12 @@ async def get_heartbeat() -> Any:
 async def put_heartbeat(
     request: Request,
     body: HeartbeatBody = Body(..., description="Heartbeat configuration"),
+    x_user_id: str | None = Header(None, alias="X-User-ID"),
 ) -> Any:
     """Update heartbeat config and reschedule the heartbeat job."""
-    config = load_config()
+    user_id = x_user_id or "default"
+    config_path = get_config_path(user_id)
+    config = load_config(config_path)
     hb = HeartbeatConfig(
         enabled=body.enabled,
         every=body.every,
@@ -214,11 +241,11 @@ async def put_heartbeat(
         active_hours=body.active_hours,
     )
     config.agents.defaults.heartbeat = hb
-    save_config(config)
+    save_config(config, config_path)
 
     cron_manager = getattr(request.app.state, "cron_manager", None)
     if cron_manager is not None:
-        await cron_manager.reschedule_heartbeat()
+        await cron_manager.reschedule_heartbeat(user_id)
 
     return hb.model_dump(mode="json", by_alias=True)
 
@@ -228,8 +255,12 @@ async def put_heartbeat(
     response_model=AgentsLLMRoutingConfig,
     summary="Get agent LLM routing settings",
 )
-async def get_agents_llm_routing() -> AgentsLLMRoutingConfig:
-    config = load_config()
+async def get_agents_llm_routing(
+    x_user_id: str | None = Header(None, alias="X-User-ID"),
+) -> AgentsLLMRoutingConfig:
+    user_id = x_user_id or "default"
+    config_path = get_config_path(user_id)
+    config = load_config(config_path)
     return config.agents.llm_routing
 
 
@@ -240,8 +271,11 @@ async def get_agents_llm_routing() -> AgentsLLMRoutingConfig:
 )
 async def put_agents_llm_routing(
     body: AgentsLLMRoutingConfig = Body(...),
+    x_user_id: str | None = Header(None, alias="X-User-ID"),
 ) -> AgentsLLMRoutingConfig:
-    config = load_config()
+    user_id = x_user_id or "default"
+    config_path = get_config_path(user_id)
+    config = load_config(config_path)
     config.agents.llm_routing = body
-    save_config(config)
+    save_config(config, config_path)
     return body

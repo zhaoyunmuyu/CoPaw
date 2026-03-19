@@ -36,6 +36,7 @@ from ...constant import (
     set_request_user_id,
     reset_request_user_id,
     get_request_working_dir,
+    get_request_user_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,9 @@ class AgentRunner(Runner):
         self._mcp_manager = None  # MCP client manager for hot-reload
         self.memory_manager: MemoryManager | None = None
         # Per-user MemoryManager cache for performance optimization
-        self._memory_manager_cache: OrderedDict[str, MemoryManager] = OrderedDict()
+        self._memory_manager_cache: OrderedDict[
+            str, MemoryManager
+        ] = OrderedDict()
         self._mm_cache_lock = asyncio.Lock()
         self._mm_cache_max_size = COPAW_MM_CACHE_MAX_SIZE
 
@@ -117,16 +120,25 @@ class AgentRunner(Runner):
             )
             await mm.start()
             self._memory_manager_cache[user_id] = mm
-            logger.info("Created and cached MemoryManager for user: %s", user_id)
+            logger.info(
+                "Created and cached MemoryManager for user: %s", user_id
+            )
 
             # Evict oldest if over limit
             while len(self._memory_manager_cache) > self._mm_cache_max_size:
-                oldest_user, oldest_mm = self._memory_manager_cache.popitem(last=False)
+                oldest_user, oldest_mm = self._memory_manager_cache.popitem(
+                    last=False
+                )
                 try:
                     await oldest_mm.close()
-                    logger.info("Evicted MemoryManager from cache for user: %s", oldest_user)
+                    logger.info(
+                        "Evicted MemoryManager from cache for user: %s",
+                        oldest_user,
+                    )
                 except Exception as e:
-                    logger.warning("Failed to close evicted MemoryManager: %s", e)
+                    logger.warning(
+                        "Failed to close evicted MemoryManager: %s", e
+                    )
 
             return mm
 
@@ -145,7 +157,11 @@ class AgentRunner(Runner):
         from ...agents.utils.setup_utils import initialize_user_directory
 
         # Set request context for user-specific directory routing
-        user_token = set_request_user_id(request.user_id if request else None)
+        # 优先使用 request 中的 user_id，否则使用当前请求上下文中的 user_id（支持 cron 任务）
+        user_id = (
+            request.user_id if request else None
+        ) or get_request_user_id()
+        user_token = set_request_user_id(user_id)
 
         # Auto-initialize user directory if this is a new user.
         # Channel requests bypass HTTP middleware, so initialization
@@ -159,7 +175,10 @@ class AgentRunner(Runner):
                     language=config.agents.language,
                 )
                 if initialized:
-                    logger.info("Auto-initialized directory for user: %s (via query_handler)", user_id)
+                    logger.info(
+                        "Auto-initialized directory for user: %s (via query_handler)",
+                        user_id,
+                    )
             except Exception as e:
                 logger.warning(
                     "Auto-initialization failed for user %s: %s",
@@ -184,7 +203,9 @@ class AgentRunner(Runner):
         agent = None
         chat = None
         session_state_loaded = False
-        request_memory_manager = None  # Per-request MemoryManager (for LRU cache)
+        request_memory_manager = (
+            None  # Per-request MemoryManager (for LRU cache)
+        )
         # Note: We no longer override the shared MemoryManager's working_path.
         # Instead, we use per-user cached MemoryManager instances for better performance.
         if self.memory_manager is not None:
@@ -225,7 +246,9 @@ class AgentRunner(Runner):
                 session_id=session_id,
                 user_id=user_id,
                 channel=channel,
-                working_dir=str(get_request_working_dir()),  # Use request-scoped
+                working_dir=str(
+                    get_request_working_dir()
+                ),  # Use request-scoped
             )
 
             # Get MCP clients from manager (hot-reloadable)
@@ -390,7 +413,11 @@ class AgentRunner(Runner):
                     await mm.close()
                     logger.info("Closed MemoryManager for user: %s", user_id)
                 except Exception as e:
-                    logger.warning("Failed to close MemoryManager for user %s: %s", user_id, e)
+                    logger.warning(
+                        "Failed to close MemoryManager for user %s: %s",
+                        user_id,
+                        e,
+                    )
             self._memory_manager_cache.clear()
 
         # Also close the legacy shared memory_manager if exists

@@ -333,10 +333,12 @@ def get_config_path(user_id: str | None = None) -> Path:
     """
     if user_id is not None:
         from ..constant import get_working_dir
+
         base = get_working_dir(user_id)
     else:
         # Use request-scoped working dir when in a request context
         from ..constant import get_request_working_dir
+
         base = get_request_working_dir()
     return base / "config.json"
 
@@ -426,10 +428,12 @@ def get_jobs_path(user_id: str | None = None) -> Path:
     """
     if user_id is not None:
         from ..constant import get_working_dir
+
         base = get_working_dir(user_id)
     else:
         # Use request-scoped working dir when in a request context
         from ..constant import get_request_working_dir
+
         base = get_request_working_dir()
     return base / JOBS_FILE
 
@@ -443,9 +447,11 @@ def get_chats_path(user_id: str | None = None) -> Path:
     """
     if user_id is not None:
         from ..constant import get_working_dir
+
         base = get_working_dir(user_id)
     else:
         # Use request-scoped working dir when in a request context
         from ..constant import get_request_working_dir
+
         base = get_request_working_dir()
     return base / CHATS_FILE

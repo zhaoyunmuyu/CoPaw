@@ -89,10 +89,6 @@ def configure_provider_api_key_interactive(
         )
         return provider_id
 
-    # Ollama provider is local-like (no API key needed)
-    if provider_id == "ollama":
-        return provider_id
-
     current_base, current_key = data.get_credentials(provider_id)
 
     base_url: Optional[str] = None
@@ -145,10 +141,6 @@ def _add_models_interactive(provider_id: str) -> None:
     """Interactively add models to a provider after configuration."""
     defn = PROVIDERS[provider_id]
     data = load_providers_json()
-
-    # Ollama models cannot be added manually - they come from Ollama daemon
-    if provider_id == "ollama":
-        return
 
     settings = data.providers.get(provider_id)
     extra = (
@@ -316,10 +308,10 @@ def configure_providers_interactive(*, use_defaults: bool = False) -> None:
     while True:
         pid = configure_provider_api_key_interactive()
 
-        # For local providers (llamacpp, mlx, ollama),
+        # For local providers (llamacpp, mlx),
         # skip to model activation directly
         defn = PROVIDERS[pid]
-        if defn.is_local or pid == "ollama":
+        if defn.is_local:
             click.echo(f"\n--- Activate {defn.name} Model ---")
             configure_llm_slot_interactive()
             return
@@ -486,17 +478,6 @@ def remove_provider_cmd(provider_id: str, yes: bool) -> None:
 @click.option("--model-name", "-n", required=True, help="Model display name")
 def add_model_cmd(provider_id: str, model_id: str, model_name: str) -> None:
     """Add a model to any provider (built-in or custom)."""
-    # Prevent manual model addition for Ollama
-    if provider_id == "ollama":
-        click.echo(
-            click.style(
-                "Error: Ollama models cannot be added manually. "
-                "Use 'ollama pull <model>' to download models.",
-                fg="red",
-            ),
-        )
-        raise SystemExit(1)
-
     try:
         add_model(provider_id, ModelInfo(id=model_id, name=model_name))
     except ValueError as exc:
@@ -512,17 +493,6 @@ def add_model_cmd(provider_id: str, model_id: str, model_name: str) -> None:
 @click.option("--model-id", "-m", required=True, help="Model identifier")
 def remove_model_cmd(provider_id: str, model_id: str) -> None:
     """Remove a user-added model from any provider."""
-    # Prevent manual model removal for Ollama
-    if provider_id == "ollama":
-        click.echo(
-            click.style(
-                "Error: Ollama models cannot be removed via this command. "
-                "Use 'ollama rm <model>' to delete models.",
-                fg="red",
-            ),
-        )
-        raise SystemExit(1)
-
     try:
         remove_model(provider_id, model_id)
     except ValueError as exc:
@@ -687,113 +657,3 @@ def remove_local_cmd(model_id: str, yes: bool) -> None:
         click.echo(click.style(f"Error: {exc}", fg="red"))
         raise SystemExit(1) from exc
     click.echo(f"Done! Model '{model_id}' deleted.")
-
-
-# ---------------------------------------------------------------------------
-# Ollama model management commands
-# ---------------------------------------------------------------------------
-
-
-@models_group.command("ollama-pull")
-@click.argument("model_name")
-def ollama_pull_cmd(model_name: str) -> None:
-    """Download an Ollama model.
-
-    \b
-    Examples:
-      copaw models ollama-pull mistral:7b
-      copaw models ollama-pull qwen2.5:3b
-    """
-    from ..providers.ollama_manager import OllamaModelManager
-    from ..providers.store import get_ollama_host
-
-    click.echo(f"Downloading Ollama model: {model_name}...")
-    try:
-        host = get_ollama_host()
-        OllamaModelManager.pull_model(model_name, host=host)
-        click.echo(f"✓ Model '{model_name}' downloaded successfully.")
-        click.echo("\nTo use this model, run:\n  copaw models set-llm")
-    except ImportError as exc:
-        click.echo(
-            click.style(
-                str(exc),
-                fg="red",
-            ),
-        )
-        raise SystemExit(1) from exc
-    except Exception as exc:
-        click.echo(click.style(f"Download failed: {exc}", fg="red"))
-        raise SystemExit(1) from exc
-
-
-@models_group.command("ollama-list")
-def ollama_list_cmd() -> None:
-    """List all Ollama models."""
-    from ..providers.ollama_manager import OllamaModelManager
-    from ..providers.store import get_ollama_host
-
-    try:
-        host = get_ollama_host()
-        models = OllamaModelManager.list_models(host=host)
-    except ImportError as exc:
-        click.echo(
-            click.style(
-                str(exc),
-                fg="red",
-            ),
-        )
-        raise SystemExit(1) from exc
-    except Exception as exc:
-        click.echo(click.style(f"Error: {exc}", fg="red"))
-        raise SystemExit(1) from exc
-
-    if not models:
-        click.echo("No Ollama models found.")
-        click.echo("Use 'copaw models ollama-pull <model>' to download one.")
-        return
-
-    click.echo(f"\n=== Ollama Models ({len(models)}) ===")
-    for m in models:
-        size_gb = m.size / (1024 * 1024 * 1024)
-        click.echo(f"\n{'─' * 44}")
-        click.echo(f"  {m.name}")
-        if m.size > 0:
-            click.echo(f"  Size:    {size_gb:.2f} GB")
-        if m.digest:
-            click.echo(f"  Digest:  {m.digest[:16]}...")
-    click.echo()
-
-
-@models_group.command("ollama-remove")
-@click.argument("model_name")
-@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
-def ollama_remove_cmd(model_name: str, yes: bool) -> None:
-    """Remove an Ollama model.
-
-    \b
-    Examples:
-      copaw models ollama-remove mistral:7b
-      copaw models ollama-remove qwen2.5:3b -y
-    """
-    from ..providers.ollama_manager import OllamaModelManager
-    from ..providers.store import get_ollama_host
-
-    if not yes:
-        if not click.confirm(f"Delete Ollama model '{model_name}'?"):
-            return
-
-    try:
-        host = get_ollama_host()
-        OllamaModelManager.delete_model(model_name, host=host)
-        click.echo(f"✓ Model '{model_name}' deleted.")
-    except ImportError as exc:
-        click.echo(
-            click.style(
-                str(exc),
-                fg="red",
-            ),
-        )
-        raise SystemExit(1) from exc
-    except Exception as exc:
-        click.echo(click.style(f"Error: {exc}", fg="red"))
-        raise SystemExit(1) from exc

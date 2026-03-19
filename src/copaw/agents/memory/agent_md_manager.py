@@ -124,6 +124,23 @@ class AgentMdManager:
         file_path = self.memory_dir / md_name
         file_path.write_text(content, encoding="utf-8")
 
+    def append_working_md(self, md_name: str, content: str):
+        """Append markdown content to a file in the working directory.
+
+        Creates the file if it doesn't exist.
+        """
+        file_path = self.working_dir / md_name
+
+        # If file exists, read existing content and add newline if needed
+        if file_path.exists():
+            existing_content = file_path.read_text(encoding="utf-8")
+            # If existing content doesn't end with newline, add one
+            if existing_content and not existing_content.endswith("\n"):
+                content = "\n" + content
+
+        with open(file_path, "a", encoding="utf-8") as f:
+            f.write(content)
+
 
 def get_agent_md_manager() -> AgentMdManager:
     """Get AgentMdManager for current request.

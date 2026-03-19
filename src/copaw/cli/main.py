@@ -121,7 +121,9 @@ def log_init_timings() -> None:
     help="User-specific subdirectory for multi-user isolation.",
 )
 @click.pass_context
-def cli(ctx: click.Context, host: str | None, port: int | None, user_id: str | None) -> None:
+def cli(
+    ctx: click.Context, host: str | None, port: int | None, user_id: str | None
+) -> None:
     """CoPaw CLI."""
     # Set runtime user directory
     from ..constant import set_current_user

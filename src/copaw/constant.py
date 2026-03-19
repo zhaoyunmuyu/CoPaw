@@ -31,12 +31,12 @@ _request_user_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 )
 
 # Request-scoped directory cache (computed per-request)
-_request_working_dir: contextvars.ContextVar[Path | None] = (
-    contextvars.ContextVar("request_working_dir", default=None)
-)
-_request_secret_dir: contextvars.ContextVar[Path | None] = (
-    contextvars.ContextVar("request_secret_dir", default=None)
-)
+_request_working_dir: contextvars.ContextVar[
+    Path | None
+] = contextvars.ContextVar("request_working_dir", default=None)
+_request_secret_dir: contextvars.ContextVar[
+    Path | None
+] = contextvars.ContextVar("request_secret_dir", default=None)
 
 
 def get_working_dir(user_id: str | None = None) -> Path:
@@ -226,6 +226,26 @@ def get_custom_channels_dir() -> Path:
 def get_models_dir() -> Path:
     """Get local models directory for current request."""
     return get_request_working_dir() / "models"
+
+
+def list_all_user_ids() -> list[str]:
+    """Scan and return all existing user IDs.
+
+    Scans the ~/.copaw/ directory and returns all directory names
+    that contain a valid config.json file.
+
+    Returns:
+        List of user IDs
+    """
+    user_ids = []
+    if not DEFAULT_WORKING_DIR.exists():
+        return user_ids
+
+    for entry in DEFAULT_WORKING_DIR.iterdir():
+        if entry.is_dir() and (entry / "config.json").exists():
+            user_ids.append(entry.name)
+
+    return user_ids
 
 
 # Backward compatibility: module-level variables that resolve at access time

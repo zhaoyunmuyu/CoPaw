@@ -40,6 +40,7 @@ class ChatManager:
             JsonChatRepository for user's chats.json
         """
         from ...config.utils import get_chats_path
+
         return JsonChatRepository(get_chats_path(user_id))
 
     # ----- Read Operations -----
@@ -67,7 +68,9 @@ class ChatManager:
                 channel=channel,
             )
 
-    async def get_chat(self, chat_id: str, user_id: Optional[str] = None) -> Optional[ChatSpec]:
+    async def get_chat(
+        self, chat_id: str, user_id: Optional[str] = None
+    ) -> Optional[ChatSpec]:
         """Get chat spec by chat_id (UUID).
 
         Args:

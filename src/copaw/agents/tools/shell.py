@@ -7,14 +7,42 @@ import asyncio
 import locale
 import logging
 import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
 from agentscope.tool import ToolResponse
 from agentscope.message import TextBlock
 
+from ...constant import get_request_working_dir, get_request_user_id
 from .path_validator import PathValidator
 from .sandbox import SandboxExecutor
+
+def _inject_user_id_for_copaw_cron(cmd: str) -> str:
+    """If command is 'copaw cron ...', auto-append --user-id if missing.
+
+    Args:
+        cmd: Original shell command
+
+    Returns:
+        Modified command with --user-id injected if applicable
+    """
+    stripped = cmd.strip()
+    # Check if it's a copaw cron command
+    if not stripped.startswith("copaw cron"):
+        return cmd
+
+    # Check if --user-id already exists
+    if "--user-id" in stripped:
+        return cmd
+
+    # Get current user_id from request context
+    user_id = get_request_user_id()
+    if user_id is None:
+        return cmd
+
+    # Append --user-id to the command
+    return f"{cmd} --user-id {user_id}"
 
 
 def _get_sandbox_config():
@@ -91,8 +119,11 @@ async def execute_shell_command(
     Returns:
         ToolResponse with returncode, stdout, and stderr.
     """
+
     cmd = (command or "").strip()
 
+    # Inject --user-id for copaw cron commands
+    cmd = _inject_user_id_for_copaw_cron(cmd)
     # Get user directory and validate cwd
     user_dir = PathValidator.get_user_dir()
 

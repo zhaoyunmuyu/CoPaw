@@ -7,5 +7,9 @@ export interface PushMessage {
 
 export const consoleApi = {
   getPushMessages: () =>
-    request<{ messages: PushMessage[] }>("/console/push-messages"),
+    request<{ messages: PushMessage[] }>("/console/push-messages", {
+      headers: {
+        "x-user-id": (window as any).currentUserId || "default",
+      },
+    }),
 };

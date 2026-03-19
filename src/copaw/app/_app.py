@@ -18,7 +18,7 @@ from ..config import (  # pylint: disable=no-name-in-module
     update_last_dispatch,
     ConfigWatcher,
 )
-from ..config.utils import get_jobs_path, get_config_path
+from ..config.utils import get_config_path
 from ..constant import (
     DOCS_ENABLED,
     LOG_LEVEL_ENV,
@@ -34,7 +34,6 @@ from ..utils.logging import setup_logger, add_copaw_file_handler
 from .channels import ChannelManager  # pylint: disable=no-name-in-module
 from .channels.utils import make_process_from_runner
 from .mcp import MCPClientManager, MCPConfigWatcher  # MCP hot-reload support
-from .crons.repo.json_repo import JsonJobRepository
 from .crons.manager import CronManager
 from .runner.manager import ChatManager
 from .routers import router as api_router
@@ -94,12 +93,10 @@ async def lifespan(
     await channel_manager.start_all()
 
     # --- cron init/start ---
-    repo = JsonJobRepository(get_jobs_path())
     cron_manager = CronManager(
-        repo=repo,
         runner=runner,
         channel_manager=channel_manager,
-        timezone="UTC",
+        timezone="Asia/Shanghai",
     )
     await cron_manager.start()
 
@@ -327,12 +324,10 @@ async def lifespan(
             await _teardown_new_stack(mcp_mgr=new_mcp_manager)
             return
 
-        job_repo = JsonJobRepository(get_jobs_path())
         new_cron_manager = CronManager(
-            repo=job_repo,
             runner=runner,
             channel_manager=new_channel_manager,
-            timezone="UTC",
+            timezone="Asia/Shanghai",
         )
         try:
             await new_cron_manager.start()
@@ -470,7 +465,9 @@ async def user_context_middleware(request, call_next):
     from ..config import load_config
 
     # 从 Header 获取 user_id
-    user_id = request.headers.get("X-User-ID") or request.headers.get("X-CoPaw-User-Id")
+    user_id = request.headers.get("X-User-ID") or request.headers.get(
+        "X-CoPaw-User-Id"
+    )
 
     if user_id:
         # 设置请求上下文
@@ -486,7 +483,10 @@ async def user_context_middleware(request, call_next):
                     language=config.agents.language,
                 )
                 if initialized:
-                    logger.info("Auto-initialized directory for user: %s (via HTTP middleware)", user_id)
+                    logger.info(
+                        "Auto-initialized directory for user: %s (via HTTP middleware)",
+                        user_id,
+                    )
             except Exception as e:
                 logger.warning(
                     "Auto-initialization failed for user %s: %s",
@@ -569,6 +569,7 @@ app.include_router(
 # Voice channel: Twilio-facing endpoints at root level (not under /api/).
 # POST /voice/incoming, WS /voice/ws, POST /voice/status-callback
 app.include_router(voice_router, tags=["voice"])
+
 
 # User-specific static files: /static/{user_id}/{path}
 # This route dynamically resolves the user directory per-request.

@@ -14,12 +14,14 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 class InitUserRequest(BaseModel):
     """Request body for POST /users/init."""
+
     user_id: str
     language: str = "en"
 
 
 class InitUserResponse(BaseModel):
     """Response body for POST /users/init."""
+
     success: bool
     initialized: bool
     user_id: str
@@ -28,6 +30,7 @@ class InitUserResponse(BaseModel):
 
 class UserStatusResponse(BaseModel):
     """Response body for GET /users/{user_id}/status."""
+
     user_id: str
     initialized: bool
     working_dir: str

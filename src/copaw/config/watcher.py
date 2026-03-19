@@ -172,23 +172,17 @@ class ConfigWatcher:
         self._last_channels_hash = self._channels_hash(new_channels)
 
     async def _apply_heartbeat_change(self, loaded_config: Any) -> None:
-        """Update heartbeat hash and reschedule if changed."""
+        """Update heartbeat hash and reschedule if changed.
+
+        Note: Since heartbeats are now per-user, this method only logs the change.
+        Per-user heartbeats are started via start_user() when the user is first
+        accessed, and rescheduled via the API endpoint with user context.
+        """
         hb = getattr(loaded_config.agents.defaults, "heartbeat", None)
         new_hb_hash = _heartbeat_hash(hb)
-        if (
-            self._cron_manager is not None
-            and new_hb_hash != self._last_heartbeat_hash
-        ):
+        if new_hb_hash != self._last_heartbeat_hash:
             self._last_heartbeat_hash = new_hb_hash
-            try:
-                await self._cron_manager.reschedule_heartbeat()
-                logger.info("ConfigWatcher: heartbeat rescheduled")
-            except Exception:
-                logger.exception(
-                    "ConfigWatcher: failed to reschedule heartbeat",
-                )
-        else:
-            self._last_heartbeat_hash = new_hb_hash
+            logger.info("ConfigWatcher: heartbeat config changed (per-user)")
 
     async def _poll_loop(self) -> None:
         while True:

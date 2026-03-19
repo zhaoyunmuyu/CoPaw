@@ -77,25 +77,48 @@ async def run_heartbeat_once(
     *,
     runner: Any,
     channel_manager: Any,
+    user_id: str,
 ) -> None:
     """
-    Run one heartbeat: read HEARTBEAT.md via config path, run agent,
-    optionally dispatch to last channel (target=last).
+    Run one heartbeat for a specific user: read HEARTBEAT.md via config path,
+    run agent, optionally dispatch to last channel (target=last).
+
+    Args:
+        runner: Agent runner
+        channel_manager: Channel manager for dispatch
+        user_id: User identifier for user-specific paths and config
     """
-    config = load_config()
-    hb = get_heartbeat_config()
+    from ...config.utils import get_config_path, get_heartbeat_query_path
+    from ...constant import get_working_dir
+
+    # Use user-specific config path
+    config_path = get_config_path(user_id)
+    config = load_config(config_path)
+
+    # Use user-specific heartbeat config
+    hb = config.agents.defaults.heartbeat
+    if hb is None:
+        hb = get_heartbeat_config()  # fallback to default
+
     if not _in_active_hours(hb.active_hours):
-        logger.debug("heartbeat skipped: outside active hours")
+        logger.debug(
+            "heartbeat skipped for user=%s: outside active hours", user_id
+        )
         return
 
-    path = get_heartbeat_query_path()
+    # Use user-specific HEARTBEAT.md path
+    path = get_heartbeat_query_path(user_id)
     if not path.is_file():
-        logger.debug("heartbeat skipped: no file at %s", path)
+        logger.debug(
+            "heartbeat skipped for user=%s: no file at %s", user_id, path
+        )
         return
 
     query_text = path.read_text(encoding="utf-8").strip()
     if not query_text:
-        logger.debug("heartbeat skipped: empty query file")
+        logger.debug(
+            "heartbeat skipped for user=%s: empty query file", user_id
+        )
         return
 
     # Build request: single user message with query text
@@ -106,8 +129,8 @@ async def run_heartbeat_once(
                 "content": [{"type": "text", "text": query_text}],
             },
         ],
-        "session_id": "main",
-        "user_id": "main",
+        "session_id": f"main:{user_id}",
+        "user_id": user_id,
     }
 
     target = (hb.target or "").strip().lower()
@@ -128,7 +151,7 @@ async def run_heartbeat_once(
             try:
                 await asyncio.wait_for(_run_and_dispatch(), timeout=120)
             except asyncio.TimeoutError:
-                logger.warning("heartbeat run timed out")
+                logger.warning("heartbeat run timed out for user=%s", user_id)
             return
 
     # target main or no last_dispatch: run agent only, no dispatch
@@ -139,4 +162,4 @@ async def run_heartbeat_once(
     try:
         await asyncio.wait_for(_run_only(), timeout=120)
     except asyncio.TimeoutError:
-        logger.warning("heartbeat run timed out")
+        logger.warning("heartbeat run timed out for user=%s", user_id)

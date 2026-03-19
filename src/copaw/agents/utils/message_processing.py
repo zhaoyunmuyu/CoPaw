@@ -21,11 +21,13 @@ from .file_handling import download_file_from_base64, download_file_from_url
 
 logger = logging.getLogger(__name__)
 
+
 # Only allow local paths under this dir (channels save media here).
 # Use function accessor for request-scoped directory resolution
 def _get_allowed_media_root() -> Path:
     """Get allowed media root for current request."""
     return get_request_working_dir() / "media"
+
 
 _ALLOWED_MEDIA_ROOT = None  # Deprecated: use _get_allowed_media_root() instead
 

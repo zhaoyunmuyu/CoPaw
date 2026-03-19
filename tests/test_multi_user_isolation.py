@@ -36,7 +36,11 @@ from copaw.config.utils import get_chats_path
 @pytest.fixture(autouse=True)
 def reset_all_context():
     """Reset all context vars before and after each test."""
-    from copaw.constant import _request_working_dir, _request_secret_dir, _request_user_id
+    from copaw.constant import (
+        _request_working_dir,
+        _request_secret_dir,
+        _request_user_id,
+    )
 
     # Reset to None at start of each test
     token_user = _request_user_id.set(None)
@@ -313,7 +317,9 @@ class TestConfigIsolation:
         result = get_providers_json_path("alice")
         assert result == secret_dir / "alice" / "providers.json"
 
-    def test_get_providers_json_path_with_request_context(self, tmp_copaw_dirs):
+    def test_get_providers_json_path_with_request_context(
+        self, tmp_copaw_dirs
+    ):
         """Test that providers.json path uses request context."""
         from copaw.providers.store import get_providers_json_path
 
@@ -342,8 +348,9 @@ class TestFileOperations:
         try:
             # Verify get_request_working_dir returns correct path
             current_wd = get_request_working_dir()
-            assert current_wd == working_dir / "testuser", \
-                f"Expected {working_dir / 'testuser'}, got {current_wd}"
+            assert (
+                current_wd == working_dir / "testuser"
+            ), f"Expected {working_dir / 'testuser'}, got {current_wd}"
 
             # Import file_io after setting context
             # Note: In real usage, the module is already loaded and uses
@@ -382,9 +389,11 @@ class TestFileOperations:
             )
 
             # result.content[0] is a dict, not an object with .text
-            result_text = result.content[0].get("text", "") \
-                if isinstance(result.content[0], dict) \
+            result_text = (
+                result.content[0].get("text", "")
+                if isinstance(result.content[0], dict)
                 else result.content[0].text
+            )
             assert "test.txt" in result_text
 
         finally:
@@ -421,7 +430,7 @@ class TestAgentInitialization:
         token = set_request_user_id("promptuser")
         try:
             builder = PromptBuilder(
-                working_dir=get_request_working_dir()
+                working_dir=get_request_working_dir(),
             )
 
             assert builder.working_dir == working_dir / "promptuser"
@@ -518,6 +527,7 @@ class TestAutoInitialization:
 
         # Verify content is valid JSON
         import json
+
         with open(result_path) as f:
             data = json.load(f)
         assert "providers" in data or "active_llm" in data
@@ -568,21 +578,21 @@ class TestHttpMiddleware:
             def __init__(self, headers):
                 self.headers = headers
 
-        call_count = {'value': 0}
+        call_count = {"value": 0}
 
         class MockResponse:
             def __init__(self, status_code=200):
                 self.status_code = status_code
 
         async def mock_call_next(_req):
-            call_count['value'] += 1
+            call_count["value"] += 1
             return MockResponse()
 
         request = MockRequest({"x-user-id": "middleware_user"})
         await user_context_middleware(request, mock_call_next)
 
         # Middleware should have called next
-        assert call_count['value'] == 1
+        assert call_count["value"] == 1
 
     @pytest.mark.asyncio
     async def test_user_context_middleware_without_header(self):
@@ -613,10 +623,10 @@ class TestHttpMiddleware:
             def __init__(self, headers):
                 self.headers = headers
 
-        call_count = {'value': 0}
+        call_count = {"value": 0}
 
         async def mock_call_next(_req):
-            call_count['value'] += 1
+            call_count["value"] += 1
             return True
 
         # Using X-CoPaw-User-Id header
@@ -624,7 +634,7 @@ class TestHttpMiddleware:
         await user_context_middleware(request, mock_call_next)
 
         # Should work the same as X-User-ID
-        assert call_count['value'] == 1
+        assert call_count["value"] == 1
 
     @pytest.mark.asyncio
     async def test_user_context_middleware_triggers_auto_init(
@@ -663,7 +673,9 @@ class TestHttpMiddleware:
         user_secret = get_secret_dir(user_id)
 
         assert user_wd.exists(), f"User working dir should exist: {user_wd}"
-        assert user_secret.exists(), f"User secret dir should exist: {user_secret}"
+        assert (
+            user_secret.exists()
+        ), f"User secret dir should exist: {user_secret}"
 
         # Verify config.json was created
         config_path = user_wd / "config.json"
@@ -671,7 +683,9 @@ class TestHttpMiddleware:
 
         # Verify providers.json was created
         providers_path = user_secret / "providers.json"
-        assert providers_path.exists(), f"providers.json should exist: {providers_path}"
+        assert (
+            providers_path.exists()
+        ), f"providers.json should exist: {providers_path}"
 
 
 class TestMemoryManagerIsolation:
@@ -692,7 +706,9 @@ class TestMemoryManagerIsolation:
         finally:
             reset_request_user_id(token)
 
-    def test_memory_manager_path_override_in_query_handler(self, tmp_copaw_dirs):
+    def test_memory_manager_path_override_in_query_handler(
+        self, tmp_copaw_dirs
+    ):
         """Test that query_handler properly overrides MemoryManager paths."""
         from unittest.mock import MagicMock, PropertyMock
 
@@ -702,7 +718,9 @@ class TestMemoryManagerIsolation:
         mock_memory_manager = MagicMock()
         mock_memory_manager.working_path = working_dir / "original"
         mock_memory_manager.memory_path = working_dir / "original" / "memory"
-        mock_memory_manager.tool_result_path = working_dir / "original" / "tool_result"
+        mock_memory_manager.tool_result_path = (
+            working_dir / "original" / "tool_result"
+        )
 
         # Set user context
         token = set_request_user_id("pathoverrideuser")
@@ -719,9 +737,18 @@ class TestMemoryManagerIsolation:
             mock_memory_manager.tool_result_path = request_wd / "tool_result"
 
             # Verify paths were overridden
-            assert mock_memory_manager.working_path == working_dir / "pathoverrideuser"
-            assert mock_memory_manager.memory_path == working_dir / "pathoverrideuser" / "memory"
-            assert mock_memory_manager.tool_result_path == working_dir / "pathoverrideuser" / "tool_result"
+            assert (
+                mock_memory_manager.working_path
+                == working_dir / "pathoverrideuser"
+            )
+            assert (
+                mock_memory_manager.memory_path
+                == working_dir / "pathoverrideuser" / "memory"
+            )
+            assert (
+                mock_memory_manager.tool_result_path
+                == working_dir / "pathoverrideuser" / "tool_result"
+            )
 
             # Restore paths
             (
@@ -732,8 +759,14 @@ class TestMemoryManagerIsolation:
 
             # Verify paths were restored
             assert mock_memory_manager.working_path == working_dir / "original"
-            assert mock_memory_manager.memory_path == working_dir / "original" / "memory"
-            assert mock_memory_manager.tool_result_path == working_dir / "original" / "tool_result"
+            assert (
+                mock_memory_manager.memory_path
+                == working_dir / "original" / "memory"
+            )
+            assert (
+                mock_memory_manager.tool_result_path
+                == working_dir / "original" / "tool_result"
+            )
         finally:
             reset_request_user_id(token)
 
@@ -768,7 +801,9 @@ class TestMemoryManagerLRUCache:
             await runner.shutdown_handler()
 
     @pytest.mark.asyncio
-    async def test_cache_hit_returns_existing_memory_manager(self, tmp_copaw_dirs):
+    async def test_cache_hit_returns_existing_memory_manager(
+        self, tmp_copaw_dirs
+    ):
         """Test that cache hit returns existing MemoryManager."""
         from copaw.app.runner.runner import AgentRunner
 
@@ -796,14 +831,18 @@ class TestMemoryManagerLRUCache:
             await runner.shutdown_handler()
 
     @pytest.mark.asyncio
-    async def test_lru_eviction_when_cache_full(self, tmp_copaw_dirs, monkeypatch):
+    async def test_lru_eviction_when_cache_full(
+        self, tmp_copaw_dirs, monkeypatch
+    ):
         """Test LRU eviction when cache exceeds max size."""
         from copaw.app.runner.runner import AgentRunner
 
         working_dir, _ = tmp_copaw_dirs
 
         # Set small cache size for testing
-        monkeypatch.setattr("copaw.app.runner.runner.COPAW_MM_CACHE_MAX_SIZE", 3)
+        monkeypatch.setattr(
+            "copaw.app.runner.runner.COPAW_MM_CACHE_MAX_SIZE", 3
+        )
 
         runner = AgentRunner()
         # Override cache max size
@@ -852,15 +891,25 @@ class TestMemoryManagerLRUCache:
 
         try:
             # Add users in order
-            await runner._get_memory_manager_for_user("userA", working_dir / "userA")
-            await runner._get_memory_manager_for_user("userB", working_dir / "userB")
-            await runner._get_memory_manager_for_user("userC", working_dir / "userC")
+            await runner._get_memory_manager_for_user(
+                "userA", working_dir / "userA"
+            )
+            await runner._get_memory_manager_for_user(
+                "userB", working_dir / "userB"
+            )
+            await runner._get_memory_manager_for_user(
+                "userC", working_dir / "userC"
+            )
 
             # Access userA again - moves to end
-            await runner._get_memory_manager_for_user("userA", working_dir / "userA")
+            await runner._get_memory_manager_for_user(
+                "userA", working_dir / "userA"
+            )
 
             # Now add userD - should evict userB (oldest)
-            await runner._get_memory_manager_for_user("userD", working_dir / "userD")
+            await runner._get_memory_manager_for_user(
+                "userD", working_dir / "userD"
+            )
 
             # userB should be evicted, userA should remain
             assert "userB" not in runner._memory_manager_cache
@@ -869,7 +918,9 @@ class TestMemoryManagerLRUCache:
             await runner.shutdown_handler()
 
     @pytest.mark.asyncio
-    async def test_shutdown_closes_all_cached_memory_managers(self, tmp_copaw_dirs):
+    async def test_shutdown_closes_all_cached_memory_managers(
+        self, tmp_copaw_dirs
+    ):
         """Test that shutdown closes all cached MemoryManager instances."""
         from copaw.app.runner.runner import AgentRunner
 
@@ -879,8 +930,12 @@ class TestMemoryManagerLRUCache:
 
         try:
             # Create multiple MemoryManagers
-            await runner._get_memory_manager_for_user("shutdownuser1", working_dir / "shutdownuser1")
-            await runner._get_memory_manager_for_user("shutdownuser2", working_dir / "shutdownuser2")
+            await runner._get_memory_manager_for_user(
+                "shutdownuser1", working_dir / "shutdownuser1"
+            )
+            await runner._get_memory_manager_for_user(
+                "shutdownuser2", working_dir / "shutdownuser2"
+            )
 
             assert len(runner._memory_manager_cache) == 2
 
@@ -1020,7 +1075,9 @@ class TestChatsIsolation:
 
         token = set_request_user_id("testuser")
         try:
-            result = await chat_manager.create_chat(chat_spec, user_id="testuser")
+            result = await chat_manager.create_chat(
+                chat_spec, user_id="testuser"
+            )
             assert result is not None
 
             # Verify the chat was saved to user's directory
@@ -1068,7 +1125,9 @@ class TestChatsIsolation:
         # (different files, so chat won't exist in other's repo)
         token_other = set_request_user_id("other")
         try:
-            result = await chat_manager.get_chat(owner_chat.id, user_id="other")
+            result = await chat_manager.get_chat(
+                owner_chat.id, user_id="other"
+            )
             # Should return None since the chat doesn't exist in other's file
             assert result is None
         finally:

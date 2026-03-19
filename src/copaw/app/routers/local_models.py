@@ -211,6 +211,7 @@ async def _run_download_in_background(
             result=result_dict,
         )
         await push_store_append(
+            None,  # Use default user
             "console",
             f"Model downloaded: {info.display_name}",
         )
@@ -222,6 +223,7 @@ async def _run_download_in_background(
             error=str(exc),
         )
         await push_store_append(
+            None,  # Use default user
             "console",
             f"Model download failed: {body.repo_id} — {exc}",
         )

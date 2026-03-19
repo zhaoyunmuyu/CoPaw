@@ -157,7 +157,9 @@ def build_system_prompt_from_working_dir() -> str:
     """
     from ..constant import get_request_working_dir
 
-    builder = PromptBuilder(working_dir=get_request_working_dir())  # Use request-scoped
+    builder = PromptBuilder(
+        working_dir=get_request_working_dir()
+    )  # Use request-scoped
     return builder.build()
 
 

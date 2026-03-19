@@ -142,30 +142,6 @@ PROVIDER_ANTHROPIC = ProviderDefinition(
     chat_model="AnthropicChatModel",
 )
 
-
-def _default_ollama_base_url() -> str:
-    """Derive the default Ollama base URL from ``OLLAMA_HOST`` env var.
-
-    Falls back to ``http://localhost:11434/v1`` when the variable is unset.
-    The ``/v1`` suffix is appended later by the normalization step in
-    ``store._normalize_ollama_base_url`` if missing.
-    """
-    host = os.environ.get("OLLAMA_HOST", "").strip()
-    if not host:
-        return "http://localhost:11434/v1"
-    if not host.startswith(("http://", "https://")):
-        host = f"http://{host}"
-    return host
-
-
-PROVIDER_OLLAMA = ProviderDefinition(
-    id="ollama",
-    name="Ollama",
-    default_base_url=_default_ollama_base_url(),
-    api_key_prefix="",
-    models=[],
-)
-
 _BUILTIN_IDS: frozenset[str] = frozenset(
     [
         "modelscope",
@@ -174,7 +150,6 @@ _BUILTIN_IDS: frozenset[str] = frozenset(
         "openai",
         "azure-openai",
         "anthropic",
-        "ollama",
         "llamacpp",
         "mlx",
     ],
@@ -187,7 +162,6 @@ PROVIDERS: dict[str, ProviderDefinition] = {
     PROVIDER_OPENAI.id: PROVIDER_OPENAI,
     PROVIDER_AZURE_OPENAI.id: PROVIDER_AZURE_OPENAI,
     PROVIDER_ANTHROPIC.id: PROVIDER_ANTHROPIC,
-    PROVIDER_OLLAMA.id: PROVIDER_OLLAMA,
     PROVIDER_LLAMACPP.id: PROVIDER_LLAMACPP,
     PROVIDER_MLX.id: PROVIDER_MLX,
 }
@@ -316,32 +290,6 @@ def sync_local_models() -> None:
         PROVIDER_MLX.models = mlx_models
     except ImportError:
         # local_models dependencies not installed; leave model lists empty
-        pass
-
-
-def sync_ollama_models(host: Optional[str] = None) -> None:
-    """Refresh Ollama provider model list from the Ollama daemon.
-
-    Models are derived from ``ollama.list()`` via :class:`OllamaModelManager`.
-    If the SDK is not installed or the daemon is unavailable, the list is
-    left unchanged.
-
-    Args:
-        host: Optional Ollama native host URL (e.g. ``http://remote:11434``).
-            When *None*, the SDK default (localhost) is used.
-    """
-    try:
-        from ..providers.ollama_manager import OllamaModelManager
-
-        models: list[ModelInfo] = []
-        for model in OllamaModelManager.list_models(host=host):
-            models.append(ModelInfo(id=model.name, name=model.name))
-        PROVIDER_OLLAMA.models = models
-    except ImportError:
-        # Ollama SDK not installed; treat as having no models
-        PROVIDER_OLLAMA.models = []
-    except Exception:
-        # Any other error (e.g. daemon not running) — keep previous list.
         pass
 
 

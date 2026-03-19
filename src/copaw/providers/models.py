@@ -97,16 +97,11 @@ class ProvidersData(BaseModel):
         """Determine if a provider is configured/available.
 
         - Local providers are always configured (no credentials needed).
-        - Ollama is configured if it has base_url set.
         - Custom providers need base_url.
         - Built-in remote providers are configured if they exist in settings.
         """
         if defn.is_local:
             return True
-
-        if defn.id == "ollama":
-            s = self.providers.get(defn.id)
-            return bool(s and s.base_url) if s else False
 
         cpd = self.custom_providers.get(defn.id)
         if cpd is not None:

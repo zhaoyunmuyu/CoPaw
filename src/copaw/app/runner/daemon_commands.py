@@ -50,6 +50,7 @@ class DaemonContext:
     def __post_init__(self):
         if self.working_dir is None:
             self.working_dir = get_runtime_working_dir()
+
     load_config_fn: Callable[[], Any] = load_config
     memory_manager: Optional[Any] = None
     # Optional: async restart (channels, cron, MCP) in-process.

@@ -28,12 +28,9 @@ from .registry import (
     register_custom_provider,
     sync_custom_providers,
     sync_local_models,
-    sync_ollama_models,
     unregister_custom_provider,
     validate_custom_provider_id,
 )
-
-from .ollama_manager import _base_url_to_host as _base_url_to_ollama_host
 
 logger = logging.getLogger(__name__)
 
@@ -112,13 +109,6 @@ def get_providers_json_path(user_id: str | None = None) -> Path:
     return get_request_secret_dir() / "providers.json"
 
 
-def get_ollama_host() -> Optional[str]:
-    """Return the configured Ollama native host URL, or *None* for default."""
-    data = load_providers_json()
-    s = data.providers.get("ollama")
-    return _base_url_to_ollama_host(s.base_url) if s and s.base_url else None
-
-
 def _normalize_chat_model_name(chat_model: Optional[str]) -> str:
     """Validate and normalize chat model class name."""
     normalized = (chat_model or "").strip()
@@ -163,39 +153,12 @@ def _ensure_base_url(settings: ProviderSettings, defn) -> None:
         settings.base_url = defn.default_base_url
 
 
-def _normalize_ollama_base_url(base_url: str) -> str:
-    """Normalize Ollama OpenAI-compatible endpoint to include /v1.
-
-    Older configs may use http://localhost:11434 (missing /v1), which leads
-    to OpenAI client requests returning 404.
-    """
-    value = (base_url or "").strip()
-    if not value:
-        return value
-
-    try:
-        parts = urlsplit(value)
-    except ValueError:
-        return value
-
-    path = parts.path or ""
-    if path in ("", "/"):
-        path = "/v1"
-    elif path == "/v1/":
-        path = "/v1"
-
-    return urlunsplit(
-        (parts.scheme, parts.netloc, path, parts.query, parts.fragment),
-    )
-
-
 def _normalize_special_provider_settings(
     provider_id: str,
     settings: ProviderSettings,
 ) -> None:
     """Apply provider-specific settings normalization."""
-    if provider_id == "ollama" and settings.base_url:
-        settings.base_url = _normalize_ollama_base_url(settings.base_url)
+    pass
 
 
 def _build_remote_provider_headers(
@@ -300,38 +263,13 @@ def _parse_legacy_format(raw: dict):
 
 
 def _validate_active_llm(data: ProvidersData) -> None:
-    """Clear active_llm if its provider is not configured or stale.
-
-    For the special built-in provider ``ollama``, we additionally verify that
-    the configured model still exists in the running Ollama daemon and clear
-    the slot if it does not.
-    """
+    """Clear active_llm if its provider is not configured or stale."""
     pid = data.active_llm.provider_id
     if not pid:
         return
     defn = PROVIDERS.get(pid)
     if defn is None or not data.is_configured(defn):
         data.active_llm = ModelSlotConfig()
-        return
-
-    # Extra validation for Ollama: ensure the active model still exists.
-    if defn.id == "ollama" and data.active_llm.model:
-        try:
-            from ..providers.ollama_manager import OllamaModelManager
-
-            s = data.providers.get("ollama")
-            host = (
-                _base_url_to_ollama_host(s.base_url)
-                if s and s.base_url
-                else None
-            )
-            names = {m.name for m in OllamaModelManager.list_models(host=host)}
-            if data.active_llm.model not in names:
-                data.active_llm = ModelSlotConfig()
-        except Exception:
-            # If Ollama is not reachable, leave the active slot as-is; the
-            # runtime will surface any connectivity errors when used.
-            pass
 
 
 def _ensure_all_providers(providers: dict[str, ProviderSettings]) -> None:
@@ -382,14 +320,6 @@ def load_providers_json(path: Optional[Path] = None) -> ProvidersData:
 
     sync_custom_providers(custom_providers)
     sync_local_models()
-
-    _ollama_s = providers.get("ollama")
-    _ollama_host = (
-        _base_url_to_ollama_host(_ollama_s.base_url)
-        if _ollama_s and _ollama_s.base_url
-        else None
-    )
-    sync_ollama_models(host=_ollama_host)
     _ensure_all_providers(providers)
 
     data = ProvidersData(
@@ -589,11 +519,6 @@ def add_model(provider_id: str, model: ModelInfo) -> ProvidersData:
         raise ValueError(f"Provider '{provider_id}' not found.")
 
     if is_builtin(provider_id):
-        if provider_id == "ollama":
-            raise ValueError(
-                "Cannot add models to built-in provider 'ollama'. "
-                "Ollama models are managed by the Ollama daemon itself.",
-            )
         settings = data.providers.setdefault(
             provider_id,
             ProviderSettings(base_url=defn.default_base_url),
@@ -630,11 +555,6 @@ def remove_model(provider_id: str, model_id: str) -> ProvidersData:
         raise ValueError(f"Provider '{provider_id}' not found.")
 
     if is_builtin(provider_id):
-        if provider_id == "ollama":
-            raise ValueError(
-                "Cannot remove models from built-in provider 'ollama'. "
-                "Ollama models are managed by the Ollama daemon itself.",
-            )
         if any(m.id == model_id for m in defn.models):
             raise ValueError(
                 f"Model '{model_id}' is a built-in model of "
@@ -706,10 +626,6 @@ def _merge_discovered_models(
     added_count = 0
 
     if is_builtin(provider_id):
-        # Ollama models come from daemon sync and should not be persisted here.
-        if provider_id == "ollama":
-            return 0
-
         settings = data.providers.setdefault(
             provider_id,
             ProviderSettings(base_url=defn.default_base_url),
@@ -771,30 +687,6 @@ async def discover_provider_models(
             "models": list(defn.models),
             "added_count": 0,
         }
-
-    # Ollama model list comes from daemon (possibly remote).
-    if provider_id == "ollama":
-        try:
-            from .ollama_manager import OllamaModelManager
-
-            host = get_ollama_host()
-            models = [
-                ModelInfo(id=m.name, name=m.name)
-                for m in OllamaModelManager.list_models(host=host)
-            ]
-            return {
-                "success": True,
-                "message": f"Discovered {len(models)} Ollama model(s).",
-                "models": models,
-                "added_count": 0,
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "message": f"Failed to query Ollama models: {str(e)}",
-                "models": [],
-                "added_count": 0,
-            }
 
     try:
         import httpx
@@ -1016,38 +908,6 @@ async def test_provider_connection(
                 "message": f"{defn.name} has no models available.",
             }
 
-    # Ollama special handling - check daemon connectivity
-    if provider_id == "ollama":
-        try:
-            from .ollama_manager import OllamaModelManager
-
-            effective_url = base_url
-            if not effective_url:
-                s = data.providers.get("ollama")
-                effective_url = s.base_url if s else None
-            host = (
-                _base_url_to_ollama_host(effective_url)
-                if effective_url
-                else None
-            )
-            models = OllamaModelManager.list_models(host=host)
-            return {
-                "success": True,
-                "message": (
-                    f"Ollama daemon is reachable with {len(models)} model(s)."
-                ),
-            }
-        except ImportError:
-            return {
-                "success": False,
-                "message": "Ollama Python SDK is not installed.",
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "message": f"Ollama daemon is not reachable: {str(e)}",
-            }
-
     # Remote providers - test API credentials
     # Use provided credentials or fall back to saved config
     if not base_url or not api_key:
@@ -1249,36 +1109,6 @@ async def test_model_connection(
             "success": False,
             "message": f"Model '{model_id}' is not available.",
         }
-
-    # Ollama special handling
-    if provider_id == "ollama":
-        try:
-            from .ollama_manager import OllamaModelManager
-
-            s = data.providers.get("ollama")
-            host = (
-                _base_url_to_ollama_host(s.base_url)
-                if s and s.base_url
-                else None
-            )
-            models = OllamaModelManager.list_models(host=host)
-            for model in models:
-                if model.name == model_id:
-                    return {
-                        "success": True,
-                        "message": (
-                            f"Model '{model_id}' is available in Ollama."
-                        ),
-                    }
-            return {
-                "success": False,
-                "message": f"Model '{model_id}' is not found in Ollama.",
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "message": f"Ollama error: {str(e)}",
-            }
 
     # Remote providers - test the complete call chain
     if not data.is_configured(defn):
@@ -1487,8 +1317,14 @@ def ensure_providers_json(user_id: str | None = None) -> Path:
 
     # Create default providers configuration
     # Use first available provider as default (dashscope preferred)
-    default_provider_key = "dashscope" if "dashscope" in PROVIDERS else next(iter(PROVIDERS.keys()), None)
-    default_provider = PROVIDERS.get(default_provider_key) if default_provider_key else None
+    default_provider_key = (
+        "dashscope"
+        if "dashscope" in PROVIDERS
+        else next(iter(PROVIDERS.keys()), None)
+    )
+    default_provider = (
+        PROVIDERS.get(default_provider_key) if default_provider_key else None
+    )
 
     if default_provider:
         providers_data = ProvidersData(
@@ -1497,12 +1333,14 @@ def ensure_providers_json(user_id: str | None = None) -> Path:
                     enabled=True,
                     api_key_env=None,  # User must set via UI/CLI
                     models=default_provider.models,
-                )
+                ),
             },
             custom_providers={},
             active_llm=ModelSlotConfig(
                 provider_id=default_provider_key,
-                model=default_provider.models[0].id if default_provider.models else None,
+                model=default_provider.models[0].id
+                if default_provider.models
+                else None,
             ),
         )
     else:

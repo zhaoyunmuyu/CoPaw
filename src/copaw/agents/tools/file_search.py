@@ -10,6 +10,8 @@ from typing import Optional
 from agentscope.message import TextBlock
 from agentscope.tool import ToolResponse
 
+from ...constant import get_request_working_dir
+from .file_io import _resolve_file_path
 from .path_validator import PathValidator
 
 # Skip binary / large files
