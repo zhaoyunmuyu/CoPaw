@@ -69,46 +69,73 @@ class S3BackupClient:
         if date:
             prefix = f"{self.prefix}/{date}/"
 
-        response = self._s3.list_objects_v2(Bucket=self.bucket, Prefix=prefix)
-
-        if "Contents" not in response:
-            return {"dates": [], "backups": {}}
-
         backups = {}
-        for obj in response["Contents"]:
-            key = obj["Key"]
-            # Parse key: cmbswe/{date}/{user_id}.zip
-            parts = key.replace(f"{self.prefix}/", "").split("/")
-            if len(parts) != 2 or not parts[1].endswith(".zip"):
-                continue
+        continuation_token = None
 
-            backup_date = parts[0]
-            backup_user_id = parts[1].replace(".zip", "")
+        while True:
+            params = {"Bucket": self.bucket, "Prefix": prefix}
+            if continuation_token:
+                params["ContinuationToken"] = continuation_token
 
-            if user_id and backup_user_id != user_id:
-                continue
+            response = self._s3.list_objects_v2(**params)
 
-            if backup_date not in backups:
-                backups[backup_date] = {}
+            if "Contents" in response:
+                for obj in response["Contents"]:
+                    key = obj["Key"]
+                    # Parse key: cmbswe/{date}/{user_id}.zip
+                    parts = key.replace(f"{self.prefix}/", "").split("/")
+                    if len(parts) != 2 or not parts[1].endswith(".zip"):
+                        continue
 
-            backups[backup_date][backup_user_id] = {
-                "s3_key": key,
-                "size": obj["Size"],
-                "last_modified": obj["LastModified"].isoformat(),
-            }
+                    backup_date = parts[0]
+                    backup_user_id = parts[1].replace(".zip", "")
+
+                    if user_id and backup_user_id != user_id:
+                        continue
+
+                    if backup_date not in backups:
+                        backups[backup_date] = {}
+
+                    backups[backup_date][backup_user_id] = {
+                        "s3_key": key,
+                        "size": obj["Size"],
+                        "last_modified": obj["LastModified"].isoformat(),
+                    }
+
+            if not response.get("IsTruncated"):
+                break
+            continuation_token = response.get("NextContinuationToken")
 
         dates = sorted(backups.keys(), reverse=True)
         return {"dates": dates, "backups": backups}
 
     def get_backup_key(self, date: str, user_id: str) -> str:
-        """Get full S3 key for a backup."""
+        """Get full S3 key for a backup.
+
+        Args:
+            date: Date folder (YYYY-MM-DD)
+            user_id: User identifier
+
+        Returns:
+            Full S3 key including prefix
+        """
         return f"{self.prefix}/{date}/{user_id}.zip"
 
     def backup_exists(self, date: str, user_id: str) -> bool:
-        """Check if a backup exists in S3."""
+        """Check if a backup exists in S3.
+
+        Args:
+            date: Date folder (YYYY-MM-DD)
+            user_id: User identifier
+
+        Returns:
+            True if backup exists, False otherwise
+        """
         key = self.get_backup_key(date, user_id)
         try:
             self._s3.head_object(Bucket=self.bucket, Key=key)
             return True
-        except ClientError:
-            return False
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "404":
+                return False
+            raise
