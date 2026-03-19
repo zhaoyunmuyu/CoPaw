@@ -264,8 +264,8 @@ def _build_spec_from_cli(
 )
 @click.option(
     "--timezone",
-    default="UTC",
-    help="Timezone for the cron schedule (e.g. UTC, America/New_York).",
+    default="Asia/Shanghai",
+    help="Timezone for the cron schedule (e.g. Asia/Shanghai, UTC, America/New_York).",
 )
 @click.option(
     "--enabled/--no-enabled",

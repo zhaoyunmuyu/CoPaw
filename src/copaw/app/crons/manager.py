@@ -5,7 +5,7 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Set
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -612,5 +612,6 @@ class CronManager:
                 )
                 raise
             finally:
-                st.last_run_at = datetime.utcnow()
+                # Use scheduler's timezone for consistency with next_run_at
+                st.last_run_at = datetime.now(self._scheduler.timezone)
                 self._states[user_id][job.id] = st

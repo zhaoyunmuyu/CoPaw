@@ -57,7 +57,7 @@ copaw cron create [选项]
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `--timezone <时区>` | `UTC` | 时区，如 `Asia/Shanghai` |
+| `--timezone <时区>` | `Asia/Shanghai` | 时区，如 `UTC`、`America/New_York` |
 | `--enabled` / `--no-enabled` | `--enabled` | 是否启用任务 |
 | `--mode <stream\|final>` | `final` | `stream`实时发送/`final`只发最终结果 |
 
