@@ -29,6 +29,9 @@ def _copy_default_config_files(
     """
     copied_files: list[str] = []
 
+    # Ensure destination directory exists
+    dst_dir.mkdir(parents=True, exist_ok=True)
+
     # Copy providers.json from secret directory
     src_providers = src_dir / "providers.json"
     dst_providers = dst_dir / "providers.json"

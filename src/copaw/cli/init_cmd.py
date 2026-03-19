@@ -119,8 +119,17 @@ def init_cmd(
     user_id: str | None,
 ) -> None:
     """Create working dir with config.json and HEARTBEAT.md (interactive)."""
-    # Set runtime user directory
-    from ..constant import set_current_user
+    from ..constant import (
+        set_current_user,
+        DEFAULT_WORKING_DIR,
+        DEFAULT_SECRET_DIR,
+    )
+
+    # When --user-id is specified, auto-enable non-interactive mode
+    if user_id and not use_defaults:
+        use_defaults = True
+        accept_security = True
+        click.echo(f"User ID: {user_id} (auto non-interactive mode)")
 
     set_current_user(user_id)
 
@@ -149,6 +158,46 @@ def init_cmd(
             )
             raise click.Abort()
     working_dir.mkdir(parents=True, exist_ok=True)
+
+    # --- For non-default user: copy from default user if exists ---
+    if user_id and user_id != "default":
+        default_working_dir = DEFAULT_WORKING_DIR / "default"
+        default_secret_dir = DEFAULT_SECRET_DIR / "default"
+
+        if default_working_dir.exists() or default_secret_dir.exists():
+            click.echo("\n=== Copying from default user ===")
+            from ..agents.utils.setup_utils import (
+                _copy_default_config_files,
+                _copy_default_working_files,
+            )
+
+            copied_working = []
+            copied_secret = []
+
+            if default_working_dir.exists():
+                copied_working = _copy_default_working_files(
+                    default_working_dir, working_dir
+                )
+                if copied_working:
+                    click.echo(
+                        f"✓ Copied from default working dir: {', '.join(copied_working)}"
+                    )
+
+            if default_secret_dir.exists():
+                copied_secret = _copy_default_config_files(
+                    default_secret_dir,
+                    DEFAULT_SECRET_DIR / user_id,
+                )
+                if copied_secret:
+                    click.echo(
+                        f"✓ Copied from default secret dir: {', '.join(copied_secret)}"
+                    )
+
+            if copied_working or copied_secret:
+                click.echo("\n✓ Initialization complete!")
+                return
+            else:
+                click.echo("No files copied from default user, using templates...")
 
     # --- Copy init config files (config.json and providers.json) ---
     from ..agents.utils.setup_utils import copy_init_config_files
