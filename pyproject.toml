@@ -56,6 +56,8 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "pre-commit>=4.2.0",
     "pytest-cov>=6.2.1",
+    "bandit>=1.7.9",
+    "flake8-bugbear>=23.0.0",
 ]
 local = [
     "huggingface_hub>=0.20.0",
@@ -79,3 +81,10 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
+
+[tool.bandit]
+# Bandit configuration for security scanning
+exclude_dirs = ["tests", ".venv", "venv", "build", "dist"]
+# Severity levels: LOW, MEDIUM, HIGH
+# Confidence levels: LOW, MEDIUM, HIGH
+skips = ["B101"]  # Skip assert_used checks (common in Python patterns)

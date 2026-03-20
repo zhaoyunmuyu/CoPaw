@@ -61,8 +61,15 @@ repos:
     rev: 6.1.0
     hooks:
       - id: flake8
-        args: [ "--extend-ignore=E203"]
+        args: [ "--extend-ignore=E203", "--max-complexity=15"]
+        additional_dependencies: ["flake8-bugbear>=23.0.0"]
         exclude: '(?x)(.*/skills/.*|^scripts/pack/)'
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.9
+    hooks:
+      - id: bandit
+        args: ["-iii", "-ll", "-c", "pyproject.toml"]
+        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^tests/)'
   - repo: https://github.com/pylint-dev/pylint
     rev: v3.0.2
     hooks:
@@ -78,10 +85,15 @@ repos:
           | .*/skills/.*
           )
         args: [
-          --max-complexity=15,
+          # Enabled key rules for code quality:
+          # E0101: return-in-init, E0105: return-in-generator
+          # E0104/E0106: yield outside function, E0711: notimplemented-raised
+          # E0710: catching-non-exception, E0702: raising-bad-type
+          # E0107: duplicate-argument-name, R1710: inconsistent-return-statements
+          # E0213: no-self-argument, E0603: undefined-all-variable
+          --max-line-length=79,
           --disable=W0511,
           --disable=W0718,
-          --disable=W0122,
           --disable=C0103,
           --disable=R0913,
           --disable=E0401,
@@ -108,9 +120,9 @@ repos:
           --disable=C0302,
           --disable=W1203,
           --disable=C2801,
-          --disable=C0114,  # Disable missing module docstring for quick dev
-          --disable=C0115,  # Disable missing class docstring for quick dev
-          --disable=C0116,  # Disable missing function or method docstring for quick dev
+          --disable=C0114,
+          --disable=C0115,
+          --disable=C0116,
         ]
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: 'v3.0.0'
