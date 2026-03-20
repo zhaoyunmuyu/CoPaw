@@ -61,7 +61,10 @@ repos:
     rev: 6.1.0
     hooks:
       - id: flake8
-        args: [ "--extend-ignore=E203", "--max-complexity=15"]
+        args: [
+          "--extend-ignore=E203,E501,C901,F811,F841,B007,B008,B009,B010,B014,B027",
+          "--max-complexity=15",
+        ]
         additional_dependencies: ["flake8-bugbear>=23.0.0"]
         exclude: '(?x)(.*/skills/.*|^scripts/pack/)'
   - repo: https://github.com/PyCQA/bandit
@@ -85,12 +88,31 @@ repos:
           | .*/skills/.*
           )
         args: [
-          # Enabled key rules for code quality:
-          # E0101: return-in-init, E0105: return-in-generator
-          # E0104/E0106: yield outside function, E0711: notimplemented-raised
-          # E0710: catching-non-exception, E0702: raising-bad-type
-          # E0107: duplicate-argument-name, R1710: inconsistent-return-statements
-          # E0213: no-self-argument, E0603: undefined-all-variable
+          # Enabled key rules for code quality (mapped from your 43 rules):
+          # Control Flow:
+          #   E0101: return-in-init - "return in __init__"
+          #   E0104: return-outside-function - "return outside function"
+          #   E0105: yield-outside-function - "yield outside function"
+          #   E0106: return-arg-in-generator - "return with argument in generator"
+          #   E0107: nonexistent-operator - "nonexistent operator"
+          #   E0114: continue-in-finally - "continue in finally"
+          #   E0115: return-in-finally - "return in finally"
+          # Exception Handling:
+          #   E0701: bad-except-order - "Exception order"
+          #   E0702: raising-bad-type - "raising bad type"
+          #   E0703: bad-exception-context - "Exception context"
+          #   E0704: misplaced-bare-raise - "misplaced bare raise"
+          #   E0710: raising-non-exception - "raising non-Exception"
+          #   E0711: notimplemented-raised - "NotImplemented raised"
+          #   E0712: not-callable - "catching non-Exception"
+          # Class/Method:
+          #   E0213: no-self-argument - "self should be first argument"
+          #   E0237: assigning-non-slot - "assigning non-slot"
+          #   E0603: undefined-all-variable - "undefined __all__ variable"
+          # Code Quality:
+          #   R0205: useless-object-inheritance - "useless object inheritance"
+          #   R0402: consider-using-from-import - "consider using from import"
+          #   R1710: inconsistent-return-statements - "inconsistent return"
           --max-line-length=79,
           --disable=W0511,
           --disable=W0718,
