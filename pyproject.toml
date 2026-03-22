@@ -25,6 +25,8 @@ dependencies = [
     "twilio>=9.10.2",
     "pywebview>=4.0",
     "boto3>=1.34.0",
+    "redis>=5.0.0",
+    "portalocker>=2.7.0",
 ]
 
 [tool.setuptools.dynamic]
