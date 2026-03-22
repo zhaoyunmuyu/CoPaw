@@ -274,3 +274,38 @@ DASHSCOPE_BASE_URL = os.environ.get(
 # Example: COPAW_CORS_ORIGINS="http://localhost:5173,http://127.0.0.1:5173"
 # When unset, CORS middleware is not applied.
 CORS_ORIGINS = os.environ.get("COPAW_CORS_ORIGINS", "*").strip()
+
+# ============================================================================
+# Redis configuration
+# ============================================================================
+REDIS_HOST = os.environ.get("COPAW_REDIS_HOST", "localhost")
+REDIS_PORT = int(os.environ.get("COPAW_REDIS_PORT", "6379"))
+REDIS_DB = int(os.environ.get("COPAW_REDIS_DB", "0"))
+REDIS_PASSWORD = os.environ.get("COPAW_REDIS_PASSWORD", "")
+REDIS_SSL = os.environ.get("COPAW_REDIS_SSL", "false").lower() in ("true", "1", "yes")
+
+# ============================================================================
+# Cron lock configuration (for multi-instance coordination)
+# ============================================================================
+CRON_LOCK_ENABLED = os.environ.get("COPAW_CRON_LOCK_ENABLED", "true").lower() in (
+    "true",
+    "1",
+    "yes",
+)
+CRON_LOCK_TTL = int(os.environ.get("COPAW_CRON_LOCK_TTL", "600"))
+CRON_LOCK_PREFIX = os.environ.get("COPAW_CRON_LOCK_PREFIX", "copaw:cron:user:")
+CRON_LOCK_JITTER_MS = int(os.environ.get("COPAW_CRON_LOCK_JITTER_MS", "2000"))
+
+# ============================================================================
+# Instance ID (unique identifier for this process/machine)
+# ============================================================================
+import socket
+import uuid as _uuid
+
+_INSTANCE_ID = os.environ.get("COPAW_INSTANCE_ID", "")
+if not _INSTANCE_ID:
+    try:
+        _INSTANCE_ID = socket.gethostname()
+    except Exception:
+        _INSTANCE_ID = str(_uuid.uuid4())[:8]
+INSTANCE_ID = _INSTANCE_ID
