@@ -63,6 +63,7 @@ class ZhaohuConfig(BaseChannelConfig):
     channel: str = "ZH"
     net: str = "DMZ"
     request_timeout: float = 15.0
+    user_query_url: str = ""
 
 class QQConfig(BaseChannelConfig):
     app_id: str = ""
