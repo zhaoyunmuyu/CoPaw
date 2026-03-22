@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import AsyncGenerator
 
 import portalocker
+from portalocker.exceptions import AlreadyLocked
 
 logger = logging.getLogger(__name__)
 
@@ -35,16 +36,18 @@ async def file_lock(path: Path, mode: str = "r") -> AsyncGenerator:
         await asyncio.to_thread(_ensure_file_exists, path)
 
     fd = None
+    locked = False
     try:
         fd = await asyncio.to_thread(open, path, "r+" if mode == "w" else "r")
         await asyncio.to_thread(portalocker.lock, fd, lock_mode)
+        locked = True
         yield fd
-    except portalocker.LockException:
+    except AlreadyLocked:
         if fd:
             await asyncio.to_thread(fd.close)
         raise
     finally:
-        if fd:
+        if fd and locked:
             await asyncio.to_thread(portalocker.unlock, fd)
             await asyncio.to_thread(fd.close)
 
