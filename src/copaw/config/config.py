@@ -300,6 +300,31 @@ class MCPConfig(BaseModel):
     )
 
 
+class RedisConfig(BaseModel):
+    """Redis connection configuration."""
+
+    host: str = "localhost"
+    port: int = 6379
+    db: int = 0
+    password: str = ""
+    ssl: bool = False
+
+
+class CronLockConfig(BaseModel):
+    """Distributed cron lock configuration for multi-instance deployments."""
+
+    enabled: bool = True
+    ttl: int = 600
+    prefix: str = "copaw:cron:user:"
+    jitter_ms: int = 2000
+
+
+class InstanceConfig(BaseModel):
+    """Instance identification for multi-instance deployments."""
+
+    id: str = ""
+
+
 class Config(BaseModel):
     """Root config (config.json)."""
 
@@ -310,6 +335,9 @@ class Config(BaseModel):
     last_dispatch: Optional[LastDispatchConfig] = None
     # When False, channel output hides tool call/result details (show "...").
     show_tool_details: bool = True
+    redis: RedisConfig = Field(default_factory=RedisConfig)
+    cron_lock: CronLockConfig = Field(default_factory=CronLockConfig)
+    instance: InstanceConfig = Field(default_factory=InstanceConfig)
 
 
 ChannelConfigUnion = Union[
