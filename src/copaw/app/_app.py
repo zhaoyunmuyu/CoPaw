@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from agentscope_runtime.engine.app import AgentApp
 
 from .runner import AgentRunner
@@ -54,6 +54,34 @@ mimetypes.add_type("application/wasm", ".wasm")
 # Load persisted env vars into os.environ at module import time
 # so they are available before the lifespan starts.
 load_envs_into_environ()
+
+
+async def check_redis() -> bool:
+    """Check Redis connection health."""
+    try:
+        from redis.asyncio import from_url
+        from copaw.constant import REDIS_HOST, REDIS_PORT, REDIS_DB
+
+        client = from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}")
+        await client.ping()
+        await client.close()
+        return True
+    except Exception:
+        return False
+
+
+def check_nas() -> bool:
+    """Check NAS write access."""
+    try:
+        from copaw.constant import DEFAULT_WORKING_DIR
+
+        test_file = DEFAULT_WORKING_DIR / ".health_check"
+        test_file.write_text("ok")
+        test_file.unlink()
+        return True
+    except Exception:
+        return False
+
 
 runner = AgentRunner()
 
@@ -556,6 +584,44 @@ def read_root():
 def get_version():
     """Return the current CoPaw version."""
     return {"version": __version__}
+
+
+@app.get("/health")
+async def health_check():
+    from copaw.constant import INSTANCE_ID
+
+    redis_ok = await check_redis()
+    nas_ok = check_nas()
+    status = "healthy" if redis_ok and nas_ok else "unhealthy"
+    code = 200 if status == "healthy" else 503
+
+    return JSONResponse(
+        status_code=code,
+        content={
+            "status": status,
+            "redis": "connected" if redis_ok else "disconnected",
+            "nas": "writable" if nas_ok else "not_writable",
+            "instance_id": INSTANCE_ID,
+        },
+    )
+
+
+@app.get("/ready")
+async def readiness_check():
+    redis_ok = await check_redis()
+    nas_ok = check_nas()
+
+    if not redis_ok:
+        return JSONResponse(
+            status_code=503,
+            content={"ready": False, "reason": "Redis not ready"},
+        )
+    if not nas_ok:
+        return JSONResponse(
+            status_code=503,
+            content={"ready": False, "reason": "NAS not ready"},
+        )
+    return JSONResponse(content={"ready": True})
 
 
 app.include_router(api_router, prefix="/api")
