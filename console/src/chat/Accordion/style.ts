@@ -7,7 +7,7 @@ export default createGlobalStyle`
   svg {
     transform: scale(1.25);
   }
-  
+
   .anticon-spin::before,
   .anticon-spin {
     animation-duration: 2s;
@@ -110,7 +110,7 @@ export default createGlobalStyle`
       background-color: transparent;
     }
 
-    
+
 
     .${(p) => p.theme.prefixCls}-accordion-group-header-close,
     .${(p) => p.theme.prefixCls}-accordion-group-open {

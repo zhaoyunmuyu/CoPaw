@@ -232,7 +232,7 @@ export default forwardRef(function (_, ref) {
       if (result === AntdUpload.LIST_IGNORE) {
         return;
       }
-      
+
       // Handle Promise return from beforeUpload
       if (result instanceof Promise) {
         result.then((processedFile) => {
@@ -249,7 +249,7 @@ export default forwardRef(function (_, ref) {
         });
         return;
       }
-      
+
       // If beforeUpload returns a File or Blob, use it
       if (result && typeof result === 'object') {
         continueUpload(result as File);

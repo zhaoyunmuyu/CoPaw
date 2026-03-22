@@ -134,7 +134,7 @@ const IndexStyle = createGlobalStyle`
       vertical-align: top;
     }
 
-    
+
   }
 }
 

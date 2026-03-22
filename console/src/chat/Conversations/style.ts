@@ -114,8 +114,8 @@ export default createGlobalStyle`
 
     &:focus-within {
       background-color: ${(p) => p.theme.colorFillTertiary};
-      
-    
+
+
     }
   }
 

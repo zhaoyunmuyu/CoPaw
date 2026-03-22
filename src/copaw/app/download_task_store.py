@@ -236,7 +236,9 @@ async def clear_completed(backend: Optional[str] = None) -> None:
 
 
 async def _delete_task(
-    client: Redis, task_id: str, backend: Optional[str]
+    client: Redis,
+    task_id: str,
+    backend: Optional[str],
 ) -> None:
     """Delete a task from Redis."""
     key = _task_key(task_id)

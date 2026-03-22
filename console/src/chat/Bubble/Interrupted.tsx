@@ -43,7 +43,7 @@ const Style = createGlobalStyle`
   &-interrupted {
     font-size: 16px;
   }
-  
+
 }
 
 `

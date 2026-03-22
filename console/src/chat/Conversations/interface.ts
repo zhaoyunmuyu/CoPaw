@@ -22,7 +22,7 @@ export interface Conversation extends AnyObject {
    * @descriptionEn Timestamp of conversation creation or last activity for sorting and display
    */
   timestamp?: number;
-  
+
 
   /**
    * @description 会话的图标元素，用于视觉识别

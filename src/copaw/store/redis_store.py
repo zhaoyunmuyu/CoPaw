@@ -41,7 +41,11 @@ class ConsolePushStore:
         return f"copaw:push:{user_id}"
 
     async def append(
-        self, user_id: str, session_id: str, text: str, ttl: Optional[int] = None
+        self,
+        user_id: str,
+        session_id: str,
+        text: str,
+        ttl: Optional[int] = None,
     ) -> None:
         """Append a message to user's queue with TTL.
 
@@ -70,7 +74,9 @@ class ConsolePushStore:
             logger.error(f"Failed to append message to {key}: {e}")
             raise
 
-    async def take(self, user_id: str, session_id: str) -> List[Dict[str, Any]]:
+    async def take(
+        self, user_id: str, session_id: str
+    ) -> List[Dict[str, Any]]:
         """Get and remove all messages for a specific session.
 
         Args:
@@ -113,7 +119,7 @@ class ConsolePushStore:
                 await self.redis_client.delete(key)
 
             logger.debug(
-                f"Retrieved {len(messages)} messages for session {session_id} from {key}"
+                f"Retrieved {len(messages)} messages for session {session_id} from {key}",
             )
             return messages
         except Exception as e:
@@ -157,7 +163,9 @@ class ConsolePushStore:
             raise
 
     async def get_recent(
-        self, user_id: str, max_age_seconds: float
+        self,
+        user_id: str,
+        max_age_seconds: float,
     ) -> List[Dict[str, Any]]:
         """Get recent messages without removing them (consume on read).
 
@@ -197,7 +205,7 @@ class ConsolePushStore:
             await self.redis_client.delete(key)
 
             logger.debug(
-                f"Retrieved {len(messages)} recent messages (consumed all) from {key}"
+                f"Retrieved {len(messages)} recent messages (consumed all) from {key}",
             )
             return messages
         except Exception as e:
@@ -243,7 +251,9 @@ class DownloadTaskStore:
         return "copaw:download:index:all"
 
     async def save(
-        self, task: Dict[str, Any], ttl: Optional[int] = None
+        self,
+        task: Dict[str, Any],
+        ttl: Optional[int] = None,
     ) -> None:
         """Save a download task with TTL.
 
@@ -303,7 +313,9 @@ class DownloadTaskStore:
             logger.error(f"Failed to get task {task_id}: {e}")
             raise
 
-    async def get_all(self, backend: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def get_all(
+        self, backend: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """Get all tasks, optionally filtered by backend.
 
         Args:

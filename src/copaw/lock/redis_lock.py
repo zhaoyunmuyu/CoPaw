@@ -99,7 +99,9 @@ class LockRenewalTask:
     async def start(self) -> None:
         """Start the background renewal task."""
         if self._running:
-            logger.warning(f"Lock renewal task already running for {self.lock_key}")
+            logger.warning(
+                f"Lock renewal task already running for {self.lock_key}"
+            )
             return
 
         self._running = True
@@ -119,7 +121,9 @@ class LockRenewalTask:
             try:
                 await asyncio.wait_for(self._task, timeout=5.0)
             except asyncio.TimeoutError:
-                logger.warning(f"Lock renewal task did not stop gracefully for {self.lock_key}")
+                logger.warning(
+                    f"Lock renewal task did not stop gracefully for {self.lock_key}"
+                )
                 self._task.cancel()
                 try:
                     await self._task
@@ -128,7 +132,7 @@ class LockRenewalTask:
 
         logger.debug(
             f"Stopped lock renewal task for {self.lock_key} "
-            f"(total renewals: {self._renewal_count})"
+            f"(total renewals: {self._renewal_count})",
         )
 
     async def _renew_loop(self) -> None:
@@ -141,7 +145,7 @@ class LockRenewalTask:
                 try:
                     await asyncio.wait_for(
                         self._stop_event.wait(),
-                        timeout=renewal_interval
+                        timeout=renewal_interval,
                     )
                     # If we get here, stop was signaled
                     break
@@ -160,36 +164,38 @@ class LockRenewalTask:
                     self._renewal_count += 1
                     logger.debug(
                         f"Renewed lock {self.lock_key} "
-                        f"(renewal #{self._renewal_count})"
+                        f"(renewal #{self._renewal_count})",
                     )
                 else:
                     self._failed_renewals += 1
                     logger.warning(
                         f"Failed to renew lock {self.lock_key} "
-                        f"(failure #{self._failed_renewals})"
+                        f"(failure #{self._failed_renewals})",
                     )
 
                     if self._failed_renewals >= self.max_failed_renewals:
                         logger.error(
                             f"Lock renewal failed {self._failed_renewals} times, "
-                            f"stopping renewal task for {self.lock_key}"
+                            f"stopping renewal task for {self.lock_key}",
                         )
                         self._running = False
                         break
 
             except asyncio.CancelledError:
-                logger.debug(f"Lock renewal task cancelled for {self.lock_key}")
+                logger.debug(
+                    f"Lock renewal task cancelled for {self.lock_key}"
+                )
                 break
             except Exception as e:
                 logger.error(
                     f"Unexpected error in lock renewal for {self.lock_key}: {e}",
-                    exc_info=True
+                    exc_info=True,
                 )
                 self._failed_renewals += 1
 
                 if self._failed_renewals >= self.max_failed_renewals:
                     logger.error(
-                        f"Too many failures, stopping renewal task for {self.lock_key}"
+                        f"Too many failures, stopping renewal task for {self.lock_key}",
                     )
                     self._running = False
                     break
@@ -207,7 +213,7 @@ class LockRenewalTask:
                 1,
                 self.lock_key,
                 self.lock_value,
-                self.ttl
+                self.ttl,
             )
             return bool(result)
         except Exception as e:
@@ -222,9 +228,9 @@ class LockRenewalTask:
             True if renewal is running and healthy, False otherwise
         """
         return (
-            self._running and
-            self._failed_renewals < self.max_failed_renewals and
-            (self._task is not None and not self._task.done())
+            self._running
+            and self._failed_renewals < self.max_failed_renewals
+            and (self._task is not None and not self._task.done())
         )
 
 
@@ -266,7 +272,7 @@ class RedisLock:
                 1,
                 key,
                 value,
-                ttl
+                ttl,
             )
             success = bool(result)
 
@@ -296,7 +302,7 @@ class RedisLock:
                 RELEASE_LOCK_SCRIPT,
                 1,
                 key,
-                value
+                value,
             )
             success = bool(result)
 
@@ -305,7 +311,7 @@ class RedisLock:
             else:
                 logger.warning(
                     f"Failed to release lock {key} - "
-                    f"lock not owned or already expired"
+                    f"lock not owned or already expired",
                 )
 
             return success

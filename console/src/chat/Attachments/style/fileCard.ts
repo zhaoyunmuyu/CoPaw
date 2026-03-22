@@ -128,7 +128,7 @@ export default createGlobalStyle`
 
   &:hover &-remove {
     display: flex;
-    
+
   }
 
   &-status-error {

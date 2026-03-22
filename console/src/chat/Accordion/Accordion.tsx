@@ -76,7 +76,7 @@ function Item(props: IAccordionProps) {
 
   const prefixCls = getPrefixCls('accordion-group');
   const [stateOpen, setStateOpen] = React.useState(props.defaultOpen);
-  
+
   // 支持受控模式：如果提供了 open prop，则使用它；否则使用内部状态
   const isOpen = props.open !== undefined ? props.open : stateOpen;
   const status = props.inline ? 'close' : (isOpen ? 'open' : 'close');

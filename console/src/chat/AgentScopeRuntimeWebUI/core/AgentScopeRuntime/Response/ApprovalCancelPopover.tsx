@@ -118,7 +118,7 @@ function TabSelect(props: TabSelectProps) {
 export default function ApprovalCancelPopover(props: ApprovalCancelPopoverProps) {
   const { t } = useTranslation();
   const defaultOptions = useDefaultOptions();
-  
+
   const {
     options = defaultOptions,
     onConfirm,

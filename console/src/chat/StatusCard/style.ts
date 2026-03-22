@@ -85,7 +85,7 @@ export default createGlobalStyle`
       display: flex;
       justify-content: flex-end;
     }
-  
+
   }
 
   &-statistic {

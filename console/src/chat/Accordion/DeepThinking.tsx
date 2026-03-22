@@ -52,26 +52,26 @@ export default function (props: IDeepThinking) {
   const prefixCls = getPrefixCls('accordion-deep-thinking');
   const isDarkMode = providerTheme?.algorithm === AntdTheme.darkAlgorithm;
   const icon = <img style={{ display: 'block', width: 16, height: 16, filter: isDarkMode ? 'invert(1)  brightness(100%) saturate(0%)' : '' }} src="https://img.alicdn.com/imgextra/i2/O1CN01QZgWRv1I4JM0BAZ9O_!!6000000000839-54-tps-56-56.apng" />
-  
+
   // 构建标题文本
   let titleText = props.title || 'Deep thinking';
   if (props.loading) {
     titleText += '...';
   }
-  
+
   // 构建标题
   const title = props.loading ? (
     <Accordion.SoftLightTitle>{titleText}</Accordion.SoftLightTitle>
   ) : titleText;
 
   // 构建 bodyStyle，添加 maxHeight 支持
-  const bodyStyle: React.CSSProperties = props.maxHeight 
+  const bodyStyle: React.CSSProperties = props.maxHeight
     ? { maxHeight: props.maxHeight, overflowY: 'auto' as const }
     : {};
 
   // 确定默认展开状态：如果设置了 autoCloseOnFinish 且不在 loading 状态，默认关闭
-  const finalDefaultOpen = props.defaultOpen !== undefined 
-    ? props.defaultOpen 
+  const finalDefaultOpen = props.defaultOpen !== undefined
+    ? props.defaultOpen
     : (props.autoCloseOnFinish && !props.loading) ? false : undefined;
 
   return <Accordion

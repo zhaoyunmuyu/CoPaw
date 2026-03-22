@@ -42,7 +42,7 @@ export function cursorExtension() {
       if (!cursor) {
         return;
       }
-      
+
       return {
         type: 'cursor',
         raw: match[0],
@@ -52,7 +52,7 @@ export function cursorExtension() {
     },
     renderer(token) {
       const content = `<custom-cursor data-type="${token.name}"></custom-cursor>`;
-      
+
       return content;
     },
   };

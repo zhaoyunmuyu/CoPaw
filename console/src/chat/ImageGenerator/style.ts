@@ -50,7 +50,7 @@ export default createGlobalStyle`
     &-icon {
       width: 32px;
       height: 32px;
-    } 
+    }
 
     &-content {
       display: flex;
@@ -59,7 +59,7 @@ export default createGlobalStyle`
       align-items: center;
       justify-content: center;
       z-index: 1;
-      
+
     }
 
     &-text {

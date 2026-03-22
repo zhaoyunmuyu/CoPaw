@@ -157,7 +157,7 @@ const Spin = ({
         }
 
         .fluid-background-container {
-          
+
           --s: var(--actual-size);
           --p: calc(var(--s) / 4);
           --radius: calc(var(--s) * 0.25);
@@ -165,7 +165,7 @@ const Spin = ({
           --width: calc(var(--s) * 0.025);
           --duration: calc(8s / ${speed});
           --ai-duration: calc(5.5s / ${speed});
-          
+
           --bg-color: color-mix(in srgb, #7b7bf4, transparent 90%);
           position: absolute;
           inset: 0;

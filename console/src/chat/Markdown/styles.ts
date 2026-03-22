@@ -39,7 +39,7 @@ export default createGlobalStyle`
   .${(p) => p.theme.prefixCls}-codeHighlighter {
     border: 1px solid ${(p) => p.theme.colorBorderSecondary};
     border-radius: ${(p) => p.theme.borderRadiusSM}px;
-    
+
   }
 
   .${(p) => p.theme.prefixCls}-mermaid-graph,
@@ -169,7 +169,7 @@ export default createGlobalStyle`
 
   .${(p) => p.theme.prefixCls}-markdown-video {
     position: relative;
-    
+
     &-poster {
       display: flex;
       align-items: center;

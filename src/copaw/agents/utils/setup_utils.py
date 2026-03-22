@@ -219,12 +219,14 @@ def _fallback_to_templates(
         if not config_copied and template_config:
             config_copied = True
             logger.info(
-                "Copied config.json from templates for user %s", user_id
+                "Copied config.json from templates for user %s",
+                user_id,
             )
         if not providers_copied and template_providers:
             providers_copied = True
             logger.info(
-                "Copied providers.json from templates for user %s", user_id
+                "Copied providers.json from templates for user %s",
+                user_id,
             )
 
     if not md_copied:

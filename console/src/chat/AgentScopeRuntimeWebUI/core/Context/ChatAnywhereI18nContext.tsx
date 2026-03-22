@@ -14,7 +14,7 @@ const messages = {
     'approval.cancel': '取消执行',
     'approval.confirm': '确认执行',
     'approval.taskRunning': '当前有正在执行的任务，无法发送新的任务',
-    
+
     // ApprovalCancelPopover 相关
     'cancelPopover.title': '取消原因',
     'cancelPopover.placeholder': '请输入原因，以便大模型做进一步规划',
@@ -52,7 +52,7 @@ const messages = {
     'approval.cancel': 'Cancel',
     'approval.confirm': 'Confirm',
     'approval.taskRunning': 'A task is currently running, cannot send new task',
-    
+
     // ApprovalCancelPopover related
     'cancelPopover.title': 'Cancel Reason',
     'cancelPopover.placeholder': 'Please enter the reason for better AI planning',
@@ -123,14 +123,14 @@ export function ChatAnywhereI18nContextProvider(props: ChatAnywhereI18nContextPr
 
   const t = useCallback((key: MessageKey, params?: Record<string, string | number>): string => {
     let message = messages[locale][key] || key;
-    
+
     // 支持参数替换，如 t('hello', { name: 'World' }) => "Hello, World"
     if (params) {
       Object.entries(params).forEach(([paramKey, value]) => {
         message = message.replace(new RegExp(`\\{${paramKey}\\}`, 'g'), String(value));
       });
     }
-    
+
     return message;
   }, [locale]);
 

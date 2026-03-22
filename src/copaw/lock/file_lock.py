@@ -56,6 +56,7 @@ async def read_json_locked(path: Path) -> dict:
     """Read JSON file with shared lock."""
     async with file_lock(path, mode="r") as f:
         import json
+
         content = await asyncio.to_thread(f.read)
         return json.loads(content) if content else {}
 
@@ -63,6 +64,7 @@ async def read_json_locked(path: Path) -> dict:
 async def write_json_locked(path: Path, data: dict) -> None:
     """Write JSON file with exclusive lock (atomic)."""
     import json
+
     json_str = json.dumps(data, indent=2, ensure_ascii=False)
 
     async with file_lock(path, mode="w") as f:

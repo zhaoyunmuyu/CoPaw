@@ -97,7 +97,7 @@ const SenderHeader: React.FC<SenderHeaderProps> = (props) => {
         </div>
       </Sender.Header>
     </>
-    
+
   );
 };
 

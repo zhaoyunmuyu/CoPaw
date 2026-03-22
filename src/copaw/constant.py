@@ -282,12 +282,18 @@ REDIS_HOST = os.environ.get("COPAW_REDIS_HOST", "localhost")
 REDIS_PORT = int(os.environ.get("COPAW_REDIS_PORT", "6379"))
 REDIS_DB = int(os.environ.get("COPAW_REDIS_DB", "0"))
 REDIS_PASSWORD = os.environ.get("COPAW_REDIS_PASSWORD", "")
-REDIS_SSL = os.environ.get("COPAW_REDIS_SSL", "false").lower() in ("true", "1", "yes")
+REDIS_SSL = os.environ.get("COPAW_REDIS_SSL", "false").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 
 # ============================================================================
 # Cron lock configuration (for multi-instance coordination)
 # ============================================================================
-CRON_LOCK_ENABLED = os.environ.get("COPAW_CRON_LOCK_ENABLED", "true").lower() in (
+CRON_LOCK_ENABLED = os.environ.get(
+    "COPAW_CRON_LOCK_ENABLED", "true"
+).lower() in (
     "true",
     "1",
     "yes",

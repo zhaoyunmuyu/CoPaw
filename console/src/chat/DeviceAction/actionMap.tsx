@@ -52,8 +52,8 @@ const actionMap = {
   presskey: {
     name: '按键',
     icon: <SparkKeyboardLine />,
-  },  
-  
+  },
+
   scroll: {
     name: '滚动',
     icon: <SparkSortLine />,
@@ -97,4 +97,4 @@ const actionMap = {
 }
 
 
-export default actionMap; 
+export default actionMap;

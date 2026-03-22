@@ -48,7 +48,7 @@ export default createGlobalStyle`
     opacity: 0;
     animation: ${(p) =>
       p.theme.prefixCls}-operate-card-body-open 0.2s ease-in-out forwards;
-    
+
     @keyframes ${(p) => p.theme.prefixCls}-operate-card-body-open {
       from {
         opacity: 0;
@@ -57,7 +57,7 @@ export default createGlobalStyle`
         opacity: 1;
       }
     }
-  
+
   }
 
 
@@ -84,7 +84,7 @@ export default createGlobalStyle`
       align-items: center;
       padding: 0 12px;
       gap: 8px;
-      
+
       color: ${(p) => p.theme.colorText};
 
 
@@ -104,11 +104,11 @@ export default createGlobalStyle`
       }
 
       &-done {
-        
+
       }
 
     }
-  
+
   }
 
 
@@ -138,7 +138,7 @@ export default createGlobalStyle`
 
       &:hover {
         color: ${(p) => p.theme.colorText};
-        
+
       }
 
     }
@@ -162,7 +162,7 @@ export default createGlobalStyle`
     margin-left: 16px;
     margin-top: 8px;
 
-  
+
     &-title {
       font-size: 12px;
       color: ${(p) => p.theme.colorText};
@@ -298,7 +298,7 @@ export default createGlobalStyle`
       display: flex;
       gap: 8px;
       background-color: ${(p) => p.theme.colorFillQuaternary};
-      
+
     }
 
     &-footer {

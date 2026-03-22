@@ -38,7 +38,7 @@ export interface IAgentScopeRuntimeWebUIAPIOptions {
   }) => void;
 
   enableHistoryMessages?: boolean;
-  
+
   responseParser?: (
     response: Response,
   ) => IAgentScopeRuntimeResponse | IAgentScopeRuntimeMessage | IContent;

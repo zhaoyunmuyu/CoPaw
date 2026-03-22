@@ -28,7 +28,7 @@ export function citationsExtension(citationsData) {
       const citation = citationsData?.[text];
 
       if (!citation) return token.raw;
-     
+
       return `<citation data-text="${text}" data-url="${citation.url}" data-title="${citation.title}" data-content="${citation.content}"></citation>`;
 
     },

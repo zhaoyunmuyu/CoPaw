@@ -17,7 +17,12 @@ from apscheduler.triggers.interval import IntervalTrigger
 from redis.asyncio import Redis, from_url as redis_from_url
 
 from ...config import get_heartbeat_config
-from ...lock import RedisLock, LockRenewalTask, read_json_locked, write_json_locked
+from ...lock import (
+    RedisLock,
+    LockRenewalTask,
+    read_json_locked,
+    write_json_locked,
+)
 from ...constant import (
     CRON_LOCK_ENABLED,
     CRON_LOCK_TTL,
@@ -104,7 +109,9 @@ class CronManager:
             redis_url = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
             if REDIS_SSL:
                 redis_url = redis_url.replace("redis://", "rediss://")
-            self._redis = redis_from_url(redis_url, password=REDIS_PASSWORD or None)
+            self._redis = redis_from_url(
+                redis_url, password=REDIS_PASSWORD or None
+            )
             self._redis_lock = RedisLock(self._redis)
             logger.info(
                 "Redis lock initialized: host=%s port=%s db=%s ssl=%s",
@@ -165,10 +172,14 @@ class CronManager:
             states = self._states.get(user_id, {})
             data = {
                 job_id: {
-                    "last_run_at": state.last_run_at.isoformat() if state.last_run_at else None,
+                    "last_run_at": state.last_run_at.isoformat()
+                    if state.last_run_at
+                    else None,
                     "last_status": state.last_status,
                     "last_error": state.last_error,
-                    "next_run_at": state.next_run_at.isoformat() if state.next_run_at else None,
+                    "next_run_at": state.next_run_at.isoformat()
+                    if state.next_run_at
+                    else None,
                 }
                 for job_id, state in states.items()
             }
@@ -621,7 +632,9 @@ class CronManager:
             lock_key = f"{CRON_LOCK_PREFIX}{user_id}"
             lock_value = f"{INSTANCE_ID}:{job_id}:{time.time()}"
             acquired = await self._redis_lock.acquire(
-                lock_key, lock_value, ttl=CRON_LOCK_TTL
+                lock_key,
+                lock_value,
+                ttl=CRON_LOCK_TTL,
             )
 
             if not acquired:
@@ -634,7 +647,10 @@ class CronManager:
 
             # Start lock renewal task
             renewal_task = LockRenewalTask(
-                self._redis, lock_key, lock_value, CRON_LOCK_TTL
+                self._redis,
+                lock_key,
+                lock_value,
+                CRON_LOCK_TTL,
             )
             await renewal_task.start()
 

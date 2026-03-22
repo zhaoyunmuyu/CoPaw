@@ -54,7 +54,7 @@ export interface MarkdownProps {
    */
   className?: string;
   animation?: boolean;
-  
+
   components?: XMarkdownProps['components'];
   citations?: {
     title?: string;

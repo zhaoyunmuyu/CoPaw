@@ -26,4 +26,4 @@ function ComposedProvider(props: { options, cards, children }) {
 }
 
 
-export default ComposedProvider;  
+export default ComposedProvider;

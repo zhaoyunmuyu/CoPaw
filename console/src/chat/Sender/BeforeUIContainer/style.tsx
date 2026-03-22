@@ -19,7 +19,7 @@ export default createGlobalStyle`
 
     &-children {
       display: flex;
-      justify-content: space-between; 
+      justify-content: space-between;
       align-items: center;
       height: 32px;
       padding: 0 12px;

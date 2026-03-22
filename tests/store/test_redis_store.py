@@ -39,8 +39,12 @@ class TestConsolePushStore:
         mock_pipe.rpush = MagicMock(return_value=mock_pipe)
         mock_pipe.expire = MagicMock(return_value=mock_pipe)
         mock_pipe.execute = AsyncMock(return_value=[1, True])
-        mock_redis.pipeline.return_value.__aenter__ = AsyncMock(return_value=mock_pipe)
-        mock_redis.pipeline.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_redis.pipeline.return_value.__aenter__ = AsyncMock(
+            return_value=mock_pipe
+        )
+        mock_redis.pipeline.return_value.__aexit__ = AsyncMock(
+            return_value=None
+        )
 
         # Append a message
         with patch("time.time", return_value=1000.0):
@@ -57,7 +61,11 @@ class TestConsolePushStore:
 
         # Mock lrange to return the message for take
         stored_message = json.dumps(
-            {"session_id": "session1", "text": "Hello World", "timestamp": 1000.0}
+            {
+                "session_id": "session1",
+                "text": "Hello World",
+                "timestamp": 1000.0,
+            },
         )
         mock_redis.lrange = AsyncMock(return_value=[stored_message.encode()])
 
@@ -77,10 +85,10 @@ class TestConsolePushStore:
         # Mock pipeline for take_all
         stored_messages = [
             json.dumps(
-                {"session_id": "s1", "text": "Message 1", "timestamp": 1000.0}
+                {"session_id": "s1", "text": "Message 1", "timestamp": 1000.0},
             ).encode(),
             json.dumps(
-                {"session_id": "s2", "text": "Message 2", "timestamp": 1001.0}
+                {"session_id": "s2", "text": "Message 2", "timestamp": 1001.0},
             ).encode(),
         ]
 
@@ -88,8 +96,12 @@ class TestConsolePushStore:
         mock_pipe.lrange = MagicMock(return_value=mock_pipe)
         mock_pipe.delete = MagicMock(return_value=mock_pipe)
         mock_pipe.execute = AsyncMock(return_value=[stored_messages, 1])
-        mock_redis.pipeline.return_value.__aenter__ = AsyncMock(return_value=mock_pipe)
-        mock_redis.pipeline.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_redis.pipeline.return_value.__aenter__ = AsyncMock(
+            return_value=mock_pipe
+        )
+        mock_redis.pipeline.return_value.__aexit__ = AsyncMock(
+            return_value=None
+        )
 
         messages = await store.take_all("user1")
 
@@ -108,8 +120,12 @@ class TestConsolePushStore:
         mock_pipe.rpush = MagicMock(return_value=mock_pipe)
         mock_pipe.expire = MagicMock(return_value=mock_pipe)
         mock_pipe.execute = AsyncMock(return_value=[1, True])
-        mock_redis.pipeline.return_value.__aenter__ = AsyncMock(return_value=mock_pipe)
-        mock_redis.pipeline.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_redis.pipeline.return_value.__aenter__ = AsyncMock(
+            return_value=mock_pipe
+        )
+        mock_redis.pipeline.return_value.__aexit__ = AsyncMock(
+            return_value=None
+        )
 
         # Append with custom TTL
         await store.append("user1", "session1", "Test message", ttl=120)
@@ -125,10 +141,10 @@ class TestConsolePushStore:
         current_time = 1000.0
         stored_messages = [
             json.dumps(
-                {"session_id": "s1", "text": "Recent", "timestamp": 990.0}
+                {"session_id": "s1", "text": "Recent", "timestamp": 990.0},
             ).encode(),  # 10 seconds old
             json.dumps(
-                {"session_id": "s2", "text": "Old", "timestamp": 900.0}
+                {"session_id": "s2", "text": "Old", "timestamp": 900.0},
             ).encode(),  # 100 seconds old
         ]
 
@@ -167,8 +183,12 @@ class TestDownloadTaskStore:
         mock_pipe.sadd = MagicMock(return_value=mock_pipe)
         mock_pipe.expire = MagicMock(return_value=mock_pipe)
         mock_pipe.execute = AsyncMock(return_value=[True, 1, True, 1, True])
-        mock_redis.pipeline.return_value.__aenter__ = AsyncMock(return_value=mock_pipe)
-        mock_redis.pipeline.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_redis.pipeline.return_value.__aenter__ = AsyncMock(
+            return_value=mock_pipe
+        )
+        mock_redis.pipeline.return_value.__aexit__ = AsyncMock(
+            return_value=None
+        )
 
         await store.save(task)
 
@@ -194,7 +214,7 @@ class TestDownloadTaskStore:
 
         # Mock smembers to return task IDs
         mock_redis.smembers = AsyncMock(
-            return_value={b"task1", b"task2", b"task3"}
+            return_value={b"task1", b"task2", b"task3"},
         )
 
         # Mock get to return different tasks
@@ -239,16 +259,24 @@ class TestDownloadTaskStore:
             mock_pipe.srem = MagicMock(return_value=mock_pipe)
             mock_pipe.execute = AsyncMock(return_value=[1, 1, 1])
             mock_redis.pipeline.return_value.__aenter__ = AsyncMock(
-                return_value=mock_pipe
+                return_value=mock_pipe,
             )
-            mock_redis.pipeline.return_value.__aexit__ = AsyncMock(return_value=None)
+            mock_redis.pipeline.return_value.__aexit__ = AsyncMock(
+                return_value=None
+            )
 
             result = await store.delete("task123")
 
             assert result is True
-            mock_pipe.delete.assert_called_once_with("copaw:download:task:task123")
-            mock_pipe.srem.assert_any_call("copaw:download:index:nas", "task123")
-            mock_pipe.srem.assert_any_call("copaw:download:index:all", "task123")
+            mock_pipe.delete.assert_called_once_with(
+                "copaw:download:task:task123"
+            )
+            mock_pipe.srem.assert_any_call(
+                "copaw:download:index:nas", "task123"
+            )
+            mock_pipe.srem.assert_any_call(
+                "copaw:download:index:all", "task123"
+            )
 
     @pytest.mark.asyncio
     async def test_delete_nonexistent_task(self, mock_redis):

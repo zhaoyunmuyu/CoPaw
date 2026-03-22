@@ -98,7 +98,7 @@ export interface ConversationsProps extends React.HTMLAttributes<HTMLUListElemen
 }
 
 const Conversations: React.FC<ConversationsProps & { groupable?: boolean | Groupable }> = (props) => {
-  
+
   const {
     prefixCls: customizePrefixCls,
     rootClassName,
