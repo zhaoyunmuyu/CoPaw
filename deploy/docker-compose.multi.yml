@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - copaw-net
+
+  copaw:
+    image: copaw:latest
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    deploy:
+      replicas: 5
+    environment:
+      - COPAW_WORKING_DIR=/nas/copaw
+      - COPAW_SECRET_DIR=/nas/copaw/.secret
+      - COPAW_REDIS_HOST=redis
+      - COPAW_REDIS_PORT=6379
+      - COPAW_CRON_LOCK_TTL=600
+      - COPAW_CRON_LOCK_JITTER_MS=2000
+    volumes:
+      - /mnt/nas/copaw:/nas/copaw:rw
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - copaw-net
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - copaw
+    networks:
+      - copaw-net
+
+volumes:
+  redis_data:
+
+networks:
+  copaw-net:
+    driver: bridge
