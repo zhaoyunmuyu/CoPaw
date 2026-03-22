@@ -4,15 +4,32 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import random
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from redis.asyncio import Redis, from_url as redis_from_url
 
 from ...config import get_heartbeat_config
+from ...lock import RedisLock, LockRenewalTask, read_json_locked, write_json_locked
+from ...constant import (
+    CRON_LOCK_ENABLED,
+    CRON_LOCK_TTL,
+    CRON_LOCK_PREFIX,
+    CRON_LOCK_JITTER_MS,
+    INSTANCE_ID,
+    REDIS_HOST,
+    REDIS_PORT,
+    REDIS_DB,
+    REDIS_PASSWORD,
+    REDIS_SSL,
+)
 
 from ..console_push_store import append as push_store_append
 from .executor import CronExecutor
@@ -61,6 +78,11 @@ class CronManager:
         )
         self._scan_job_id = "_cron_user_scan"
 
+        # Redis distributed locking
+        self._redis: Optional[Redis] = None
+        self._redis_lock: Optional[RedisLock] = None
+        self._init_redis()
+
     def _get_repo_for_user(self, user_id: str) -> JsonJobRepository:
         """Get repository for specific user.
 
@@ -73,6 +95,90 @@ class CronManager:
         from ...config.utils import get_jobs_path
 
         return JsonJobRepository(get_jobs_path(user_id))
+
+    def _init_redis(self) -> None:
+        """Initialize Redis connection and lock client."""
+        if not CRON_LOCK_ENABLED:
+            return
+        try:
+            redis_url = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+            if REDIS_SSL:
+                redis_url = redis_url.replace("redis://", "rediss://")
+            self._redis = redis_from_url(redis_url, password=REDIS_PASSWORD or None)
+            self._redis_lock = RedisLock(self._redis)
+            logger.info(
+                "Redis lock initialized: host=%s port=%s db=%s ssl=%s",
+                REDIS_HOST,
+                REDIS_PORT,
+                REDIS_DB,
+                REDIS_SSL,
+            )
+        except Exception as e:
+            logger.exception("Failed to initialize Redis: %s", e)
+
+    def _get_state_path(self, user_id: str) -> Path:
+        """Get jobs state file path for a user.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            Path to jobs_state.json
+        """
+        from ...constant import get_working_dir
+
+        return get_working_dir(user_id) / "jobs_state.json"
+
+    async def _load_user_states(self, user_id: str) -> Dict[str, CronJobState]:
+        """Load user job states from NAS with file lock.
+
+        Args:
+            user_id: User identifier
+
+        Returns:
+            Dictionary of job states
+        """
+        state_path = self._get_state_path(user_id)
+        try:
+            if state_path.exists():
+                data = await read_json_locked(state_path)
+                return {
+                    job_id: CronJobState(**state_data)
+                    for job_id, state_data in data.items()
+                }
+        except Exception as e:
+            logger.warning(
+                "Failed to load user states for user=%s: %s",
+                user_id,
+                e,
+            )
+        return {}
+
+    async def _save_user_states(self, user_id: str) -> None:
+        """Save user job states to NAS with file lock.
+
+        Args:
+            user_id: User identifier
+        """
+        state_path = self._get_state_path(user_id)
+        try:
+            states = self._states.get(user_id, {})
+            data = {
+                job_id: {
+                    "last_run_at": state.last_run_at.isoformat() if state.last_run_at else None,
+                    "last_status": state.last_status,
+                    "last_error": state.last_error,
+                    "next_run_at": state.next_run_at.isoformat() if state.next_run_at else None,
+                }
+                for job_id, state in states.items()
+            }
+            await write_json_locked(state_path, data)
+        except Exception as e:
+            logger.exception(
+                "Failed to save user states for user=%s: %s",
+                user_id,
+                e,
+            )
 
     async def start(self) -> None:
         """Start the scheduler (global, starts only once)."""
@@ -112,6 +218,14 @@ class CronManager:
                 self._scheduler.remove_job(self._scan_job_id)
             self._scheduler.shutdown(wait=False)
             self._started = False
+
+            # Close Redis connection
+            if self._redis:
+                try:
+                    await self._redis.close()
+                    logger.info("Redis connection closed")
+                except Exception as e:
+                    logger.warning("Failed to close Redis connection: %s", e)
 
     async def _scan_and_load_users(self) -> None:
         """Scan all user directories and load cron jobs for unloaded users.
@@ -497,11 +611,68 @@ class CronManager:
         # Set request context for user isolation during execution
         from ...constant import set_request_user_id, reset_request_user_id
 
-        token = set_request_user_id(user_id)
-        try:
-            await self._execute_once(user_id, job)
-        finally:
-            reset_request_user_id(token)
+        # Redis distributed lock flow
+        if self._redis_lock and CRON_LOCK_ENABLED:
+            # Add random jitter before lock acquisition
+            jitter_ms = random.randint(0, CRON_LOCK_JITTER_MS)
+            await asyncio.sleep(jitter_ms / 1000.0)
+
+            # Acquire user-level lock
+            lock_key = f"{CRON_LOCK_PREFIX}{user_id}"
+            lock_value = f"{INSTANCE_ID}:{job_id}:{time.time()}"
+            acquired = await self._redis_lock.acquire(
+                lock_key, lock_value, ttl=CRON_LOCK_TTL
+            )
+
+            if not acquired:
+                logger.debug(
+                    "cron job skipped (lock not acquired): job_id=%s user_id=%s",
+                    job_id,
+                    user_id,
+                )
+                return
+
+            # Start lock renewal task
+            renewal_task = LockRenewalTask(
+                self._redis, lock_key, lock_value, CRON_LOCK_TTL
+            )
+            await renewal_task.start()
+
+            try:
+                # Load states from NAS
+                loaded_states = await self._load_user_states(user_id)
+                if user_id in self._states:
+                    # Merge loaded states with current states
+                    for jid, state in loaded_states.items():
+                        if jid not in self._states[user_id]:
+                            self._states[user_id][jid] = state
+
+                # Execute job
+                token = set_request_user_id(user_id)
+                try:
+                    await self._execute_once(user_id, job)
+                finally:
+                    reset_request_user_id(token)
+
+                # Save states to NAS
+                await self._save_user_states(user_id)
+
+            finally:
+                # Stop renewal and release lock
+                await renewal_task.stop()
+                await self._redis_lock.release(lock_key, lock_value)
+                logger.debug(
+                    "Released lock for job_id=%s user_id=%s",
+                    job_id,
+                    user_id,
+                )
+        else:
+            # No Redis lock, execute directly
+            token = set_request_user_id(user_id)
+            try:
+                await self._execute_once(user_id, job)
+            finally:
+                reset_request_user_id(token)
 
         # Refresh next_run
         aps_job = self._scheduler.get_job(job_id)
