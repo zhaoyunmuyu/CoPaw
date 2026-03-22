@@ -1,100 +1,64 @@
 # -*- coding: utf-8 -*-
-"""In-memory store for console channel push messages (e.g. cron text).
-
-Bounded: at most _MAX_MESSAGES kept per user; messages older than _MAX_AGE_SECONDS
-are dropped when reading. Frontend dedupes by id and caps its seen set.
-"""
+"""Redis-based store for console channel push messages."""
 from __future__ import annotations
 
-import asyncio
-import time
-import uuid
-from typing import Any, Dict, List
+import logging
+from typing import Any, Dict, List, Optional
 
-# Per-user storage: {user_id: [messages]}
-_store: Dict[str, List[Dict[str, Any]]] = {}
-_lock = asyncio.Lock()
+from redis.asyncio import Redis
+
+from ..store.redis_store import ConsolePushStore as _ConsolePushStore
+from ..constant import (
+    REDIS_HOST,
+    REDIS_PORT,
+    REDIS_DB,
+    REDIS_PASSWORD,
+    REDIS_SSL,
+)
+
+logger = logging.getLogger(__name__)
+
+_redis_client: Optional[Redis] = None
+_store: Optional[_ConsolePushStore] = None
 _MAX_AGE_SECONDS = 60
-_MAX_MESSAGES = 500
+
+
+def _get_store() -> _ConsolePushStore:
+    global _redis_client, _store
+    if _store is None:
+        redis_url = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+        if REDIS_SSL:
+            redis_url = redis_url.replace("redis://", "rediss://")
+        _redis_client = Redis.from_url(
+            redis_url,
+            password=REDIS_PASSWORD or None,
+            decode_responses=False,
+        )
+        _store = _ConsolePushStore(_redis_client, ttl=_MAX_AGE_SECONDS)
+    return _store
 
 
 async def append(user_id: str | None, session_id: str, text: str) -> None:
-    """Append a message for a specific user (bounded per user)."""
-    if not session_id or not text:
-        return
-
-    # Default to "default" for backward compatibility
-    uid = user_id or "default"
-
-    async with _lock:
-        if uid not in _store:
-            _store[uid] = []
-
-        _store[uid].append(
-            {
-                "id": str(uuid.uuid4()),
-                "text": text,
-                "ts": time.time(),
-                "session_id": session_id,
-                "user_id": uid,
-            },
-        )
-
-        # Keep only _MAX_MESSAGES per user
-        if len(_store[uid]) > _MAX_MESSAGES:
-            _store[uid].sort(key=lambda m: m["ts"])
-            _store[uid] = _store[uid][-_MAX_MESSAGES:]
+    store = _get_store()
+    await store.append(user_id, session_id, text)
 
 
 async def take(user_id: str | None, session_id: str) -> List[Dict[str, Any]]:
-    """Return and remove all messages for the user and session."""
-    if not session_id:
-        return []
-
-    uid = user_id or "default"
-
-    async with _lock:
-        user_messages = _store.get(uid, [])
-        out = []
-        remaining = []
-        for m in user_messages:
-            if m.get("session_id") == session_id:
-                out.append(m)
-            else:
-                remaining.append(m)
-        if remaining:
-            _store[uid] = remaining
-        else:
-            _store.pop(uid, None)
-        return _strip_ts(out)
+    store = _get_store()
+    return await store.take(user_id, session_id)
 
 
 async def take_all(user_id: str | None = None) -> List[Dict[str, Any]]:
-    """Return and remove all messages for the user."""
-    uid = user_id or "default"
-
-    async with _lock:
-        out = _store.pop(uid, [])
-        return _strip_ts(out)
+    store = _get_store()
+    return await store.take_all(user_id)
 
 
 async def get_recent(
     user_id: str | None = None,
     max_age_seconds: int = _MAX_AGE_SECONDS,
 ) -> List[Dict[str, Any]]:
-    """Return and remove recent messages for the user.
-
-    Messages returned are immediately removed from storage and will not
-    be available for subsequent calls.
-    """
-    uid = user_id or "default"
-    now = time.time()
-    cutoff = now - max_age_seconds
-
-    async with _lock:
-        user_messages = _store.pop(uid, [])
-        to_return = [m for m in user_messages if m["ts"] >= cutoff]
-        return _strip_ts(to_return)
+    store = _get_store()
+    return await store.get_recent(user_id, max_age_seconds)
 
 
 def _strip_ts(msgs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
