@@ -7,6 +7,7 @@ export const CHANNEL_LABELS: Record<string, string> = {
   discord: "Discord",
   dingtalk: "DingTalk",
   feishu: "Feishu",
+  zhaohu: "Zhaohu",
   qq: "QQ",
   telegram: "Telegram",
   console: "Console",

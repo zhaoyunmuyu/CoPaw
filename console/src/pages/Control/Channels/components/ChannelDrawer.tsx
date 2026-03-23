@@ -180,6 +180,29 @@ export function ChannelDrawer({
             </Form.Item>
           </>
         );
+      case "zhaohu":
+        return (
+          <>
+            <Form.Item name="push_url" label="Push URL">
+              <Input placeholder="https://api.example.com/message/push" />
+            </Form.Item>
+            <Form.Item name="sys_id" label="Sys ID">
+              <Input placeholder="system-id" />
+            </Form.Item>
+            <Form.Item name="robot_open_id" label="Robot Open ID">
+              <Input placeholder="robot-open-id" />
+            </Form.Item>
+            <Form.Item name="channel" label="Channel Code">
+              <Input placeholder="ZH" />
+            </Form.Item>
+            <Form.Item name="net" label="Network">
+              <Input placeholder="DMZ" />
+            </Form.Item>
+            <Form.Item name="request_timeout" label="Request Timeout (sec)">
+              <InputNumber min={1} step={1} style={{ width: "100%" }} />
+            </Form.Item>
+          </>
+        );
       case "qq":
         return (
           <>

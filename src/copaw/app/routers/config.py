@@ -173,6 +173,10 @@ async def put_channel(
         from ...config.config import FeishuConfig
 
         channel_config = FeishuConfig(**single_channel_config)
+    elif channel_name == "zhaohu":
+        from ...config.config import ZhaohuConfig
+
+        channel_config = ZhaohuConfig(**single_channel_config)
     elif channel_name == "qq":
         from ...config.config import QQConfig
 

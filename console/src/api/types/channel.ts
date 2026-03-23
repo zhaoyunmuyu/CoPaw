@@ -32,6 +32,15 @@ export interface FeishuConfig extends BaseChannelConfig {
   media_dir: string;
 }
 
+export interface ZhaohuConfig extends BaseChannelConfig {
+  push_url: string;
+  sys_id: string;
+  robot_open_id: string;
+  channel: string;
+  net: string;
+  request_timeout: number;
+}
+
 export interface QQConfig extends BaseChannelConfig {
   app_id: string;
   client_secret: string;
@@ -63,6 +72,7 @@ export interface ChannelConfig {
   discord: DiscordConfig;
   dingtalk: DingTalkConfig;
   feishu: FeishuConfig;
+  zhaohu: ZhaohuConfig;
   qq: QQConfig;
   telegram: TelegramConfig;
   console: ConsoleConfig;
@@ -74,6 +84,7 @@ export type SingleChannelConfig =
   | DiscordConfig
   | DingTalkConfig
   | FeishuConfig
+  | ZhaohuConfig
   | QQConfig
   | ConsoleConfig
   | TelegramConfig

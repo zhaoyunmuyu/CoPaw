@@ -12,6 +12,7 @@ from .providers import router as providers_router
 from .skills import router as skills_router
 from .users import router as users_router
 from .workspace import router as workspace_router
+from .zhaohu import zhaohu_router
 from ..crons.api import router as cron_router
 from ..runner.api import router as runner_router
 from ..backup import router as backup_router
@@ -33,5 +34,6 @@ router.include_router(users_router)
 router.include_router(workspace_router)
 router.include_router(envs_router)
 router.include_router(backup_router)
+router.include_router(zhaohu_router)
 
 __all__ = ["router"]

@@ -18,6 +18,7 @@ from ..config.config import (
     TelegramConfig,
     DingTalkConfig,
     FeishuConfig,
+    ZhaohuConfig,
     IMessageChannelConfig,
     QQConfig,
     VoiceChannelConfig,
@@ -45,6 +46,7 @@ _ALL_CHANNEL_NAMES = {
     "telegram": "Telegram",
     "dingtalk": "DingTalk",
     "feishu": "Feishu",
+    "zhaohu": "Zhaohu",
     "qq": "QQ",
     "console": "Console",
     "voice": "Twilio",
@@ -353,6 +355,71 @@ def configure_feishu(current_config: FeishuConfig) -> FeishuConfig:
 
     return current_config
 
+def configure_zhaohu(current_config: ZhaohuConfig) -> ZhaohuConfig:
+    """Configure Zhaohu channel interactively."""
+    click.echo("\n=== Configure Zhaohu Channel ===")
+
+    enabled = prompt_confirm(
+        "Enable Zhaohu channel?",
+        default=current_config.enabled,
+    )
+
+    if not enabled:
+        current_config.enabled = False
+        return current_config
+
+    current_config.enabled = True
+
+    bot_prefix = click.prompt(
+        "Bot prefix (e.g., @bot)",
+        default=current_config.bot_prefix or "[BOT]",
+        type=str,
+    )
+    current_config.bot_prefix = bot_prefix
+
+    push_url = click.prompt(
+        "Zhaohu Push URL",
+        default=current_config.push_url or "",
+        type=str,
+    )
+    current_config.push_url = push_url
+
+    sys_id = click.prompt(
+        "Zhaohu Sys ID",
+        default=current_config.sys_id or "",
+        type=str,
+    )
+    current_config.sys_id = sys_id
+
+    robot_open_id = click.prompt(
+        "Zhaohu Robot Open ID",
+        default=current_config.robot_open_id or "",
+        type=str,
+    )
+    current_config.robot_open_id = robot_open_id
+
+    channel = click.prompt(
+        "Zhaohu Channel Code",
+        default=current_config.channel or "ZH",
+        type=str,
+    )
+    current_config.channel = channel
+
+    net = click.prompt(
+        "Zhaohu Network",
+        default=current_config.net or "DMZ",
+        type=str,
+    )
+    current_config.net = net
+
+    request_timeout = click.prompt(
+        "Request timeout (seconds)",
+        default=current_config.request_timeout or 15.0,
+        type=float,
+    )
+    current_config.request_timeout = request_timeout
+
+    return current_config
 
 def configure_qq(current_config: QQConfig) -> QQConfig:
     """Configure QQ channel interactively."""
@@ -610,6 +677,7 @@ _ALL_CHANNEL_CONFIGURATORS = {
     "telegram": ("Telegram", configure_telegram),
     "dingtalk": ("DingTalk", configure_dingtalk),
     "feishu": ("Feishu", configure_feishu),
+    "zhaohu": ("Zhaohu", configure_zhaohu),
     "qq": ("QQ", configure_qq),
     "console": ("Console", configure_console),
     "voice": ("Twilio", configure_voice),
