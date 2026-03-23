@@ -1,14 +1,40 @@
 import { SparkCopyLine, SparkReplaceLine } from "@agentscope-ai/icons";
-import { IAgentScopeRuntimeResponse } from "../types";
+import { IAgentScopeRuntimeResponse, AgentScopeRuntimeMessageType } from "../types";
 import AgentScopeRuntimeResponseBuilder from "./Builder";
 import { Bubble } from "@/chat";
-import { Tooltip } from "@agentscope-ai/design";
+import { Tooltip, message } from "@agentscope-ai/design";
 import { copy } from "../../../../Util/copy";
 import compact from 'lodash/compact';
 import { emit } from "../../Context/useChatAnywhereEventEmitter";
 import { useChatAnywhereOptions } from "../../Context/ChatAnywhereOptionsContext";
 import { useTranslation } from "../../Context/ChatAnywhereI18nContext";
 import React from "react";
+
+/**
+ * Extract text content from response output, excluding reasoning messages
+ */
+function extractTextFromResponse(data: IAgentScopeRuntimeResponse): string {
+  if (!data.output || !Array.isArray(data.output)) {
+    return JSON.stringify(data);
+  }
+
+  const textParts: string[] = [];
+  for (const msg of data.output) {
+    // Skip reasoning messages
+    if (msg.type === AgentScopeRuntimeMessageType.REASONING) {
+      continue;
+    }
+    if (msg.content && Array.isArray(msg.content)) {
+      for (const item of msg.content) {
+        if (item.type === 'text' && 'text' in item && item.text) {
+          textParts.push(item.text);
+        }
+      }
+    }
+  }
+
+  return textParts.length > 0 ? textParts.join('\n') : JSON.stringify(data);
+}
 
 
 function Usage(props: {
@@ -31,7 +57,12 @@ export default function Tools(props: {
     {
       icon: <SparkCopyLine />,
       onClick: () => {
-        copy(JSON.stringify(props.data));
+        const text = extractTextFromResponse(props.data);
+        copy(text).then(() => {
+          message.success('复制成功');
+        }).catch(() => {
+          message.error('复制失败');
+        });
       }
     }
   ];

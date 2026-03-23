@@ -3,7 +3,7 @@ import { MessageCircle, X } from "lucide-react";
 import { consoleApi, type PushMessage } from "../../api/modules/console";
 import styles from "./index.module.less";
 
-const POLL_INTERVAL_MS = 2500;
+const POLL_INTERVAL_MS = 6000;
 const AUTO_DISMISS_MS = 8000;
 const MAX_SEEN_IDS = 500;
 const MAX_VISIBLE_BUBBLES = 4;
