@@ -16,9 +16,13 @@ from copaw.app.backup.task_store import TaskStore
 @pytest.fixture
 def temp_dirs():
     """Create temporary directories for testing."""
-    with tempfile.TemporaryDirectory(prefix="copaw_test_user_") as user_dir, \
-         tempfile.TemporaryDirectory(prefix="copaw_test_secret_") as secret_dir, \
-         tempfile.TemporaryDirectory(prefix="copaw_test_zip_") as zip_dir:
+    with tempfile.TemporaryDirectory(
+        prefix="copaw_test_user_",
+    ) as user_dir, tempfile.TemporaryDirectory(
+        prefix="copaw_test_secret_",
+    ) as secret_dir, tempfile.TemporaryDirectory(
+        prefix="copaw_test_zip_",
+    ) as zip_dir:
         yield {
             "user_dir": Path(user_dir),
             "secret_dir": Path(secret_dir),
@@ -44,7 +48,9 @@ class TestCompressUser:
 
     @pytest.mark.asyncio
     async def test_compress_user_without_secret_dir(
-        self, worker: BackupWorker, temp_dirs: dict
+        self,
+        worker: BackupWorker,
+        temp_dirs: dict,
     ):
         """Test compressing user directory without secret directory."""
         user_dir = temp_dirs["user_dir"]
@@ -56,7 +62,9 @@ class TestCompressUser:
         (user_dir / "subdir" / "file.txt").write_text("test content")
 
         # Mock get_secret_dir to return non-existent directory
-        with patch("copaw.app.backup.worker.get_secret_dir") as mock_get_secret:
+        with patch(
+            "copaw.app.backup.worker.get_secret_dir",
+        ) as mock_get_secret:
             mock_get_secret.return_value = Path("/nonexistent/secret")
 
             # Compress
@@ -72,7 +80,9 @@ class TestCompressUser:
 
     @pytest.mark.asyncio
     async def test_compress_user_with_secret_dir(
-        self, worker: BackupWorker, temp_dirs: dict
+        self,
+        worker: BackupWorker,
+        temp_dirs: dict,
     ):
         """Test compressing user directory with secret directory."""
         user_dir = temp_dirs["user_dir"]
@@ -88,7 +98,9 @@ class TestCompressUser:
         (secret_dir / "nested" / "secret.txt").write_text("secret data")
 
         # Mock get_secret_dir
-        with patch("copaw.app.backup.worker.get_secret_dir") as mock_get_secret:
+        with patch(
+            "copaw.app.backup.worker.get_secret_dir",
+        ) as mock_get_secret:
             mock_get_secret.return_value = secret_dir
 
             # Compress
@@ -109,7 +121,9 @@ class TestCompressUser:
 
     @pytest.mark.asyncio
     async def test_compress_user_empty_secret_dir(
-        self, worker: BackupWorker, temp_dirs: dict
+        self,
+        worker: BackupWorker,
+        temp_dirs: dict,
     ):
         """Test compressing user directory with empty secret directory."""
         user_dir = temp_dirs["user_dir"]
@@ -123,7 +137,9 @@ class TestCompressUser:
         assert secret_dir.exists()
 
         # Mock get_secret_dir
-        with patch("copaw.app.backup.worker.get_secret_dir") as mock_get_secret:
+        with patch(
+            "copaw.app.backup.worker.get_secret_dir",
+        ) as mock_get_secret:
             mock_get_secret.return_value = secret_dir
 
             # Compress
@@ -143,7 +159,9 @@ class TestExtractZip:
 
     @pytest.mark.asyncio
     async def test_extract_zip_without_secret_folder(
-        self, worker: BackupWorker, temp_dirs: dict
+        self,
+        worker: BackupWorker,
+        temp_dirs: dict,
     ):
         """Test extracting zip without .secret/ folder."""
         user_dir = temp_dirs["user_dir"]
@@ -156,7 +174,9 @@ class TestExtractZip:
             zf.writestr("subdir/file.txt", "test content")
 
         # Mock get_secret_dir
-        with patch("copaw.app.backup.worker.get_secret_dir") as mock_get_secret:
+        with patch(
+            "copaw.app.backup.worker.get_secret_dir",
+        ) as mock_get_secret:
             mock_get_secret.return_value = secret_dir
 
             # Extract
@@ -173,7 +193,9 @@ class TestExtractZip:
 
     @pytest.mark.asyncio
     async def test_extract_zip_with_secret_folder(
-        self, worker: BackupWorker, temp_dirs: dict
+        self,
+        worker: BackupWorker,
+        temp_dirs: dict,
     ):
         """Test extracting zip with .secret/ folder."""
         user_dir = temp_dirs["user_dir"]
@@ -187,7 +209,9 @@ class TestExtractZip:
             zf.writestr(".secret/nested/secret.txt", "secret data")
 
         # Mock get_secret_dir
-        with patch("copaw.app.backup.worker.get_secret_dir") as mock_get_secret:
+        with patch(
+            "copaw.app.backup.worker.get_secret_dir",
+        ) as mock_get_secret:
             mock_get_secret.return_value = secret_dir
 
             # Extract
@@ -200,15 +224,21 @@ class TestExtractZip:
         # Verify secret files extracted to secret_dir
         assert (secret_dir / "providers.json").exists()
         assert (secret_dir / "nested" / "secret.txt").exists()
-        assert (secret_dir / "providers.json").read_text() == '{"provider": "key"}'
-        assert (secret_dir / "nested" / "secret.txt").read_text() == "secret data"
+        assert (
+            secret_dir / "providers.json"
+        ).read_text() == '{"provider": "key"}'
+        assert (
+            secret_dir / "nested" / "secret.txt"
+        ).read_text() == "secret data"
 
         # Verify files are NOT in user_dir's .secret folder
         assert not (user_dir / ".secret").exists()
 
     @pytest.mark.asyncio
     async def test_extract_zip_path_traversal_protection(
-        self, worker: BackupWorker, temp_dirs: dict
+        self,
+        worker: BackupWorker,
+        temp_dirs: dict,
     ):
         """Test that path traversal attempts are blocked."""
         user_dir = temp_dirs["user_dir"]
@@ -223,7 +253,9 @@ class TestExtractZip:
             zf.writestr(".secret/../../../etc/shadow", "malicious secret")
 
         # Mock get_secret_dir
-        with patch("copaw.app.backup.worker.get_secret_dir") as mock_get_secret:
+        with patch(
+            "copaw.app.backup.worker.get_secret_dir",
+        ) as mock_get_secret:
             mock_get_secret.return_value = secret_dir
 
             # Extract should raise ValueError
@@ -232,10 +264,12 @@ class TestExtractZip:
 
             assert "Path traversal detected" in str(exc_info.value)
 
-        # Note: config.json was extracted before the path traversal was encountered
-        # This is expected behavior - the implementation doesn't rollback on error
+        # Note: config.json was extracted before path traversal was encountered
+        # This is expected - the implementation doesn't rollback on error
         assert (user_dir / "config.json").exists()
 
-        # But verify the malicious files were NOT extracted outside target directories
+        # But verify malicious files were NOT extracted outside target dirs
         assert not (user_dir / ".." / ".." / ".." / "etc" / "passwd").exists()
-        assert not (secret_dir / ".." / ".." / ".." / "etc" / "shadow").exists()
+        assert not (
+            secret_dir / ".." / ".." / ".." / "etc" / "shadow"
+        ).exists()

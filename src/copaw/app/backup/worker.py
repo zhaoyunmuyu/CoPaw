@@ -269,21 +269,28 @@ class BackupWorker:
                             if file.is_file():
                                 zf.write(
                                     file,
-                                    Path(".secret") / file.relative_to(secret_dir),
+                                    Path(".secret")
+                                    / file.relative_to(secret_dir),
                                 )
                             elif file.is_dir() and not any(file.iterdir()):
                                 # Add empty directory
                                 zf.writestr(
-                                    str(Path(".secret") / file.relative_to(secret_dir))
+                                    str(
+                                        Path(".secret")
+                                        / file.relative_to(secret_dir),
+                                    )
                                     + "/",
                                     "",
                                 )
                         except PermissionError as e:
                             logger.warning(
-                                f"Permission denied accessing secret file {file}: {e}"
+                                "Permission denied accessing secret file "
+                                f"{file}: {e}",
                             )
                         except OSError as e:
-                            logger.warning(f"Error accessing secret file {file}: {e}")
+                            logger.warning(
+                                "Error accessing secret file " f"{file}: {e}",
+                            )
             return str(zip_path)
 
         return await asyncio.to_thread(_do_compress)
@@ -325,30 +332,40 @@ class BackupWorker:
                             if file.is_file():
                                 zf.write(
                                     file,
-                                    Path(".secret") / file.relative_to(secret_dir),
+                                    Path(".secret")
+                                    / file.relative_to(secret_dir),
                                 )
                             elif file.is_dir() and not any(file.iterdir()):
                                 # Add empty directory
                                 zf.writestr(
-                                    str(Path(".secret") / file.relative_to(secret_dir))
+                                    str(
+                                        Path(".secret")
+                                        / file.relative_to(secret_dir),
+                                    )
                                     + "/",
                                     "",
                                 )
                         except PermissionError as e:
                             logger.warning(
-                                f"Permission denied accessing secret file {file}: {e}"
+                                "Permission denied accessing secret file "
+                                f"{file}: {e}",
                             )
                         except OSError as e:
-                            logger.warning(f"Error accessing secret file {file}: {e}")
+                            logger.warning(
+                                "Error accessing secret file " f"{file}: {e}",
+                            )
             return str(zip_path)
 
         await asyncio.to_thread(_do_compress)
         return str(zip_path)
 
     async def _extract_zip(
-        self, zip_path: Path, target_dir: Path, user_id: str
+        self,
+        zip_path: Path,
+        target_dir: Path,
+        user_id: str,
     ) -> None:
-        """Extract zip to target directory, routing .secret/ to secret directory.
+        """Extract zip to target, routing .secret/ to secret directory.
 
         Args:
             zip_path: Path to the zip file to extract.
@@ -369,8 +386,12 @@ class BackupWorker:
                     # Determine target directory based on prefix
                     if member.filename.startswith(".secret/"):
                         # Route to secret directory
-                        relative_path = member.filename[8:]  # Remove .secret/ prefix
-                        if not relative_path:  # Skip if it's just .secret/ directory
+                        relative_path = member.filename[
+                            8:
+                        ]  # Remove .secret/ prefix
+                        if (
+                            not relative_path
+                        ):  # Skip if it's just .secret/ directory
                             continue
                         extract_dir = secret_dir
                         dest_path = secret_dir / relative_path
@@ -383,9 +404,12 @@ class BackupWorker:
                     # Validate path traversal
                     resolved_dest = dest_path.resolve()
                     resolved_extract = extract_dir.resolve()
-                    if not str(resolved_dest).startswith(str(resolved_extract)):
+                    if not str(resolved_dest).startswith(
+                        str(resolved_extract),
+                    ):
                         raise ValueError(
-                            f"Path traversal detected in zip entry: {member.filename}"
+                            "Path traversal detected in zip entry: "
+                            f"{member.filename}",
                         )
 
                     # Extract the file/directory
@@ -393,7 +417,10 @@ class BackupWorker:
                         dest_path.mkdir(parents=True, exist_ok=True)
                     else:
                         dest_path.parent.mkdir(parents=True, exist_ok=True)
-                        with zf.open(member) as source, open(dest_path, "wb") as target:
+                        with zf.open(member) as source, open(
+                            dest_path,
+                            "wb",
+                        ) as target:
                             target.write(source.read())
 
         await asyncio.to_thread(_do_extract)
