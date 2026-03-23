@@ -76,11 +76,14 @@ async def lifespan(
     mcp_manager = MCPClientManager()
     if hasattr(config, "mcp"):
         try:
-            await mcp_manager.init_from_config(config.mcp)
+            # Shield MCP init from cancellation to avoid anyio scope errors
+            await asyncio.shield(mcp_manager.init_from_config(config.mcp))
             logger.debug("MCP client manager initialized")
-        except BaseException as e:
-            if isinstance(e, (KeyboardInterrupt, SystemExit)):
-                raise
+        except asyncio.CancelledError:
+            logger.warning("MCP initialization was cancelled")
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as e:
             logger.exception("Failed to initialize MCP manager")
     runner.set_mcp_manager(mcp_manager)
 
@@ -407,27 +410,27 @@ async def lifespan(
         if cfg_w is not None:
             try:
                 await cfg_w.stop()
-            except Exception:
+            except (Exception, asyncio.CancelledError):
                 pass
         if mcp_w is not None:
             try:
                 await mcp_w.stop()
-            except Exception:
+            except (Exception, asyncio.CancelledError):
                 pass
         if cron_mgr is not None:
             try:
                 await cron_mgr.stop()
-            except Exception:
+            except (Exception, asyncio.CancelledError):
                 pass
         if ch_mgr is not None:
             try:
                 await ch_mgr.stop_all()
-            except Exception:
+            except (Exception, asyncio.CancelledError):
                 pass
         if mcp_mgr is not None:
             try:
                 await mcp_mgr.close_all()
-            except Exception:
+            except (Exception, asyncio.CancelledError):
                 pass
         await runner.stop()
 
