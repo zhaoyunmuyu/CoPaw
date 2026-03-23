@@ -13,6 +13,7 @@ Example:
 import json
 import logging
 import os
+from datetime import datetime
 from typing import TYPE_CHECKING, Optional, Sequence, Tuple, Type, Any
 from functools import wraps
 
@@ -27,6 +28,11 @@ try:
 except ImportError:  # pragma: no cover - compatibility fallback
     AnthropicChatFormatter = None
     AnthropicChatModel = None
+
+try:
+    from agentscope.model import DashScopeChatModel
+except ImportError:  # pragma: no cover - compatibility fallback
+    DashScopeChatModel = None
 
 from .utils.tool_message_utils import _sanitize_tool_messages
 from ..config.utils import load_config
@@ -94,6 +100,57 @@ _CHAT_MODEL_FORMATTER_MAP: dict[Type[ChatModelBase], Type[FormatterBase]] = {
 }
 if AnthropicChatModel is not None and AnthropicChatFormatter is not None:
     _CHAT_MODEL_FORMATTER_MAP[AnthropicChatModel] = AnthropicChatFormatter
+
+
+class DashScopeCompatibleChatModel(OpenAIChatModel):
+    """OpenAIChatModel with support for DashScope-specific parameters.
+
+    This class extends OpenAIChatModel to support the `enable_thinking`
+    parameter for DashScope's OpenAI-compatible API.
+    """
+
+    def __init__(
+        self,
+        model_name: str,
+        api_key: str | None = None,
+        stream: bool = True,
+        enable_thinking: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        """Initialize with enable_thinking support.
+
+        Args:
+            model_name: The model name.
+            api_key: The API key.
+            stream: Whether to use streaming.
+            enable_thinking: Whether to enable thinking/reasoning content.
+            **kwargs: Additional arguments passed to OpenAIChatModel.
+        """
+        super().__init__(model_name, api_key=api_key, stream=stream, **kwargs)
+        self._enable_thinking = enable_thinking
+
+    async def __call__(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        tool_choice: str | None = None,
+        structured_model: Type[Any] | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Override to add enable_thinking via extra_body."""
+        # Add enable_thinking to extra_body if enabled
+        if self._enable_thinking:
+            if "extra_body" not in kwargs:
+                kwargs["extra_body"] = {}
+            kwargs["extra_body"]["enable_thinking"] = True
+
+        return await super().__call__(
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,
+            structured_model=structured_model,
+            **kwargs,
+        )
 
 
 def _get_formatter_for_chat_model(
@@ -566,6 +623,14 @@ def _create_remote_model_instance(
                 ensure_ascii=False,
             ),
         }
+        # Use DashScopeCompatibleChatModel with enable_thinking for dashscope
+        return DashScopeCompatibleChatModel(
+            model_name,
+            api_key=api_key,
+            stream=True,
+            enable_thinking=True,
+            client_kwargs=client_kwargs,
+        )
 
     # Instantiate model
     model = chat_model_class(

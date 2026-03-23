@@ -1,7 +1,7 @@
 
 import { OperateCard, useProviderContext } from '@/chat';
 import { SparkCopyLine, SparkLoadingLine, SparkToolLine, SparkTrueLine } from '@agentscope-ai/icons';
-import { CodeBlock, CollapsePanel, IconButton } from '@agentscope-ai/design';
+import { CodeBlock, CollapsePanel, IconButton, message } from '@agentscope-ai/design';
 import { copy } from '../../Util/copy';
 import { useRef, useState } from 'react';
 
@@ -33,11 +33,12 @@ function Block(props: {
             copy(contentString).then(() => {
               clearTimeout(timer.current);
               setCopied(true);
+              message.success('复制成功');
               timer.current = setTimeout(() => {
                 setCopied(false);
               }, 2000);
             }).catch(() => {
-              console.warn('Copy failed');
+              message.error('复制失败');
             });
           }} />
       }

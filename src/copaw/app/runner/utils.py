@@ -10,6 +10,10 @@ from agentscope_runtime.engine.schemas.agent_schemas import (
     MessageType,
 )
 from agentscope_runtime.engine.helpers.agent_api_builder import ResponseBuilder
+from ...local_models.tag_parser import (
+    extract_thinking_from_text,
+    text_contains_think_tag,
+)
 
 
 def build_env_context(
@@ -84,7 +88,46 @@ def agentscope_msg_to_message(
         role = msg.role or "assistant"
 
         if isinstance(msg.content, str):
-            # Only text
+            # Only text - check for thinking tags
+            text = msg.content
+            if text_contains_think_tag(text):
+                parsed = extract_thinking_from_text(text)
+                # Add thinking block if present
+                if parsed.thinking:
+                    rb = ResponseBuilder()
+                    mb = rb.create_message_builder(
+                        role=role,
+                        message_type=MessageType.REASONING,
+                    )
+                    mb.message.metadata = {
+                        "original_id": msg.id,
+                        "original_name": msg.name,
+                        "metadata": msg.metadata,
+                    }
+                    cb = mb.create_content_builder(content_type="text")
+                    cb.set_text(parsed.thinking)
+                    cb.complete()
+                    mb.complete()
+                    results.append(mb.get_message_data())
+                # Add remaining text if present
+                if parsed.remaining_text:
+                    rb = ResponseBuilder()
+                    mb = rb.create_message_builder(
+                        role=role,
+                        message_type=MessageType.MESSAGE,
+                    )
+                    mb.message.metadata = {
+                        "original_id": msg.id,
+                        "original_name": msg.name,
+                        "metadata": msg.metadata,
+                    }
+                    cb = mb.create_content_builder(content_type="text")
+                    cb.set_text(parsed.remaining_text)
+                    cb.complete()
+                    mb.complete()
+                    results.append(mb.get_message_data())
+                continue
+            # No thinking tags - original logic
             rb = ResponseBuilder()
             mb = rb.create_message_builder(
                 role=role,
@@ -115,7 +158,52 @@ def agentscope_msg_to_message(
                 continue
 
             if btype == "text":
-                # Create/continue MESSAGE type
+                # Check for thinking tags in text block
+                text = block.get("text", "")
+                if text_contains_think_tag(text):
+                    parsed = extract_thinking_from_text(text)
+                    # Add thinking content as REASONING type
+                    if parsed.thinking:
+                        if current_type != MessageType.REASONING:
+                            if current_mb:
+                                current_mb.complete()
+                                results.append(current_mb.get_message_data())
+                            rb = ResponseBuilder()
+                            current_mb = rb.create_message_builder(
+                                role=role,
+                                message_type=MessageType.REASONING,
+                            )
+                            current_mb.message.metadata = {
+                                "original_id": msg.id,
+                                "original_name": msg.name,
+                                "metadata": msg.metadata,
+                            }
+                            current_type = MessageType.REASONING
+                        cb = current_mb.create_content_builder(content_type="text")
+                        cb.set_text(parsed.thinking)
+                        cb.complete()
+                    # Add remaining text as MESSAGE type
+                    if parsed.remaining_text:
+                        if current_type != MessageType.MESSAGE:
+                            if current_mb:
+                                current_mb.complete()
+                                results.append(current_mb.get_message_data())
+                            rb = ResponseBuilder()
+                            current_mb = rb.create_message_builder(
+                                role=role,
+                                message_type=MessageType.MESSAGE,
+                            )
+                            current_mb.message.metadata = {
+                                "original_id": msg.id,
+                                "original_name": msg.name,
+                                "metadata": msg.metadata,
+                            }
+                            current_type = MessageType.MESSAGE
+                        cb = current_mb.create_content_builder(content_type="text")
+                        cb.set_text(parsed.remaining_text)
+                        cb.complete()
+                    continue
+                # No thinking tags - original logic
                 if current_type != MessageType.MESSAGE:
                     if current_mb:
                         current_mb.complete()
@@ -133,7 +221,7 @@ def agentscope_msg_to_message(
                     }
                     current_type = MessageType.MESSAGE
                 cb = current_mb.create_content_builder(content_type="text")
-                cb.set_text(block.get("text", ""))
+                cb.set_text(text)
                 cb.complete()
 
             elif btype == "thinking":

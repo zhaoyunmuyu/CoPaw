@@ -10,7 +10,7 @@ export async function copy(text: string): Promise<void> {
   document.body.appendChild(textarea);
   textarea.select();
   try {
-    document.execCommand('copy', true);
+    document.execCommand('copy');
   } finally {
     document.body.removeChild(textarea);
   }

@@ -12,9 +12,14 @@ export function useSkills() {
     setLoading(true);
     try {
       const data = await api.listSkills();
-      if (data) {
-        setSkills(data);
+      // Handle both array and object responses (e.g., { skills: [...] })
+      let skillsArray: SkillSpec[] = [];
+      if (Array.isArray(data)) {
+        skillsArray = data;
+      } else if (data && typeof data === "object" && "skills" in data) {
+        skillsArray = (data as { skills: SkillSpec[] }).skills;
       }
+      setSkills(skillsArray);
     } catch (error) {
       console.error("Failed to load skills", error);
       message.error("Failed to load skills");
