@@ -1,296 +1,326 @@
 ---
 name: batch_api
-description: "当用户需要对大量外部接口进行批量调用时使用此skill。例如：查询数百个客户的信息、获取产品列表数据、或任何需要重复调用API且参数不同的场景。该skill通过脚本自动处理批量执行、进度追踪、错误恢复，并将结果存储到独立任务目录中，不占用模型上下文。触发条件：用户提到'批量'、'循环'、'逐个查询'，或有一个列表需要通过API处理。"
+description: "当用户需要对大量外部接口进行批量调用时使用此skill。支持单步批量调用和多步骤流水线串联调用。例如：查询数百个客户的信息、先获取客户列表再查询每个客户详情、获取产品列表再查库存等场景。该skill通过脚本自动处理批量执行、进度追踪、错误恢复，并将结果存储到独立任务目录中，不占用模型上下文。触发条件：用户提到'批量'、'循环'、'逐个查询'、'先...再...'、'串联调用'，或有一个列表需要通过API处理。"
 ---
 
 # 批量API调用指南
 
 ## 概述
 
-本skill提供了一个高效的批量API请求执行脚本，主要功能：
+本skill提供了两种批量API请求模式：
+
+**单步模式**：一次性批量调用同一个接口
 - 从JSON/CSV文件读取输入数据
 - 基于模板构建URL和请求体
 - 进度追踪，支持中断恢复
+
+**流水线模式**：多步骤串联调用
+- 支持接口串联，如先调用接口A，再用A的结果调用接口B
+- 自动传递数据，支持字段映射
+- 每个步骤结果独立存储
+
+**共同特性：**
 - 错误处理和自动重试
-- **强制独立任务目录，避免污染工作空间**
+- 强制独立任务目录
 - 结果存储到文件
 
 **适用场景：**
-- 需要为10个以上项目调用API查询数据（客户、产品、订单等）
+- 需要为10个以上项目调用API查询数据
 - 用户提到"批量"、"循环处理"、"逐个查询"
-- 从文件读取列表并通过API处理
-- 长时间运行的API任务需要进度追踪
+- **先获取列表，再查询详情**（流水线模式）
+- **先搜索，再获取详细信息**（流水线模式）
 
-## 工作目录结构
+---
 
-**每个批量任务必须放在独立目录中。**
+## 一、单步模式
 
-目录结构：
+适用于一次性批量调用同一接口的场景。
+
+### 工作目录结构
+
 ```
 batch_tasks/
-├── customer_query_20240115/     # 任务目录（任务名+日期命名）
-│   ├── config.json              # 配置文件（必需）
-│   ├── input.json               # 输入数据（必需）
-│   ├── results.json             # 输出结果（脚本生成）
-│   ├── results.json.progress.json  # 进度文件（脚本生成，完成后删除）
-│   └── results.json.errors.jsonl   # 错误日志（有错误时生成）
-├── product_query_20240116/
-│   ├── config.json
-│   ├── input.csv
+├── customer_query_20240115/
+│   ├── config.json              # 单步配置
+│   ├── input.json
 │   └── results.json
-└── ...
 ```
 
-## 快速开始
-
-### 第一步：创建任务目录
-
-```bash
-mkdir -p batch_tasks/customer_query_20240115
-```
-
-### 第二步：准备输入文件
-
-在任务目录中创建`input.json`或`input.csv`：
-
-**JSON格式：**
-```json
-[
-  {"customer_id": "C001", "name": "张三"},
-  {"customer_id": "C002", "name": "李四"}
-]
-```
-
-**CSV格式：**
-```csv
-customer_id,name
-C001,张三
-C002,李四
-```
-
-### 第三步：创建配置文件
-
-在任务目录中创建`config.json`：
+### 配置文件 (config.json)
 
 ```json
 {
   "base_url": "https://api.example.com",
   "endpoint": "/customers/{customer_id}",
   "method": "GET",
-  "headers": {
-    "Authorization": "Bearer YOUR_TOKEN"
-  },
+  "headers": {"Authorization": "Bearer TOKEN"},
   "id_field": "customer_id"
 }
 ```
 
-### 第四步：执行脚本
+### 执行命令
 
 ```bash
 python scripts/batch_request.py --workdir batch_tasks/customer_query_20240115
 ```
 
-## 配置参数说明
+### 配置参数说明
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `base_url` | string | 必填 | API基础URL |
 | `endpoint` | string | 必填 | 端点路径，支持`{字段}`占位符 |
-| `method` | string | GET | HTTP方法：GET, POST, PUT, DELETE, PATCH |
-| `headers` | object | {} | HTTP请求头，支持`{字段}`占位符 |
-| `request_body` | object | null | POST/PUT/PATCH请求体 |
+| `method` | string | GET | HTTP方法 |
+| `headers` | object | {} | HTTP请求头，支持占位符 |
+| `request_body` | object | null | POST/PUT请求体 |
 | `url_params` | object | {} | URL查询参数 |
 | `response_data_path` | string | "$" | 从响应中提取数据的JSONPath |
 | `id_field` | string | "id" | 用于进度追踪的字段名 |
 | `timeout` | number | 30 | 请求超时时间（秒） |
 | `retry_count` | number | 3 | 失败重试次数 |
-| `retry_delay` | number | 1 | 重试间隔（秒） |
-| `concurrency` | number | 1 | 并发请求数（最大10） |
-| `delay_between_requests` | number | 0 | 请求间隔（秒） |
+| `concurrency` | number | 1 | 并发请求数 |
 
-## 模板占位符
+---
 
-使用`{字段名}`从输入数据中替换值：
+## 二、流水线模式
 
-**URL路径：**
+适用于多步骤串联调用的场景，如先获取列表再查询详情。
+
+### 典型场景
+
+1. **先获取客户ID列表，再逐个查询客户详情**
+2. **先搜索产品，再获取每个产品的库存信息**
+3. **先获取订单列表，再查询每个订单的物流状态**
+
+### 工作目录结构
+
 ```
-/customers/{customer_id}/orders/{order_id}
+batch_tasks/
+├── customer_details_20240115/
+│   ├── config.json              # 流水线配置（含多个步骤）
+│   ├── input.json               # 初始输入
+│   ├── step_1_get_ids.json      # 步骤1结果（自动生成）
+│   ├── step_2_get_details.json  # 步骤2结果（自动生成）
+│   └── results.json             # 最终汇总结果
 ```
 
-**请求头：**
+### 配置文件格式 (config.json)
+
 ```json
 {
-  "Authorization": "Bearer {api_token}",
-  "X-Customer-ID": "{customer_id}"
+  "steps": [
+    {
+      "name": "get_customer_ids",
+      "base_url": "https://api.example.com",
+      "endpoint": "/customers",
+      "method": "GET",
+      "response_data_path": "$.data",
+      "input_source": "initial"
+    },
+    {
+      "name": "get_customer_details",
+      "base_url": "https://api.example.com",
+      "endpoint": "/customers/{id}",
+      "method": "GET",
+      "input_source": "get_customer_ids",
+      "input_mapping": {
+        "id": "$.id"
+      }
+    }
+  ]
 }
 ```
 
-**请求体：**
+### 步骤配置参数
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `name` | string | 步骤名称，用于引用结果 |
+| `base_url` | string | API基础URL |
+| `endpoint` | string | 端点路径，支持`{字段}`占位符 |
+| `method` | string | HTTP方法 |
+| `headers` | object | HTTP请求头 |
+| `request_body` | object | 请求体 |
+| `response_data_path` | string | 从响应提取数据的JSONPath |
+| `input_source` | string | 输入来源：`"initial"`（初始输入）、`"previous"`（上一步输出）、步骤名（指定步骤输出） |
+| `input_mapping` | object | 字段映射：`{"目标字段": "JSONPath路径"}` |
+| `id_field` | string | 用于追踪的字段名 |
+| `concurrency` | number | 并发数 |
+| `retry_count` | number | 重试次数 |
+
+### 执行命令
+
+```bash
+python scripts/pipeline.py --workdir batch_tasks/customer_details_20240115
+```
+
+### 字段映射说明
+
+`input_mapping` 用于将上一步的输出映射到当前步骤的输入参数：
+
 ```json
 {
-  "query": "{name}",
-  "filters": {"id": "{customer_id}"}
+  "input_mapping": {
+    "customer_id": "$.id",           // 从上一步结果提取 id 字段
+    "region": "$.address.region",    // 提取嵌套字段
+    "type": "vip"                    // 固定值
+  }
 }
 ```
 
-## 输出文件
+---
 
-### results.json
+## 快速开始
+
+### 单步模式示例
+
+```bash
+# 1. 创建任务目录
+mkdir -p batch_tasks/customer_query
+
+# 2. 创建配置文件
+cat > batch_tasks/customer_query/config.json << 'EOF'
+{
+  "base_url": "https://api.example.com",
+  "endpoint": "/customers/{customer_id}",
+  "id_field": "customer_id"
+}
+EOF
+
+# 3. 创建输入文件
+cat > batch_tasks/customer_query/input.json << 'EOF'
+[{"customer_id": "C001"}, {"customer_id": "C002"}]
+EOF
+
+# 4. 执行
+python scripts/batch_request.py --workdir batch_tasks/customer_query
+```
+
+### 流水线模式示例
+
+```bash
+# 1. 创建任务目录
+mkdir -p batch_tasks/customer_pipeline
+
+# 2. 创建流水线配置
+cat > batch_tasks/customer_pipeline/config.json << 'EOF'
+{
+  "steps": [
+    {
+      "name": "list_customers",
+      "base_url": "https://api.example.com",
+      "endpoint": "/customers",
+      "input_source": "initial"
+    },
+    {
+      "name": "get_details",
+      "base_url": "https://api.example.com",
+      "endpoint": "/customers/{id}",
+      "input_source": "list_customers",
+      "input_mapping": {"id": "$.id"}
+    }
+  ]
+}
+EOF
+
+# 3. 创建初始输入
+cat > batch_tasks/customer_pipeline/input.json << 'EOF'
+[{"page": 1}]
+EOF
+
+# 4. 执行流水线
+python scripts/pipeline.py --workdir batch_tasks/customer_pipeline
+```
+
+---
+
+## 输出文件格式
+
+### 单步模式 results.json
+
 ```json
 {
   "status": "completed",
   "total": 200,
   "success": 198,
   "failed": 2,
-  "start_time": "2024-01-15T10:30:00Z",
-  "end_time": "2024-01-15T10:45:00Z",
-  "duration_seconds": 900,
   "results": [
     {
-      "input": {"customer_id": "C001", "name": "张三"},
-      "output": {"id": "C001", "email": "zhangsan@example.com"},
+      "input": {"customer_id": "C001"},
+      "output": {"id": "C001", "name": "张三"},
       "status": "success"
-    }
-  ],
-  "errors": [
-    {
-      "input": {"customer_id": "C199"},
-      "error": "404 Not Found",
-      "status": "failed"
     }
   ]
 }
 ```
 
-### progress.json（自动生成）
-追踪进度，用于中断恢复：
+### 流水线模式 results.json
+
 ```json
 {
-  "processed_ids": ["C001", "C002"],
-  "last_index": 50,
-  "timestamp": "2024-01-15T10:35:00Z"
+  "status": "completed",
+  "steps": [
+    {
+      "name": "list_customers",
+      "output_file": "step_1_list_customers.json",
+      "total": 10,
+      "success": 10,
+      "failed": 0
+    },
+    {
+      "name": "get_details",
+      "output_file": "step_2_get_details.json",
+      "total": 10,
+      "success": 9,
+      "failed": 1
+    }
+  ],
+  "duration_seconds": 45.2
 }
 ```
+
+---
 
 ## 中断恢复
 
-脚本自动追踪进度。如果中断：
-
-1. 使用`--resume`参数重新执行
-2. 脚本检测进度文件并从中断处继续
-
 ```bash
-python scripts/batch_request.py --workdir batch_tasks/customer_query_20240115 --resume
+# 单步模式
+python scripts/batch_request.py --workdir batch_tasks/task1 --resume
+
+# 流水线模式暂不支持中断恢复，需重新执行
 ```
 
-## 错误处理
-
-- **自动重试**：失败的请求根据`retry_count`自动重试
-- **错误日志**：错误记录到`results.json.errors.jsonl`文件
-- **继续执行**：出错后继续处理后续项目
-- **汇总报告**：最终结果中包含所有错误信息
-
-## 高级用法
-
-### POST请求带请求体
-
-```json
-{
-  "base_url": "https://api.example.com",
-  "endpoint": "/search",
-  "method": "POST",
-  "headers": {"Content-Type": "application/json"},
-  "request_body": {
-    "query": "{search_term}",
-    "limit": 10
-  }
-}
-```
-
-### 并发请求
-
-```json
-{
-  "concurrency": 5,
-  "delay_between_requests": 0.1
-}
-```
-
-### 自定义响应提取
-
-使用JSONPath从响应中提取特定数据：
-```json
-{
-  "response_data_path": "$.data.items"
-}
-```
-
-## Agent工作流程
-
-1. **明确需求**：确认API端点、输入数据来源、期望输出
-2. **创建任务目录**：`mkdir -p batch_tasks/任务名_日期`
-3. **准备配置**：在任务目录创建config.json
-4. **准备输入**：在任务目录创建input.json或input.csv
-5. **执行脚本**：使用`--workdir`参数执行
-6. **检查结果**：读取任务目录中的results.json汇总结果
-7. **向用户报告**：总结成功/失败数量和错误信息
+---
 
 ## 命令参考
 
 ```bash
-# 基本用法
-python scripts/batch_request.py --workdir batch_tasks/customer_query_20240115
+# 单步模式
+python scripts/batch_request.py --workdir <任务目录>
+python scripts/batch_request.py --workdir <任务目录> --resume
 
-# 恢复中断的任务
-python scripts/batch_request.py --workdir batch_tasks/customer_query_20240115 --resume
-
-# 强制重新开始
-python scripts/batch_request.py --workdir batch_tasks/customer_query_20240115 --force
-
-# 自定义文件名（在workdir下，默认为config.json/input.json/results.json）
-python scripts/batch_request.py --workdir batch_tasks/task1 -c my_config.json -i my_input.csv
+# 流水线模式
+python scripts/pipeline.py --workdir <任务目录>
+python scripts/pipeline.py --workdir <任务目录> --force
 
 # 查看帮助
 python scripts/batch_request.py --help
+python scripts/pipeline.py --help
 ```
 
-## 示例场景
+---
 
-### 场景1：查询客户详情
+## Agent工作流程
 
-用户："查询customer_list.json中所有200个客户的API信息"
+### 单步模式
+1. 创建任务目录
+2. 创建config.json和input.json
+3. 执行batch_request.py
+4. 读取results.json汇总结果
 
-步骤：
-1. 创建任务目录：`mkdir -p batch_tasks/customer_query_20240115`
-2. 将customer_list.json移动到任务目录并重命名为input.json
-3. 在任务目录创建config.json，端点设为`/customers/{customer_id}`
-4. 执行：`python scripts/batch_request.py --workdir batch_tasks/customer_query_20240115`
-5. 从results.json汇总结果
-
-### 场景2：从CSV批量查询产品
-
-用户："获取products.csv中所有产品ID的产品信息"
-
-步骤：
-1. 创建任务目录：`mkdir -p batch_tasks/product_query_20240116`
-2. 将products.csv移动到任务目录并重命名为input.csv
-3. 在任务目录创建config.json配置适当的端点
-4. 执行：`python scripts/batch_request.py --workdir batch_tasks/product_query_20240116`
-5. 报告结果
-
-### 场景3：批量POST请求
-
-用户："更新orders.json中所有订单的状态"
-
-步骤：
-1. 创建任务目录：`mkdir -p batch_tasks/order_update_20240117`
-2. 将orders.json移动到任务目录并重命名为input.json
-3. 在任务目录创建config.json，使用POST方法和请求体模板
-4. 执行：`python scripts/batch_request.py --workdir batch_tasks/order_update_20240117`
-5. 报告结果
-
-## 代码风格
-
-- Python代码保持简洁
-- 避免不必要的注释和冗长的变量名
-- 专注于当前任务
+### 流水线模式
+1. 创建任务目录
+2. 创建流水线配置config.json（定义多个steps）
+3. 创建初始输入input.json
+4. 执行pipeline.py
+5. 读取各步骤结果文件和最终results.json

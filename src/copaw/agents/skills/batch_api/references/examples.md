@@ -1,280 +1,306 @@
 # 批量API调用示例
 
-## 示例1：客户信息查询
+---
 
-### 创建任务目录
+## 一、单步模式示例
+
+### 示例1：客户信息查询
+
 ```bash
-mkdir -p batch_tasks/customer_query_20240115
+mkdir -p batch_tasks/customer_query
 ```
 
-### 输入文件 (batch_tasks/customer_query_20240115/input.json)
-```json
-[
-  {"customer_id": "C001", "name": "张三"},
-  {"customer_id": "C002", "name": "李四"},
-  {"customer_id": "C003", "name": "王五"}
-]
-```
-
-### 配置文件 (batch_tasks/customer_query_20240115/config.json)
+**config.json:**
 ```json
 {
   "base_url": "https://api.company.com",
   "endpoint": "/v1/customers/{customer_id}",
   "method": "GET",
-  "headers": {
-    "Authorization": "Bearer YOUR_API_TOKEN"
-  },
-  "id_field": "customer_id",
-  "concurrency": 3,
-  "retry_count": 2
+  "headers": {"Authorization": "Bearer TOKEN"},
+  "id_field": "customer_id"
 }
 ```
 
-### 执行命令
-```bash
-python scripts/batch_request.py --workdir batch_tasks/customer_query_20240115
+**input.json:**
+```json
+[
+  {"customer_id": "C001"},
+  {"customer_id": "C002"}
+]
 ```
 
-### 输出文件 (batch_tasks/customer_query_20240115/results.json)
+**执行:**
+```bash
+python scripts/batch_request.py --workdir batch_tasks/customer_query
+```
+
+---
+
+### 示例2：CSV输入 + POST请求
+
+**input.csv:**
+```csv
+product_id,action
+P001,check_stock
+P002,check_stock
+```
+
+**config.json:**
 ```json
 {
-  "status": "completed",
-  "total": 3,
-  "success": 3,
-  "failed": 0,
-  "results": [
-    {
-      "input": {"customer_id": "C001", "name": "张三"},
-      "output": {"id": "C001", "email": "zhangsan@company.com", "phone": "138-0000-0001"},
-      "status": "success"
-    },
-    {
-      "input": {"customer_id": "C002", "name": "李四"},
-      "output": {"id": "C002", "email": "lisi@company.com", "phone": "138-0000-0002"},
-      "status": "success"
-    },
-    {
-      "input": {"customer_id": "C003", "name": "王五"},
-      "output": {"id": "C003", "email": "wangwu@company.com", "phone": "138-0000-0003"},
-      "status": "success"
-    }
-  ]
+  "base_url": "https://api.example.com",
+  "endpoint": "/products/action",
+  "method": "POST",
+  "headers": {"Content-Type": "application/json"},
+  "request_body": {
+    "product_id": "{product_id}",
+    "action": "{action}"
+  },
+  "id_field": "product_id"
 }
 ```
 
 ---
 
-## 示例2：产品搜索（POST请求）
+## 二、流水线模式示例
 
-### 任务目录结构
+### 示例3：先获取客户列表，再查询详情
+
+**场景**：先调用列表接口获取客户ID，再用ID查询每个客户的详细信息。
+
+```bash
+mkdir -p batch_tasks/customer_pipeline
 ```
-batch_tasks/product_search_20240116/
+
+**config.json（流水线配置）:**
+```json
+{
+  "steps": [
+    {
+      "name": "get_customer_list",
+      "base_url": "https://api.company.com",
+      "endpoint": "/v1/customers",
+      "method": "GET",
+      "response_data_path": "$.data.items",
+      "input_source": "initial"
+    },
+    {
+      "name": "get_customer_details",
+      "base_url": "https://api.company.com",
+      "endpoint": "/v1/customers/{customer_id}",
+      "method": "GET",
+      "input_source": "get_customer_list",
+      "input_mapping": {
+        "customer_id": "$.id"
+      }
+    }
+  ]
+}
+```
+
+**input.json（初始输入）:**
+```json
+[{"page": 1, "limit": 100}]
+```
+
+**执行:**
+```bash
+python scripts/pipeline.py --workdir batch_tasks/customer_pipeline
+```
+
+**生成的文件:**
+```
+batch_tasks/customer_pipeline/
 ├── config.json
 ├── input.json
-└── results.json  (脚本生成)
-```
-
-### 输入文件 (input.json)
-```json
-[
-  {"product_name": "iPhone 15", "category": "电子产品"},
-  {"product_name": "MacBook Pro", "category": "电子产品"},
-  {"product_name": "AirPods", "category": "电子产品"}
-]
-```
-
-### 配置文件 (config.json)
-```json
-{
-  "base_url": "https://search.api.com",
-  "endpoint": "/v1/search",
-  "method": "POST",
-  "headers": {
-    "Content-Type": "application/json",
-    "X-API-Key": "YOUR_API_KEY"
-  },
-  "request_body": {
-    "query": "{product_name}",
-    "category": "{category}",
-    "limit": 10
-  },
-  "id_field": "product_name",
-  "response_data_path": "$.results",
-  "concurrency": 2
-}
-```
-
-### 执行命令
-```bash
-python scripts/batch_request.py --workdir batch_tasks/product_search_20240116
+├── step_1_get_customer_list.json     # 步骤1结果
+├── step_2_get_customer_details.json  # 步骤2结果
+└── results.json                      # 最终汇总
 ```
 
 ---
 
-## 示例3：订单状态更新（CSV输入）
+### 示例4：搜索产品后获取库存
 
-### 任务目录结构
-```
-batch_tasks/order_update_20240117/
-├── config.json
-├── input.csv
-└── results.json
-```
+**场景**：先搜索产品，再查询每个产品的库存信息。
 
-### 输入文件 (input.csv)
-```csv
-order_id,new_status,updated_by
-ORD-001,已发货,系统
-ORD-002,已签收,系统
-ORD-003,已取消,管理员
-```
-
-### 配置文件 (config.json)
+**config.json:**
 ```json
 {
-  "base_url": "https://orders.api.com",
-  "endpoint": "/v1/orders/{order_id}/status",
-  "method": "PUT",
-  "headers": {
-    "Authorization": "Bearer YOUR_TOKEN",
-    "Content-Type": "application/json"
-  },
-  "request_body": {
-    "status": "{new_status}",
-    "updated_by": "{updated_by}"
-  },
-  "id_field": "order_id",
-  "timeout": 60
-}
-```
-
-### 执行命令
-```bash
-python scripts/batch_request.py --workdir batch_tasks/order_update_20240117
-```
-
----
-
-## 示例4：中断恢复
-
-当批量任务被中断（Ctrl+C或崩溃）时，可以从中断处继续：
-
-```bash
-# 第一次运行（被中断）
-python scripts/batch_request.py --workdir batch_tasks/large_task_20240118
-# 输出: 进度: 150/500 (150 成功, 0 失败) ... (Ctrl+C)
-# 进度保存到 batch_tasks/large_task_20240118/results.json.progress.json
-
-# 恢复执行
-python scripts/batch_request.py --workdir batch_tasks/large_task_20240118 --resume
-# 输出: 从进度恢复: 已处理 150 个项目
-#       正在处理 350 个项目（总数: 500，已完成: 150）
-```
-
----
-
-## 示例5：错误处理与重试
-
-### 配置重试参数 (config.json)
-```json
-{
-  "base_url": "https://unstable.api.com",
-  "endpoint": "/data/{id}",
-  "method": "GET",
-  "headers": {"Authorization": "Bearer TOKEN"},
-  "id_field": "id",
-  "retry_count": 5,
-  "retry_delay": 2,
-  "timeout": 60
-}
-```
-
-### 带错误的输出结果 (results.json)
-```json
-{
-  "status": "completed",
-  "total": 100,
-  "success": 95,
-  "failed": 5,
-  "errors": [
+  "steps": [
     {
-      "input": {"id": "ERR001"},
-      "error": "HTTP 404: Not Found",
-      "status": "failed"
+      "name": "search_products",
+      "base_url": "https://api.shop.com",
+      "endpoint": "/products/search",
+      "method": "POST",
+      "headers": {"Content-Type": "application/json"},
+      "request_body": {
+        "keyword": "{keyword}",
+        "category": "{category}"
+      },
+      "response_data_path": "$.results",
+      "input_source": "initial"
     },
     {
-      "input": {"id": "ERR002"},
-      "error": "Connection timeout after 60s",
-      "status": "failed"
+      "name": "check_inventory",
+      "base_url": "https://api.shop.com",
+      "endpoint": "/inventory/{sku}",
+      "method": "GET",
+      "input_source": "search_products",
+      "input_mapping": {
+        "sku": "$.sku"
+      }
     }
   ]
 }
 ```
 
-错误同时记录在`results.json.errors.jsonl`文件中。
-
----
-
-## 示例6：复杂模板替换
-
-### 输入文件 (input.json)
+**input.json:**
 ```json
 [
-  {
-    "api_token": "token123",
-    "org_id": "ORG001",
-    "user_id": "USER001",
-    "query_text": "搜索关键词"
-  }
+  {"keyword": "手机", "category": "electronics"},
+  {"keyword": "笔记本", "category": "computers"}
 ]
 ```
 
-### 配置文件 (config.json)
+---
+
+### 示例5：订单 -> 物流追踪
+
+**场景**：先获取订单列表，再查询每个订单的物流状态。
+
+**config.json:**
 ```json
 {
-  "base_url": "https://api.service.com",
-  "endpoint": "/orgs/{org_id}/users/{user_id}/search",
-  "method": "POST",
-  "headers": {
-    "Authorization": "Bearer {api_token}",
-    "X-Org-ID": "{org_id}"
-  },
-  "url_params": {
-    "user": "{user_id}"
-  },
-  "request_body": {
-    "query": "{query_text}",
-    "org": "{org_id}"
-  },
-  "id_field": "user_id"
+  "steps": [
+    {
+      "name": "get_orders",
+      "base_url": "https://api.order.com",
+      "endpoint": "/orders",
+      "method": "GET",
+      "url_params": {
+        "status": "{status}",
+        "date_from": "{date_from}"
+      },
+      "response_data_path": "$.orders",
+      "input_source": "initial"
+    },
+    {
+      "name": "track_shipping",
+      "base_url": "https://api.shipping.com",
+      "endpoint": "/track/{tracking_number}",
+      "method": "GET",
+      "input_source": "get_orders",
+      "input_mapping": {
+        "tracking_number": "$.tracking_no"
+      }
+    }
+  ]
 }
 ```
 
-所有`{字段}`占位符都会被输入数据中对应的值替换。
+**input.json:**
+```json
+[
+  {"status": "shipped", "date_from": "2024-01-01"}
+]
+```
 
 ---
 
-## 完整任务目录示例
+### 示例6：三步流水线（用户 -> 订单 -> 详情）
+
+**场景**：获取用户列表 -> 查询每个用户的订单 -> 查询订单详情。
+
+**config.json:**
+```json
+{
+  "steps": [
+    {
+      "name": "get_users",
+      "base_url": "https://api.example.com",
+      "endpoint": "/users",
+      "input_source": "initial",
+      "response_data_path": "$.users"
+    },
+    {
+      "name": "get_user_orders",
+      "base_url": "https://api.example.com",
+      "endpoint": "/users/{user_id}/orders",
+      "input_source": "get_users",
+      "input_mapping": {
+        "user_id": "$.id"
+      },
+      "response_data_path": "$.orders"
+    },
+    {
+      "name": "get_order_details",
+      "base_url": "https://api.example.com",
+      "endpoint": "/orders/{order_id}",
+      "input_source": "get_user_orders",
+      "input_mapping": {
+        "order_id": "$.order_id"
+      }
+    }
+  ]
+}
+```
+
+**input.json:**
+```json
+[{"limit": 50}]
+```
+
+---
+
+## 三、字段映射详解
+
+`input_mapping` 支持从上一步结果提取字段：
+
+```json
+{
+  "input_mapping": {
+    "customer_id": "$.id",              // 简单字段
+    "region": "$.address.province",     // 嵌套字段
+    "city": "$.address.city"
+  }
+}
+```
+
+**特殊值**：非JSONPath开头的值作为固定值
+
+```json
+{
+  "input_mapping": {
+    "customer_id": "$.id",
+    "source": "api",        // 固定值
+    "version": "2.0"        // 固定值
+  }
+}
+```
+
+---
+
+## 四、完整目录结构示例
 
 ```
 batch_tasks/
-├── customer_query_20240115/
-│   ├── config.json
+├── simple_query/
+│   ├── config.json           # 单步配置
 │   ├── input.json
 │   └── results.json
-├── product_search_20240116/
-│   ├── config.json
+│
+├── customer_pipeline/
+│   ├── config.json           # 流水线配置
 │   ├── input.json
-│   ├── results.json
-│   └── results.json.errors.jsonl   # 有错误时生成
-├── order_update_20240117/
-│   ├── config.json
-│   ├── input.csv
+│   ├── step_1_get_list.json
+│   ├── step_2_get_details.json
 │   └── results.json
-└── large_task_20240118/
+│
+└── order_tracking/
     ├── config.json
     ├── input.json
-    ├── results.json
-    └── results.json.progress.json   # 未完成任务存在
+    ├── step_1_get_orders.json
+    ├── step_2_track_shipping.json
+    └── results.json
 ```
