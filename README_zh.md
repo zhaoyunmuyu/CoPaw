@@ -87,6 +87,7 @@
 - [本地模型](#本地模型)
 - [文档](#文档)
 - [常见问题](#常见问题)
+- [掌握最新动态](#掌握最新动态)
 - [路线图](#路线图)
 - [参与贡献](#参与贡献)
 - [从源码安装](#从源码安装)
@@ -389,6 +390,16 @@ copaw app # 启动服务
 ## 常见问题
 
 常见问题、排错指南与已知问题，请访问 **[FAQ 页面](https://copaw.agentscope.io/docs/faq)**。
+
+---
+
+## 掌握最新动态
+
+<a href="https://github.com/agentscope-ai/CoPaw">
+  <img src="https://img.alicdn.com/imgextra/i1/O1CN0197AtT32351zYCnOUU_!!6000000007203-1-tps-2214-1080.gif" width="600" alt="Star CoPaw" />
+</a>
+
+在 GitHub 上 Star CoPaw，第一时间收到新版本发布通知。
 
 ---
 

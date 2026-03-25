@@ -83,6 +83,7 @@
 - [ローカルモデル](#ローカルモデル)
 - [ドキュメント](#ドキュメント)
 - [FAQ](#faq)
+- [最新情報をいち早く](#最新情報をいち早く)
 - [ロードマップ](#ロードマップ)
 - [参加方法](#参加方法)
 - [ソースからインストール](#ソースからインストール)
@@ -379,6 +380,16 @@ copaw app    # サーバーを起動
 ## FAQ
 
 よくある質問、トラブルシューティングのヒント、既知の問題については、**[FAQページ](https://copaw.agentscope.io/docs/faq)** をご覧ください。
+
+---
+
+## 最新情報をいち早く
+
+<a href="https://github.com/agentscope-ai/CoPaw">
+  <img src="https://img.alicdn.com/imgextra/i1/O1CN0197AtT32351zYCnOUU_!!6000000007203-1-tps-2214-1080.gif" width="600" alt="Star CoPaw" />
+</a>
+
+GitHubでCoPawにスターを付けて、新しいリリースの通知を即座に受け取りましょう。
 
 ---
 

@@ -87,6 +87,7 @@ Your Personal AI Assistant; easy to install, deploy on your own machine or on th
 - [Local Models](#local-models)
 - [Documentation](#documentation)
 - [FAQ](#faq)
+- [Staying ahead](#staying-ahead)
 - [Roadmap](#roadmap)
 - [Contributing](#get-involved)
 - [Install from source](#install-from-source)
@@ -383,6 +384,16 @@ Full docs in this repo: [website/public/docs/](website/public/docs/).
 ## FAQ
 
 For common questions, troubleshooting tips, and known issues, please visit the **[FAQ page](https://copaw.agentscope.io/docs/faq)**.
+
+---
+
+## Staying ahead
+
+<a href="https://github.com/agentscope-ai/CoPaw">
+  <img src="https://img.alicdn.com/imgextra/i1/O1CN0197AtT32351zYCnOUU_!!6000000007203-1-tps-2214-1080.gif" width="600" alt="Star CoPaw" />
+</a>
+
+Star CoPaw on GitHub and be instantly notified of new releases.
 
 ---
 
