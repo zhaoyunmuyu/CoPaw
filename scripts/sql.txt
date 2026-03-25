@@ -1,0 +1,136 @@
+完整配置步骤
+
+  1. 安装依赖
+
+  pip install aiomysql python-dotenv
+
+  2. 创建数据库
+
+  CREATE DATABASE copaw_tracing CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+  3. 创建数据表
+
+  USE copaw_tracing;
+
+  -- 会话表
+  CREATE TABLE IF NOT EXISTS traces (
+      trace_id VARCHAR(36) PRIMARY KEY,
+      user_id VARCHAR(128) NOT NULL,
+      session_id VARCHAR(256) NOT NULL,
+      channel VARCHAR(64) NOT NULL,
+      start_time DATETIME(3) NOT NULL,
+      end_time DATETIME(3),
+      duration_ms INT,
+      model_name VARCHAR(128),
+      total_input_tokens INT DEFAULT 0,
+      total_output_tokens INT DEFAULT 0,
+      total_tokens INT DEFAULT 0,
+      tools_used JSON,
+      skills_used JSON,
+      status VARCHAR(32) DEFAULT 'running',
+      error TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_user_id (user_id),
+      INDEX idx_start_time (start_time),
+      INDEX idx_model_name (model_name),
+      INDEX idx_session_id (session_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+  -- 操作表
+  CREATE TABLE IF NOT EXISTS spans (
+      span_id VARCHAR(36) PRIMARY KEY,
+      trace_id VARCHAR(36) NOT NULL,
+      parent_span_id VARCHAR(36),
+      name VARCHAR(256) NOT NULL,
+      event_type VARCHAR(32) NOT NULL,
+      start_time DATETIME(3) NOT NULL,
+      end_time DATETIME(3),
+      duration_ms INT,
+      user_id VARCHAR(128),
+      session_id VARCHAR(256),
+      channel VARCHAR(64),
+      model_name VARCHAR(128),
+      input_tokens INT,
+      output_tokens INT,
+      tool_name VARCHAR(128),
+      skill_name VARCHAR(128),
+      tool_input JSON,
+      tool_output TEXT,
+      error TEXT,
+      metadata JSON,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_trace_id (trace_id),
+      INDEX idx_event_type (event_type),
+      INDEX idx_tool_name (tool_name),
+      INDEX idx_skill_name (skill_name),
+      INDEX idx_user_id (user_id),
+      INDEX idx_start_time (start_time),
+      FOREIGN KEY (trace_id) REFERENCES traces(trace_id) ON DELETE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+  -- 用户每日统计表
+  CREATE TABLE IF NOT EXISTS user_daily_stats (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      user_id VARCHAR(128) NOT NULL,
+      stat_date DATE NOT NULL,
+      total_tokens INT DEFAULT 0,
+      input_tokens INT DEFAULT 0,
+      output_tokens INT DEFAULT 0,
+      session_count INT DEFAULT 0,
+      conversation_count INT DEFAULT 0,
+      total_duration_ms BIGINT DEFAULT 0,
+      models_used JSON,
+      tools_used JSON,
+      skills_used JSON,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_user_date (user_id, stat_date),
+      INDEX idx_stat_date (stat_date)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+  -- 全局每日统计表
+  CREATE TABLE IF NOT EXISTS global_daily_stats (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      stat_date DATE NOT NULL UNIQUE,
+      total_users INT DEFAULT 0,
+      active_users INT DEFAULT 0,
+      total_tokens INT DEFAULT 0,
+      input_tokens INT DEFAULT 0,
+      output_tokens INT DEFAULT 0,
+      session_count INT DEFAULT 0,
+      conversation_count INT DEFAULT 0,
+      avg_duration_ms INT DEFAULT 0,
+      model_distribution JSON,
+      tool_distribution JSON,
+      skill_distribution JSON,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_stat_date (stat_date)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+  4. 创建 .env 文件
+
+  在项目根目录 D:\Vibe Coding\CoPaw 创建 .env 文件：
+
+  # Tracing 功能开关
+  COPAW_TRACING_ENABLED=true
+
+  # 数据库配置
+  COPAW_TRACING_DB_HOST=localhost
+  COPAW_TRACING_DB_PORT=3306
+  COPAW_TRACING_DB_USER=root
+  COPAW_TRACING_DB_PASSWORD=your_password
+  COPAW_TRACING_DB_NAME=copaw_tracing
+  COPAW_TRACING_DB_MIN_CONN=2
+  COPAW_TRACING_DB_MAX_CONN=10
+
+  # 性能配置
+  COPAW_TRACING_BATCH_SIZE=100
+  COPAW_TRACING_FLUSH_INTERVAL=5
+  COPAW_TRACING_RETENTION_DAYS=30
+
+  5. 启动应用
+
+  copaw --user-id default app
+
+  日志会显示：Tracing manager initialized (database storage: localhost)

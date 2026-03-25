@@ -33,6 +33,9 @@ import {
   PanelLeftOpen,
   Copy,
   Check,
+  BarChart3,
+  LineChart,
+  FileSearch,
 } from "lucide-react";
 import api from "../api";
 import styles from "./index.module.less";
@@ -46,6 +49,7 @@ const DEFAULT_OPEN_KEYS = [
   "control-group",
   "agent-group",
   "settings-group",
+  "analytics-group",
 ];
 
 const KEY_TO_PATH: Record<string, string> = {
@@ -60,6 +64,9 @@ const KEY_TO_PATH: Record<string, string> = {
   models: "/models",
   environments: "/environments",
   "agent-config": "/agent-config",
+  "analytics-overview": "/analytics/overview",
+  "analytics-users": "/analytics/users",
+  "analytics-traces": "/analytics/traces",
 };
 
 const UPDATE_MD: Record<string, string> = {
@@ -335,6 +342,28 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
           key: "environments",
           label: t("nav.environments"),
           icon: <Globe size={16} />,
+        },
+      ],
+    },
+    {
+      key: "analytics-group",
+      label: t("nav.analytics", "Analytics"),
+      icon: <BarChart3 size={16} />,
+      children: [
+        {
+          key: "analytics-overview",
+          label: t("nav.analyticsOverview", "Overview"),
+          icon: <LineChart size={16} />,
+        },
+        {
+          key: "analytics-users",
+          label: t("nav.analyticsUsers", "Users"),
+          icon: <UsersRound size={16} />,
+        },
+        {
+          key: "analytics-traces",
+          label: t("nav.analyticsTraces", "Traces"),
+          icon: <FileSearch size={16} />,
         },
       ],
     },

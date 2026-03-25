@@ -50,9 +50,12 @@ class MCPClientManager:
             try:
                 await self._add_client(key, client_config)
                 logger.debug(f"MCP client '{key}' initialized successfully")
-            except BaseException as e:
-                if isinstance(e, (KeyboardInterrupt, SystemExit)):
-                    raise
+            except asyncio.CancelledError:
+                logger.warning(f"MCP client '{key}' initialization cancelled")
+                # Don't propagate CancelledError - continue with other clients
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except Exception as e:
                 logger.warning(
                     f"Failed to initialize MCP client '{key}': {e}",
                     exc_info=True,
@@ -178,11 +181,34 @@ class MCPClientManager:
         """
         client = self._build_client(client_config)
 
-        # Add timeout to prevent indefinite blocking
-        await asyncio.wait_for(client.connect(), timeout=timeout)
+        # Run connect in a task to isolate anyio cancel scope issues
+        async def _connect():
+            try:
+                await asyncio.wait_for(client.connect(), timeout=timeout)
+                return True
+            except asyncio.CancelledError:
+                logger.warning(f"MCP client '{key}' connection cancelled")
+                return False
+            except Exception as e:
+                logger.warning(f"MCP client '{key}' connection failed: {e}")
+                return False
 
-        async with self._lock:
-            self._clients[key] = client
+        # Create task and wait for it
+        task = asyncio.create_task(_connect())
+        try:
+            success = await task
+            if success:
+                async with self._lock:
+                    self._clients[key] = client
+        except asyncio.CancelledError:
+            # If we get cancelled, try to clean up
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            raise
 
     @staticmethod
     def _build_client(client_config: "MCPClientConfig") -> Any:

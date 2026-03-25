@@ -1,0 +1,134 @@
+.tracesPage {
+  padding: 24px;
+  height: calc(100vh - 128px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+
+  h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+  }
+}
+
+.filters {
+  display: flex;
+  gap: 12px;
+}
+
+.tableCard {
+  flex: 1;
+  overflow: hidden;
+
+  :global(.ant-card-body) {
+    padding: 0;
+    height: 100%;
+    overflow: auto;
+  }
+}
+
+.drawerLoading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+}
+
+.drawerContent {
+  overflow-x: hidden;
+
+  code {
+    word-break: break-all;
+    font-size: 12px;
+  }
+
+  pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+  }
+
+  .errorSection {
+    margin-top: 24px;
+
+    h4 {
+      margin-bottom: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #ff4d4f;
+    }
+
+    .errorText {
+      background: #fff2f0;
+      border: 1px solid #ffccc7;
+      border-radius: 4px;
+      padding: 12px;
+      overflow-x: auto;
+      font-size: 12px;
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  }
+
+  .timelineSection {
+    margin-top: 24px;
+
+    h4 {
+      display: flex;
+      align-items: center;
+      margin-bottom: 16px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+  }
+
+  .timelineItem {
+    max-width: 100%;
+    overflow: hidden;
+
+    .timelineHeader {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+
+      .timelineName {
+        font-weight: 500;
+        word-break: break-all;
+      }
+
+      .timelineDuration {
+        color: #999;
+        font-size: 12px;
+      }
+    }
+
+    .timelineDetail {
+      margin-top: 4px;
+      font-size: 12px;
+      color: #666;
+      word-break: break-all;
+    }
+  }
+
+  .toolsSection {
+    margin-top: 24px;
+
+    h4 {
+      display: flex;
+      align-items: center;
+      margin-bottom: 16px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+  }
+}

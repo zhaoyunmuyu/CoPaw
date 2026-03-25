@@ -24,6 +24,13 @@ _current_user_id: str | None = None
 _runtime_working_dir: Path = DEFAULT_WORKING_DIR
 _runtime_secret_dir: Path = DEFAULT_SECRET_DIR
 
+# Initialize from environment variable (for uvicorn worker process)
+_env_user_id = os.environ.get("COPAW_USER_ID")
+if _env_user_id:
+    _current_user_id = _env_user_id
+    _runtime_working_dir = DEFAULT_WORKING_DIR / _env_user_id
+    _runtime_secret_dir = DEFAULT_SECRET_DIR / _env_user_id
+
 # Context variables for request-scoped user isolation (multi-user concurrent mode)
 _request_user_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "request_user_id",
@@ -78,9 +85,12 @@ def set_current_user(user_id: str | None) -> None:
     if user_id:
         _runtime_working_dir = DEFAULT_WORKING_DIR / user_id
         _runtime_secret_dir = DEFAULT_SECRET_DIR / user_id
+        # Set env var for uvicorn worker process inheritance
+        os.environ["COPAW_USER_ID"] = user_id
     else:
         _runtime_working_dir = DEFAULT_WORKING_DIR
         _runtime_secret_dir = DEFAULT_SECRET_DIR
+        os.environ.pop("COPAW_USER_ID", None)
 
 
 def get_runtime_working_dir() -> Path:
