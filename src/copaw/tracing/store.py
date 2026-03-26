@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from .config import TracingConfig
-from .database import TDSQLConnection, init_database
+from .database import TDSQLConnection
 from .models import (
     DailyStats,
     EventType,
@@ -105,9 +105,8 @@ class TraceStore:
         self._global_stats: dict[str, dict] = {}
 
     async def initialize(self) -> None:
-        """Initialize store and create tables if using database."""
+        """Initialize store. Database tables must be created manually."""
         if self.db is not None and self.db.is_connected:
-            await init_database(self.db)
             self._use_db = True
             logger.info("TraceStore initialized with database")
         else:

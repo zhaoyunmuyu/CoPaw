@@ -10,16 +10,9 @@ from contextvars import ContextVar
 from datetime import datetime
 from typing import Any, Optional
 
-from .config import TracingConfig, TDSQLConfig
+from .config import TracingConfig
 from .database import TDSQLConnection
-from .models import (
-    EventType,
-    Span,
-    SpanCreate,
-    SpanUpdate,
-    Trace,
-    TraceStatus,
-)
+from .models import EventType, Span, Trace, TraceStatus
 from .store import TraceStore, sanitize_dict, sanitize_string
 
 logger = logging.getLogger(__name__)
@@ -211,7 +204,6 @@ class TraceManager:
         ctx.trace = trace
         set_current_trace(ctx)
 
-        logger.debug("Started trace: %s", trace_id)
         return trace_id
 
     async def end_trace(
@@ -246,8 +238,6 @@ class TraceManager:
         ctx = get_current_trace()
         if ctx and ctx.trace_id == trace_id:
             set_current_trace(None)
-
-        logger.debug("Ended trace: %s (status=%s, duration=%sms)", trace_id, status, trace.duration_ms)
 
     # Span operations
 
@@ -622,7 +612,6 @@ class TraceManager:
                 # Clear pending cache after flush (spans are now in store)
                 for span in spans:
                     self._pending_spans.pop(span.span_id, None)
-                logger.debug("Flushed %d spans to store", len(spans))
             except Exception as e:
                 logger.error("Failed to flush spans: %s", e)
 
