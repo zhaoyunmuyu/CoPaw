@@ -100,35 +100,6 @@ class Trace(BaseModel):
         use_enum_values = True
 
 
-class SpanCreate(BaseModel):
-    """Payload for creating a new span."""
-
-    trace_id: str
-    parent_span_id: Optional[str] = None
-    name: str
-    event_type: EventType
-    user_id: str
-    session_id: str
-    channel: str
-    model_name: Optional[str] = None
-    input_tokens: Optional[int] = None
-    tool_name: Optional[str] = None
-    skill_name: Optional[str] = None
-    tool_input: Optional[dict[str, Any]] = None
-
-
-class SpanUpdate(BaseModel):
-    """Payload for updating an existing span."""
-
-    span_id: str
-    end_time: Optional[datetime] = None
-    duration_ms: Optional[int] = None
-    output_tokens: Optional[int] = None
-    tool_output: Optional[str] = None
-    error: Optional[str] = None
-    metadata: Optional[dict[str, Any]] = None
-
-
 # API Response Models
 
 class ModelUsage(BaseModel):

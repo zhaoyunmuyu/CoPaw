@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from .config import TracingConfig
-from .database import TDSQLConnection, init_database
+from .database import TDSQLConnection
 from .models import (
     DailyStats,
     EventType,
@@ -105,9 +105,8 @@ class TraceStore:
         self._global_stats: dict[str, dict] = {}
 
     async def initialize(self) -> None:
-        """Initialize store and create tables if using database."""
+        """Initialize store. Database tables must be created manually."""
         if self.db is not None and self.db.is_connected:
-            await init_database(self.db)
             self._use_db = True
             logger.info("TraceStore initialized with database")
         else:
@@ -371,7 +370,7 @@ class TraceStore:
     async def _db_create_trace(self, trace: Trace) -> None:
         """Create trace in database."""
         query = """
-            INSERT INTO traces (
+            INSERT INTO swe_tracing_traces (
                 trace_id, user_id, session_id, channel, start_time,
                 end_time, duration_ms, model_name, total_input_tokens,
                 total_output_tokens, total_tokens, tools_used, skills_used,
@@ -400,7 +399,7 @@ class TraceStore:
     async def _db_update_trace(self, trace: Trace) -> None:
         """Update trace in database."""
         query = """
-            UPDATE traces SET
+            UPDATE swe_tracing_traces SET
                 end_time = %s,
                 duration_ms = %s,
                 model_name = %s,
@@ -430,7 +429,7 @@ class TraceStore:
 
     async def _db_get_trace(self, trace_id: str) -> Optional[Trace]:
         """Get trace from database."""
-        query = "SELECT * FROM traces WHERE trace_id = %s"
+        query = "SELECT * FROM swe_tracing_traces WHERE trace_id = %s"
         row = await self.db.fetch_one(query, (trace_id,))
         if row is None:
             return None
@@ -439,12 +438,12 @@ class TraceStore:
     async def _db_create_span(self, span: Span) -> None:
         """Create span in database."""
         query = """
-            INSERT INTO spans (
+            INSERT INTO swe_tracing_spans (
                 span_id, trace_id, parent_span_id, name, event_type,
-                start_time, end_time, duration_ms, model_name,
-                input_tokens, output_tokens, tool_name, skill_name,
+                start_time, end_time, duration_ms, user_id, session_id, channel,
+                model_name, input_tokens, output_tokens, tool_name, skill_name,
                 tool_input, tool_output, error, metadata
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         params = (
             span.span_id,
@@ -455,6 +454,9 @@ class TraceStore:
             span.start_time,
             span.end_time,
             span.duration_ms,
+            span.user_id,
+            span.session_id,
+            span.channel,
             span.model_name,
             span.input_tokens,
             span.output_tokens,
@@ -470,7 +472,7 @@ class TraceStore:
     async def _db_update_span(self, span: Span) -> None:
         """Update span in database."""
         query = """
-            UPDATE spans SET
+            UPDATE swe_tracing_spans SET
                 end_time = %s,
                 duration_ms = %s,
                 output_tokens = %s,
@@ -494,19 +496,19 @@ class TraceStore:
 
     async def _db_get_spans(self, trace_id: str) -> list[Span]:
         """Get spans from database."""
-        query = "SELECT * FROM spans WHERE trace_id = %s ORDER BY start_time"
+        query = "SELECT * FROM swe_tracing_spans WHERE trace_id = %s ORDER BY start_time"
         rows = await self.db.fetch_all(query, (trace_id,))
         return [self._row_to_span(row) for row in rows]
 
     async def _db_batch_create_spans(self, spans: list[Span]) -> None:
         """Batch create spans in database."""
         query = """
-            INSERT INTO spans (
+            INSERT INTO swe_tracing_spans (
                 span_id, trace_id, parent_span_id, name, event_type,
-                start_time, end_time, duration_ms, model_name,
-                input_tokens, output_tokens, tool_name, skill_name,
+                start_time, end_time, duration_ms, user_id, session_id, channel,
+                model_name, input_tokens, output_tokens, tool_name, skill_name,
                 tool_input, tool_output, error, metadata
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         params_list = []
         for span in spans:
@@ -519,6 +521,9 @@ class TraceStore:
                 span.start_time,
                 span.end_time,
                 span.duration_ms,
+                span.user_id,
+                span.session_id,
+                span.channel,
                 span.model_name,
                 span.input_tokens,
                 span.output_tokens,
@@ -540,7 +545,7 @@ class TraceStore:
         # Get total users and active users
         users_query = """
             SELECT COUNT(DISTINCT user_id) as total_users
-            FROM traces
+            FROM swe_tracing_traces
             WHERE start_time >= %s AND start_time <= %s
         """
         users_row = await self.db.fetch_one(users_query, (start_date, end_date))
@@ -549,7 +554,7 @@ class TraceStore:
         # Get online users (active in last 5 minutes, based on spans)
         online_query = """
             SELECT COUNT(DISTINCT user_id) as online_users
-            FROM spans
+            FROM swe_tracing_spans
             WHERE start_time >= %s
         """
         online_threshold = datetime.now() - timedelta(minutes=5)
@@ -564,7 +569,7 @@ class TraceStore:
                 SUM(total_tokens) as total_tokens,
                 COUNT(*) as total_sessions,
                 AVG(duration_ms) as avg_duration
-            FROM traces
+            FROM swe_tracing_traces
             WHERE start_time >= %s AND start_time <= %s
         """
         token_row = await self.db.fetch_one(token_query, (start_date, end_date))
@@ -575,7 +580,7 @@ class TraceStore:
                    SUM(total_input_tokens) as input_tokens,
                    SUM(total_output_tokens) as output_tokens,
                    SUM(total_tokens) as total_tokens
-            FROM traces
+            FROM swe_tracing_traces
             WHERE start_time >= %s AND start_time <= %s AND model_name IS NOT NULL
             GROUP BY model_name
             ORDER BY count DESC
@@ -585,7 +590,7 @@ class TraceStore:
         model_distribution = [
             ModelUsage(
                 model_name=row["model_name"],
-                count=row["count"],
+                count=row["count"] or 0,
                 total_tokens=row["total_tokens"] or 0,
                 input_tokens=row["input_tokens"] or 0,
                 output_tokens=row["output_tokens"] or 0,
@@ -598,7 +603,7 @@ class TraceStore:
             SELECT tool_name, COUNT(*) as count,
                    AVG(duration_ms) as avg_duration,
                    SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) as error_count
-            FROM spans
+            FROM swe_tracing_spans
             WHERE start_time >= %s AND start_time <= %s
               AND event_type = 'tool_call_end'
               AND tool_name IS NOT NULL
@@ -610,7 +615,7 @@ class TraceStore:
         top_tools = [
             ToolUsage(
                 tool_name=row["tool_name"],
-                count=row["count"],
+                count=row["count"] or 0,
                 avg_duration_ms=int(row["avg_duration"] or 0),
                 error_count=row["error_count"] or 0,
             )
@@ -621,7 +626,7 @@ class TraceStore:
         skill_query = """
             SELECT skill_name, COUNT(*) as count,
                    AVG(duration_ms) as avg_duration
-            FROM spans
+            FROM swe_tracing_spans
             WHERE start_time >= %s AND start_time <= %s
               AND event_type = 'skill_invocation'
               AND skill_name IS NOT NULL
@@ -633,22 +638,22 @@ class TraceStore:
         top_skills = [
             SkillUsage(
                 skill_name=row["skill_name"],
-                count=row["count"],
+                count=row["count"] or 0,
                 avg_duration_ms=int(row["avg_duration"] or 0),
             )
             for row in skill_rows
         ]
 
         return OverviewStats(
-            online_users=online_users,
-            total_users=total_users,
+            online_users=online_users or 0,
+            total_users=total_users or 0,
             model_distribution=model_distribution,
-            total_tokens=token_row["total_tokens"] if token_row else 0,
-            input_tokens=token_row["input_tokens"] if token_row else 0,
-            output_tokens=token_row["output_tokens"] if token_row else 0,
-            total_sessions=token_row["total_sessions"] if token_row else 0,
-            total_conversations=token_row["total_sessions"] if token_row else 0,
-            avg_duration_ms=int(token_row["avg_duration"] or 0) if token_row else 0,
+            total_tokens=token_row["total_tokens"] or 0 if token_row else 0,
+            input_tokens=token_row["input_tokens"] or 0 if token_row else 0,
+            output_tokens=token_row["output_tokens"] or 0 if token_row else 0,
+            total_sessions=token_row["total_sessions"] or 0 if token_row else 0,
+            total_conversations=token_row["total_sessions"] or 0 if token_row else 0,
+            avg_duration_ms=int(token_row["avg_duration"] or 0) if token_row and token_row["avg_duration"] else 0,
             top_tools=top_tools,
             top_skills=top_skills,
             daily_trend=[],
@@ -670,7 +675,7 @@ class TraceStore:
         where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
         # Get total count
-        count_query = f"SELECT COUNT(DISTINCT user_id) as total FROM traces WHERE {where_sql}"
+        count_query = f"SELECT COUNT(DISTINCT user_id) as total FROM swe_tracing_traces WHERE {where_sql}"
         count_row = await self.db.fetch_one(count_query, tuple(params))
         total = count_row["total"] if count_row else 0
 
@@ -682,10 +687,10 @@ class TraceStore:
                    COUNT(DISTINCT t.session_id) as total_conversations,
                    SUM(t.total_tokens) as total_tokens,
                    MAX(t.start_time) as last_active,
-                   (SELECT COUNT(*) FROM spans s
-                    WHERE s.trace_id IN (SELECT trace_id FROM traces WHERE user_id = t.user_id)
+                   (SELECT COUNT(*) FROM swe_tracing_spans s
+                    WHERE s.trace_id IN (SELECT trace_id FROM swe_tracing_traces WHERE user_id = t.user_id)
                     AND s.event_type = 'skill_invocation') as total_skills
-            FROM traces t
+            FROM swe_tracing_traces t
             WHERE {where_sql}
             GROUP BY t.user_id
             ORDER BY last_active DESC
@@ -722,7 +727,7 @@ class TraceStore:
                 SUM(total_output_tokens) as output_tokens,
                 SUM(total_tokens) as total_tokens,
                 AVG(duration_ms) as avg_duration
-            FROM traces
+            FROM swe_tracing_traces
             WHERE user_id = %s AND start_time >= %s AND start_time <= %s
         """
         stats_row = await self.db.fetch_one(stats_query, (user_id, start_date, end_date))
@@ -733,7 +738,7 @@ class TraceStore:
                    SUM(total_input_tokens) as input_tokens,
                    SUM(total_output_tokens) as output_tokens,
                    SUM(total_tokens) as total_tokens
-            FROM traces
+            FROM swe_tracing_traces
             WHERE user_id = %s AND start_time >= %s AND start_time <= %s AND model_name IS NOT NULL
             GROUP BY model_name
             ORDER BY count DESC
@@ -755,7 +760,7 @@ class TraceStore:
             SELECT tool_name, COUNT(*) as count,
                    AVG(duration_ms) as avg_duration,
                    SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) as error_count
-            FROM spans
+            FROM swe_tracing_spans
             WHERE user_id = %s AND start_time >= %s AND start_time <= %s
               AND event_type = 'tool_call_end'
               AND tool_name IS NOT NULL
@@ -776,7 +781,7 @@ class TraceStore:
         # Get skill usage (by event_type = skill_invocation)
         skill_query = """
             SELECT skill_name, COUNT(*) as count
-            FROM spans
+            FROM swe_tracing_spans
             WHERE user_id = %s AND start_time >= %s AND start_time <= %s
               AND event_type = 'skill_invocation'
               AND skill_name IS NOT NULL
@@ -835,7 +840,7 @@ class TraceStore:
         where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
 
         # Get total count
-        count_query = f"SELECT COUNT(*) as total FROM traces WHERE {where_sql}"
+        count_query = f"SELECT COUNT(*) as total FROM swe_tracing_traces WHERE {where_sql}"
         count_row = await self.db.fetch_one(count_query, tuple(params))
         total = count_row["total"] if count_row else 0
 
@@ -845,7 +850,7 @@ class TraceStore:
             SELECT trace_id, user_id, session_id, channel, start_time,
                    duration_ms, total_tokens, model_name, status,
                    JSON_LENGTH(tools_used) as tools_count
-            FROM traces
+            FROM swe_tracing_traces
             WHERE {where_sql}
             ORDER BY start_time DESC
             LIMIT %s OFFSET %s
@@ -1205,9 +1210,9 @@ class TraceStore:
             start_time=row["start_time"],
             end_time=row["end_time"],
             duration_ms=row["duration_ms"],
-            user_id="",  # Not stored in spans table, would need join
-            session_id="",  # Not stored in spans table
-            channel="",  # Not stored in spans table
+            user_id=row.get("user_id") or "",
+            session_id=row.get("session_id") or "",
+            channel=row.get("channel") or "",
             model_name=row["model_name"],
             input_tokens=row["input_tokens"],
             output_tokens=row["output_tokens"],

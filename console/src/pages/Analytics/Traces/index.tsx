@@ -381,12 +381,12 @@ export default function TracesPage() {
                           <strong>Model:</strong> {span.model_name}
                         </div>
                       )}
-                      {span.input_tokens && (
+                      {span.input_tokens != null && span.input_tokens > 0 && (
                         <div className={styles.timelineDetail}>
                           <strong>Input tokens:</strong> {span.input_tokens}
                         </div>
                       )}
-                      {span.output_tokens && (
+                      {span.output_tokens != null && span.output_tokens > 0 && (
                         <div className={styles.timelineDetail}>
                           <strong>Output tokens:</strong> {span.output_tokens}
                         </div>

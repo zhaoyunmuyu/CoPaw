@@ -750,10 +750,6 @@ class CoPawAgent(ReActAgent):
                         is_skill = True
                         detected_skill_name = potential_skill
 
-        # Debug: log skill detection
-        logger.debug("Tool call '%s' - is_skill=%s, skill_name=%s",
-                    tool_name, is_skill, detected_skill_name)
-
         # Get tracing hook
         span_id = None
         try:
@@ -784,7 +780,7 @@ class CoPawAgent(ReActAgent):
         except Exception as exc:
             error = str(exc)
             # Record error in tracing
-            if span_id:
+            if span_id is not None:
                 try:
                     from .hooks import TracingHookRegistry
 
@@ -806,7 +802,7 @@ class CoPawAgent(ReActAgent):
             raise
         finally:
             # Record success in tracing
-            if span_id and error is None:
+            if span_id is not None and error is None:
                 try:
                     from .hooks import TracingHookRegistry
 

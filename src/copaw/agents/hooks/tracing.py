@@ -69,7 +69,7 @@ class TracingHook:
             return span_id
         except Exception as e:
             logger.warning("Failed to emit LLM start event: %s", e)
-            return ""
+            return None
 
     async def on_llm_end(
         self,
@@ -134,7 +134,7 @@ class TracingHook:
             return span_id
         except Exception as e:
             logger.warning("Failed to emit tool start event: %s", e)
-            return ""
+            return None
 
     async def on_tool_end(
         self,
@@ -206,7 +206,7 @@ class TracingHook:
             return span_id
         except Exception as e:
             logger.warning("Failed to emit skill event: %s", e)
-            return ""
+            return None
 
     async def on_skill_end(
         self,
