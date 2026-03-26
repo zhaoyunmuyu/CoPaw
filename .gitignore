@@ -28,12 +28,13 @@ website/dist/
 website/public/search-index.json
 
 # misc
-.env
-.env.*
+.env.local
 providers.json
 envs.json
-!.env.example
-!.env.template
+!.env
+!.env.development
+!.env.production
+!.env.local
 __pycache__/
 *.db
 *.rdb

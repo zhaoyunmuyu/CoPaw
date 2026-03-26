@@ -2,14 +2,27 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import time
 
 import click
 from dotenv import load_dotenv
 
-# Load .env file from current directory or project root
-load_dotenv()
+# Load .env files in order:
+# 1. .env - base config (can define COPAW_ENV)
+# 2. .env.local - local overrides (git ignored, for secrets)
+# 3. .env.{COPAW_ENV} - environment-specific config (development/production)
+env_files_base = [".env", ".env.local"]
+for _env_file in env_files_base:
+    if os.path.exists(_env_file):
+        load_dotenv(_env_file, override=False)
+
+# Get environment (default: development)
+_env = os.environ.get("COPAW_ENV", "development")
+_env_file_specific = f".env.{_env}"
+if os.path.exists(_env_file_specific):
+    load_dotenv(_env_file_specific, override=False)
 
 # On Windows, force UTF-8 for stdout/stderr so cron and other commands
 # can handle Chinese and other non-ASCII (Linux is UTF-8 by default).
