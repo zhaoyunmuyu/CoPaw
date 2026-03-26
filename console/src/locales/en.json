@@ -35,7 +35,11 @@
     "agentConfig": "Configuration",
     "settings": "Settings",
     "models": "Models",
-    "environments": "Environments"
+    "environments": "Environments",
+    "analytics": "Analytics",
+    "analyticsOverview": "Overview",
+    "analyticsUsers": "Users",
+    "analyticsTraces": "Traces"
   },
   "workspace": {
     "title": "WorkSpace",
@@ -491,5 +495,45 @@
       "viewReleases": "View Releases",
       "close": "Close"
     }
+  },
+  "analytics": {
+    "overview": "Overview",
+    "userAnalysis": "User Analysis",
+    "traceDetails": "Trace Details",
+    "onlineUsers": "Online Users",
+    "totalSessions": "Total Sessions",
+    "totalTokens": "Total Tokens",
+    "avgDuration": "Avg Duration",
+    "modelDistribution": "Model Distribution",
+    "topTools": "Top Tools",
+    "userId": "User ID",
+    "sessions": "Sessions",
+    "conversations": "Conversations",
+    "tokens": "Tokens",
+    "lastActive": "Last Active",
+    "searchUser": "Search user...",
+    "userDetails": "User Details",
+    "totalSessions": "Total Sessions",
+    "totalTokens": "Total Tokens",
+    "inputTokens": "Input Tokens",
+    "outputTokens": "Output Tokens",
+    "modelUsage": "Model Usage",
+    "toolsUsed": "Tools Used",
+    "traceId": "Trace ID",
+    "startTime": "Start Time",
+    "duration": "Duration",
+    "model": "Model",
+    "tools": "Tools",
+    "status": "Status",
+    "traceDetail": "Trace Detail",
+    "channel": "Channel",
+    "error": "Error",
+    "timeline": "Timeline",
+    "toolsCalled": "Tools Called",
+    "filterStatus": "Filter status",
+    "totalItems": "Total {{total}} items",
+    "noData": "No analytics data available",
+    "calls": "Calls",
+    "errors": "Errors"
   }
 }

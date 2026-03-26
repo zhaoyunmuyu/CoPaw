@@ -35,7 +35,11 @@
     "agentConfig": "Конфигурация",
     "settings": "Настройки",
     "models": "Модели",
-    "environments": "Окружения"
+    "environments": "Окружения",
+    "analytics": "Аналитика",
+    "analyticsOverview": "Обзор",
+    "analyticsUsers": "Пользователи",
+    "analyticsTraces": "Трейсы"
   },
   "workspace": {
     "title": "Рабочее пространство",
@@ -491,5 +495,43 @@
       "viewReleases": "Открыть релизы",
       "close": "Закрыть"
     }
+  },
+  "analytics": {
+    "overview": "Обзор",
+    "userAnalysis": "Анализ пользователей",
+    "traceDetails": "Детали трейсов",
+    "onlineUsers": "Онлайн",
+    "totalSessions": "Всего сессий",
+    "totalTokens": "Всего токенов",
+    "avgDuration": "Среднее время",
+    "modelDistribution": "Распределение моделей",
+    "topTools": "Топ инструментов",
+    "userId": "ID пользователя",
+    "sessions": "Сессии",
+    "conversations": "Диалоги",
+    "tokens": "Токены",
+    "lastActive": "Последняя активность",
+    "searchUser": "Поиск пользователя...",
+    "userDetails": "Детали пользователя",
+    "inputTokens": "Входные токены",
+    "outputTokens": "Выходные токены",
+    "modelUsage": "Использование моделей",
+    "toolsUsed": "Используемые инструменты",
+    "traceId": "ID трейса",
+    "startTime": "Время начала",
+    "duration": "Длительность",
+    "model": "Модель",
+    "tools": "Инструменты",
+    "status": "Статус",
+    "traceDetail": "Детали трейса",
+    "channel": "Канал",
+    "error": "Ошибка",
+    "timeline": "Хронология",
+    "toolsCalled": "Вызванные инструменты",
+    "filterStatus": "Фильтр по статусу",
+    "totalItems": "Всего {{total}} элементов",
+    "noData": "Нет данных аналитики",
+    "calls": "Вызовы",
+    "errors": "Ошибки"
   }
 }

@@ -16,6 +16,7 @@ import WorkspacePage from "../../pages/Agent/Workspace";
 import MCPPage from "../../pages/Agent/MCP";
 import ModelsPage from "../../pages/Settings/Models";
 import EnvironmentsPage from "../../pages/Settings/Environments";
+import AnalyticsPage from "../../pages/Analytics";
 
 const { Content } = Layout;
 
@@ -32,13 +33,16 @@ const pathToKey: Record<string, string> = {
   "/models": "models",
   "/environments": "environments",
   "/agent-config": "agent-config",
+  "/analytics/overview": "analytics-overview",
+  "/analytics/users": "analytics-users",
+  "/analytics/traces": "analytics-traces",
 };
 
 export default function MainLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const currentPath = location.pathname;
-  const selectedKey = pathToKey[currentPath] || "chat";
+  const selectedKey = pathToKey[currentPath] || (currentPath.startsWith("/analytics") ? `analytics-${currentPath.split("/")[2]}` : "chat");
 
   useEffect(() => {
     if (currentPath === "/") {
@@ -66,6 +70,7 @@ export default function MainLayout() {
               <Route path="/models" element={<ModelsPage />} />
               <Route path="/environments" element={<EnvironmentsPage />} />
               <Route path="/agent-config" element={<AgentConfigPage />} />
+              <Route path="/analytics/*" element={<AnalyticsPage />} />
               <Route path="/" element={<Chat />} />
             </Routes>
           </div>

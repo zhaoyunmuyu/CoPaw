@@ -23,12 +23,23 @@ logger = logging.getLogger(__name__)
 THINK_START = "<think>"
 THINK_END = "</think>"
 
+# Alternative control characters used by some Qwen models
+# \x1b = ESC (U+001B), \x07 = BEL (U+0007)
+CTRL_THINK_START = "\x1b"
+CTRL_THINK_END = "\x07"
+
 TOOL_CALL_START = "<tool_call>"
 TOOL_CALL_END = "</tool_call>"
 
 # Regex to find a complete <think>...</think> block (non-greedy).
 _THINK_RE = re.compile(
     r"<think>(.*?)</think>",
+    re.DOTALL,
+)
+
+# Regex for control character thinking tags (Qwen models)
+_CTRL_THINK_RE = re.compile(
+    r"\x1b(.*?)\x07",
     re.DOTALL,
 )
 
@@ -132,19 +143,20 @@ def _parse_single_tool_call(raw_text: str) -> ParsedToolCall | None:
 
 
 def text_contains_think_tag(text: str) -> bool:
-    """Fast substring check for a ``<think>`` tag."""
-    return THINK_START in text
+    """Fast substring check for a ``<think>`` tag or control character tag."""
+    return THINK_START in text or CTRL_THINK_START in text
 
 
 def extract_thinking_from_text(text: str) -> TextWithThinking:
-    """Extract ``<think>...</think>`` content from *text*.
+    """Extract `` хро... хро`` or ``\\x1b...\\x07`` content from *text*.
 
     Returns a :class:`TextWithThinking` with:
 
     * ``thinking``       – the reasoning content (empty if none found)
     * ``remaining_text`` – everything outside the think tags
-    * ``has_open_tag``   – ``True`` if ``<think>`` opened but not closed yet
+    * ``has_open_tag``   – ``True`` if the tag opened but not closed yet
     """
+    # First try XML-style tags ( хро... хро)
     match = _THINK_RE.search(text)
     if match:
         thinking = match.group(1).strip()
@@ -154,11 +166,33 @@ def extract_thinking_from_text(text: str) -> TextWithThinking:
             remaining_text=remaining,
         )
 
-    # No complete block — check for an unclosed <think>.
+    # Try control character tags (ESC...BEL, used by Qwen models)
+    ctrl_match = _CTRL_THINK_RE.search(text)
+    if ctrl_match:
+        thinking = ctrl_match.group(1).strip()
+        remaining = (text[: ctrl_match.start()] + text[ctrl_match.end() :]).strip()
+        return TextWithThinking(
+            thinking=thinking,
+            remaining_text=remaining,
+        )
+
+    # No complete block — check for an unclosed tag
+    # Check XML-style first
     open_idx = text.find(THINK_START)
     if open_idx != -1:
         remaining = text[:open_idx].strip()
         partial = text[open_idx + len(THINK_START) :]
+        return TextWithThinking(
+            thinking=partial.strip(),
+            remaining_text=remaining,
+            has_open_tag=True,
+        )
+
+    # Check control character style
+    ctrl_open_idx = text.find(CTRL_THINK_START)
+    if ctrl_open_idx != -1:
+        remaining = text[:ctrl_open_idx].strip()
+        partial = text[ctrl_open_idx + len(CTRL_THINK_START) :]
         return TextWithThinking(
             thinking=partial.strip(),
             remaining_text=remaining,

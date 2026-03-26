@@ -7,6 +7,7 @@ AgentScope's hook interface (any Callable).
 Available Hooks:
     - BootstrapHook: First-time setup guidance
     - MemoryCompactionHook: Automatic context window management
+    - TracingHook: Event tracing for analytics
 
 Example:
     >>> from copaw.agents.hooks import BootstrapHook, MemoryCompactionHook
@@ -28,8 +29,11 @@ Example:
 
 from .bootstrap import BootstrapHook
 from .memory_compaction import MemoryCompactionHook
+from .tracing import TracingHook, TracingHookRegistry
 
 __all__ = [
     "BootstrapHook",
     "MemoryCompactionHook",
+    "TracingHook",
+    "TracingHookRegistry",
 ]

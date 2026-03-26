@@ -1,5 +1,11 @@
 import { getApiUrl, getApiToken } from "./config";
 
+declare global {
+  interface Window {
+    currentUserId?: string;
+  }
+}
+
 function buildHeaders(method?: string, extra?: HeadersInit): Headers {
   // Normalize extra to a Headers instance for consistent handling
   const headers = extra instanceof Headers ? extra : new Headers(extra);
@@ -17,6 +23,11 @@ function buildHeaders(method?: string, extra?: HeadersInit): Headers {
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
+
+  // Add X-User-ID header if available
+  const userId =
+    (typeof window !== "undefined" && window.currentUserId) || "default";
+  headers.set("X-User-ID", userId);
 
   return headers;
 }

@@ -35,7 +35,11 @@
     "agentConfig": "設定",
     "settings": "設定",
     "models": "モデル",
-    "environments": "環境変数"
+    "environments": "環境変数",
+    "analytics": "分析",
+    "analyticsOverview": "概要",
+    "analyticsUsers": "ユーザー",
+    "analyticsTraces": "トレース"
   },
   "workspace": {
     "title": "ワークスペース",
@@ -489,5 +493,43 @@
       "viewReleases": "リリースを見る",
       "close": "閉じる"
     }
+  },
+  "analytics": {
+    "overview": "概要",
+    "userAnalysis": "ユーザー分析",
+    "traceDetails": "トレース詳細",
+    "onlineUsers": "オンラインユーザー",
+    "totalSessions": "総セッション数",
+    "totalTokens": "総トークン数",
+    "avgDuration": "平均所要時間",
+    "modelDistribution": "モデル分布",
+    "topTools": "よく使うツール",
+    "userId": "ユーザーID",
+    "sessions": "セッション数",
+    "conversations": "会話数",
+    "tokens": "トークン数",
+    "lastActive": "最終活動",
+    "searchUser": "ユーザーを検索...",
+    "userDetails": "ユーザー詳細",
+    "inputTokens": "入力トークン",
+    "outputTokens": "出力トークン",
+    "modelUsage": "モデル使用状況",
+    "toolsUsed": "使用ツール",
+    "traceId": "トレースID",
+    "startTime": "開始時刻",
+    "duration": "所要時間",
+    "model": "モデル",
+    "tools": "ツール数",
+    "status": "ステータス",
+    "traceDetail": "トレース詳細",
+    "channel": "チャンネル",
+    "error": "エラー",
+    "timeline": "タイムライン",
+    "toolsCalled": "呼び出しツール",
+    "filterStatus": "ステータスで絞り込み",
+    "totalItems": "全{{total}}件",
+    "noData": "分析データがありません",
+    "calls": "呼び出し回数",
+    "errors": "エラー数"
   }
 }

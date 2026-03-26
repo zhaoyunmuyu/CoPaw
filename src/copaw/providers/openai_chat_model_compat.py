@@ -186,6 +186,27 @@ class OpenAIChatModelCompat(OpenAIChatModel):
     """OpenAIChatModel with robust parsing for malformed tool-call chunks
     and transparent ``extra_content`` (Gemini thought_signature) relay."""
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._last_usage = None  # Store last response usage for tracing
+
+    def _parse_openai_completion_response(
+        self,
+        start_datetime: datetime,
+        response: Any,
+        structured_model: Type[BaseModel] | None = None,
+    ) -> ChatResponse:
+        """Parse non-streaming response and store usage for tracing."""
+        parsed = super()._parse_openai_completion_response(
+            start_datetime=start_datetime,
+            response=response,
+            structured_model=structured_model,
+        )
+        # Store usage for tracing
+        if parsed.usage:
+            self._last_usage = parsed.usage
+        return parsed
+
     async def _parse_openai_stream_response(
         self,
         start_datetime: datetime,
@@ -198,6 +219,9 @@ class OpenAIChatModelCompat(OpenAIChatModel):
             response=sanitized_response,
             structured_model=structured_model,
         ):
+            # Store usage from the last chunk for tracing
+            if parsed.usage:
+                self._last_usage = parsed.usage
             if sanitized_response.extra_contents:
                 for block in parsed.content:
                     if block.get("type") != "tool_use":

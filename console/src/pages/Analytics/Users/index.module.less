@@ -1,0 +1,56 @@
+.usersPage {
+  padding: 24px;
+  height: calc(100vh - 128px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+
+  h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+  }
+}
+
+.drawerLoading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+}
+
+.drawerContent {
+  .section {
+    margin-top: 24px;
+
+    h4 {
+      margin-bottom: 12px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+  }
+
+  .tagList {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
+
+.tableCard {
+  flex: 1;
+  overflow: hidden;
+
+  :global(.ant-card-body) {
+    padding: 0;
+    height: 100%;
+    overflow: auto;
+  }
+}

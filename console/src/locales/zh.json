@@ -35,7 +35,11 @@
     "agentConfig": "运行配置",
     "settings": "设置",
     "models": "模型",
-    "environments": "环境变量"
+    "environments": "环境变量",
+    "analytics": "统计分析",
+    "analyticsOverview": "总览",
+    "analyticsUsers": "用户分析",
+    "analyticsTraces": "对话详情"
   },
   "workspace": {
     "title": "工作区",
@@ -491,5 +495,45 @@
       "viewReleases": "查看 Releases",
       "close": "关闭"
     }
+  },
+  "analytics": {
+    "overview": "总览",
+    "userAnalysis": "用户分析",
+    "traceDetails": "对话详情",
+    "onlineUsers": "在线用户",
+    "totalSessions": "总会话数",
+    "totalTokens": "总Token数",
+    "avgDuration": "平均耗时",
+    "modelDistribution": "模型分布",
+    "topTools": "常用工具",
+    "userId": "用户ID",
+    "sessions": "会话数",
+    "conversations": "对话数",
+    "tokens": "Token数",
+    "lastActive": "最后活跃",
+    "searchUser": "搜索用户...",
+    "userDetails": "用户详情",
+    "totalSessions": "总会话",
+    "totalTokens": "总Token",
+    "inputTokens": "输入Token",
+    "outputTokens": "输出Token",
+    "modelUsage": "模型使用",
+    "toolsUsed": "使用工具",
+    "traceId": "Trace ID",
+    "startTime": "开始时间",
+    "duration": "耗时",
+    "model": "模型",
+    "tools": "工具数",
+    "status": "状态",
+    "traceDetail": "Trace详情",
+    "channel": "频道",
+    "error": "错误",
+    "timeline": "时间线",
+    "toolsCalled": "调用的工具",
+    "filterStatus": "筛选状态",
+    "totalItems": "共 {{total}} 项",
+    "noData": "暂无统计数据",
+    "calls": "调用次数",
+    "errors": "错误数"
   }
 }
