@@ -94,6 +94,14 @@ class TextWithToolCalls:
     partial_tool_text: str = ""
 
 
+@dataclass
+class StreamingTextSegment:
+    """A single text segment emitted by incremental think-tag parsing."""
+
+    kind: str
+    text: str
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -199,12 +207,119 @@ def extract_thinking_from_text(text: str) -> TextWithThinking:
             has_open_tag=True,
         )
 
+    # Some backends emit only a closing tag. Treat everything before the
+    # first ``</think>`` as implicit thinking content.
+    end_idx = text.find(THINK_END)
+    if end_idx != -1:
+        thinking = text[:end_idx].strip()
+        remaining = text[end_idx + len(THINK_END) :].strip()
+        return TextWithThinking(
+            thinking=thinking,
+            remaining_text=remaining,
+        )
+
     return TextWithThinking(remaining_text=text)
 
 
 def text_contains_tool_call_tag(text: str) -> bool:
     """Fast substring check for a ``<tool_call>`` tag."""
     return TOOL_CALL_START in text
+
+
+class StreamingThinkParser:
+    """Incrementally split raw text into ``text`` and ``thinking`` segments.
+
+    Assumes ``<think>`` and ``</think>`` markers always arrive complete within
+    a single chunk. The parser only tracks whether the current stream position
+    is inside a thinking region and splits the current chunk accordingly.
+    """
+
+    def __init__(self) -> None:
+        self._in_thinking = False
+        self._trim_next_thinking_leading_newline = False
+        self._is_first_chunk = True
+
+    def feed(self, text: str) -> list[StreamingTextSegment]:
+        """Consume a raw chunk and emit newly available segments."""
+        if not text:
+            return []
+        if self._is_first_chunk:
+            self._is_first_chunk = False
+            if THINK_START not in text:
+                text = THINK_START + text
+        emitted: list[StreamingTextSegment] = []
+        remaining = text
+
+        while remaining:
+            if not self._in_thinking:
+                start_idx = remaining.find(THINK_START)
+                end_idx = remaining.find(THINK_END)
+                if end_idx != -1 and (start_idx == -1 or end_idx < start_idx):
+                    thinking_text = remaining[:end_idx]
+                    if self._trim_next_thinking_leading_newline:
+                        thinking_text = thinking_text.lstrip("\n")
+                        self._trim_next_thinking_leading_newline = False
+                    if thinking_text:
+                        emitted.append(
+                            StreamingTextSegment(
+                                kind="thinking",
+                                text=thinking_text,
+                            ),
+                        )
+                    remaining = remaining[end_idx + len(THINK_END) :]
+                    continue
+
+            marker = THINK_END if self._in_thinking else THINK_START
+            idx = remaining.find(marker)
+
+            if idx == -1:
+                final_text = remaining
+                if self._in_thinking and self._trim_next_thinking_leading_newline:
+                    final_text = final_text.lstrip("\n")
+                    self._trim_next_thinking_leading_newline = False
+                if not final_text:
+                    break
+                emitted.append(
+                    StreamingTextSegment(
+                        kind="thinking" if self._in_thinking else "text",
+                        text=final_text,
+                    ),
+                )
+                break
+
+            prefix = remaining[:idx]
+            if prefix:
+                if self._in_thinking and self._trim_next_thinking_leading_newline:
+                    prefix = prefix.lstrip("\n")
+                    self._trim_next_thinking_leading_newline = False
+                if prefix:
+                    emitted.append(
+                        StreamingTextSegment(
+                            kind="thinking" if self._in_thinking else "text",
+                            text=prefix,
+                        ),
+                    )
+
+            remaining = remaining[idx + len(marker) :]
+            self._in_thinking = not self._in_thinking
+            if self._in_thinking:
+                self._trim_next_thinking_leading_newline = True
+
+        if (
+            emitted
+            and emitted[-1].kind == "thinking"
+            and self._trim_next_thinking_leading_newline
+        ):
+            emitted[-1].text = emitted[-1].text.lstrip("\n")
+            self._trim_next_thinking_leading_newline = False
+            if not emitted[-1].text:
+                emitted.pop()
+
+        return emitted
+
+    def flush(self) -> list[StreamingTextSegment]:
+        """Flush remaining buffered text at end-of-stream."""
+        return []
 
 
 def parse_tool_calls_from_text(text: str) -> TextWithToolCalls:

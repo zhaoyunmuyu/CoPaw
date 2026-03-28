@@ -19,6 +19,7 @@ from agentscope.message import TextBlock, ToolUseBlock, ThinkingBlock
 
 from .backends.base import LocalBackend
 from .tag_parser import (
+    StreamingThinkParser,
     extract_thinking_from_text,
     parse_tool_calls_from_text,
     text_contains_think_tag,
@@ -126,9 +127,40 @@ class LocalChatModel(ChatModelBase):
 
         loop.run_in_executor(None, _produce)
 
-        accumulated_text = ""
-        accumulated_thinking = ""
+        think_parser = StreamingThinkParser()
         tool_calls: dict[int, dict] = {}
+
+        def _build_stream_contents(
+            *,
+            raw_text_piece: str,
+            thinking_piece: str,
+        ) -> list:
+            contents: list = []
+
+            if thinking_piece:
+                contents.append(
+                    ThinkingBlock(
+                        type="thinking",
+                        thinking=thinking_piece,
+                    ),
+                )
+
+            for segment in think_parser.feed(raw_text_piece):
+                if not segment.text:
+                    continue
+                if segment.kind == "thinking":
+                    contents.append(
+                        ThinkingBlock(
+                            type="thinking",
+                            thinking=segment.text,
+                        ),
+                    )
+                else:
+                    contents.append(
+                        TextBlock(type="text", text=segment.text),
+                    )
+
+            return contents
 
         while True:
             item = await queue.get()
@@ -144,13 +176,8 @@ class LocalChatModel(ChatModelBase):
 
             delta = choices[0].get("delta", {})
 
-            # Accumulate text
             content_piece = delta.get("content") or ""
-            accumulated_text += content_piece
-
-            # Accumulate reasoning/thinking content
             thinking_piece = delta.get("reasoning_content") or ""
-            accumulated_thinking += thinking_piece
 
             # Handle tool calls in delta
             for tc in delta.get("tool_calls") or []:
@@ -165,45 +192,22 @@ class LocalChatModel(ChatModelBase):
                     "arguments",
                 ) or ""
 
-            # Build content blocks
-            contents: list = []
-
-            # Determine effective thinking and display text.
-            # If the backend provides structured reasoning_content we use
-            # that; otherwise fall back to extracting <think> tags from
-            # the accumulated text.
-            effective_thinking = accumulated_thinking
-            effective_text = accumulated_text
-
-            if (
-                not effective_thinking
-                and effective_text
-                and text_contains_think_tag(effective_text)
-            ):
-                parsed_thinking = extract_thinking_from_text(effective_text)
-                effective_thinking = parsed_thinking.thinking
-                effective_text = parsed_thinking.remaining_text
-                # If <think> is still open, suppress all text output
-                # (thinking is still streaming).
-                if parsed_thinking.has_open_tag:
-                    effective_text = ""
-
-            if effective_thinking:
-                contents.append(
-                    ThinkingBlock(
-                        type="thinking",
-                        thinking=effective_thinking,
-                    ),
-                )
+            contents = _build_stream_contents(
+                raw_text_piece=content_piece,
+                thinking_piece=thinking_piece,
+            )
 
             # Fallback: parse <tool_call> tags from effective text when
             # the backend doesn't provide structured tool_calls.
             if (
                 not tool_calls
-                and effective_text
-                and text_contains_tool_call_tag(effective_text)
+                and contents
+                and len(contents) == 1
+                and contents[0].get("type") == "text"
+                and text_contains_tool_call_tag(contents[0].get("text", ""))
             ):
-                parsed = parse_tool_calls_from_text(effective_text)
+                parsed = parse_tool_calls_from_text(contents[0].get("text", ""))
+                contents = []
                 display_text = parsed.text_before
                 if parsed.text_after:
                     display_text = (
@@ -225,11 +229,6 @@ class LocalChatModel(ChatModelBase):
                             raw_input=ptc.raw_arguments,
                         ),
                     )
-            elif effective_text:
-                contents.append(
-                    TextBlock(type="text", text=effective_text),
-                )
-
             for tc_data in tool_calls.values():
                 contents.append(
                     ToolUseBlock(
@@ -255,6 +254,19 @@ class LocalChatModel(ChatModelBase):
 
             if contents:
                 yield ChatResponse(content=contents, usage=usage)
+
+        flushed_contents: list = []
+        for segment in think_parser.flush():
+            if segment.kind == "thinking":
+                flushed_contents.append(
+                    ThinkingBlock(type="thinking", thinking=segment.text),
+                )
+            else:
+                flushed_contents.append(
+                    TextBlock(type="text", text=segment.text),
+                )
+        if flushed_contents:
+            yield ChatResponse(content=flushed_contents)
 
     def _parse_completion_response(
         self,

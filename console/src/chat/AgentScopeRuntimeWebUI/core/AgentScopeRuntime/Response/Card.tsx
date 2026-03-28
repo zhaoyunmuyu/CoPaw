@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { AgentScopeRuntimeMessageType, IAgentScopeRuntimeResponse } from "../types";
+import { AgentScopeRuntimeMessageType, AgentScopeRuntimeRunStatus, IAgentScopeRuntimeResponse } from "../types";
 import AgentScopeRuntimeResponseBuilder from "./Builder";
 import Message from "./Message";
 import Tool from "./Tool";
@@ -20,7 +20,7 @@ export default function AgentScopeRuntimeResponseCard(props: {
   if (!messages?.length && AgentScopeRuntimeResponseBuilder.maybeGenerating(props.data)) return <Bubble.Spin />;
 
   return <>{
-    messages.map(item => {
+    messages.map((item, index) => {
       switch (item.type) {
         case AgentScopeRuntimeMessageType.MESSAGE:
           return <Message key={item.id} data={item} />
@@ -32,7 +32,17 @@ export default function AgentScopeRuntimeResponseCard(props: {
         case AgentScopeRuntimeMessageType.MCP_APPROVAL_REQUEST:
           return <Tool key={item.id} data={item} isApproval={true} />
         case AgentScopeRuntimeMessageType.REASONING:
-          return <Reasoning key={item.id} data={item} />
+          return <Reasoning
+            key={item.id}
+            data={item}
+            loading={
+              item.status === AgentScopeRuntimeRunStatus.InProgress &&
+              !messages.slice(index + 1).some(next =>
+                next.type === AgentScopeRuntimeMessageType.MESSAGE ||
+                next.type === AgentScopeRuntimeMessageType.ERROR
+              )
+            }
+          />
         case AgentScopeRuntimeMessageType.ERROR:
           return <Error key={item.id} data={item} />
         case AgentScopeRuntimeMessageType.HEARTBEAT:

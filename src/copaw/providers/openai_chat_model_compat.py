@@ -10,7 +10,14 @@ from typing import Any, AsyncGenerator, Type
 
 from agentscope.model import OpenAIChatModel
 from agentscope.model._model_response import ChatResponse
+from agentscope.message import TextBlock, ThinkingBlock
 from pydantic import BaseModel
+
+from ..local_models.tag_parser import (
+    StreamingThinkParser,
+    extract_thinking_from_text,
+    text_contains_think_tag,
+)
 
 
 def _clone_with_overrides(obj: Any, **overrides: Any) -> Any:
@@ -130,6 +137,114 @@ def _sanitize_stream_item(item: Any) -> Any:
     return _sanitize_chunk(item)
 
 
+def _clone_choice_with_delta(choice: Any, delta: Any) -> Any:
+    """Clone a choice object while replacing its delta."""
+    return _clone_with_overrides(choice, delta=delta)
+
+
+def _clone_chunk_with_choices(chunk: Any, choices: list[Any]) -> Any:
+    """Clone a chunk object while replacing its choices."""
+    return _clone_with_overrides(chunk, choices=choices)
+
+
+def _split_thinking_blocks(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert raw ``<think>...</think>`` text into dedicated thinking blocks.
+
+    Some OpenAI-compatible backends place reasoning inside plain text instead
+    of the structured ``reasoning_content`` field. This post-processes parsed
+    content so downstream runtime/UI receives a normal ``thinking`` block.
+    """
+    has_structured_thinking = any(
+        block.get("type") == "thinking" for block in content
+    )
+
+    normalized: list[dict[str, Any]] = []
+    for block in content:
+        if block.get("type") != "text":
+            normalized.append(block)
+            continue
+
+        text = block.get("text", "")
+        if not text or not text_contains_think_tag(text):
+            normalized.append(block)
+            continue
+
+        parsed = extract_thinking_from_text(text)
+        if parsed.thinking and not has_structured_thinking:
+            normalized.append(
+                ThinkingBlock(type="thinking", thinking=parsed.thinking),
+            )
+        if parsed.remaining_text:
+            normalized.append(
+                TextBlock(type="text", text=parsed.remaining_text),
+            )
+
+    return normalized
+
+
+def _expand_text_delta_segments(
+    *,
+    item: Any,
+    parser: StreamingThinkParser,
+) -> list[Any]:
+    """Rewrite mixed ``delta.content`` chunks into separate text/reasoning chunks."""
+    chunk = getattr(item, "chunk", item)
+    choices = getattr(chunk, "choices", None) or []
+    if not choices:
+        return [item]
+
+    choice = choices[0]
+    delta = getattr(choice, "delta", None)
+    if delta is None:
+        return [item]
+
+    content_piece = getattr(delta, "content", None) or ""
+    reasoning_piece = getattr(delta, "reasoning_content", None) or ""
+
+    if not content_piece:
+        return [item]
+
+    segments = parser.feed(content_piece)
+    emitted_items: list[Any] = []
+
+    if reasoning_piece:
+        reasoning_delta = _clone_with_overrides(
+            delta,
+            content="",
+            reasoning_content=reasoning_piece,
+        )
+        reasoning_choice = _clone_choice_with_delta(choice, reasoning_delta)
+        reasoning_chunk = _clone_chunk_with_choices(chunk, [reasoning_choice])
+        emitted_items.append(
+            _clone_with_overrides(item, chunk=reasoning_chunk)
+            if hasattr(item, "chunk")
+            else reasoning_chunk,
+        )
+
+    if not segments:
+        return emitted_items
+
+    for segment in segments:
+        if not segment.text:
+            continue
+        segment_delta = _clone_with_overrides(
+            delta,
+            content=segment.text if segment.kind == "text" else "",
+            reasoning_content=(
+                segment.text if segment.kind == "thinking" else ""
+            ),
+        )
+        segment_choice = _clone_choice_with_delta(choice, segment_delta)
+        segment_chunk = _clone_chunk_with_choices(chunk, [segment_choice])
+        emitted_items.append(
+            _clone_with_overrides(item, chunk=segment_chunk)
+            if hasattr(item, "chunk")
+            else segment_chunk,
+        )
+
+    return emitted_items or [item]
+
+
 class _SanitizedStream:
     """Proxy OpenAI async stream that sanitizes each emitted item and
     captures ``extra_content`` from tool-call chunks (used by Gemini
@@ -139,6 +254,8 @@ class _SanitizedStream:
         self._stream = stream
         self._ctx_stream: Any | None = None
         self.extra_contents: dict[str, Any] = {}
+        self._think_parser = StreamingThinkParser()
+        self._pending_items: list[Any] = []
 
     async def __aenter__(self) -> "_SanitizedStream":
         self._ctx_stream = await self._stream.__aenter__()
@@ -156,11 +273,25 @@ class _SanitizedStream:
         return self
 
     async def __anext__(self) -> Any:
-        if self._ctx_stream is None:
-            raise StopAsyncIteration
-        item = await self._ctx_stream.__anext__()
-        self._capture_extra_content(item)
-        return _sanitize_stream_item(item)
+        while True:
+            if self._pending_items:
+                return self._pending_items.pop(0)
+
+            if self._ctx_stream is None:
+                raise StopAsyncIteration
+            item = await self._ctx_stream.__anext__()
+            sanitized_item = _sanitize_stream_item(item)
+            self._capture_extra_content(sanitized_item)
+
+            expanded_items = _expand_text_delta_segments(
+                item=sanitized_item,
+                parser=self._think_parser,
+            )
+            if not expanded_items:
+                continue
+            if len(expanded_items) > 1:
+                self._pending_items.extend(expanded_items[1:])
+            return expanded_items[0]
 
     def _capture_extra_content(self, item: Any) -> None:
         """Store ``extra_content`` keyed by tool-call id."""
@@ -222,6 +353,7 @@ class OpenAIChatModelCompat(OpenAIChatModel):
             # Store usage from the last chunk for tracing
             if parsed.usage:
                 self._last_usage = parsed.usage
+            parsed.content = _split_thinking_blocks(parsed.content)
             if sanitized_response.extra_contents:
                 for block in parsed.content:
                     if block.get("type") != "tool_use":

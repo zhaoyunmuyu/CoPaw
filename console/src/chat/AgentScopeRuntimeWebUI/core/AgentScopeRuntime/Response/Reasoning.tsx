@@ -1,7 +1,7 @@
 import { AgentScopeRuntimeRunStatus, IAgentScopeRuntimeMessage, ITextContent } from "../types";
 import { Thinking } from "@/chat";
 
-export default function Reasoning({ data }: { data: IAgentScopeRuntimeMessage }) {
+export default function Reasoning({ data, loading }: { data: IAgentScopeRuntimeMessage; loading?: boolean }) {
 
   if (data.status === AgentScopeRuntimeRunStatus.Created) return null;
 
@@ -9,7 +9,7 @@ export default function Reasoning({ data }: { data: IAgentScopeRuntimeMessage })
   if (!content) return null;
 
   return <Thinking
-    loading={data.status === AgentScopeRuntimeRunStatus.InProgress}
+    loading={loading ?? data.status === AgentScopeRuntimeRunStatus.InProgress}
     title="Thinking"
     content={content.text}
 

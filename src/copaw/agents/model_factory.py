@@ -233,22 +233,53 @@ def _create_file_block_support_formatter(
                 out_assistant = [
                     m for m in messages if m.get("role") == "assistant"
                 ]
+                input_reasonings = [
+                    reasoning_contents[id(in_msg)]
+                    for in_msg in in_assistant
+                    if reasoning_contents.get(id(in_msg))
+                ]
+
                 if len(in_assistant) != len(out_assistant):
                     logger.warning(
                         "Assistant message count mismatch after formatting "
                         "(%d before, %d after). "
-                        "Skipping reasoning_content injection.",
+                        "Falling back to best-effort reasoning injection.",
                         len(in_assistant),
                         len(out_assistant),
                     )
-                else:
-                    for in_msg, out_msg in zip(
-                        in_assistant,
-                        out_assistant,
-                    ):
-                        reasoning = reasoning_contents.get(id(in_msg))
-                        if reasoning:
+
+                if out_assistant and input_reasonings:
+                    if len(out_assistant) == len(input_reasonings):
+                        for out_msg, reasoning in zip(
+                            out_assistant,
+                            input_reasonings,
+                        ):
                             out_msg["reasoning_content"] = reasoning
+                    elif len(out_assistant) == 1:
+                        out_assistant[0]["reasoning_content"] = "\n\n".join(
+                            input_reasonings,
+                        )
+                    else:
+                        # Preserve ordering and merge any surplus reasoning
+                        # into the last assistant message instead of dropping it.
+                        for out_msg, reasoning in zip(
+                            out_assistant,
+                            input_reasonings,
+                        ):
+                            out_msg["reasoning_content"] = reasoning
+                        if len(input_reasonings) > len(out_assistant):
+                            tail = "\n\n".join(
+                                input_reasonings[len(out_assistant):],
+                            )
+                            existing = out_assistant[-1].get(
+                                "reasoning_content",
+                                "",
+                            )
+                            out_assistant[-1]["reasoning_content"] = (
+                                f"{existing}\n\n{tail}".strip()
+                                if existing
+                                else tail
+                            )
 
             return _strip_top_level_message_name(messages)
 

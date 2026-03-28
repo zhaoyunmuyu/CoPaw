@@ -225,66 +225,67 @@ def agentscope_msg_to_message(
 
     results: List[Message] = []
 
+    def _append_text_and_reasoning(
+        *,
+        role: str,
+        text: str,
+        metadata: dict,
+    ) -> None:
+        if text and text_contains_think_tag(text):
+            parsed = extract_thinking_from_text(text)
+            if parsed.thinking:
+                rb = ResponseBuilder()
+                mb = rb.create_message_builder(
+                    role=role,
+                    message_type=MessageType.REASONING,
+                )
+                mb.message.metadata = metadata
+                cb = mb.create_content_builder(content_type="text")
+                cb.set_text(parsed.thinking)
+                cb.complete()
+                mb.complete()
+                results.append(mb.get_message_data())
+
+            if parsed.remaining_text:
+                rb = ResponseBuilder()
+                mb = rb.create_message_builder(
+                    role=role,
+                    message_type=MessageType.MESSAGE,
+                )
+                mb.message.metadata = metadata
+                cb = mb.create_content_builder(content_type="text")
+                cb.set_text(parsed.remaining_text)
+                cb.complete()
+                mb.complete()
+                results.append(mb.get_message_data())
+            return
+
+        rb = ResponseBuilder()
+        mb = rb.create_message_builder(
+            role=role,
+            message_type=MessageType.MESSAGE,
+        )
+        mb.message.metadata = metadata
+        cb = mb.create_content_builder(content_type="text")
+        cb.set_text(text)
+        cb.complete()
+        mb.complete()
+        results.append(mb.get_message_data())
+
     for msg in msgs:
         role = msg.role or "assistant"
+        metadata = {
+            "original_id": msg.id,
+            "original_name": msg.name,
+            "metadata": msg.metadata,
+        }
 
         if isinstance(msg.content, str):
-            # Only text - check for thinking tags
-            text = msg.content
-            if text_contains_think_tag(text):
-                parsed = extract_thinking_from_text(text)
-                # Add thinking block if present
-                if parsed.thinking:
-                    rb = ResponseBuilder()
-                    mb = rb.create_message_builder(
-                        role=role,
-                        message_type=MessageType.REASONING,
-                    )
-                    mb.message.metadata = {
-                        "original_id": msg.id,
-                        "original_name": msg.name,
-                        "metadata": msg.metadata,
-                    }
-                    cb = mb.create_content_builder(content_type="text")
-                    cb.set_text(parsed.thinking)
-                    cb.complete()
-                    mb.complete()
-                    results.append(mb.get_message_data())
-                # Add remaining text if present
-                if parsed.remaining_text:
-                    rb = ResponseBuilder()
-                    mb = rb.create_message_builder(
-                        role=role,
-                        message_type=MessageType.MESSAGE,
-                    )
-                    mb.message.metadata = {
-                        "original_id": msg.id,
-                        "original_name": msg.name,
-                        "metadata": msg.metadata,
-                    }
-                    cb = mb.create_content_builder(content_type="text")
-                    cb.set_text(parsed.remaining_text)
-                    cb.complete()
-                    mb.complete()
-                    results.append(mb.get_message_data())
-                continue
-            # No thinking tags - original logic
-            rb = ResponseBuilder()
-            mb = rb.create_message_builder(
+            _append_text_and_reasoning(
                 role=role,
-                message_type=MessageType.MESSAGE,
+                text=msg.content,
+                metadata=metadata,
             )
-            # add meta field to store old id and name
-            mb.message.metadata = {
-                "original_id": msg.id,
-                "original_name": msg.name,
-                "metadata": msg.metadata,
-            }
-            cb = mb.create_content_builder(content_type="text")
-            cb.set_text(msg.content)
-            cb.complete()
-            mb.complete()
-            results.append(mb.get_message_data())
             continue
 
         # msg.content is a list of blocks
@@ -355,12 +356,22 @@ def agentscope_msg_to_message(
                         message_type=MessageType.MESSAGE,
                     )
                     # add meta field to store old id and name
-                    current_mb.message.metadata = {
-                        "original_id": msg.id,
-                        "original_name": msg.name,
-                        "metadata": msg.metadata,
-                    }
+                    current_mb.message.metadata = metadata
                     current_type = MessageType.MESSAGE
+                text = block.get("text", "")
+                if text and text_contains_think_tag(text):
+                    if current_mb:
+                        current_mb.complete()
+                        results.append(current_mb.get_message_data())
+                        current_mb = None
+                        current_type = None
+                    _append_text_and_reasoning(
+                        role=role,
+                        text=text,
+                        metadata=metadata,
+                    )
+                    continue
+
                 cb = current_mb.create_content_builder(content_type="text")
                 cb.set_text(text)
                 cb.complete()
@@ -377,11 +388,7 @@ def agentscope_msg_to_message(
                         message_type=MessageType.REASONING,
                     )
                     # add meta field to store old id and name
-                    current_mb.message.metadata = {
-                        "original_id": msg.id,
-                        "original_name": msg.name,
-                        "metadata": msg.metadata,
-                    }
+                    current_mb.message.metadata = metadata
                     current_type = MessageType.REASONING
                 cb = current_mb.create_content_builder(content_type="text")
                 cb.set_text(block.get("thinking", ""))
@@ -398,11 +405,7 @@ def agentscope_msg_to_message(
                     message_type=MessageType.PLUGIN_CALL,
                 )
                 # add meta field to store old id and name
-                current_mb.message.metadata = {
-                    "original_id": msg.id,
-                    "original_name": msg.name,
-                    "metadata": msg.metadata,
-                }
+                current_mb.message.metadata = metadata
                 current_type = MessageType.PLUGIN_CALL
                 cb = current_mb.create_content_builder(content_type="data")
 
@@ -433,11 +436,7 @@ def agentscope_msg_to_message(
                     message_type=MessageType.PLUGIN_CALL_OUTPUT,
                 )
                 # add meta field to store old id and name
-                current_mb.message.metadata = {
-                    "original_id": msg.id,
-                    "original_name": msg.name,
-                    "metadata": msg.metadata,
-                }
+                current_mb.message.metadata = metadata
                 current_type = MessageType.PLUGIN_CALL_OUTPUT
                 cb = current_mb.create_content_builder(content_type="data")
 
@@ -469,11 +468,7 @@ def agentscope_msg_to_message(
                         message_type=MessageType.MESSAGE,
                     )
                     # add meta field to store old id and name
-                    current_mb.message.metadata = {
-                        "original_id": msg.id,
-                        "original_name": msg.name,
-                        "metadata": msg.metadata,
-                    }
+                    current_mb.message.metadata = metadata
                     current_type = MessageType.MESSAGE
                 cb = current_mb.create_content_builder(content_type="image")
 
