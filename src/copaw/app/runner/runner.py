@@ -20,7 +20,7 @@ from .command_dispatch import (
 )
 from .query_error_dump import write_query_error_dump
 from .session import SafeJSONSession
-from .utils import build_env_context
+from .utils import build_env_context, ensure_reme_safe_markdown_paths
 from ..channels.schema import DEFAULT_CHANNEL
 from ...agents.memory import MemoryManager
 from ...agents.model_factory import create_model_and_formatter
@@ -126,6 +126,12 @@ class AgentRunner(Runner):
                 max_input_length=config.agents.running.max_input_length,
                 memory_compact_ratio=MEMORY_COMPACT_RATIO,
             )
+            renamed_paths = ensure_reme_safe_markdown_paths(working_dir)
+            if renamed_paths:
+                logger.warning(
+                    "Sanitized %d ReMe-scanned path(s) before MemoryManager.start()",
+                    len(renamed_paths),
+                )
             await mm.start()
             self._memory_manager_cache[user_id] = mm
             logger.info(

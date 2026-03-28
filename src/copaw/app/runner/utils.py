@@ -1,7 +1,14 @@
 # -*- coding: utf-8 -*-
 import json
+import logging
+import os
+import re
+import unicodedata
+import uuid
+from pathlib import Path
 from typing import Optional, Union, List
 from urllib.parse import urlparse
+
 from agentscope.message import Msg
 from agentscope_runtime.engine.schemas.agent_schemas import (
     Message,
@@ -14,6 +21,140 @@ from ...local_models.tag_parser import (
     extract_thinking_from_text,
     text_contains_think_tag,
 )
+
+logger = logging.getLogger(__name__)
+
+_SAFE_REME_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _is_utf8_safe(text: str) -> bool:
+    try:
+        text.encode("utf-8")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
+def _contains_cjk(text: str) -> bool:
+    return any("\u4e00" <= ch <= "\u9fff" for ch in text)
+
+
+def _normalize_ascii_name(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text)
+    ascii_text = normalized.encode("ascii", errors="ignore").decode("ascii")
+    ascii_text = _SAFE_REME_NAME_RE.sub("_", ascii_text).strip("._-")
+    return ascii_text
+
+
+def _decode_surrogate_name(raw_name: str) -> str | None:
+    raw_bytes = os.fsencode(raw_name)
+    for encoding in ("gb18030", "gbk", "big5"):
+        try:
+            decoded = raw_bytes.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+        if _is_utf8_safe(decoded):
+            return decoded
+    return None
+
+
+def _to_pinyin_if_possible(text: str) -> str | None:
+    try:
+        from pypinyin import lazy_pinyin
+    except ImportError:
+        return None
+
+    parts = [
+        _normalize_ascii_name(piece)
+        for piece in lazy_pinyin(text, errors="ignore")
+    ]
+    parts = [piece for piece in parts if piece]
+    if not parts:
+        return None
+    return "_".join(parts)
+
+
+def _build_safe_reme_name(path: Path) -> str:
+    suffix = "".join(path.suffixes)
+    stem = path.name[: -len(suffix)] if suffix else path.name
+    decoded_stem = _decode_surrogate_name(stem) if not _is_utf8_safe(stem) else stem
+
+    candidate_stem = ""
+    if decoded_stem and _contains_cjk(decoded_stem):
+        candidate_stem = _to_pinyin_if_possible(decoded_stem) or ""
+
+    if not candidate_stem and decoded_stem and _is_utf8_safe(decoded_stem):
+        candidate_stem = _normalize_ascii_name(decoded_stem)
+
+    if not candidate_stem:
+        candidate_stem = f"md_{uuid.uuid4().hex[:12]}"
+
+    candidate_stem = candidate_stem.strip("._-") or f"md_{uuid.uuid4().hex[:12]}"
+    return f"{candidate_stem}{suffix}"
+
+
+def _dedupe_path(parent: Path, candidate_name: str) -> Path:
+    candidate = parent / candidate_name
+    if not candidate.exists():
+        return candidate
+
+    suffix = "".join(candidate.suffixes)
+    stem = (
+        candidate_name[: -len(suffix)] if suffix else candidate_name
+    ).rstrip("._-") or f"md_{uuid.uuid4().hex[:8]}"
+    for idx in range(1, 1000):
+        deduped = parent / f"{stem}_{idx}{suffix}"
+        if not deduped.exists():
+            return deduped
+
+    return parent / f"{stem}_{uuid.uuid4().hex[:8]}{suffix}"
+
+
+def _iter_reme_paths(working_dir: Path) -> list[Path]:
+    candidates: list[Path] = []
+    for filename in ("MEMORY.md", "memory.md"):
+        path = working_dir / filename
+        if path.exists():
+            candidates.append(path)
+
+    memory_dir = working_dir / "memory"
+    if memory_dir.exists():
+        files = [path for path in memory_dir.rglob("*.md") if path.is_file()]
+        directories = sorted(
+            [path for path in memory_dir.rglob("*") if path.is_dir()],
+            key=lambda p: len(p.parts),
+            reverse=True,
+        )
+        candidates.extend(files)
+        candidates.extend(directories)
+    return candidates
+
+
+def ensure_reme_safe_markdown_paths(
+    working_dir: Path,
+) -> list[tuple[Path, Path]]:
+    """Rename ReMe-scanned paths whose names cannot be UTF-8 encoded.
+
+    ReMe hashes source metadata using ``text.encode("utf-8")`` and will crash
+    if any path segment contains surrogate escapes. This helper only touches
+    the memory files/directories that ReMe is expected to watch.
+    """
+    renamed: list[tuple[Path, Path]] = []
+    for path in _iter_reme_paths(working_dir):
+        if _is_utf8_safe(path.name):
+            continue
+
+        new_name = _build_safe_reme_name(path)
+        new_path = _dedupe_path(path.parent, new_name)
+        path.rename(new_path)
+        renamed.append((path, new_path))
+        logger.warning(
+            "Renamed ReMe-scanned path with invalid UTF-8 name: %r -> %s",
+            str(path),
+            new_path,
+        )
+
+    return renamed
 
 
 def build_env_context(
