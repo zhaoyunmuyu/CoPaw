@@ -14,6 +14,7 @@ from agentscope_runtime.engine.app import AgentApp
 
 from ..config import load_config  # pylint: disable=no-name-in-module
 from ..config.utils import get_config_path
+from ..config.context import tenant_context
 from ..constant import DOCS_ENABLED, LOG_LEVEL_ENV, CORS_ORIGINS, WORKING_DIR
 from ..__version__ import __version__
 from ..utils.logging import setup_logger, add_copaw_file_handler
@@ -25,6 +26,7 @@ from ..envs import load_envs_into_environ
 from ..providers.provider_manager import ProviderManager
 from ..local_models.manager import LocalModelManager
 from .multi_agent_manager import MultiAgentManager
+from .workspace.tenant_pool import TenantWorkspacePool
 from .migration import (
     migrate_legacy_workspace_to_default_agent,
     migrate_legacy_skills_to_skill_pool,
@@ -189,6 +191,11 @@ async def lifespan(
     migrate_legacy_skills_to_skill_pool()
     ensure_qa_agent_exists()
 
+    # --- Tenant workspace pool initialization ---
+    logger.info("Initializing TenantWorkspacePool...")
+    tenant_workspace_pool = TenantWorkspacePool(WORKING_DIR)
+    app.state.tenant_workspace_pool = tenant_workspace_pool
+
     # --- Multi-agent manager initialization ---
     logger.info("Initializing MultiAgentManager...")
     multi_agent_manager = MultiAgentManager()
@@ -263,6 +270,15 @@ async def lifespan(
                 await multi_agent_mgr.stop_all()
             except Exception as e:
                 logger.error(f"Error stopping MultiAgentManager: {e}")
+
+        # Stop all tenant workspaces
+        tenant_pool = getattr(app.state, "tenant_workspace_pool", None)
+        if tenant_pool is not None:
+            logger.info("Stopping all tenant workspaces...")
+            try:
+                await tenant_pool.stop_all()
+            except Exception as e:
+                logger.error(f"Error stopping tenant workspaces: {e}")
 
         logger.info("Application shutdown complete")
 

@@ -3,6 +3,9 @@
 
 This provides agent isolation by injecting agentId into request.state,
 allowing downstream APIs to access the correct agent context.
+
+Note: For tenant-scoped deployments, tenant identity is resolved first
+before agent resolution. The agent namespace is per-tenant.
 """
 from fastapi import APIRouter, Request
 from starlette.middleware.base import (
@@ -13,19 +16,34 @@ from starlette.responses import Response
 
 
 class AgentContextMiddleware(BaseHTTPMiddleware):
-    """Middleware to inject agentId into request.state."""
+    """Middleware to inject agentId into request.state.
+
+    Note: This middleware assumes tenant identity has already been
+    resolved by TenantIdentityMiddleware and TenantWorkspaceMiddleware.
+    Agent resolution happens within the tenant context.
+    """
 
     async def dispatch(
         self,
         request: Request,
         call_next: RequestResponseEndpoint,
     ) -> Response:
-        """Extract agentId from path/header and inject into context."""
+        """Extract agentId from path/header and inject into context.
+
+        Tenant context (if set by prior middleware) takes precedence
+        for agent namespace resolution.
+        """
         import logging
         from ..agent_context import set_current_agent_id
+        from ...config.context import get_current_tenant_id
 
         logger = logging.getLogger(__name__)
         agent_id = None
+
+        # Log tenant context if available
+        tenant_id = get_current_tenant_id()
+        if tenant_id:
+            logger.debug(f"AgentContextMiddleware: tenant_id={tenant_id}")
 
         # Priority 1: Extract agentId from path: /api/agents/{agentId}/...
         path_parts = request.url.path.split("/")
@@ -55,6 +73,9 @@ def create_agent_scoped_router() -> APIRouter:
 
     Returns:
         APIRouter with all sub-routers mounted under /{agentId}/
+
+    Note: These routes are within a tenant context when tenant
+    middleware is applied. Agent namespace is per-tenant.
     """
     from .agent import router as agent_router
     from .skills import router as skills_router

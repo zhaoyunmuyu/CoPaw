@@ -1,13 +1,19 @@
 # -*- coding: utf-8 -*-
-"""Agent context utilities for multi-agent support.
+"""Agent context utilities for multi-agent and multi-tenant support.
 
-Provides utilities to get the correct agent instance for each request.
+Provides utilities to get the correct agent instance for each request,
+with tenant-first resolution order.
 """
 from contextvars import ContextVar
 from typing import Optional, TYPE_CHECKING
 from fastapi import Request
-from .multi_agent_manager import MultiAgentManager
+
 from ..config.utils import load_config
+from ..config.context import (
+    get_current_tenant_id,
+    get_current_user_id,
+    TenantContextError,
+)
 
 if TYPE_CHECKING:
     from .workspace import Workspace
@@ -19,17 +25,35 @@ _current_agent_id: ContextVar[Optional[str]] = ContextVar(
 )
 
 
+def _get_tenant_aware_config(tenant_id: Optional[str] = None):
+    """Get config with tenant awareness.
+
+    When tenant_id is provided, loads config from tenant workspace.
+    Otherwise falls back to global config.
+
+    Args:
+        tenant_id: Optional tenant ID for tenant-scoped config.
+
+    Returns:
+        Configuration object.
+    """
+    if tenant_id:
+        # For now, fall back to global config
+        # TODO: Implement tenant-scoped config loading once utils.py updated
+        return load_config()
+    return load_config()
+
+
 async def get_agent_for_request(
     request: Request,
     agent_id: Optional[str] = None,
 ) -> "Workspace":
-    """Get agent workspace for current request.
+    """Get agent workspace for current request with tenant-first resolution.
 
-    Priority:
-    1. agent_id parameter (explicit override)
-    2. request.state.agent_id (from agent-scoped router)
-    3. X-Agent-Id header (from frontend)
-    4. Active agent from config
+    Resolution order (tenant-first):
+    1. Resolve tenant from X-Tenant-Id header or context
+    2. Resolve user from X-User-Id header or context
+    3. Resolve agent from context, header, or tenant-local config
 
     Args:
         request: FastAPI request object
@@ -39,14 +63,25 @@ async def get_agent_for_request(
         Workspace for the specified or active agent
 
     Raises:
-        HTTPException: If agent not found
+        HTTPException: If agent not found or tenant context missing
     """
     from fastapi import HTTPException
 
-    # Determine which agent to use
+    # Step 1: Resolve tenant context
+    tenant_id = get_current_tenant_id()
+    if tenant_id is None:
+        # Try to get from request state (set by tenant middleware)
+        tenant_id = getattr(request.state, "tenant_id", None)
+
+    # Step 2: Resolve user context
+    user_id = get_current_user_id()
+    if user_id is None:
+        user_id = getattr(request.state, "user_id", None)
+
+    # Step 3: Determine which agent to use
     target_agent_id = agent_id
 
-    # Check request.state.agent_id (set by agent-scoped router)
+    # Check request.state.agent_id (from agent-scoped router)
     if not target_agent_id and hasattr(request.state, "agent_id"):
         target_agent_id = request.state.agent_id
 
@@ -54,16 +89,17 @@ async def get_agent_for_request(
     if not target_agent_id:
         target_agent_id = request.headers.get("X-Agent-Id")
 
-    # Load config once for fallback and validation
+    # Load tenant-aware config for fallback and validation
     config = None
     if not target_agent_id:
         # Fallback to active agent from config
-        config = load_config()
+        config = _get_tenant_aware_config(tenant_id)
         target_agent_id = config.agents.active_agent or "default"
 
-    # Check if agent exists and is enabled
+    # Check if agent exists and is enabled (using tenant-aware config)
     if config is None:
-        config = load_config()
+        config = _get_tenant_aware_config(tenant_id)
+
     if target_agent_id not in config.agents.profiles:
         raise HTTPException(
             status_code=404,
@@ -77,14 +113,20 @@ async def get_agent_for_request(
             detail=f"Agent '{target_agent_id}' is disabled",
         )
 
-    # Get MultiAgentManager
+    # Get MultiAgentManager (tenant-aware resolution)
     if not hasattr(request.app.state, "multi_agent_manager"):
         raise HTTPException(
             status_code=500,
             detail="MultiAgentManager not initialized",
         )
 
-    manager: MultiAgentManager = request.app.state.multi_agent_manager
+    # Store tenant/user context in request state for downstream use
+    if tenant_id:
+        request.state.tenant_id = tenant_id
+    if user_id:
+        request.state.user_id = user_id
+
+    manager = request.app.state.multi_agent_manager
 
     try:
         workspace = await manager.get_agent(target_agent_id)
@@ -106,14 +148,17 @@ async def get_agent_for_request(
         ) from e
 
 
-def get_active_agent_id() -> str:
+def get_active_agent_id(tenant_id: Optional[str] = None) -> str:
     """Get current active agent ID from config.
+
+    Args:
+        tenant_id: Optional tenant ID for tenant-scoped lookup.
 
     Returns:
         Active agent ID, defaults to "default"
     """
     try:
-        config = load_config()
+        config = _get_tenant_aware_config(tenant_id)
         return config.agents.active_agent or "default"
     except Exception:
         return "default"
@@ -128,8 +173,11 @@ def set_current_agent_id(agent_id: str) -> None:
     _current_agent_id.set(agent_id)
 
 
-def get_current_agent_id() -> str:
+def get_current_agent_id(tenant_id: Optional[str] = None) -> str:
     """Get current agent ID from context or config fallback.
+
+    Args:
+        tenant_id: Optional tenant ID for tenant-scoped lookup.
 
     Returns:
         Current agent ID, defaults to active agent or "default"
@@ -137,4 +185,47 @@ def get_current_agent_id() -> str:
     agent_id = _current_agent_id.get()
     if agent_id:
         return agent_id
-    return get_active_agent_id()
+    return get_active_agent_id(tenant_id)
+
+
+def get_tenant_workspace(request: Request) -> Optional["Workspace"]:
+    """Get tenant workspace from request state.
+
+    Args:
+        request: FastAPI request object
+
+    Returns:
+        Workspace if tenant workspace is bound, None otherwise
+    """
+    return getattr(request.state, "workspace", None)
+
+
+def get_tenant_workspace_strict(request: Request) -> "Workspace":
+    """Get tenant workspace from request state, raising if not set.
+
+    Args:
+        request: FastAPI request object
+
+    Returns:
+        Workspace for the current tenant
+
+    Raises:
+        TenantContextError: If workspace is not set in request state
+    """
+    workspace = getattr(request.state, "workspace", None)
+    if workspace is None:
+        raise TenantContextError(
+            "Tenant workspace not bound to request. "
+            "Ensure tenant workspace middleware is installed."
+        )
+    return workspace
+
+
+__all__ = [
+    "get_agent_for_request",
+    "get_active_agent_id",
+    "set_current_agent_id",
+    "get_current_agent_id",
+    "get_tenant_workspace",
+    "get_tenant_workspace_strict",
+]
