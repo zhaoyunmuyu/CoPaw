@@ -19,9 +19,10 @@ _MANAGER_FILE = SRC_ROOT / "copaw" / "app" / "multi_agent_manager.py"
 
 
 class FakeWorkspace:
-    def __init__(self, agent_id: str, workspace_dir: str):
+    def __init__(self, agent_id: str, workspace_dir: str, tenant_id: str | None = None):
         self.agent_id = agent_id
         self.workspace_dir = workspace_dir
+        self.tenant_id = tenant_id
         self.manager = None
         self.started = False
 
@@ -66,7 +67,29 @@ class ToolsConfig:
     pass
 
 
-def _install_test_stubs() -> None:
+def _restore_original_modules(original_modules):
+    for name, module in original_modules.items():
+        if module is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = module
+
+
+def _install_test_stubs() -> dict[str, object | None]:
+    original_modules = {
+        name: sys.modules.get(name)
+        for name in [
+            "copaw.config.utils",
+            "copaw.config.context",
+            "copaw.config.config",
+            "copaw.agents.utils.file_handling",
+            "copaw.app.utils",
+            "copaw.agents.memory.agent_md_manager",
+            "copaw.agents.utils",
+            "copaw.app.multi_agent_manager",
+            "copaw.app.workspace",
+        ]
+    }
     config_utils = types.ModuleType("copaw.config.utils")
     config_utils.load_config = lambda *args, **kwargs: None
     config_utils.save_config = lambda *args, **kwargs: None
@@ -118,6 +141,7 @@ def _install_test_stubs() -> None:
     workspace_module = types.ModuleType("copaw.app.workspace")
     workspace_module.Workspace = FakeWorkspace
     sys.modules["copaw.app.workspace"] = workspace_module
+    return original_modules
 
 
 
@@ -134,7 +158,7 @@ def _load_module(module_name: str, file_path: Path, package_name: str):
     return module
 
 
-_install_test_stubs()
+_ORIGINAL_MODULES = _install_test_stubs()
 agent_context = _load_module(
     "copaw.app.agent_context",
     _AGENT_CONTEXT_FILE,
@@ -150,6 +174,7 @@ multi_agent_manager = _load_module(
     _MANAGER_FILE,
     "copaw.app",
 )
+_restore_original_modules(_ORIGINAL_MODULES)
 
 
 def test_get_tenant_aware_config_uses_tenant_config_path(monkeypatch):

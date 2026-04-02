@@ -89,6 +89,7 @@ class MultiAgentManager:
             instance = Workspace(
                 agent_id=agent_id,
                 workspace_dir=agent_ref.workspace_dir,
+                tenant_id=tenant_id,
             )
 
             try:

@@ -47,16 +47,22 @@ def cron_group() -> None:
     default="default",
     help="Agent ID (defaults to 'default')",
 )
+@click.option(
+    "--tenant-id",
+    default=None,
+    help="Tenant ID forwarded as X-Tenant-Id header.",
+)
 @click.pass_context
 def list_jobs(
     ctx: click.Context,
     base_url: Optional[str],
     agent_id: str,
+    tenant_id: Optional[str],
 ) -> None:
     """List all cron jobs. Output is JSON from GET /cron/jobs."""
     base_url = _base_url(ctx, base_url)
     with client(base_url) as c:
-        headers = {"X-Agent-Id": agent_id}
+        headers = _build_headers(agent_id, tenant_id)
         r = c.get("/cron/jobs", headers=headers)
         r.raise_for_status()
         print_json(r.json())
@@ -74,17 +80,23 @@ def list_jobs(
     default="default",
     help="Agent ID (defaults to 'default')",
 )
+@click.option(
+    "--tenant-id",
+    default=None,
+    help="Tenant ID forwarded as X-Tenant-Id header.",
+)
 @click.pass_context
 def get_job(
     ctx: click.Context,
     job_id: str,
     base_url: Optional[str],
     agent_id: str,
+    tenant_id: Optional[str],
 ) -> None:
     """Fetch a cron job by ID. Returns JSON from GET /cron/jobs/<id>."""
     base_url = _base_url(ctx, base_url)
     with client(base_url) as c:
-        headers = {"X-Agent-Id": agent_id}
+        headers = _build_headers(agent_id, tenant_id)
         r = c.get(f"/cron/jobs/{job_id}", headers=headers)
         if r.status_code == 404:
             raise click.ClickException("Job not found.")
@@ -104,22 +116,35 @@ def get_job(
     default="default",
     help="Agent ID (defaults to 'default')",
 )
+@click.option(
+    "--tenant-id",
+    default=None,
+    help="Tenant ID forwarded as X-Tenant-Id header.",
+)
 @click.pass_context
 def job_state(
     ctx: click.Context,
     job_id: str,
     base_url: Optional[str],
     agent_id: str,
+    tenant_id: Optional[str],
 ) -> None:
     """Get the runtime state of a cron job (e.g. next run time, paused)."""
     base_url = _base_url(ctx, base_url)
     with client(base_url) as c:
-        headers = {"X-Agent-Id": agent_id}
+        headers = _build_headers(agent_id, tenant_id)
         r = c.get(f"/cron/jobs/{job_id}/state", headers=headers)
         if r.status_code == 404:
             raise click.ClickException("Job not found.")
         r.raise_for_status()
         print_json(r.json())
+
+
+def _build_headers(agent_id: str, tenant_id: Optional[str] = None) -> dict[str, str]:
+    headers = {"X-Agent-Id": agent_id}
+    if tenant_id:
+        headers["X-Tenant-Id"] = tenant_id
+    return headers
 
 
 def _build_spec_from_cli(
@@ -133,6 +158,7 @@ def _build_spec_from_cli(
     timezone: str,
     enabled: bool,
     mode: str,
+    tenant_id: Optional[str] = None,
 ) -> dict:
     """Build CronJobSpec JSON payload from CLI args (no id)."""
     schedule = {"type": "cron", "cron": cron, "timezone": timezone}
@@ -157,6 +183,7 @@ def _build_spec_from_cli(
             "id": "",
             "name": name,
             "enabled": enabled,
+            "tenant_id": tenant_id,
             "schedule": schedule,
             "task_type": "text",
             "text": text.strip(),
@@ -174,6 +201,7 @@ def _build_spec_from_cli(
             "id": "",
             "name": name,
             "enabled": enabled,
+            "tenant_id": tenant_id,
             "schedule": schedule,
             "task_type": "agent",
             "request": {
@@ -295,6 +323,11 @@ def _build_spec_from_cli(
     default="default",
     help="Agent ID (defaults to 'default')",
 )
+@click.option(
+    "--tenant-id",
+    default=None,
+    help="Tenant ID forwarded as X-Tenant-Id header.",
+)
 @click.pass_context
 def create_job(
     ctx: click.Context,
@@ -311,6 +344,7 @@ def create_job(
     mode: str,
     base_url: Optional[str],
     agent_id: str,
+    tenant_id: Optional[str],
 ) -> None:
     """Create a cron job.
 
@@ -349,9 +383,10 @@ def create_job(
             timezone=timezone,
             enabled=enabled,
             mode=mode,
+            tenant_id=tenant_id,
         )
     with client(base_url) as c:
-        headers = {"X-Agent-Id": agent_id}
+        headers = _build_headers(agent_id, tenant_id)
         r = c.post("/cron/jobs", json=payload, headers=headers)
         r.raise_for_status()
         print_json(r.json())
@@ -369,17 +404,23 @@ def create_job(
     default="default",
     help="Agent ID (defaults to 'default')",
 )
+@click.option(
+    "--tenant-id",
+    default=None,
+    help="Tenant ID forwarded as X-Tenant-Id header.",
+)
 @click.pass_context
 def delete_job(
     ctx: click.Context,
     job_id: str,
     base_url: Optional[str],
     agent_id: str,
+    tenant_id: Optional[str],
 ) -> None:
     """Permanently delete a cron job. The job is removed from the server."""
     base_url = _base_url(ctx, base_url)
     with client(base_url) as c:
-        headers = {"X-Agent-Id": agent_id}
+        headers = _build_headers(agent_id, tenant_id)
         r = c.delete(f"/cron/jobs/{job_id}", headers=headers)
         if r.status_code == 404:
             raise click.ClickException("Job not found.")
@@ -399,19 +440,25 @@ def delete_job(
     default="default",
     help="Agent ID (defaults to 'default')",
 )
+@click.option(
+    "--tenant-id",
+    default=None,
+    help="Tenant ID forwarded as X-Tenant-Id header.",
+)
 @click.pass_context
 def pause_job(
     ctx: click.Context,
     job_id: str,
     base_url: Optional[str],
     agent_id: str,
+    tenant_id: Optional[str],
 ) -> None:
     """Pause a cron job so it no longer runs on schedule.
     Use 'resume' to re-enable.
     """
     base_url = _base_url(ctx, base_url)
     with client(base_url) as c:
-        headers = {"X-Agent-Id": agent_id}
+        headers = _build_headers(agent_id, tenant_id)
         r = c.post(f"/cron/jobs/{job_id}/pause", headers=headers)
         if r.status_code == 404:
             raise click.ClickException("Job not found.")
@@ -431,17 +478,23 @@ def pause_job(
     default="default",
     help="Agent ID (defaults to 'default')",
 )
+@click.option(
+    "--tenant-id",
+    default=None,
+    help="Tenant ID forwarded as X-Tenant-Id header.",
+)
 @click.pass_context
 def resume_job(
     ctx: click.Context,
     job_id: str,
     base_url: Optional[str],
     agent_id: str,
+    tenant_id: Optional[str],
 ) -> None:
     """Resume a paused cron job so it runs again on its schedule."""
     base_url = _base_url(ctx, base_url)
     with client(base_url) as c:
-        headers = {"X-Agent-Id": agent_id}
+        headers = _build_headers(agent_id, tenant_id)
         r = c.post(f"/cron/jobs/{job_id}/resume", headers=headers)
         if r.status_code == 404:
             raise click.ClickException("Job not found.")
@@ -461,17 +514,23 @@ def resume_job(
     default="default",
     help="Agent ID (defaults to 'default')",
 )
+@click.option(
+    "--tenant-id",
+    default=None,
+    help="Tenant ID forwarded as X-Tenant-Id header.",
+)
 @click.pass_context
 def run_job(
     ctx: click.Context,
     job_id: str,
     base_url: Optional[str],
     agent_id: str,
+    tenant_id: Optional[str],
 ) -> None:
     """Trigger a one-off run of a cron job immediately (ignores schedule)."""
     base_url = _base_url(ctx, base_url)
     with client(base_url) as c:
-        headers = {"X-Agent-Id": agent_id}
+        headers = _build_headers(agent_id, tenant_id)
         r = c.post(f"/cron/jobs/{job_id}/run", headers=headers)
         if r.status_code == 404:
             raise click.ClickException("Job not found.")

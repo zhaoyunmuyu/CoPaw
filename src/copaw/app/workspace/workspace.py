@@ -57,15 +57,22 @@ class Workspace:
     All components use existing single-agent code without modification.
     """
 
-    def __init__(self, agent_id: str, workspace_dir: str):
+    def __init__(
+        self,
+        agent_id: str,
+        workspace_dir: str,
+        tenant_id: Optional[str] = None,
+    ):
         """Initialize agent instance.
 
         Args:
             agent_id: Unique agent identifier
             workspace_dir: Path to agent's workspace directory
+            tenant_id: Optional tenant identifier owning this workspace
         """
         self.agent_id = agent_id
         self.workspace_dir = Path(workspace_dir).expanduser()
+        self.tenant_id = tenant_id
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
 
         # Service manager (unified component management)
