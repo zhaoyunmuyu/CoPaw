@@ -11,6 +11,7 @@ import copaw.app.migration as migration_module
 import copaw.constant as constant_module
 from copaw.agents.skills_manager import ensure_skill_pool_initialized
 from copaw.app.migration import ensure_default_agent_exists, ensure_qa_agent_exists
+from copaw.constant import BUILTIN_QA_AGENT_ID
 
 
 def test_ensure_default_agent_exists_uses_tenant_working_dir(
@@ -48,7 +49,7 @@ def test_ensure_qa_agent_exists_uses_tenant_working_dir(tmp_path, monkeypatch):
     ensure_qa_agent_exists(working_dir=tenant_dir)
 
     config_path = tenant_dir / "config.json"
-    qa_workspace = tenant_dir / "workspaces" / "qa"
+    qa_workspace = tenant_dir / "workspaces" / BUILTIN_QA_AGENT_ID
 
     assert config_path.exists()
     assert qa_workspace.exists()
@@ -57,7 +58,7 @@ def test_ensure_qa_agent_exists_uses_tenant_working_dir(tmp_path, monkeypatch):
 
     config_data = json.loads(config_path.read_text(encoding="utf-8"))
     profiles = config_data.get("agents", {}).get("profiles", {})
-    qa_profile = profiles.get("qa") or {}
+    qa_profile = profiles.get(BUILTIN_QA_AGENT_ID) or {}
     assert qa_profile.get("workspace_dir") == str(qa_workspace)
 
     assert not (global_dir / "config.json").exists()

@@ -18,7 +18,6 @@ from ..config.config import (
     HeartbeatConfig,
     MCPConfig,
     build_qa_agent_tools_config,
-    save_agent_config,
 )
 from ..constant import (
     BUILTIN_QA_AGENT_ID,
@@ -291,12 +290,14 @@ def _migrate_workspace_items_from_source(
 
 
 # pylint: disable=too-many-branches,too-many-statements
-def migrate_legacy_skills_to_skill_pool() -> bool:
+def migrate_legacy_skills_to_skill_pool(
+    working_dir: Path | None = None,
+) -> bool:
     """Migrate legacy skill layouts into workspace skills/ directories.
 
     Legacy layout had two flat directories per workspace:
-    - ``active_skills/``  — skills the agent was actually using
-    - ``customized_skills/`` — user-created or edited skills (may overlap)
+    - ``active_skills/``  -- skills the agent was actually using
+    - ``customized_skills/`` -- user-created or edited skills (may overlap)
 
     New layout uses ``<workspace>/skills/`` (unified).
 
@@ -318,11 +319,15 @@ def migrate_legacy_skills_to_skill_pool() -> bool:
     Users can manually upload workspace skills to the shared pool later
     via the UI.
 
+    Args:
+        working_dir: Optional tenant-scoped working directory.
+            Defaults to the global ``WORKING_DIR`` when *None*.
+
     Returns:
         bool: True if skills were migrated, False otherwise.
     """
     try:
-        return _do_migrate_legacy_skills()
+        return _do_migrate_legacy_skills(working_dir=working_dir)
     except Exception as e:
         logger.error(
             f"Legacy skill migration failed: {e}. "
@@ -333,7 +338,9 @@ def migrate_legacy_skills_to_skill_pool() -> bool:
         return False
 
 
-def _do_migrate_legacy_skills() -> bool:
+def _do_migrate_legacy_skills(
+    working_dir: Path | None = None,
+) -> bool:
     """Internal implementation of legacy skills migration."""
     from ..agents.skills_manager import (
         _build_signature,
@@ -348,9 +355,11 @@ def _do_migrate_legacy_skills() -> bool:
         reconcile_workspace_manifest,
     )
 
+    wd = Path(working_dir or WORKING_DIR).expanduser()
+
     # --- Phase 0: Check if migration already completed ---
     # If skill pool manifest exists, migration has been done
-    pool_manifest = get_pool_skill_manifest_path()
+    pool_manifest = get_pool_skill_manifest_path(working_dir=wd)
     if pool_manifest.exists():
         return False
 
@@ -403,7 +412,7 @@ def _do_migrate_legacy_skills() -> bool:
 
     # --- Phase 1: Initialize pool ---
     try:
-        ensure_skill_pool_initialized()
+        ensure_skill_pool_initialized(working_dir=wd)
     except Exception as e:
         logger.warning(
             "Failed to initialize skill pool before migration: %s",
@@ -411,15 +420,14 @@ def _do_migrate_legacy_skills() -> bool:
         )
         return False
 
+    config_path = wd / "config.json"
     try:
-        config = load_config()
+        config = load_config(config_path)
     except Exception as e:
         logger.warning("Failed to load config for skill migration: %s", e)
         return False
 
-    default_workspace = Path(
-        f"{WORKING_DIR}/workspaces/default",
-    ).expanduser()
+    default_workspace = (wd / "workspaces" / "default").expanduser()
     default_workspace.mkdir(parents=True, exist_ok=True)
 
     # --- Phase 1: Discover workspaces ---
@@ -432,7 +440,7 @@ def _do_migrate_legacy_skills() -> bool:
             seen_workspaces,
         )
 
-    workspaces_root = Path(WORKING_DIR) / "workspaces"
+    workspaces_root = wd / "workspaces"
     if workspaces_root.exists():
         for workspace_dir in sorted(workspaces_root.iterdir()):
             if workspace_dir.is_dir():
@@ -466,7 +474,7 @@ def _do_migrate_legacy_skills() -> bool:
             ):
                 workspaces_with_existing_skills.add(str(workspace_dir))
 
-    legacy_root = Path(WORKING_DIR).expanduser()
+    legacy_root = wd
     if (
         legacy_root != default_workspace
         and _has_legacy_skill_root(legacy_root)
@@ -615,15 +623,21 @@ def _ensure_workspace_json_files(
                 logger.debug("Created %s for %s", filename, label)
 
 
-def ensure_default_agent_exists() -> None:
+def ensure_default_agent_exists(
+    working_dir: Path | None = None,
+) -> None:
     """Ensure that the default agent exists in config.
 
     This function is called on startup to verify the default agent
     is properly configured. If not, it will be created.
     Also ensures necessary workspace files exist (chats.json, jobs.json).
+
+    Args:
+        working_dir: Optional tenant-scoped working directory.
+            Defaults to the global ``WORKING_DIR`` when *None*.
     """
     try:
-        _do_ensure_default_agent()
+        _do_ensure_default_agent(working_dir=working_dir)
     except Exception as e:
         logger.error(
             f"Failed to ensure default agent exists: {e}. "
@@ -632,19 +646,36 @@ def ensure_default_agent_exists() -> None:
         )
 
 
-def _do_ensure_default_agent() -> None:
+def _do_ensure_default_agent(
+    working_dir: Path | None = None,
+) -> None:
     """Internal implementation of default agent initialization."""
-    config = load_config()
+    wd = Path(working_dir or WORKING_DIR).expanduser()
+    config_path = wd / "config.json"
+    config = load_config(config_path)
 
-    # Get or determine default workspace path
+    # When an explicit working_dir is given and the loaded default
+    # profile still points outside this tenant directory, treat the
+    # agent as non-existent so it gets re-created under the tenant.
     if "default" in config.agents.profiles:
         agent_ref = config.agents.profiles["default"]
         default_workspace = Path(agent_ref.workspace_dir).expanduser()
-        agent_existed = True
+        try:
+            is_under_tenant = default_workspace.resolve().is_relative_to(
+                wd.resolve(),
+            )
+        except (OSError, ValueError):
+            is_under_tenant = False
+        if working_dir is not None and not is_under_tenant:
+            # Stale global default -- override with tenant-scoped path
+            default_workspace = (
+                wd / "workspaces" / "default"
+            ).expanduser()
+            agent_existed = False
+        else:
+            agent_existed = True
     else:
-        default_workspace = Path(
-            f"{WORKING_DIR}/workspaces/default",
-        ).expanduser()
+        default_workspace = (wd / "workspaces" / "default").expanduser()
         agent_existed = False
 
     # Ensure workspace directory exists
@@ -666,7 +697,7 @@ def _do_ensure_default_agent() -> None:
         if not config.agents.active_agent:
             config.agents.active_agent = "default"
 
-        save_config(config)
+        save_config(config, config_path)
         logger.info(
             f"Created default agent with workspace: {default_workspace}",
         )
@@ -701,7 +732,9 @@ def _other_agent_owns_workspace(
     return None
 
 
-def ensure_qa_agent_exists() -> None:
+def ensure_qa_agent_exists(
+    working_dir: Path | None = None,
+) -> None:
     """Ensure the builtin QA agent profile and workspace exist.
 
     On **first creation** only, ``active_skills`` is seeded from
@@ -715,12 +748,16 @@ def ensure_qa_agent_exists() -> None:
     builtin creation is **skipped** (with a warning) so that workspace's
     ``agent.json`` is not overwritten.
 
+    Args:
+        working_dir: Optional tenant-scoped working directory.
+            Defaults to the global ``WORKING_DIR`` when *None*.
+
     Note:
         This function catches all exceptions internally and never raises.
         Errors are logged for graceful degradation.
     """
     try:
-        _do_ensure_qa_agent()
+        _do_ensure_qa_agent(working_dir=working_dir)
     except Exception as e:
         logger.error(
             f"Failed to ensure QA agent exists: {e}. "
@@ -729,11 +766,15 @@ def ensure_qa_agent_exists() -> None:
         )
 
 
-def _do_ensure_qa_agent() -> None:
+def _do_ensure_qa_agent(
+    working_dir: Path | None = None,
+) -> None:
     """Internal implementation of QA agent initialization."""
     from .routers.agents import _initialize_agent_workspace
 
-    config = load_config()
+    wd = Path(working_dir or WORKING_DIR).expanduser()
+    config_path = wd / "config.json"
+    config = load_config(config_path)
     qa_id = BUILTIN_QA_AGENT_ID
 
     if qa_id in config.agents.profiles:
@@ -741,9 +782,7 @@ def _do_ensure_qa_agent() -> None:
         qa_workspace = Path(agent_ref.workspace_dir).expanduser()
         agent_existed = True
     else:
-        qa_workspace = Path(
-            f"{WORKING_DIR}/workspaces/{qa_id}",
-        ).expanduser()
+        qa_workspace = (wd / "workspaces" / qa_id).expanduser()
         agent_existed = False
 
     qa_workspace.mkdir(parents=True, exist_ok=True)
@@ -802,8 +841,19 @@ def _do_ensure_qa_agent() -> None:
         id=qa_id,
         workspace_dir=str(qa_workspace),
     )
-    save_config(config)
-    save_agent_config(qa_id, agent_config)
+    save_config(config, config_path)
+
+    # Write agent.json directly to the workspace so we don't rely on
+    # save_agent_config which loads the global config internally.
+    agent_json_path = qa_workspace / "agent.json"
+    with open(agent_json_path, "w", encoding="utf-8") as f:
+        json.dump(
+            agent_config.model_dump(exclude_none=True),
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
+
     logger.info(
         "Created builtin QA agent with workspace: %s",
         qa_workspace,

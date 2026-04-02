@@ -118,8 +118,12 @@ def get_builtin_skills_dir() -> Path:
     return Path(__file__).parent / "skills"
 
 
-def get_skill_pool_dir() -> Path:
+def get_skill_pool_dir(
+    working_dir: Path | None = None,
+) -> Path:
     """Return the local shared skill pool directory."""
+    if working_dir is not None:
+        return Path(working_dir) / "skill_pool"
     from ..constant import WORKING_DIR
 
     return Path(WORKING_DIR) / "skill_pool"
@@ -160,9 +164,11 @@ def get_workspace_identity(workspace_dir: Path) -> dict[str, str]:
     }
 
 
-def get_pool_skill_manifest_path() -> Path:
+def get_pool_skill_manifest_path(
+    working_dir: Path | None = None,
+) -> Path:
     """Return the shared pool skill manifest path."""
-    return get_skill_pool_dir() / "skill.json"
+    return get_skill_pool_dir(working_dir=working_dir) / "skill.json"
 
 
 def _timestamp() -> str:
@@ -823,9 +829,10 @@ def import_builtin_skills(
     skill_names: list[str] | None = None,
     *,
     overwrite_conflicts: bool = False,
+    working_dir: Path | None = None,
 ) -> dict[str, list[Any]]:
     """Import selected builtins from packaged source into the local pool."""
-    pool_dir = get_skill_pool_dir()
+    pool_dir = get_skill_pool_dir(working_dir=working_dir)
     pool_dir.mkdir(parents=True, exist_ok=True)
 
     candidates = {
@@ -867,7 +874,7 @@ def import_builtin_skills(
     updated: list[str] = []
     unchanged: list[str] = []
     builtin_dir = get_builtin_skills_dir()
-    manifest_path = get_pool_skill_manifest_path()
+    manifest_path = get_pool_skill_manifest_path(working_dir=working_dir)
     manifest_default = _default_pool_manifest()
 
     builtin_sigs = _get_builtin_signatures()
@@ -917,21 +924,23 @@ def import_builtin_skills(
     )
 
 
-def ensure_skill_pool_initialized() -> bool:
+def ensure_skill_pool_initialized(
+    working_dir: Path | None = None,
+) -> bool:
     """Ensure the local skill pool exists and built-ins are synced into it."""
-    pool_dir = get_skill_pool_dir()
+    pool_dir = get_skill_pool_dir(working_dir=working_dir)
     created = False
     if not pool_dir.exists():
         pool_dir.mkdir(parents=True, exist_ok=True)
         created = True
 
-    manifest_path = get_pool_skill_manifest_path()
+    manifest_path = get_pool_skill_manifest_path(working_dir=working_dir)
     if not manifest_path.exists():
         _write_json_atomic(manifest_path, _default_pool_manifest())
         created = True
 
     if created:
-        import_builtin_skills()
+        import_builtin_skills(working_dir=working_dir)
     return created
 
 
