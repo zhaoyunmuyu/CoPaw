@@ -20,22 +20,6 @@ def test_init_cmd_writes_to_tenant_directory(tmp_path, monkeypatch):
     monkeypatch.setattr("copaw.cli.init_cmd.WORKING_DIR", tmp_path)
     monkeypatch.setattr("copaw.constant.WORKING_DIR", tmp_path)
 
-    # Patch get_config_path and get_heartbeat_query_path to return tenant paths
-    def mock_get_config_path():
-        return tmp_path / "tenant-acme" / "config.json"
-
-    def mock_get_heartbeat_query_path():
-        return tmp_path / "tenant-acme" / "HEARTBEAT.md"
-
-    monkeypatch.setattr(
-        "copaw.cli.init_cmd.get_config_path",
-        mock_get_config_path,
-    )
-    monkeypatch.setattr(
-        "copaw.cli.init_cmd.get_heartbeat_query_path",
-        mock_get_heartbeat_query_path,
-    )
-
     # Mock ProviderManager to avoid side effects
     class MockProviderManager:
         _instance = None
@@ -78,22 +62,6 @@ def test_init_cmd_defaults_tenant_id_to_default(tmp_path, monkeypatch):
     # Patch WORKING_DIR to use tmp_path
     monkeypatch.setattr("copaw.cli.init_cmd.WORKING_DIR", tmp_path)
     monkeypatch.setattr("copaw.constant.WORKING_DIR", tmp_path)
-
-    # Patch get_config_path and get_heartbeat_query_path to return default tenant paths
-    def mock_get_config_path():
-        return tmp_path / "default" / "config.json"
-
-    def mock_get_heartbeat_query_path():
-        return tmp_path / "default" / "HEARTBEAT.md"
-
-    monkeypatch.setattr(
-        "copaw.cli.init_cmd.get_config_path",
-        mock_get_config_path,
-    )
-    monkeypatch.setattr(
-        "copaw.cli.init_cmd.get_heartbeat_query_path",
-        mock_get_heartbeat_query_path,
-    )
 
     # Mock ProviderManager to avoid side effects
     class MockProviderManager:
