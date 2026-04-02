@@ -113,22 +113,27 @@ def _validate_and_extract_zip(data: bytes, workspace_dir: Path) -> None:
     "/download",
     summary="Download workspace as zip",
     description=(
-        "Package the entire agent workspace into a zip archive and stream "
+        "Package the current tenant workspace into a zip archive and stream "
         "it back as a downloadable file."
     ),
     responses={
         200: {
             "content": {"application/zip": {}},
-            "description": "Zip archive of agent workspace",
+            "description": "Zip archive of tenant workspace",
         },
     },
 )
 async def download_workspace(request: Request):
-    """Stream agent workspace as a zip file."""
-    from ..agent_context import get_agent_for_request
+    """Stream tenant workspace as a zip file."""
+    # Get tenant workspace from request state (set by TenantWorkspaceMiddleware)
+    workspace = getattr(request.state, "workspace", None)
+    if workspace is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Tenant workspace not available",
+        )
 
-    agent = await get_agent_for_request(request)
-    workspace_dir = agent.workspace_dir
+    workspace_dir = workspace.workspace_dir
 
     if not workspace_dir.is_dir():
         raise HTTPException(
@@ -139,7 +144,8 @@ async def download_workspace(request: Request):
     buf = await asyncio.to_thread(_zip_directory, workspace_dir)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"copaw_workspace_{agent.agent_id}_{timestamp}.zip"
+    tenant_id = getattr(request.state, "tenant_id", "default")
+    filename = f"copaw_workspace_{tenant_id}_{timestamp}.zip"
 
     return StreamingResponse(
         buf,
@@ -156,23 +162,28 @@ async def download_workspace(request: Request):
     summary="Upload zip and merge into workspace",
     description=(
         "Upload a zip archive.  Paths present in the zip are merged into "
-        "agent workspace (files overwritten, dirs merged).  Paths not in "
-        "the zip are left unchanged (e.g. copaw.db, runtime dirs). "
-        "Download packs the entire workspace; upload only "
-        "overwrites/merges zip contents."
+        "tenant workspace (files overwritten, dirs merged).  Paths not in "
+        "the zip are left unchanged. Download packs the entire workspace; "
+        "upload only overwrites/merges zip contents."
     ),
 )
 async def upload_workspace(
     request: Request,
     file: UploadFile = File(
         ...,
-        description="Zip archive to merge into agent workspace",
+        description="Zip archive to merge into tenant workspace",
     ),
 ) -> dict:
     """
-    Merge uploaded zip contents into agent workspace (overwrite, not clear).
+    Merge uploaded zip contents into tenant workspace (overwrite, not clear).
     """
-    from ..agent_context import get_agent_for_request
+    # Get tenant workspace from request state (set by TenantWorkspaceMiddleware)
+    workspace = getattr(request.state, "workspace", None)
+    if workspace is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Tenant workspace not available",
+        )
 
     if file.content_type and file.content_type not in (
         "application/zip",
@@ -186,8 +197,7 @@ async def upload_workspace(
             ),
         )
 
-    agent = await get_agent_for_request(request)
-    workspace_dir = agent.workspace_dir
+    workspace_dir = workspace.workspace_dir
     data = await file.read()
 
     try:

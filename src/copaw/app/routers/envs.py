@@ -2,14 +2,23 @@
 """API endpoints for environment variable management."""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Dict, List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ...envs import load_envs, save_envs, delete_env_var
+from ...config.utils import get_tenant_secrets_dir
 
 router = APIRouter(prefix="/envs", tags=["envs"])
+
+
+def _get_tenant_envs_path(request: Request) -> Path:
+    """Get tenant-specific envs.json path."""
+    tenant_id = getattr(request.state, "tenant_id", None)
+    secrets_dir = get_tenant_secrets_dir(tenant_id)
+    return secrets_dir / "envs.json"
 
 
 # ------------------------------------------------------------------
@@ -34,9 +43,9 @@ class EnvVar(BaseModel):
     response_model=List[EnvVar],
     summary="List all environment variables",
 )
-async def list_envs() -> List[EnvVar]:
-    """Return all configured env vars."""
-    envs = load_envs()
+async def list_envs(request: Request) -> List[EnvVar]:
+    """Return all configured env vars for the tenant."""
+    envs = load_envs(_get_tenant_envs_path(request))
     return [EnvVar(key=k, value=v) for k, v in sorted(envs.items())]
 
 
@@ -48,9 +57,10 @@ async def list_envs() -> List[EnvVar]:
     "the provided dict. Keys not present are removed.",
 )
 async def batch_save_envs(
+    request: Request,
     body: Dict[str, str],
 ) -> List[EnvVar]:
-    """Batch save – full replacement of all env vars."""
+    """Batch save – full replacement of all env vars for the tenant."""
     # Validate keys
     for key in body:
         if not key.strip():
@@ -59,7 +69,7 @@ async def batch_save_envs(
                 detail="Key cannot be empty",
             )
     cleaned = {k.strip(): v for k, v in body.items()}
-    save_envs(cleaned)
+    save_envs(cleaned, _get_tenant_envs_path(request))
     return [EnvVar(key=k, value=v) for k, v in sorted(cleaned.items())]
 
 
@@ -68,13 +78,14 @@ async def batch_save_envs(
     response_model=List[EnvVar],
     summary="Delete an environment variable",
 )
-async def delete_env(key: str) -> List[EnvVar]:
-    """Delete a single env var."""
-    envs = load_envs()
+async def delete_env(request: Request, key: str) -> List[EnvVar]:
+    """Delete a single env var for the tenant."""
+    envs_path = _get_tenant_envs_path(request)
+    envs = load_envs(envs_path)
     if key not in envs:
         raise HTTPException(
             404,
             detail=f"Env var '{key}' not found",
         )
-    envs = delete_env_var(key)
+    envs = delete_env_var(key, envs_path)
     return [EnvVar(key=k, value=v) for k, v in sorted(envs.items())]
