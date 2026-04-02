@@ -13,6 +13,7 @@ from threading import Lock
 import time
 from typing import Optional
 
+from .tenant_initializer import TenantInitializer
 from .workspace import Workspace
 
 logger = logging.getLogger(__name__)
@@ -137,12 +138,17 @@ class TenantWorkspacePool:
             )
 
             try:
+                # Bootstrap tenant directory structure and agents
+                initializer = TenantInitializer(
+                    self._base_working_dir, tenant_id,
+                )
+                initializer.initialize()
+
                 workspace = Workspace(
                     agent_id,
                     str(workspace_dir),
                     tenant_id=tenant_id,
                 )
-
                 # Register in pool
                 with self._registry_lock:
                     entry = TenantWorkspaceEntry(

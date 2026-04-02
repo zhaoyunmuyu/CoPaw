@@ -21,7 +21,7 @@ from copaw.providers.provider import (
 from copaw.providers.models import ModelSlotConfig
 from copaw.providers.openai_provider import OpenAIProvider
 from copaw.providers.anthropic_provider import AnthropicProvider
-from copaw.providers.gemini_provider import GeminiProvider
+# from copaw.providers.gemini_provider import GeminiProvider
 from copaw.providers.ollama_provider import OllamaProvider
 from copaw.constant import SECRET_DIR
 
@@ -528,16 +528,16 @@ PROVIDER_ANTHROPIC = AnthropicProvider(
     freeze_url=True,
 )
 
-PROVIDER_GEMINI = GeminiProvider(
-    id="gemini",
-    name="Google Gemini",
-    base_url="https://generativelanguage.googleapis.com",
-    api_key_prefix="",
-    models=GEMINI_MODELS,
-    chat_model="GeminiChatModel",
-    freeze_url=True,
-    support_model_discovery=True,
-)
+# PROVIDER_GEMINI = GeminiProvider(
+#     id="gemini",
+#     name="Google Gemini",
+#     base_url="https://generativelanguage.googleapis.com",
+#     api_key_prefix="",
+#     models=GEMINI_MODELS,
+#     chat_model="GeminiChatModel",
+#     freeze_url=True,
+#     support_model_discovery=True,
+# )
 
 PROVIDER_OLLAMA = OllamaProvider(
     id="ollama",
@@ -608,7 +608,7 @@ class ProviderManager:
         self._add_builtin(PROVIDER_KIMI_INTL)
         self._add_builtin(PROVIDER_DEEPSEEK)
         self._add_builtin(PROVIDER_ANTHROPIC)
-        self._add_builtin(PROVIDER_GEMINI)
+        # self._add_builtin(PROVIDER_GEMINI)
         self._add_builtin(PROVIDER_MINIMAX_CN)
         self._add_builtin(PROVIDER_MINIMAX)
         self._add_builtin(PROVIDER_OLLAMA)
@@ -935,8 +935,8 @@ class ProviderManager:
 
         if provider_id == "anthropic" or chat_model == "AnthropicChatModel":
             return AnthropicProvider.model_validate(data)
-        if provider_id == "gemini" or chat_model == "GeminiChatModel":
-            return GeminiProvider.model_validate(data)
+        # if provider_id == "gemini" or chat_model == "GeminiChatModel":
+        #     return GeminiProvider.model_validate(data)
         if provider_id == "ollama":
             return OllamaProvider.model_validate(data)
         return OpenAIProvider.model_validate(data)

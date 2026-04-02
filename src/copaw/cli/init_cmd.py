@@ -13,8 +13,6 @@ from .providers_cmd import configure_providers_interactive
 from .skills_cmd import configure_skills_interactive
 from .utils import prompt_confirm, prompt_choice
 from ..config import (
-    get_config_path,
-    get_heartbeat_query_path,
     load_config,
     save_config,
 )
@@ -134,23 +132,28 @@ DEFAULT_HEARTBEAT_MDS = {
     is_flag=True,
     help="Skip security confirmation (use with --defaults for scripts/Docker).",
 )
+@click.option(
+    "--tenant-id",
+    default="default",
+    show_default=True,
+    help="Tenant ID for multi-tenant isolation.",
+)
 # pylint: disable=too-many-branches,too-many-statements
 def init_cmd(
     force: bool,
     use_defaults: bool,
     accept_security: bool,
+    tenant_id: str,
 ) -> None:
     """Create working dir with config.json and HEARTBEAT.md (interactive)."""
     from pathlib import Path
-    from ..app.migration import (
-        ensure_default_agent_exists,
-        ensure_qa_agent_exists,
-        migrate_legacy_skills_to_skill_pool,
-    )
+    from ..app.workspace.tenant_initializer import TenantInitializer
 
-    config_path = get_config_path()
-    working_dir = config_path.parent
-    heartbeat_path = get_heartbeat_query_path()
+    tenant_dir = WORKING_DIR / tenant_id
+    config_path = tenant_dir / "config.json"
+    heartbeat_path = tenant_dir / "HEARTBEAT.md"
+    default_workspace = tenant_dir / "workspaces" / "default"
+    working_dir = tenant_dir
 
     click.echo(f"Working dir: {working_dir}")
 
@@ -181,36 +184,30 @@ def init_cmd(
     )
 
     if not is_telemetry_opted_out(
-        working_dir,
-    ) and not has_telemetry_been_collected(working_dir):
+        WORKING_DIR,
+    ) and not has_telemetry_been_collected(WORKING_DIR):
         if use_defaults:
-            success = collect_and_upload_telemetry(working_dir)
+            success = collect_and_upload_telemetry(WORKING_DIR)
 
         else:
             _echo_telemetry_info_box()
             if prompt_confirm("Share usage data?", default=True):
-                success = collect_and_upload_telemetry(working_dir)
+                success = collect_and_upload_telemetry(WORKING_DIR)
                 if success:
                     click.echo("✓ Thank you!")
             else:
-                mark_telemetry_collected(working_dir, opted_out=True)
+                mark_telemetry_collected(WORKING_DIR, opted_out=True)
 
-    # --- Ensure default agent workspace exists ---
+    # --- Bootstrap tenant directory structure ---
     click.echo("\n=== Default Workspace Initialization ===")
-    ensure_default_agent_exists()
-    migrate_legacy_skills_to_skill_pool()
+    initializer = TenantInitializer(WORKING_DIR, tenant_id)
+    initializer.ensure_directory_structure()
+    initializer.ensure_default_agent()
     click.echo("✓ Default workspace initialized")
-    ensure_qa_agent_exists()
+    initializer.ensure_qa_agent()
     click.echo("✓ Builtin QA agent workspace ensured")
-
-    # --- Ensure local skill hub exists ---
-    from ..agents.skills_manager import ensure_skill_pool_initialized
-
-    if ensure_skill_pool_initialized():
-        click.echo("✓ Skill pool initialized")
-
-    # Get default workspace path for subsequent operations
-    default_workspace = Path(f"{WORKING_DIR}/workspaces/default").expanduser()
+    initializer.ensure_skill_pool()
+    click.echo("✓ Skill pool initialized")
 
     # --- config.json ---
     write_config = True

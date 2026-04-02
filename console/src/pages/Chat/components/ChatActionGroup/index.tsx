@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { IconButton } from "@agentscope-ai/design";
 import { SparkHistoryLine, SparkNewChatFill } from "@agentscope-ai/icons";
-import { useChatAnywhereSessions } from "@agentscope-ai/chat";
+import { useChatAnywhereSessions } from '@/components/agentscope-chat';
 import { useTranslation } from "react-i18next";
 import { Flex, Tooltip } from "antd";
 import ChatSessionDrawer from "../ChatSessionDrawer";

@@ -15,7 +15,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 from starlette.types import ASGIApp
 
-from ..config.context import (
+from ...config.context import (
     set_current_workspace_dir,
     reset_current_workspace_dir,
 )
