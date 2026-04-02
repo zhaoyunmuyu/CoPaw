@@ -6,6 +6,7 @@ import logging
 from typing import Any, Dict
 
 from .models import CronJobSpec
+from ..tenant_context import bind_tenant_context
 
 logger = logging.getLogger(__name__)
 
@@ -16,25 +17,49 @@ class CronExecutor:
         self._channel_manager = channel_manager
 
     async def execute(self, job: CronJobSpec) -> None:
-        """Execute one job once.
+        """Execute one job once with tenant context.
 
         - task_type text: send fixed text to channel
         - task_type agent: ask agent with prompt, send reply to channel (
             stream_query + send_event)
+
+        Job execution is wrapped in tenant context to ensure proper isolation.
         """
         target_user_id = job.dispatch.target.user_id
         target_session_id = job.dispatch.target.session_id
         dispatch_meta: Dict[str, Any] = dict(job.dispatch.meta or {})
+
+        # Extract tenant_id from job spec (added for tenant isolation)
+        tenant_id = getattr(job, 'tenant_id', None)
+        if tenant_id:
+            dispatch_meta['tenant_id'] = tenant_id
+
         logger.info(
             "cron execute: job_id=%s channel=%s task_type=%s "
-            "target_user_id=%s target_session_id=%s",
+            "target_user_id=%s target_session_id=%s tenant_id=%s",
             job.id,
             job.dispatch.channel,
             job.task_type,
             target_user_id[:40] if target_user_id else "",
             target_session_id[:40] if target_session_id else "",
+            tenant_id or "default",
         )
 
+        # Wrap execution in tenant context
+        with bind_tenant_context(
+            tenant_id=tenant_id,
+            user_id=target_user_id,
+        ):
+            await self._execute_job(job, target_user_id, target_session_id, dispatch_meta)
+
+    async def _execute_job(
+        self,
+        job: CronJobSpec,
+        target_user_id: str,
+        target_session_id: str,
+        dispatch_meta: Dict[str, Any],
+    ) -> None:
+        """Internal: execute job logic (called within tenant context)."""
         if job.task_type == "text" and job.text:
             logger.info(
                 "cron send_text: job_id=%s channel=%s len=%s",

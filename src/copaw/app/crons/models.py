@@ -125,6 +125,12 @@ class CronJobSpec(BaseModel):
     name: str
     enabled: bool = True
 
+    # Tenant isolation: each job belongs to a tenant
+    tenant_id: Optional[str] = Field(
+        default=None,
+        description="Tenant ID for job isolation. If None, uses default tenant.",
+    )
+
     schedule: ScheduleSpec
     task_type: TaskType = "agent"
     text: Optional[str] = None
