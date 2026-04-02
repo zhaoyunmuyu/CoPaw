@@ -2,6 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Deployment Environment
+
+- OS: Linux 3.15 内核
+- 部署方式: Kubernetes 容器多实例部署
+- 外部依赖:
+  - Redis 集群（可连接）
+  - MySQL 数据库（可连接）
+
 ## Build and Development Commands
 
 ### Python Backend
