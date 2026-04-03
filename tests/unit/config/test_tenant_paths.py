@@ -13,17 +13,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 import pytest
 
-_ORIGINAL_CONFIG_CONFIG = sys.modules.get("copaw.config.config")
 config_stub = types.ModuleType("copaw.config.config")
 config_stub.Config = object
-config_stub.ChannelConfig = object
-config_stub.ChannelConfigUnion = object
-config_stub.AgentsRunningConfig = object
-config_stub.FileGuardConfig = object
 config_stub.HeartbeatConfig = object
-config_stub.SecurityConfig = object
-config_stub.ToolGuardConfig = object
-config_stub.ToolGuardRuleConfig = object
 config_stub.LastApiConfig = object
 config_stub.LastDispatchConfig = object
 config_stub.load_agent_config = lambda *args, **kwargs: None
@@ -32,11 +24,6 @@ sys.modules["copaw.config.config"] = config_stub
 
 context_module = importlib.import_module("copaw.config.context")
 utils_module = importlib.import_module("copaw.config.utils")
-
-if _ORIGINAL_CONFIG_CONFIG is None:
-    sys.modules.pop("copaw.config.config", None)
-else:
-    sys.modules["copaw.config.config"] = _ORIGINAL_CONFIG_CONFIG
 
 TenantContextError = context_module.TenantContextError
 get_tenant_working_dir_strict = utils_module.get_tenant_working_dir_strict
