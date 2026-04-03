@@ -9,7 +9,6 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from threading import Lock
 import time
 from typing import Optional
 
@@ -60,10 +59,10 @@ class TenantWorkspacePool:
         self._workspaces: dict[str, TenantWorkspaceEntry] = {}
 
         # Per-tenant creation locks to prevent duplicate concurrent creation
-        self._creation_locks: dict[str, Lock] = {}
+        self._creation_locks: dict[str, asyncio.Lock] = {}
 
         # Global lock for registry operations
-        self._registry_lock = Lock()
+        self._registry_lock = asyncio.Lock()
 
         logger.info(
             f"TenantWorkspacePool initialized at {self._base_working_dir}",
@@ -80,7 +79,7 @@ class TenantWorkspacePool:
         """
         return self._base_working_dir / tenant_id
 
-    def _get_or_create_creation_lock(self, tenant_id: str) -> Lock:
+    async def _get_or_create_creation_lock(self, tenant_id: str) -> asyncio.Lock:
         """Get or create a creation lock for a tenant.
 
         Args:
@@ -89,12 +88,12 @@ class TenantWorkspacePool:
         Returns:
             Lock for the tenant's creation.
         """
-        with self._registry_lock:
+        async with self._registry_lock:
             if tenant_id not in self._creation_locks:
-                self._creation_locks[tenant_id] = Lock()
+                self._creation_locks[tenant_id] = asyncio.Lock()
             return self._creation_locks[tenant_id]
 
-    def get_or_create(
+    async def get_or_create(
         self,
         tenant_id: str,
         agent_id: str = "default",
@@ -109,23 +108,23 @@ class TenantWorkspacePool:
             agent_id: The agent ID to use for the workspace (default: "default").
 
         Returns:
-            Workspace instance for the tenant.
+            Workspace instance for the tenant (already started).
 
         Raises:
-            RuntimeError: If workspace creation fails.
+            RuntimeError: If workspace creation or startup fails.
         """
-        # Fast path: check if already exists
-        with self._registry_lock:
+        # Fast path: check if already exists and started
+        async with self._registry_lock:
             entry = self._workspaces.get(tenant_id)
             if entry is not None:
                 self._mark_access(entry)
                 return entry.workspace
 
         # Slow path: need to create (with per-tenant lock)
-        creation_lock = self._get_or_create_creation_lock(tenant_id)
-        with creation_lock:
+        creation_lock = await self._get_or_create_creation_lock(tenant_id)
+        async with creation_lock:
             # Double-check after acquiring lock
-            with self._registry_lock:
+            async with self._registry_lock:
                 entry = self._workspaces.get(tenant_id)
                 if entry is not None:
                     self._mark_access(entry)
@@ -149,15 +148,19 @@ class TenantWorkspacePool:
                     str(workspace_dir),
                     tenant_id=tenant_id,
                 )
+
+                # Start the workspace (async)
+                await workspace.start()
+
                 # Register in pool
-                with self._registry_lock:
+                async with self._registry_lock:
                     entry = TenantWorkspaceEntry(
                         tenant_id=tenant_id,
                         workspace=workspace,
                     )
                     self._workspaces[tenant_id] = entry
 
-                logger.info(f"Workspace created for tenant: {tenant_id}")
+                logger.info(f"Workspace created and started for tenant: {tenant_id}")
                 return workspace
 
             except Exception as e:
@@ -169,7 +172,7 @@ class TenantWorkspacePool:
                     f"Failed to create workspace for tenant {tenant_id}: {e}",
                 ) from e
 
-    def get(self, tenant_id: str) -> Optional[Workspace]:
+    async def get(self, tenant_id: str) -> Optional[Workspace]:
         """Get existing workspace for tenant if it exists.
 
         Args:
@@ -178,14 +181,14 @@ class TenantWorkspacePool:
         Returns:
             Workspace instance if found, None otherwise.
         """
-        with self._registry_lock:
+        async with self._registry_lock:
             entry = self._workspaces.get(tenant_id)
             if entry is not None:
                 self._mark_access(entry)
                 return entry.workspace
             return None
 
-    def remove(self, tenant_id: str) -> Optional[Workspace]:
+    async def remove(self, tenant_id: str) -> Optional[Workspace]:
         """Remove workspace from pool without stopping it.
 
         The caller is responsible for stopping the workspace if needed.
@@ -197,7 +200,7 @@ class TenantWorkspacePool:
         Returns:
             The removed workspace if it existed, None otherwise.
         """
-        with self._registry_lock:
+        async with self._registry_lock:
             entry = self._workspaces.pop(tenant_id, None)
             if entry is not None:
                 logger.info(f"Removed workspace from pool: {tenant_id}")
@@ -214,7 +217,7 @@ class TenantWorkspacePool:
         Returns:
             True if workspace was found and stopped, False otherwise.
         """
-        workspace = self.remove(tenant_id)
+        workspace = await self.remove(tenant_id)
         if workspace is None:
             return False
 
@@ -226,7 +229,7 @@ class TenantWorkspacePool:
             logger.error(f"Error stopping workspace for tenant {tenant_id}: {e}")
             raise
 
-    def mark_access(self, tenant_id: str) -> bool:
+    async def mark_access(self, tenant_id: str) -> bool:
         """Mark access time for a tenant's workspace.
 
         Args:
@@ -235,7 +238,7 @@ class TenantWorkspacePool:
         Returns:
             True if workspace exists and was marked, False otherwise.
         """
-        with self._registry_lock:
+        async with self._registry_lock:
             entry = self._workspaces.get(tenant_id)
             if entry is not None:
                 self._mark_access(entry)
@@ -257,7 +260,7 @@ class TenantWorkspacePool:
         Args:
             final: If True, stop all services including reusable ones.
         """
-        with self._registry_lock:
+        async with self._registry_lock:
             entries = list(self._workspaces.values())
             self._workspaces.clear()
 
@@ -285,13 +288,13 @@ class TenantWorkspacePool:
 
         logger.info("All tenant workspaces stopped")
 
-    def get_stats(self) -> dict:
+    async def get_stats(self) -> dict:
         """Get statistics about the pool.
 
         Returns:
             Dictionary with pool statistics.
         """
-        with self._registry_lock:
+        async with self._registry_lock:
             return {
                 "tenant_count": len(self._workspaces),
                 "tenants": {
@@ -313,8 +316,7 @@ class TenantWorkspacePool:
         Returns:
             True if the tenant has a workspace, False otherwise.
         """
-        with self._registry_lock:
-            return tenant_id in self._workspaces
+        return tenant_id in self._workspaces
 
     def __len__(self) -> int:
         """Return the number of workspaces in the pool.
@@ -322,14 +324,12 @@ class TenantWorkspacePool:
         Returns:
             Number of tenant workspaces.
         """
-        with self._registry_lock:
-            return len(self._workspaces)
+        return len(self._workspaces)
 
     def __repr__(self) -> str:
         """String representation of the pool."""
-        with self._registry_lock:
-            count = len(self._workspaces)
-            tenants = list(self._workspaces.keys())
+        count = len(self._workspaces)
+        tenants = list(self._workspaces.keys())
         return (
             f"TenantWorkspacePool("
             f"base={self._base_working_dir}, "

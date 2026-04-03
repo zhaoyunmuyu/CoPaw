@@ -47,6 +47,7 @@ async def create_chat_service(ws: "Workspace", service):
     if service is not None:
         # Reused ChatManager - just wire to new runner
         cm = service
+        ws._service_manager.services["chat_manager"] = cm
         logger.info(f"Reusing ChatManager for {ws.agent_id}")
     else:
         # Create new ChatManager
@@ -61,17 +62,22 @@ async def create_chat_service(ws: "Workspace", service):
     # pylint: enable=protected-access
 
 
-async def create_channel_service(ws: "Workspace", _):
-    """Create channel manager if configured.
+async def create_channel_service(ws: "Workspace", service):
+    """Create channel manager if configured, or reuse existing one.
 
     Args:
         ws: Workspace instance
-        _: Unused service parameter
+        service: Existing ChannelManager if reused, None if creating new
 
     Returns:
         ChannelManager instance or None if not configured
     """
     # pylint: disable=protected-access
+    if service is not None:
+        # Reuse existing channel manager
+        ws._service_manager.services["channel_manager"] = service
+        return service
+
     if not ws._config.channels:
         return None
 
@@ -105,7 +111,7 @@ async def create_channel_service(ws: "Workspace", _):
     runner.set_workspace(ws)
 
     return cm
-    # pylint: enable=protected-access
+    # pylint: enable=protected-accesss
 
 
 async def create_agent_config_watcher(ws: "Workspace", _):

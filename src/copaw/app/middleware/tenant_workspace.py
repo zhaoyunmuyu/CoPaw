@@ -142,14 +142,14 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
         """
         # Get tenant workspace pool from app state
         pool = getattr(request.app.state, "tenant_workspace_pool", None)
-        if not pool:
+        if pool is None:
             logger.warning("TenantWorkspacePool not available in app.state")
             return None
 
         try:
             # Get or create workspace for tenant
-            # Note: This is synchronous in the pool but thread-safe
-            workspace = pool.get_or_create(tenant_id)
+            # Note: This is now async and will start the workspace
+            workspace = await pool.get_or_create(tenant_id)
             return workspace
         except Exception as e:
             logger.error(f"Error loading workspace for tenant {tenant_id}: {e}")
