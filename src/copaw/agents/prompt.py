@@ -321,19 +321,18 @@ def _get_active_model_info():
         when the active model cannot be resolved.
     """
     try:
-        from ..app.agent_context import get_current_agent_id
-        from ..config.config import load_agent_config
         from ..providers.provider_manager import ProviderManager
 
         manager = ProviderManager.get_instance()
 
-        # Try to get agent-specific model first
+        # Try to get tenant-level model configuration first
         active = None
         try:
-            agent_id = get_current_agent_id()
-            agent_config = load_agent_config(agent_id)
-            if agent_config.active_model:
-                active = agent_config.active_model
+            from copaw.tenant_models import TenantModelContext
+
+            tenant_config = TenantModelContext.get_config()
+            if tenant_config:
+                active = tenant_config.get_active_slot()
         except Exception:
             pass
 

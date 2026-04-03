@@ -141,12 +141,17 @@ class CoPawAgent(ToolGuardMixin, ReActAgent):
 
         # Create model and formatter using factory method
         model, formatter = create_model_and_formatter(agent_id=agent_config.id)
-        model_info = (
-            f"{agent_config.active_model.provider_id}/"
-            f"{agent_config.active_model.model}"
-            if agent_config.active_model
-            else "global-fallback"
-        )
+        # Get model info from tenant config if available
+        try:
+            from copaw.tenant_models import TenantModelContext
+            tenant_config = TenantModelContext.get_config()
+            if tenant_config:
+                active_slot = tenant_config.get_active_slot()
+                model_info = f"{active_slot.provider_id}/{active_slot.model}"
+            else:
+                model_info = "global-fallback"
+        except Exception:
+            model_info = "global-fallback"
         logger.info(
             f"Agent '{agent_config.id}' initialized with model: "
             f"{model_info} (class: {model.__class__.__name__})",

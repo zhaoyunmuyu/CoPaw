@@ -716,14 +716,14 @@ def create_model_and_formatter(
         except Exception:
             pass
 
-    # Try to get agent-specific model first
+    # Try to get tenant-level model configuration first
     model_slot = None
     retry_config = None
     rate_limit_config = None
     if agent_id:
         try:
             agent_config = load_agent_config(agent_id)
-            model_slot = agent_config.active_model
+            # Use running config for retry/rate limit settings
             retry_config = RetryConfig(
                 enabled=agent_config.running.llm_retry_enabled,
                 max_retries=agent_config.running.llm_max_retries,
@@ -739,6 +739,15 @@ def create_model_and_formatter(
             )
         except Exception:
             pass
+
+    # Try to get model from tenant-level configuration
+    try:
+        from copaw.tenant_models import TenantModelContext
+        tenant_config = TenantModelContext.get_config()
+        if tenant_config:
+            model_slot = tenant_config.get_active_slot()
+    except Exception:
+        pass
 
     # Create chat model from agent-specific or global config
     if model_slot and model_slot.provider_id and model_slot.model:
