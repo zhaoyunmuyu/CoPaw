@@ -21,9 +21,12 @@ from pydantic import BaseModel, Field
 from ..agent_context import get_agent_for_request
 from ..utils import schedule_agent_reload
 from ...config.config import load_agent_config, save_agent_config
+from ...config.context import get_current_tenant_id
 from ...providers.provider import ProviderInfo, ModelInfo
 from ...providers.provider_manager import ActiveModelsInfo, ProviderManager
 from ...providers.models import ModelSlotConfig
+from ...tenant_models.manager import TenantModelManager
+from ...tenant_models.exceptions import TenantModelNotFoundError
 
 
 logger = logging.getLogger(__name__)
@@ -572,3 +575,62 @@ async def set_active_model(
             model=body.model,
         ),
     )
+
+
+# ============================================================================
+# Tenant Model Configuration Endpoints
+# ============================================================================
+
+tenant_providers_router = APIRouter(prefix="/providers", tags=["tenant-providers"])
+
+
+@tenant_providers_router.get(
+    "",
+    summary="Get tenant model configuration",
+)
+async def get_tenant_providers():
+    """Get the current tenant's model configuration.
+
+    Returns the tenant-specific provider configuration, routing settings,
+    and active model slot. Uses tenant context to determine which tenant's
+    configuration to load.
+
+    Returns:
+        JSON object containing:
+        - tenant_id: Current tenant ID
+        - providers: List of provider configurations
+        - routing: Routing configuration with mode and slots
+        - active_mode: Current routing mode
+        - active_slot: Currently active model slot
+
+    Raises:
+        HTTPException: 404 if tenant configuration not found
+        HTTPException: 400 if tenant ID not set in context
+    """
+    # Get tenant ID from context
+    tenant_id = get_current_tenant_id()
+    if tenant_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Tenant ID not set in context. Ensure request includes tenant identity.",
+        )
+
+    # Load tenant configuration
+    try:
+        config = TenantModelManager.load(tenant_id)
+    except TenantModelNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Configuration not found for tenant '{tenant_id}'",
+        ) from exc
+
+    # Get active slot
+    active_slot = config.get_active_slot()
+
+    return {
+        "tenant_id": tenant_id,
+        "providers": [p.model_dump() for p in config.providers],
+        "routing": config.routing.model_dump(),
+        "active_mode": config.routing.mode,
+        "active_slot": active_slot.model_dump(),
+    }
