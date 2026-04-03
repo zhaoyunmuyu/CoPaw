@@ -60,16 +60,17 @@ class TestTenantProviderConfig:
 
         assert "literal_error" in str(exc_info.value).lower()
 
-    def test_provider_models_cannot_be_empty(self):
-        """Test that models list cannot be empty."""
+    def test_provider_models_can_be_empty(self):
+        """Test that models list can be empty."""
         from copaw.tenant_models.models import TenantProviderConfig
 
-        with pytest.raises(ValidationError):
-            TenantProviderConfig(
-                id="empty-models",
-                type="openai",
-                models=[],
-            )
+        # Empty models list should be allowed
+        config = TenantProviderConfig(
+            id="empty-models",
+            type="openai",
+            models=[],
+        )
+        assert config.models == []
 
 
 class TestModelSlot:
@@ -98,14 +99,14 @@ class TestRoutingConfig:
         routing = RoutingConfig(
             mode="local_first",
             slots={
-                "active": ModelSlot(provider_id="ollama-local", model="llama2"),
-                "fallback": ModelSlot(provider_id="openai-main", model="gpt-4"),
+                "local": ModelSlot(provider_id="ollama-local", model="llama2"),
+                "cloud": ModelSlot(provider_id="openai-main", model="gpt-4"),
             },
         )
 
         assert routing.mode == "local_first"
-        assert routing.slots["active"].provider_id == "ollama-local"
-        assert routing.slots["fallback"].provider_id == "openai-main"
+        assert routing.slots["local"].provider_id == "ollama-local"
+        assert routing.slots["cloud"].provider_id == "openai-main"
 
     def test_routing_mode_must_be_valid(self):
         """Test that routing mode must be one of the allowed values."""
@@ -149,8 +150,8 @@ class TestTenantModelConfig:
             routing=RoutingConfig(
                 mode="local_first",
                 slots={
-                    "active": ModelSlot(provider_id="ollama-local", model="llama2"),
-                    "fallback": ModelSlot(provider_id="openai-cloud", model="gpt-4"),
+                    "local": ModelSlot(provider_id="ollama-local", model="llama2"),
+                    "cloud": ModelSlot(provider_id="openai-cloud", model="gpt-4"),
                 },
             ),
         )
@@ -184,8 +185,8 @@ class TestTenantModelConfig:
             routing=RoutingConfig(
                 mode="local_first",
                 slots={
-                    "active": ModelSlot(provider_id="provider-1", model="gpt-4"),
-                    "fallback": ModelSlot(provider_id="provider-2", model="claude-3-opus"),
+                    "local": ModelSlot(provider_id="provider-1", model="gpt-4"),
+                    "cloud": ModelSlot(provider_id="provider-2", model="claude-3-opus"),
                 },
             ),
         )
@@ -219,8 +220,8 @@ class TestTenantModelConfig:
             routing=RoutingConfig(
                 mode="local_first",
                 slots={
-                    "active": ModelSlot(provider_id="provider-1", model="gpt-4"),
-                    "fallback": ModelSlot(provider_id="provider-2", model="claude-3-opus"),
+                    "local": ModelSlot(provider_id="provider-1", model="gpt-4"),
+                    "cloud": ModelSlot(provider_id="provider-2", model="claude-3-opus"),
                 },
             ),
         )
@@ -310,7 +311,7 @@ class TestTenantModelConfig:
             "routing": {
                 "mode": "local_first",
                 "slots": {
-                    "active": {
+                    "local": {
                         "provider_id": "openai-main",
                         "model": "gpt-4",
                     }
@@ -322,4 +323,4 @@ class TestTenantModelConfig:
         assert config.version == "1.0"
         assert config.providers[0].id == "openai-main"
         assert config.routing.mode == "local_first"
-        assert config.routing.slots["active"].model == "gpt-4"
+        assert config.routing.slots["local"].model == "gpt-4"

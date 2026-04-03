@@ -20,9 +20,9 @@ class TenantProviderConfig(BaseModel):
 
     id: str
     type: Literal["openai", "anthropic", "ollama"]
-    models: List[str] = Field(..., min_length=1)
     api_key: Optional[str] = None
     base_url: Optional[str] = None
+    models: List[str] = Field(default_factory=list)
     enabled: bool = True
     extra: Dict[str, Any] = Field(default_factory=dict)
 
@@ -70,12 +70,13 @@ class TenantModelConfig(BaseModel):
         """Get the active model slot from routing configuration.
 
         Returns:
-            The active ModelSlot.
+            The active ModelSlot based on routing mode.
 
         Raises:
-            KeyError: If 'active' slot is not found in routing configuration.
+            KeyError: If the active slot is not found in routing configuration.
         """
-        return self.routing.slots["active"]
+        slot_key = self.routing.mode.replace("_first", "")
+        return self.routing.slots[slot_key]
 
     def get_other_slot(self) -> ModelSlot:
         """Get the other (fallback) model slot from routing configuration.
@@ -84,6 +85,8 @@ class TenantModelConfig(BaseModel):
             The fallback ModelSlot.
 
         Raises:
-            KeyError: If 'fallback' slot is not found in routing configuration.
+            KeyError: If the fallback slot is not found in routing configuration.
         """
-        return self.routing.slots["fallback"]
+        current_key = self.routing.mode.replace("_first", "")
+        other_key = "cloud" if current_key == "local" else "local"
+        return self.routing.slots[other_key]
