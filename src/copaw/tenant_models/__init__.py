@@ -12,6 +12,7 @@ from copaw.tenant_models.models import (
     TenantModelConfig,
     TenantProviderConfig,
 )
+from copaw.tenant_models.utils import resolve_env_vars
 
 __all__ = [
     "ModelSlot",
@@ -22,4 +23,5 @@ __all__ = [
     "TenantModelProviderError",
     "TenantModelValidationError",
     "TenantProviderConfig",
+    "resolve_env_vars",
 ]
