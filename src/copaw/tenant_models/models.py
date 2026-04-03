@@ -1,0 +1,89 @@
+"""Data models for tenant model configuration."""
+
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field, field_validator
+
+
+class TenantProviderConfig(BaseModel):
+    """Configuration for a model provider within a tenant.
+
+    Attributes:
+        id: Unique identifier for this provider configuration.
+        type: Type of provider (openai, anthropic, ollama).
+        api_key: API key for the provider, supports ${ENV:XXX} format.
+        base_url: Optional base URL for the provider API.
+        models: List of model names available through this provider.
+        enabled: Whether this provider is enabled.
+        extra: Additional provider-specific configuration.
+    """
+
+    id: str
+    type: Literal["openai", "anthropic", "ollama"]
+    models: List[str] = Field(..., min_length=1)
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    enabled: bool = True
+    extra: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ModelSlot(BaseModel):
+    """Represents a model slot in the routing configuration.
+
+    A slot maps to a specific model from a specific provider.
+
+    Attributes:
+        provider_id: ID of the provider to use.
+        model: Name of the model to use.
+    """
+
+    provider_id: str
+    model: str
+
+
+class RoutingConfig(BaseModel):
+    """Routing configuration for model selection.
+
+    Attributes:
+        mode: Routing mode (local_first or cloud_first).
+        slots: Dictionary of named model slots.
+    """
+
+    mode: Literal["local_first", "cloud_first"]
+    slots: Dict[str, ModelSlot]
+
+
+class TenantModelConfig(BaseModel):
+    """Root model for tenant model configuration.
+
+    Attributes:
+        version: Configuration version.
+        providers: List of provider configurations.
+        routing: Routing configuration for model selection.
+    """
+
+    version: str = "1.0"
+    providers: List[TenantProviderConfig]
+    routing: RoutingConfig
+
+    def get_active_slot(self) -> ModelSlot:
+        """Get the active model slot from routing configuration.
+
+        Returns:
+            The active ModelSlot.
+
+        Raises:
+            KeyError: If 'active' slot is not found in routing configuration.
+        """
+        return self.routing.slots["active"]
+
+    def get_other_slot(self) -> ModelSlot:
+        """Get the other (fallback) model slot from routing configuration.
+
+        Returns:
+            The fallback ModelSlot.
+
+        Raises:
+            KeyError: If 'fallback' slot is not found in routing configuration.
+        """
+        return self.routing.slots["fallback"]
