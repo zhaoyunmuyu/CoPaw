@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import os
 import json
 from pathlib import Path
 from typing import Optional, Union, Dict, List, Literal
@@ -9,6 +8,7 @@ import shortuuid
 
 from .timezone import detect_system_timezone
 from ..constant import (
+    EnvVarLoader,
     HEARTBEAT_DEFAULT_EVERY,
     HEARTBEAT_DEFAULT_TARGET,
     LLM_ACQUIRE_TIMEOUT,
@@ -841,10 +841,10 @@ class MCPConfig(BaseModel):
             "tavily_search": MCPClientConfig(
                 name="tavily_mcp",
                 # Auto-enable if TAVILY_API_KEY exists in environment
-                enabled=bool(os.getenv("TAVILY_API_KEY")),
+                enabled=bool(EnvVarLoader.get_str("TAVILY_API_KEY")),
                 command="npx",
                 args=["-y", "tavily-mcp@latest"],
-                env={"TAVILY_API_KEY": os.getenv("TAVILY_API_KEY", "")},
+                env={"TAVILY_API_KEY": EnvVarLoader.get_str("TAVILY_API_KEY")},
             ),
         },
     )

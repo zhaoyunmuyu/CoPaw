@@ -740,6 +740,29 @@ def get_tenant_heartbeat_path(tenant_id: str | None = None) -> Path:
     return get_tenant_working_dir(tenant_id) / HEARTBEAT_FILE
 
 
+def get_tenant_env(
+    key: str,
+    tenant_id: str | None = None,
+    default: str | None = None,
+) -> str | None:
+    """Read an environment value from the tenant-scoped envs.json file."""
+    secrets_dir = get_tenant_secrets_dir(tenant_id)
+    envs_path = secrets_dir / "envs.json"
+    try:
+        import json
+
+        if not envs_path.is_file():
+            return default
+        with open(envs_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if not isinstance(data, dict):
+            return default
+        value = data.get(key, default)
+        return None if value is None else str(value)
+    except (OSError, ValueError, TypeError):
+        return default
+
+
 def get_tenant_working_dir_strict(tenant_id: str | None = None) -> Path:
     """Get tenant working directory, raising if tenant context unavailable.
 

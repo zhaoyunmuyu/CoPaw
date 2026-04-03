@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 import os
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -7,6 +9,23 @@ from dotenv import load_dotenv
 _env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 if _env_path.exists():
     load_dotenv(_env_path)
+
+
+_ENV_VAR_OVERRIDES: ContextVar[dict[str, str]] = ContextVar(
+    "copaw_env_var_overrides",
+    default={},
+)
+
+
+@contextmanager
+def env_var_overrides(overrides: dict[str, str]):
+    current = dict(_ENV_VAR_OVERRIDES.get())
+    current.update(overrides)
+    token = _ENV_VAR_OVERRIDES.set(current)
+    try:
+        yield
+    finally:
+        _ENV_VAR_OVERRIDES.reset(token)
 
 
 class EnvVarLoader:
@@ -18,7 +37,8 @@ class EnvVarLoader:
     def get_bool(env_var: str, default: bool = False) -> bool:
         """Get a boolean environment variable,
         interpreting common truthy values."""
-        val = os.environ.get(env_var, str(default)).lower()
+        overrides = _ENV_VAR_OVERRIDES.get()
+        val = overrides.get(env_var, os.environ.get(env_var, str(default))).lower()
         return val in ("true", "1", "yes")
 
     @staticmethod
@@ -32,7 +52,8 @@ class EnvVarLoader:
         """Get a float environment variable with optional bounds
         and infinity handling."""
         try:
-            value = float(os.environ.get(env_var, str(default)))
+            overrides = _ENV_VAR_OVERRIDES.get()
+            value = float(overrides.get(env_var, os.environ.get(env_var, str(default))))
             if min_value is not None and value < min_value:
                 return min_value
             if max_value is not None and value > max_value:
@@ -54,7 +75,8 @@ class EnvVarLoader:
     ) -> int:
         """Get an integer environment variable with optional bounds."""
         try:
-            value = int(os.environ.get(env_var, str(default)))
+            overrides = _ENV_VAR_OVERRIDES.get()
+            value = int(overrides.get(env_var, os.environ.get(env_var, str(default))))
             if min_value is not None and value < min_value:
                 return min_value
             if max_value is not None and value > max_value:
@@ -66,7 +88,8 @@ class EnvVarLoader:
     @staticmethod
     def get_str(env_var: str, default: str = "") -> str:
         """Get a string environment variable with a default fallback."""
-        return os.environ.get(env_var, default)
+        overrides = _ENV_VAR_OVERRIDES.get()
+        return overrides.get(env_var, os.environ.get(env_var, default))
 
 
 WORKING_DIR = (

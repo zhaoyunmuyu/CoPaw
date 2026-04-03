@@ -10,6 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Lock
+import time
 from typing import Optional
 
 from .tenant_initializer import TenantInitializer
@@ -27,8 +28,8 @@ class TenantWorkspaceEntry:
 
     tenant_id: str
     workspace: Workspace
-    created_at: float = field(default_factory=lambda: asyncio.get_event_loop().time())
-    last_accessed_at: float = field(default_factory=lambda: asyncio.get_event_loop().time())
+    created_at: float = field(default_factory=time.monotonic)
+    last_accessed_at: float = field(default_factory=time.monotonic)
     access_count: int = 0
 
 
@@ -143,8 +144,11 @@ class TenantWorkspacePool:
                 )
                 initializer.initialize()
 
-                workspace = Workspace(agent_id, str(workspace_dir))
-
+                workspace = Workspace(
+                    agent_id,
+                    str(workspace_dir),
+                    tenant_id=tenant_id,
+                )
                 # Register in pool
                 with self._registry_lock:
                     entry = TenantWorkspaceEntry(
@@ -244,7 +248,7 @@ class TenantWorkspacePool:
         Args:
             entry: The tenant workspace entry to mark.
         """
-        entry.last_accessed_at = asyncio.get_event_loop().time()
+        entry.last_accessed_at = time.monotonic()
         entry.access_count += 1
 
     async def stop_all(self, final: bool = True) -> None:

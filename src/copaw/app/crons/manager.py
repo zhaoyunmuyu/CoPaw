@@ -13,6 +13,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from ...config import get_heartbeat_config
 
+from ..tenant_context import bind_tenant_context
 from ..console_push_store import append as push_store_append
 from .executor import CronExecutor
 from .heartbeat import (
@@ -232,9 +233,20 @@ class CronManager:
             session_id = job.dispatch.target.session_id
             if session_id:
                 error_text = f"❌ Cron job [{job.name}] failed: {exc}"
-                asyncio.ensure_future(
-                    push_store_append(session_id, error_text),
-                )
+
+                async def _push_error() -> None:
+                    await push_store_append(
+                        session_id,
+                        error_text,
+                        tenant_id=job.tenant_id,
+                    )
+
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    asyncio.run(_push_error())
+                else:
+                    loop.create_task(_push_error())
 
     # ----- internal -----
 
@@ -331,12 +343,20 @@ class CronManager:
             if hasattr(self._runner, "workspace_dir"):
                 workspace_dir = self._runner.workspace_dir
 
-            await run_heartbeat_once(
-                runner=self._runner,
-                channel_manager=self._channel_manager,
-                agent_id=self._agent_id,
+            tenant_id = None
+            if hasattr(self._runner, "_workspace") and self._runner._workspace is not None:
+                tenant_id = getattr(self._runner._workspace, "tenant_id", None)
+
+            with bind_tenant_context(
+                tenant_id=tenant_id,
                 workspace_dir=workspace_dir,
-            )
+            ):
+                await run_heartbeat_once(
+                    runner=self._runner,
+                    channel_manager=self._channel_manager,
+                    agent_id=self._agent_id,
+                    workspace_dir=workspace_dir,
+                )
         except asyncio.CancelledError:
             logger.info("heartbeat cancelled")
             raise

@@ -35,6 +35,7 @@ from agentscope_runtime.engine.schemas.agent_schemas import (
 
 from .renderer import MessageRenderer, RenderStyle
 from .schema import ChannelType
+from ..tenant_context import bind_tenant_context
 from ...config.utils import load_config
 
 # Optional callback to enqueue payload (set by manager)
@@ -786,10 +787,17 @@ class BaseChannel(ABC):
             )
             if not is_control:
                 request = self._payload_to_request(payload)
-                await self._consume_with_tracker(request, payload)
+                with bind_tenant_context(
+                    tenant_id=getattr(self._workspace, "tenant_id", None),
+                    user_id=getattr(request, "user_id", None),
+                    workspace_dir=getattr(self._workspace, "workspace_dir", None),
+                ):
+                    await self._consume_with_tracker(request, payload)
                 return
 
         request = self._payload_to_request(payload)
+        tenant_id = getattr(self._workspace, "tenant_id", None)
+        workspace_dir = getattr(self._workspace, "workspace_dir", None)
         # Build meta from payload so session_webhook is never lost when
         # request has no channel_meta (e.g. AgentRequest schema has no field).
         if isinstance(payload, dict):
@@ -802,27 +810,32 @@ class BaseChannel(ABC):
             # (e.g. Feishu save receive_id for cron send).
             setattr(request, "channel_meta", meta_from_payload)
         to_handle = self.get_to_handle_from_request(request)
-        await self._before_consume_process(request)
-        # Prefer meta built from payload so session_webhook is present when
-        # request.channel_meta is missing (AgentRequest may not have the attr).
-        if isinstance(payload, dict):
-            send_meta = dict(payload.get("meta") or {})
-            if payload.get("session_webhook"):
-                send_meta["session_webhook"] = payload["session_webhook"]
-        else:
-            send_meta = getattr(request, "channel_meta", None) or {}
-        bot_prefix = getattr(self, "bot_prefix", None) or getattr(
-            self,
-            "_bot_prefix",
-            "",
-        )
-        if bot_prefix and "bot_prefix" not in send_meta:
-            send_meta = {**send_meta, "bot_prefix": bot_prefix}
-        logger.info(
-            "base _consume_one_request: send_meta has_session_webhook=%s",
-            bool((send_meta or {}).get("session_webhook")),
-        )
-        await self._run_process_loop(request, to_handle, send_meta)
+        with bind_tenant_context(
+            tenant_id=tenant_id,
+            user_id=getattr(request, "user_id", None),
+            workspace_dir=workspace_dir,
+        ):
+            await self._before_consume_process(request)
+            # Prefer meta built from payload so session_webhook is present when
+            # request.channel_meta is missing (AgentRequest may not have the attr).
+            if isinstance(payload, dict):
+                send_meta = dict(payload.get("meta") or {})
+                if payload.get("session_webhook"):
+                    send_meta["session_webhook"] = payload["session_webhook"]
+            else:
+                send_meta = getattr(request, "channel_meta", None) or {}
+            bot_prefix = getattr(self, "bot_prefix", None) or getattr(
+                self,
+                "_bot_prefix",
+                "",
+            )
+            if bot_prefix and "bot_prefix" not in send_meta:
+                send_meta = {**send_meta, "bot_prefix": bot_prefix}
+            logger.info(
+                "base _consume_one_request: send_meta has_session_webhook=%s",
+                bool((send_meta or {}).get("session_webhook")),
+            )
+            await self._run_process_loop(request, to_handle, send_meta)
 
     async def _run_process_loop(
         self,

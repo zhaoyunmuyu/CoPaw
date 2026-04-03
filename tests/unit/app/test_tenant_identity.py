@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from unittest.mock import Mock, AsyncMock
 
 _CONTEXT_FILE = Path(__file__).parent.parent.parent.parent / "src" / "copaw" / "config" / "context.py"
+_ORIGINAL_CONTEXT_MODULE = sys.modules.get("copaw.config.context")
 _context_spec = importlib.util.spec_from_file_location(
     "copaw.config.context",
     _CONTEXT_FILE,
@@ -42,6 +43,10 @@ sys.modules["copaw.app.middleware.tenant_identity"] = tenant_identity
 assert _middleware_spec is not None and _middleware_spec.loader is not None
 _middleware_spec.loader.exec_module(tenant_identity)
 
+if _ORIGINAL_CONTEXT_MODULE is None:
+    sys.modules.pop("copaw.config.context", None)
+else:
+    sys.modules["copaw.config.context"] = _ORIGINAL_CONTEXT_MODULE
 
 
 def build_test_app():
