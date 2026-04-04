@@ -3,16 +3,16 @@
 
 Tests lazy creation, cache hits, concurrent creation safety, and stop-all cleanup.
 """
+# pylint: disable=wrong-import-position,protected-access,unused-import
 import asyncio
-import tempfile
-from pathlib import Path
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
-import pytest
+import pytest  # noqa: E402,F401
 
-from copaw.app.workspace.tenant_pool import (
+from copaw.app.workspace.tenant_pool import (  # noqa: E402
     TenantWorkspacePool,
     TenantWorkspaceEntry,
 )
@@ -26,7 +26,7 @@ class TestTenantWorkspacePoolBasics:
         base_dir = tmp_path / "tenants"
         assert not base_dir.exists()
 
-        pool = TenantWorkspacePool(base_dir)
+        TenantWorkspacePool(base_dir)
 
         assert base_dir.exists()
         assert base_dir.is_dir()
@@ -63,7 +63,7 @@ class TestTenantWorkspaceCreation:
         assert workspace is not None
         assert workspace.agent_id == "default"
         assert workspace.workspace_dir == pool._get_tenant_workspace_dir(
-            "tenant-1"
+            "tenant-1",
         )
 
     async def test_get_or_create_uses_default_agent_id(self, tmp_path):

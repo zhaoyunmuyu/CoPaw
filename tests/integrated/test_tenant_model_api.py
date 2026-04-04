@@ -1,15 +1,13 @@
 # -*- coding: utf-8 -*-
 """Integration tests for tenant model configuration API endpoints."""
-# pylint:disable=consider-using-with
+# pylint:disable=consider-using-with,redefined-outer-name,too-many-statements
 from __future__ import annotations
 
-import json
 import socket
 import subprocess
 import sys
 import threading
 import time
-from pathlib import Path
 from unittest.mock import patch
 
 import httpx
@@ -60,10 +58,12 @@ def tenant1_config():
             mode="cloud_first",
             slots={
                 "cloud": ModelSlot(
-                    provider_id="tenant1-openai", model="gpt-4"
+                    provider_id="tenant1-openai",
+                    model="gpt-4",
                 ),
                 "local": ModelSlot(
-                    provider_id="tenant1-ollama", model="llama2"
+                    provider_id="tenant1-ollama",
+                    model="llama2",
                 ),
             },
         ),
@@ -88,10 +88,12 @@ def tenant2_config():
             mode="local_first",
             slots={
                 "local": ModelSlot(
-                    provider_id="tenant2-ollama", model="mistral"
+                    provider_id="tenant2-ollama",
+                    model="mistral",
                 ),
                 "cloud": ModelSlot(
-                    provider_id="tenant2-anthropic", model="claude-3"
+                    provider_id="tenant2-anthropic",
+                    model="claude-3",
                 ),
             },
         ),
@@ -161,7 +163,7 @@ def test_tenant_model_api_returns_tenant_specific_config(
 
                     try:
                         response = client.get(
-                            f"http://{host}:{port}/api/version"
+                            f"http://{host}:{port}/api/version",
                         )
                         if response.status_code == 200:
                             backend_ready = True
@@ -283,7 +285,7 @@ def test_tenant_isolation_different_tenants_return_different_configs(
 
                     try:
                         response = client.get(
-                            f"http://{host}:{port}/api/version"
+                            f"http://{host}:{port}/api/version",
                         )
                         if response.status_code == 200:
                             backend_ready = True
