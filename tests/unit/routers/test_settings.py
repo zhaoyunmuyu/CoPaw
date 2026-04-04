@@ -3,6 +3,7 @@
 """Unit tests for the tenant-scoped settings router (/api/settings/language)."""
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import patch
@@ -11,9 +12,15 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from copaw.app.middleware.tenant_identity import TenantIdentityMiddleware
 from copaw.app.routers.settings import router
 
 app = FastAPI()
+app.add_middleware(
+    TenantIdentityMiddleware,
+    require_tenant=False,
+    default_tenant_id=None,
+)
 app.include_router(router, prefix="/api")
 
 
@@ -58,24 +65,31 @@ def api_client():
 # ── GET /settings/language ───────────────────────────────────────────
 
 
-async def test_get_language_default(api_client):
+def test_get_language_default(api_client):
     """Should return 'en' when no settings file exists."""
-    async with api_client:
-        resp = await api_client.get("/api/settings/language")
+    async def run_test():
+        async with api_client:
+            return await api_client.get("/api/settings/language")
+
+    resp = asyncio.run(run_test())
     assert resp.status_code == 200
     assert resp.json() == {"language": "en"}
 
 
-async def test_get_language_persisted(api_client, _use_tmp_settings):
+def test_get_language_persisted(api_client, _use_tmp_settings):
     """Should return the persisted language value."""
     _use_tmp_settings["tenant-a"].write_text(
         json.dumps({"language": "ja"}), "utf-8"
     )
-    async with api_client:
-        resp = await api_client.get(
-            "/api/settings/language",
-            headers={"X-Tenant-Id": "tenant-a"},
-        )
+
+    async def run_test():
+        async with api_client:
+            return await api_client.get(
+                "/api/settings/language",
+                headers={"X-Tenant-Id": "tenant-a"},
+            )
+
+    resp = asyncio.run(run_test())
     assert resp.status_code == 200
     assert resp.json() == {"language": "ja"}
 
@@ -84,18 +98,21 @@ async def test_get_language_persisted(api_client, _use_tmp_settings):
 
 
 @pytest.mark.parametrize("lang", ["en", "zh", "ja", "ru"])
-async def test_put_language_valid(
+def test_put_language_valid(
     api_client,
     lang,
     _use_tmp_settings,
 ):
     """Should accept all valid languages and persist them."""
-    async with api_client:
-        resp = await api_client.put(
-            "/api/settings/language",
-            json={"language": lang},
-            headers={"X-Tenant-Id": "tenant-a"},
-        )
+    async def run_test():
+        async with api_client:
+            return await api_client.put(
+                "/api/settings/language",
+                json={"language": lang},
+                headers={"X-Tenant-Id": "tenant-a"},
+            )
+
+    resp = asyncio.run(run_test())
     assert resp.status_code == 200
     assert resp.json() == {"language": lang}
 
@@ -103,56 +120,68 @@ async def test_put_language_valid(
     assert data["language"] == lang
 
 
-async def test_put_language_invalid(api_client):
+def test_put_language_invalid(api_client):
     """Should reject invalid language with 400."""
-    async with api_client:
-        resp = await api_client.put(
-            "/api/settings/language",
-            json={"language": "xx"},
-            headers={"X-Tenant-Id": "tenant-a"},
-        )
+    async def run_test():
+        async with api_client:
+            return await api_client.put(
+                "/api/settings/language",
+                json={"language": "xx"},
+                headers={"X-Tenant-Id": "tenant-a"},
+            )
+
+    resp = asyncio.run(run_test())
     assert resp.status_code == 400
     assert "Invalid language" in resp.json()["detail"]
 
 
-async def test_put_language_empty(api_client):
+def test_put_language_empty(api_client):
     """Should reject empty language with 400."""
-    async with api_client:
-        resp = await api_client.put(
-            "/api/settings/language",
-            json={"language": ""},
-            headers={"X-Tenant-Id": "tenant-a"},
-        )
+    async def run_test():
+        async with api_client:
+            return await api_client.put(
+                "/api/settings/language",
+                json={"language": ""},
+                headers={"X-Tenant-Id": "tenant-a"},
+            )
+
+    resp = asyncio.run(run_test())
     assert resp.status_code == 400
 
 
-async def test_put_language_missing_key(api_client):
+def test_put_language_missing_key(api_client):
     """Should reject body without 'language' key with 400."""
-    async with api_client:
-        resp = await api_client.put(
-            "/api/settings/language",
-            json={"lang": "zh"},
-            headers={"X-Tenant-Id": "tenant-a"},
-        )
+    async def run_test():
+        async with api_client:
+            return await api_client.put(
+                "/api/settings/language",
+                json={"lang": "zh"},
+                headers={"X-Tenant-Id": "tenant-a"},
+            )
+
+    resp = asyncio.run(run_test())
     assert resp.status_code == 400
 
 
-async def test_put_then_get_roundtrip(api_client):
+def test_put_then_get_roundtrip(api_client):
     """PUT then GET should return the updated language."""
-    async with api_client:
-        await api_client.put(
-            "/api/settings/language",
-            json={"language": "ru"},
-            headers={"X-Tenant-Id": "tenant-a"},
-        )
-        resp = await api_client.get(
-            "/api/settings/language",
-            headers={"X-Tenant-Id": "tenant-a"},
-        )
+    async def run_test():
+        async with api_client:
+            await api_client.put(
+                "/api/settings/language",
+                json={"language": "ru"},
+                headers={"X-Tenant-Id": "tenant-a"},
+            )
+            return await api_client.get(
+                "/api/settings/language",
+                headers={"X-Tenant-Id": "tenant-a"},
+            )
+
+    resp = asyncio.run(run_test())
     assert resp.json() == {"language": "ru"}
 
 
-async def test_put_language_preserves_other_settings(
+def test_put_language_preserves_other_settings(
     api_client,
     _use_tmp_settings,
 ):
@@ -161,12 +190,16 @@ async def test_put_language_preserves_other_settings(
         json.dumps({"theme": "dark", "language": "en"}),
         "utf-8",
     )
-    async with api_client:
-        await api_client.put(
-            "/api/settings/language",
-            json={"language": "zh"},
-            headers={"X-Tenant-Id": "tenant-a"},
-        )
+
+    async def run_test():
+        async with api_client:
+            await api_client.put(
+                "/api/settings/language",
+                json={"language": "zh"},
+                headers={"X-Tenant-Id": "tenant-a"},
+            )
+
+    asyncio.run(run_test())
 
     data = json.loads(_use_tmp_settings["tenant-a"].read_text("utf-8"))
     assert data["language"] == "zh"
@@ -176,12 +209,11 @@ async def test_put_language_preserves_other_settings(
 # ── Tenant isolation tests ───────────────────────────────────────────
 
 
-async def test_tenant_a_cannot_see_tenant_b_settings(
+def test_tenant_a_cannot_see_tenant_b_settings(
     api_client,
     _use_tmp_settings,
 ):
     """Tenant A should not see Tenant B's settings."""
-    # Set different languages for each tenant
     _use_tmp_settings["tenant-a"].write_text(
         json.dumps({"language": "zh"}), "utf-8"
     )
@@ -189,57 +221,54 @@ async def test_tenant_a_cannot_see_tenant_b_settings(
         json.dumps({"language": "ja"}), "utf-8"
     )
 
-    async with api_client:
-        # Tenant A gets zh
-        resp_a = await api_client.get(
-            "/api/settings/language",
-            headers={"X-Tenant-Id": "tenant-a"},
-        )
-        # Tenant B gets ja
-        resp_b = await api_client.get(
-            "/api/settings/language",
-            headers={"X-Tenant-Id": "tenant-b"},
-        )
+    async def run_test():
+        async with api_client:
+            resp_a = await api_client.get(
+                "/api/settings/language",
+                headers={"X-Tenant-Id": "tenant-a"},
+            )
+            resp_b = await api_client.get(
+                "/api/settings/language",
+                headers={"X-Tenant-Id": "tenant-b"},
+            )
+            return resp_a, resp_b
 
+    resp_a, resp_b = asyncio.run(run_test())
     assert resp_a.json() == {"language": "zh"}
     assert resp_b.json() == {"language": "ja"}
 
 
-async def test_tenant_settings_are_isolated(
+def test_tenant_settings_are_isolated(
     api_client,
     _use_tmp_settings,
 ):
     """Changing settings for one tenant doesn't affect another."""
-    async with api_client:
-        # Set tenant-a to zh
-        await api_client.put(
-            "/api/settings/language",
-            json={"language": "zh"},
-            headers={"X-Tenant-Id": "tenant-a"},
-        )
+    async def run_test():
+        async with api_client:
+            await api_client.put(
+                "/api/settings/language",
+                json={"language": "zh"},
+                headers={"X-Tenant-Id": "tenant-a"},
+            )
+            await api_client.put(
+                "/api/settings/language",
+                json={"language": "ja"},
+                headers={"X-Tenant-Id": "tenant-b"},
+            )
+            resp_a = await api_client.get(
+                "/api/settings/language",
+                headers={"X-Tenant-Id": "tenant-a"},
+            )
+            resp_b = await api_client.get(
+                "/api/settings/language",
+                headers={"X-Tenant-Id": "tenant-b"},
+            )
+            return resp_a, resp_b
 
-        # Set tenant-b to ja
-        await api_client.put(
-            "/api/settings/language",
-            json={"language": "ja"},
-            headers={"X-Tenant-Id": "tenant-b"},
-        )
-
-        # Verify tenant-a still has zh
-        resp_a = await api_client.get(
-            "/api/settings/language",
-            headers={"X-Tenant-Id": "tenant-a"},
-        )
-        # Verify tenant-b still has ja
-        resp_b = await api_client.get(
-            "/api/settings/language",
-            headers={"X-Tenant-Id": "tenant-b"},
-        )
-
+    resp_a, resp_b = asyncio.run(run_test())
     assert resp_a.json() == {"language": "zh"}
     assert resp_b.json() == {"language": "ja"}
 
-    # Verify files are separate
     data_a = json.loads(_use_tmp_settings["tenant-a"].read_text("utf-8"))
     data_b = json.loads(_use_tmp_settings["tenant-b"].read_text("utf-8"))
     assert data_a["language"] == "zh"

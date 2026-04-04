@@ -39,9 +39,9 @@
 - `src/copaw/app/routers/agent_scoped.py`
   - Reconcile agent-scoped routing with tenant-scoped routing
 - `src/copaw/app/workspace/workspace.py`
-  - Allow tenant-scoped config/runtime initialization and remove global assumptions
+  - Allow tenant-scoped config/runtime initialization, remove global assumptions, add `tenant_id` property
 - `src/copaw/config/utils.py`
-  - Add tenant path helpers; eliminate global business-path defaults
+  - Add tenant path helpers; eliminate global business-path defaults; add `get_tenant_env()` helper
 - `src/copaw/config/config.py`
   - Support tenant-scoped config/agent config resolution where needed
 - `src/copaw/app/routers/console.py`
@@ -65,17 +65,38 @@
 - `src/copaw/app/crons/repo/json_repo.py`
   - Verify tenant workspace-local jobs path behavior
 - `src/copaw/app/crons/heartbeat.py`
-  - Tenant-scoped heartbeat paths and runtime lookup
+  - Tenant-scoped heartbeat paths, runtime lookup, and context binding
+- `src/copaw/app/crons/api.py`
+  - Inject tenant_id from request context into created/updated jobs
 - `src/copaw/agents/memory/reme_light_memory_manager.py`
   - Ensure tenant-scoped config lookups and context restoration assumptions hold
 - `src/copaw/agents/memory/agent_md_manager.py`
   - Verify tenant workspace-local memory directory behavior
+- `src/copaw/app/channels/base.py`
+  - Add tenant context binding in `_consume_one_request()`
+- `src/copaw/envs/store.py`
+  - Restrict startup env loading to system-level bootstrap vars only
+- `src/copaw/providers/provider_manager.py`
+  - Separate global provider definitions from tenant-scoped credentials
+- `src/copaw/app/auth.py`
+  - Evaluate and document global vs tenant-scoped auth strategy
+- `src/copaw/agents/skills_manager.py`
+  - Replace direct `os.environ` writes with tenant-scoped env store
+- `src/copaw/app/runner/runner.py`
+  - Load `.env` from tenant workspace, not global `./`
+- `src/copaw/constant.py`
+  - Restrict module-level `.env` loading to system bootstrap vars
+- `src/copaw/cli/cron_cmd.py`
+  - Add `--tenant-id` parameter and `X-Tenant-Id` header support
 
 ### Existing tests to update or extend
 - `tests/unit/routers/test_settings.py`
 - New router tests under `tests/unit/routers/` for console, envs, workspace, agents
 - New cron tests under `tests/unit/app/crons/`
 - Workspace/runtime tests under `tests/unit/app/` or `tests/unit/workspace/`
+- `tests/unit/app/channels/test_channel_tenant_binding.py`
+- `tests/unit/app/test_tenant_secrets_isolation.py`
+- `tests/unit/app/crons/test_cron_creation_tenant.py`
 
 ---
 
@@ -85,7 +106,9 @@
 2. Tenant-scoped routing and console isolation
 3. Tenant-scoped config, agents, workspace APIs, and secrets
 4. Tenant-scoped cron/background execution
-5. Memory/config dependency hardening and regression verification
+5. Channel layer tenant binding and full secrets isolation
+6. Cron creation path hardening and MultiAgentManager deprecation
+7. Memory/config dependency hardening, audit, and regression verification
 
 ---
 
@@ -336,7 +359,86 @@
 - [ ] Run tenant memory tests.
 - [ ] Commit memory hardening.
 
-### Task 17: Audit remaining global fallbacks and shared-state leaks
+### Task 17: Add tenant context binding to channel layer
+
+**Files:**
+- Modify: `src/copaw/app/channels/base.py`
+- Modify: `src/copaw/app/workspace/workspace.py`
+- Test: `tests/unit/app/channels/test_channel_tenant_binding.py`
+
+- [ ] Add `tenant_id` property to `Workspace` class so channels can access the tenant identity of their owning workspace.
+- [ ] In `BaseChannel._consume_one_request()`, wrap the entire processing path in `bind_tenant_context()` using the workspace's tenant_id, sender_id, and workspace_dir.
+- [ ] Ensure the binding happens before `_payload_to_request()`, `_before_consume_process()`, and `_process()` calls.
+- [ ] Verify that `_consume_with_tracker()` path also runs inside tenant context.
+- [ ] Add unit tests proving channel message processing binds tenant context correctly.
+- [ ] Add a test proving file writes during channel processing resolve to the tenant workspace directory.
+- [ ] Add a test proving two channels belonging to different tenant workspaces do not share mutable state.
+- [ ] Run channel tenant binding tests.
+- [ ] Commit channel tenant binding.
+
+### Task 18: Full secrets and env isolation
+
+**Files:**
+- Modify: `src/copaw/envs/store.py`
+- Modify: `src/copaw/providers/provider_manager.py`
+- Modify: `src/copaw/app/auth.py`
+- Modify: `src/copaw/agents/skills_manager.py`
+- Modify: `src/copaw/app/runner/runner.py`
+- Modify: `src/copaw/constant.py`
+- Modify: `src/copaw/config/utils.py`
+- Test: `tests/unit/app/test_tenant_secrets_isolation.py`
+
+- [ ] Refactor `load_envs_into_environ()` to only load system-level bootstrap variables (e.g. `COPAW_WORKING_DIR`, `COPAW_SECRET_DIR`) into `os.environ`. Remove tenant secret loading from startup path.
+- [ ] Introduce `get_tenant_env(key, tenant_id=None)` helper that reads from tenant-scoped `envs.json` without polluting `os.environ`.
+- [ ] Refactor `ProviderManager` to separate provider capability definitions (global) from provider credentials (tenant-scoped). Credentials should be loaded from `get_tenant_secrets_dir(tenant_id) / "providers"` at request time.
+- [ ] Evaluate `auth.py` — if authentication is a system-level gateway concern, document it as intentionally global. If per-tenant auth is needed, migrate `AUTH_FILE` to tenant secret store.
+- [ ] Refactor `skills_manager.py` to write skill env vars to tenant-scoped env store instead of `os.environ`.
+- [ ] Refactor `runner.py` `.env` loading to load from tenant workspace directory, not `./`.
+- [ ] Audit `constant.py` module-level `.env` loading — restrict to system-level bootstrap variables only.
+- [ ] Add tests proving tenant A cannot read tenant B's API keys via `get_tenant_env()`.
+- [ ] Add tests proving `os.environ` is not polluted with tenant-specific secrets after request processing.
+- [ ] Add tests proving provider credentials are loaded from tenant-scoped paths.
+- [ ] Run secrets isolation tests.
+- [ ] Commit secrets isolation.
+
+### Task 19: Fix cron job creation paths to inject tenant_id
+
+**Files:**
+- Modify: `src/copaw/app/crons/api.py`
+- Modify: `src/copaw/app/crons/heartbeat.py`
+- Modify: `src/copaw/app/crons/manager.py`
+- Modify: `src/copaw/cli/cron_cmd.py`
+- Test: `tests/unit/app/crons/test_cron_creation_tenant.py`
+
+- [ ] In `POST /cron/jobs`, inject `tenant_id` from `request.state.tenant_id` into the created `CronJobSpec`, overriding any client-provided value.
+- [ ] In `PUT /cron/jobs/{job_id}`, inject `tenant_id` from `request.state.tenant_id` into the updated spec.
+- [ ] Add validation: reject job creation if `tenant_id` would be `None` in multi-tenant strict mode.
+- [ ] Update CLI `copaw cron create` to accept `--tenant-id` parameter and send `X-Tenant-Id` header in HTTP requests.
+- [ ] Wrap heartbeat callback execution in `bind_tenant_context()` with the owning workspace's tenant_id.
+- [ ] Replace hardcoded `user_id="main"` in `run_heartbeat_once()` with tenant-aware user_id.
+- [ ] Add tests proving API-created jobs always have tenant_id set from request context.
+- [ ] Add tests proving heartbeat execution runs inside tenant context.
+- [ ] Add a test proving no job can be persisted with `tenant_id=None` in strict mode.
+- [ ] Run cron creation tests.
+- [ ] Commit cron creation tenant_id injection.
+
+### Task 20: Plan MultiAgentManager deprecation
+
+**Files:**
+- Modify: `src/copaw/app/_app.py`
+- Modify: `src/copaw/app/agent_context.py`
+- Modify: any remaining `MultiAgentManager` callers
+- Test: existing workspace/agent tests
+
+- [ ] Audit all remaining call sites of `MultiAgentManager` — list each caller and whether it can be migrated to `TenantWorkspacePool`.
+- [ ] For each call site that can be migrated, route through `TenantWorkspacePool` instead.
+- [ ] If any call site genuinely requires the old interface, add a deprecation comment with migration path.
+- [ ] Remove `MultiAgentManager` from `_app.py` lifespan if all callers have been migrated; otherwise mark it as deprecated with a TODO.
+- [ ] Ensure app startup/shutdown only manages `TenantWorkspacePool` as the primary workspace lifecycle owner.
+- [ ] Run existing workspace and agent tests to verify no regressions.
+- [ ] Commit MultiAgentManager deprecation progress.
+
+### Task 21: Audit remaining global fallbacks and shared-state leaks
 
 **Files:**
 - Modify: `src/copaw/config/utils.py`
@@ -352,7 +454,7 @@
 - [ ] Run the targeted regression tests.
 - [ ] Commit fallback cleanup.
 
-### Task 18: End-to-end verification and documentation sync
+### Task 22: End-to-end verification and documentation sync
 
 **Files:**
 - Modify: `docs/superpowers/specs/2026-04-01-multi-tenant-isolation-design.md` only if implementation-driven clarifications are required
@@ -388,7 +490,16 @@ Cron and background flows do not pass through HTTP middleware. Any missed contex
 Memory storage itself is mostly safe once `working_dir` is tenant-scoped, but helper calls that load config or agent config can still escape the tenant boundary.
 
 ### 7. Secrets semantics
-If tenant secrets are still mirrored into global environment variables as the source of truth, isolation is not real.
+If tenant secrets are still mirrored into global environment variables as the source of truth, isolation is not real. Key offenders: `load_envs_into_environ()`, `skills_manager.py` direct `os.environ` writes, `runner.py` `.env` loading.
+
+### 8. Channel layer tenant context gap
+All 14 channel implementations process messages without tenant context binding. This is the largest isolation gap — every IM message runs in an unscoped context. Fix must be in `BaseChannel._consume_one_request()` to avoid per-channel duplication.
+
+### 9. Cron job creation without tenant_id
+API endpoints `POST/PUT /cron/jobs` and CLI `copaw cron create` do not inject tenant_id into new jobs. Jobs created without tenant_id will execute in wrong/missing tenant context.
+
+### 10. MultiAgentManager / TenantWorkspacePool dual ownership
+Two parallel workspace lifecycle managers create ambiguity about which path to use. Must converge to single owner before claiming isolation is complete.
 
 ---
 
@@ -409,10 +520,26 @@ If tenant secrets are still mirrored into global environment variables as the so
 ### Context correctness
 - File and shell tools invoked during HTTP requests resolve relative paths against the current tenant workspace.
 - Cron and heartbeat execution do the same without HTTP middleware.
-- Missing workspace context raises instead of falling back.
+- Channel message processing runs inside tenant context with correct workspace_dir.
+- Missing workspace context raises instead of falling back (in multi-tenant strict mode).
+
+### Secrets isolation
+- Tenant A cannot read tenant B's API keys, provider credentials, or env secrets.
+- `os.environ` does not contain any tenant-specific secrets after startup.
+- Provider credentials are loaded from tenant-scoped paths at request time.
+- Skill env vars do not leak across tenants via `os.environ`.
+
+### Cron job integrity
+- All persisted cron jobs have a non-null `tenant_id`.
+- Jobs created via API, CLI, and heartbeat all carry correct tenant_id.
+- Job execution restores full tenant context before running.
 
 ### Single-tenant compatibility
 - Using `tenant_id=default` preserves existing user-visible behavior while still running through the new tenant architecture.
+
+### Workspace lifecycle
+- Only one workspace lifecycle manager (`TenantWorkspacePool`) owns workspace creation/destruction.
+- `MultiAgentManager` is either removed or clearly marked as deprecated with no new callers.
 
 ---
 
@@ -420,9 +547,13 @@ If tenant secrets are still mirrored into global environment variables as the so
 
 1. Tasks 1-5 (runtime foundation)
 2. Tasks 6-12 (router/config/secrets surface area)
-3. Tasks 13-15 (cron/heartbeat)
+3. Tasks 13-15 (cron/heartbeat persistence and execution)
 4. Task 16 (memory hardening)
-5. Tasks 17-18 (audit and verification)
+5. Task 17 (channel layer tenant binding)
+6. Task 18 (full secrets/env isolation)
+7. Task 19 (cron creation path tenant_id injection)
+8. Task 20 (MultiAgentManager deprecation)
+9. Tasks 21-22 (audit and verification)
 
 ---
 

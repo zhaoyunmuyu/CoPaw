@@ -10,6 +10,19 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 SRC_ROOT = Path(__file__).parent.parent.parent.parent / "src"
 _HEARTBEAT_FILE = SRC_ROOT / "copaw" / "app" / "crons" / "heartbeat.py"
 
+_ORIGINAL_MODULES = {
+    name: sys.modules.get(name)
+    for name in [
+        "copaw.app",
+        "copaw.app.crons",
+        "copaw.agents.utils.file_handling",
+        "copaw.config",
+        "copaw.constant",
+        "copaw.app.crons.models",
+        "copaw.app.crons.heartbeat",
+    ]
+}
+
 if "copaw.app" not in sys.modules:
     app_pkg = types.ModuleType("copaw.app")
     app_pkg.__path__ = [str(SRC_ROOT / "copaw" / "app")]
@@ -53,6 +66,12 @@ heartbeat_module = importlib.util.module_from_spec(heartbeat_spec)
 sys.modules["copaw.app.crons.heartbeat"] = heartbeat_module
 assert heartbeat_spec is not None and heartbeat_spec.loader is not None
 heartbeat_spec.loader.exec_module(heartbeat_module)
+
+for _name, _module in _ORIGINAL_MODULES.items():
+    if _module is None:
+        sys.modules.pop(_name, None)
+    else:
+        sys.modules[_name] = _module
 
 
 def test_run_heartbeat_uses_workspace_dir_when_provided(tmp_path):

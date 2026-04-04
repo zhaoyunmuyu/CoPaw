@@ -7,7 +7,6 @@ import hashlib
 import io
 import json
 import logging
-import os
 import re
 import shutil
 import tempfile
@@ -84,9 +83,6 @@ class SkillRequirements(BaseModel):
     require_envs: list[str] = Field(default_factory=list)
 
 
-_ACTIVE_SKILL_ENV_ENTRIES: dict[str, dict[str, Any]] = {}
-_ENV_LOCK = threading.Lock()
-
 _BUILTIN_SIGNATURES: dict[str, str] = {}
 _BUILTIN_SIG_LOCK = threading.Lock()
 
@@ -118,8 +114,12 @@ def get_builtin_skills_dir() -> Path:
     return Path(__file__).parent / "skills"
 
 
-def get_skill_pool_dir() -> Path:
+def get_skill_pool_dir(
+    working_dir: Path | None = None,
+) -> Path:
     """Return the local shared skill pool directory."""
+    if working_dir is not None:
+        return Path(working_dir) / "skill_pool"
     from ..constant import WORKING_DIR
 
     return Path(WORKING_DIR) / "skill_pool"
@@ -160,9 +160,11 @@ def get_workspace_identity(workspace_dir: Path) -> dict[str, str]:
     }
 
 
-def get_pool_skill_manifest_path() -> Path:
+def get_pool_skill_manifest_path(
+    working_dir: Path | None = None,
+) -> Path:
     """Return the shared pool skill manifest path."""
-    return get_skill_pool_dir() / "skill.json"
+    return get_skill_pool_dir(working_dir=working_dir) / "skill.json"
 
 
 def _timestamp() -> str:
@@ -613,43 +615,7 @@ def _build_skill_config_env_overrides(
     return overrides
 
 
-def _acquire_skill_env_key(key: str, value: str) -> bool:
-    with _ENV_LOCK:
-        active = _ACTIVE_SKILL_ENV_ENTRIES.get(key)
-        if active is not None:
-            if active["value"] != value:
-                return False
-            active["count"] += 1
-            if os.environ.get(key) is None:
-                os.environ[key] = value
-            return True
-
-        if os.environ.get(key) is not None:
-            return False
-
-        _ACTIVE_SKILL_ENV_ENTRIES[key] = {
-            "baseline": None,
-            "value": value,
-            "count": 1,
-        }
-        os.environ[key] = value
-        return True
-
-
-def _release_skill_env_key(key: str) -> None:
-    with _ENV_LOCK:
-        active = _ACTIVE_SKILL_ENV_ENTRIES.get(key)
-        if active is None:
-            return
-
-        active["count"] -= 1
-        if active["count"] > 0:
-            if os.environ.get(key) is None:
-                os.environ[key] = active["value"]
-            return
-
-        _ACTIVE_SKILL_ENV_ENTRIES.pop(key, None)
-        os.environ.pop(key, None)
+from copaw.constant import env_var_overrides
 
 
 @contextmanager
@@ -657,46 +623,43 @@ def apply_skill_config_env_overrides(
     workspace_dir: Path,
     channel_name: str,
 ) -> Iterator[None]:
-    """Inject effective skill config into env for one agent turn.
+    """Inject effective skill config into request-scoped env overrides.
 
-    Config keys matching ``metadata.requires.env`` entries are injected
-    as environment variables.  The full config is always available as
-    ``COPAW_SKILL_CONFIG_<SKILL_NAME>`` (JSON string).
+    Config keys matching ``metadata.requires.env`` entries are exposed via
+    ``EnvVarLoader`` for the current agent turn only. The full config is also
+    available as ``COPAW_SKILL_CONFIG_<SKILL_NAME>`` within the same scope.
     """
     manifest = reconcile_workspace_manifest(workspace_dir)
     entries = manifest.get("skills", {})
-    active_keys: list[str] = []
+    overrides: dict[str, str] = {}
 
-    try:
-        for skill_name in resolve_effective_skills(
-            workspace_dir,
-            channel_name,
-        ):
-            entry = entries.get(skill_name) or {}
-            config = entry.get("config") or {}
-            if not isinstance(config, dict) or not config:
+    for skill_name in resolve_effective_skills(
+        workspace_dir,
+        channel_name,
+    ):
+        entry = entries.get(skill_name) or {}
+        config = entry.get("config") or {}
+        if not isinstance(config, dict) or not config:
+            continue
+
+        requirements = entry.get("requirements") or {}
+        require_envs = requirements.get("require_envs") or []
+        for env_key, env_value in _build_skill_config_env_overrides(
+            skill_name,
+            config,
+            list(require_envs),
+        ).items():
+            if env_key in overrides and overrides[env_key] != env_value:
+                logger.warning(
+                    "Skipped env override '%s' for skill '%s'",
+                    env_key,
+                    skill_name,
+                )
                 continue
+            overrides[env_key] = env_value
 
-            requirements = entry.get("requirements") or {}
-            require_envs = requirements.get("require_envs") or []
-            overrides = _build_skill_config_env_overrides(
-                skill_name,
-                config,
-                list(require_envs),
-            )
-            for env_key, env_value in overrides.items():
-                if not _acquire_skill_env_key(env_key, env_value):
-                    logger.warning(
-                        "Skipped env override '%s' for skill '%s'",
-                        env_key,
-                        skill_name,
-                    )
-                    continue
-                active_keys.append(env_key)
+    with env_var_overrides(overrides):
         yield
-    finally:
-        for env_key in reversed(active_keys):
-            _release_skill_env_key(env_key)
 
 
 def _build_skill_metadata(
@@ -823,9 +786,10 @@ def import_builtin_skills(
     skill_names: list[str] | None = None,
     *,
     overwrite_conflicts: bool = False,
+    working_dir: Path | None = None,
 ) -> dict[str, list[Any]]:
     """Import selected builtins from packaged source into the local pool."""
-    pool_dir = get_skill_pool_dir()
+    pool_dir = get_skill_pool_dir(working_dir=working_dir)
     pool_dir.mkdir(parents=True, exist_ok=True)
 
     candidates = {
@@ -867,7 +831,7 @@ def import_builtin_skills(
     updated: list[str] = []
     unchanged: list[str] = []
     builtin_dir = get_builtin_skills_dir()
-    manifest_path = get_pool_skill_manifest_path()
+    manifest_path = get_pool_skill_manifest_path(working_dir=working_dir)
     manifest_default = _default_pool_manifest()
 
     builtin_sigs = _get_builtin_signatures()
@@ -917,21 +881,23 @@ def import_builtin_skills(
     )
 
 
-def ensure_skill_pool_initialized() -> bool:
+def ensure_skill_pool_initialized(
+    working_dir: Path | None = None,
+) -> bool:
     """Ensure the local skill pool exists and built-ins are synced into it."""
-    pool_dir = get_skill_pool_dir()
+    pool_dir = get_skill_pool_dir(working_dir=working_dir)
     created = False
     if not pool_dir.exists():
         pool_dir.mkdir(parents=True, exist_ok=True)
         created = True
 
-    manifest_path = get_pool_skill_manifest_path()
+    manifest_path = get_pool_skill_manifest_path(working_dir=working_dir)
     if not manifest_path.exists():
         _write_json_atomic(manifest_path, _default_pool_manifest())
         created = True
 
     if created:
-        import_builtin_skills()
+        import_builtin_skills(working_dir=working_dir)
     return created
 
 
@@ -1089,14 +1055,21 @@ def reconcile_workspace_manifest(workspace_dir: Path) -> dict[str, Any]:
     )
 
 
-def list_workspaces() -> list[dict[str, str]]:
-    """List configured workspaces with agent names."""
+def list_workspaces(tenant_id: str | None = None) -> list[dict[str, str]]:
+    """List configured workspaces with agent names.
+
+    Args:
+        tenant_id: Tenant ID. If None, uses current tenant from context.
+
+    Returns:
+        List of workspace info dicts with agent_id, agent_name, workspace_dir.
+    """
     workspaces: list[dict[str, str]] = []
     try:
-        from ..config.utils import load_config
+        from ..config.utils import load_config, get_tenant_config_path
         from ..config.config import load_agent_config
 
-        config = load_config()
+        config = load_config(get_tenant_config_path(tenant_id))
         # Only return agents that are still in the configuration
         # This ensures deleted agents are not included
         for agent_id, profile in sorted(config.agents.profiles.items()):

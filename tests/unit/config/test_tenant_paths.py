@@ -4,7 +4,7 @@
 Tests tenant-aware path computation and strict failure when
 tenant/workspace context is absent.
 """
-import importlib.util
+import importlib
 import sys
 import types
 from pathlib import Path
@@ -12,10 +12,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 import pytest
-
-SRC_ROOT = Path(__file__).parent.parent.parent.parent / "src"
-_CONTEXT_FILE = SRC_ROOT / "copaw" / "config" / "context.py"
-_UTILS_FILE = SRC_ROOT / "copaw" / "config" / "utils.py"
 
 config_stub = types.ModuleType("copaw.config.config")
 config_stub.Config = object
@@ -26,24 +22,8 @@ config_stub.load_agent_config = lambda *args, **kwargs: None
 config_stub.save_agent_config = lambda *args, **kwargs: None
 sys.modules["copaw.config.config"] = config_stub
 
-
-context_spec = importlib.util.spec_from_file_location(
-    "copaw.config.context",
-    _CONTEXT_FILE,
-)
-context_module = importlib.util.module_from_spec(context_spec)
-sys.modules["copaw.config.context"] = context_module
-assert context_spec is not None and context_spec.loader is not None
-context_spec.loader.exec_module(context_module)
-
-utils_spec = importlib.util.spec_from_file_location(
-    "copaw.config.utils",
-    _UTILS_FILE,
-)
-utils_module = importlib.util.module_from_spec(utils_spec)
-sys.modules["copaw.config.utils"] = utils_module
-assert utils_spec is not None and utils_spec.loader is not None
-utils_spec.loader.exec_module(utils_module)
+context_module = importlib.import_module("copaw.config.context")
+utils_module = importlib.import_module("copaw.config.utils")
 
 TenantContextError = context_module.TenantContextError
 get_tenant_working_dir_strict = utils_module.get_tenant_working_dir_strict

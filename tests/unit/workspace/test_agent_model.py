@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Tests for per-agent model configuration."""
+"""Tests for per-agent model configuration.
+
+DEPRECATED: Agent-level model configuration has been removed.
+Models are now managed at tenant level via TenantModelConfig.
+These tests are skipped as the functionality is no longer supported.
+"""
 from pathlib import Path
 
 import pytest
@@ -63,6 +68,9 @@ def mock_agent_workspace(tmp_path, monkeypatch):
     return workspace_dir
 
 
+@pytest.mark.skip(
+    reason="Agent-level model configuration is deprecated. Models are now managed at tenant level.",
+)
 def test_agent_model_config_defaults_to_none(
     mock_agent_workspace,
 ):  # pylint: disable=redefined-outer-name,unused-argument
@@ -71,6 +79,9 @@ def test_agent_model_config_defaults_to_none(
     assert agent_config.active_model is None
 
 
+@pytest.mark.skip(
+    reason="Agent-level model configuration is deprecated. Models are now managed at tenant level.",
+)
 def test_agent_model_config_can_be_set(
     mock_agent_workspace,
 ):  # pylint: disable=redefined-outer-name,unused-argument
@@ -91,6 +102,9 @@ def test_agent_model_config_can_be_set(
     assert reloaded_config.active_model.model == "gpt-4"
 
 
+@pytest.mark.skip(
+    reason="Agent-level model configuration is deprecated. Models are now managed at tenant level.",
+)
 def test_agent_model_config_persists_across_reloads(
     mock_agent_workspace,
 ):  # pylint: disable=redefined-outer-name,unused-argument
@@ -112,6 +126,9 @@ def test_agent_model_config_persists_across_reloads(
         assert reloaded.active_model.model == "claude-3-5-sonnet-20241022"
 
 
+@pytest.mark.skip(
+    reason="Agent-level model configuration is deprecated. Models are now managed at tenant level.",
+)
 def test_agent_model_config_can_be_cleared(
     mock_agent_workspace,
 ):  # pylint: disable=redefined-outer-name,unused-argument
@@ -134,6 +151,9 @@ def test_agent_model_config_can_be_cleared(
     assert reloaded.active_model is None
 
 
+@pytest.mark.skip(
+    reason="Agent-level model configuration is deprecated. Models are now managed at tenant level.",
+)
 def test_different_agents_have_independent_models(tmp_path, monkeypatch):
     """Test that different agents can have different model configs."""
     # Patch WORKING_DIR so tests never touch the real ~/.copaw/
@@ -210,6 +230,9 @@ def test_different_agents_have_independent_models(tmp_path, monkeypatch):
     assert reloaded2.active_model.model == "claude-3-5-sonnet-20241022"
 
 
+@pytest.mark.skip(
+    reason="Agent-level model configuration is deprecated. Models are now managed at tenant level.",
+)
 def test_model_config_excluded_when_none(
     mock_agent_workspace,
 ):  # pylint: disable=redefined-outer-name
@@ -229,6 +252,9 @@ def test_model_config_excluded_when_none(
     assert "active_model" not in raw_data
 
 
+@pytest.mark.skip(
+    reason="Agent-level model configuration is deprecated. Models are now managed at tenant level.",
+)
 def test_model_config_included_when_set(
     mock_agent_workspace,
 ):  # pylint: disable=redefined-outer-name

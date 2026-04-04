@@ -45,6 +45,21 @@
 
 这保证隔离是结构性成立，而不是依赖每个模块显式传递 tenant 参数。
 
+### 2.1 多租户模式判定
+
+系统需要一个明确的机制来区分"多租户模式"和"单租户兼容模式"，以决定 fallback 行为：
+
+- **多租户模式**：当 `TenantIdentityMiddleware` 配置为 `require_tenant=True` 且 `default_tenant_id=None` 时生效。此模式下：
+  - 所有有状态请求必须携带 `X-Tenant-Id`，否则返回 4xx
+  - `get_current_workspace_dir()` 返回 `None` 时必须报错，不允许 fallback 到 `WORKING_DIR`
+  - 工具层的 `get_current_workspace_dir() or WORKING_DIR` 模式视为隔离漏洞
+- **单租户兼容模式**：当 `default_tenant_id="default"` 时生效。此模式下：
+  - 未携带 `X-Tenant-Id` 的请求自动绑定到 `default` 租户
+  - 行为等价于多租户架构下的 `default` 租户，但不强制要求 header
+  - 工具层的 fallback 到 `WORKING_DIR` 仍然安全，因为 `WORKING_DIR/default/` 就是唯一租户目录
+
+判定方式建议：在 `app.state` 上暴露 `multi_tenant_strict: bool` 标志，由 middleware 初始化时设置，供需要区分行为的组件查询。
+
 ---
 
 ## 3. 隔离边界定义
@@ -290,7 +305,19 @@ cron、background task、外部 channel callback 不经过 HTTP middleware，因
 - `TenantWorkspacePool` 持有 tenant runtime
 - tenant runtime 内部管理该租户自己的 agent list / active agent 状态
 
-不建议继续保留“app 全局一个 MultiAgentManager，所有 agent 跨 tenant 共享命名空间”的结构，因为这会直接破坏隔离边界。
+不建议继续保留”app 全局一个 MultiAgentManager，所有 agent 跨 tenant 共享命名空间”的结构，因为这会直接破坏隔离边界。
+
+#### 6.4.1 MultiAgentManager 退场路径
+
+当前实现中 `MultiAgentManager` 和 `TenantWorkspacePool` 同时存在于 `_app.py`。虽然 `MultiAgentManager` 内部已通过 `_cache_key(agent_id, tenant_id)` 做了租户隔离，但两套并行的 workspace 管理机制增加了理解和维护成本，且容易引入”该走哪条路径”的歧义。
+
+建议退场步骤：
+
+1. **过渡期**（当前）：`MultiAgentManager` 保留，但所有新代码路径统一走 `TenantWorkspacePool`
+2. **收敛期**：将 `MultiAgentManager` 的剩余调用方逐一迁移到 `TenantWorkspacePool`
+3. **移除期**：确认无引用后删除 `MultiAgentManager`
+
+退场完成标志：`_app.py` 中只存在 `TenantWorkspacePool` 一个 workspace 生命周期管理入口。
 
 ### 6.5 app 初始化原则
 
@@ -420,6 +447,19 @@ console:<tenant_id>:<user_id>
 
 虽然 tenant 理论上可从 workspace 推导，但冗余记录能提高调试、导出、恢复上下文时的可靠性。
 
+#### 8.2.1 Job 创建路径的 tenant_id 注入
+
+所有 job 创建入口都必须在持久化前注入 `tenant_id`，不能依赖客户端传入：
+
+| 创建入口 | tenant_id 来源 | 要求 |
+|---------|---------------|------|
+| `POST /cron/jobs` API | `request.state.tenant_id`（由 middleware 设置） | 服务端强制注入，忽略客户端传入的 tenant_id |
+| `PUT /cron/jobs/{job_id}` API | 同上 | 同上 |
+| CLI `copaw cron create` | `--tenant-id` 参数或 HTTP header `X-Tenant-Id` | CLI 必须传递 tenant 标识 |
+| Heartbeat 自动创建 | 所属 workspace 的 tenant_id | 由 CronManager 初始化时绑定 |
+
+禁止出现 `tenant_id=None` 的持久化 job（单租户模式下应为 `"default"`）。
+
 ### 8.3 执行前恢复上下文
 
 cron 不经过 HTTP middleware，因此在 `executor.py` 真正执行任务前，必须显式恢复：
@@ -503,6 +543,37 @@ heartbeat 也必须 tenant-scoped：
 
 这样才能保证 tenant A 与 tenant B 的 API key、token、provider 配置互不可见。
 
+#### 9.2.1 需要改造的全局 secret 访问点
+
+以下组件当前直接使用全局 `SECRET_DIR`，必须迁移到租户隔离路径：
+
+| 组件 | 当前行为 | 目标行为 |
+|------|---------|---------|
+| `envs/store.py` `load_envs_into_environ()` | 启动时将全局 `envs.json` 加载到 `os.environ` | 仅加载系统级 bootstrap 变量；租户 secret 按需从 tenant secret store 读取，不污染 `os.environ` |
+| `providers/provider_manager.py` | `root_path = SECRET_DIR / "providers"` 全局共享 | 区分系统级 provider（全局共享）和租户级 provider credential（tenant secret store） |
+| `app/auth.py` | `AUTH_FILE = SECRET_DIR / "auth.json"` 单一全局 | 若需要租户级认证，迁移到 tenant secret store；若认证是系统级网关行为，保持全局但明确标注 |
+| `agents/skills_manager.py` | 直接写 `os.environ[key] = value` | 改为写入 tenant-scoped env store，不污染进程全局环境 |
+| `app/runner/runner.py` | 从 `./` 加载 `.env` 到全局 `os.environ` | 从 tenant workspace 加载 `.env`，不污染全局 |
+| `constant.py` | 模块导入时加载项目根 `.env` | 仅保留系统级 bootstrap 变量 |
+
+#### 9.2.2 租户 secret 读取模式
+
+推荐引入 `get_tenant_env(key, tenant_id=None)` 辅助函数：
+
+- 从 tenant secret store（`get_tenant_secrets_dir() / "envs.json"`）读取
+- 不经过 `os.environ`
+- agent / skill / provider 代码中所有 `os.getenv()` 调用逐步替换为该函数
+- 子进程启动时显式构造 env dict，而非继承全局 `os.environ`
+
+#### 9.2.3 Provider Manager 隔离策略
+
+Provider Manager 当前是全局共享对象（见 3.1 节）。多租户下需要区分：
+
+- **provider 能力定义**（支持哪些 provider、模型列表）：继续全局共享
+- **provider credential**（API key、base URL、自定义端点）：必须租户隔离
+
+实现方式：Provider Manager 在执行请求时，从当前 tenant workspace 加载 credential，而非从全局 `SECRET_DIR` 读取。
+
 ### 9.3 Memory
 
 Memory 必须 tenant-scoped，但隔离应主要在 workspace 层完成，而不是在 memory 层显式引入 tenant 语义。
@@ -563,7 +634,40 @@ Memory 必须 tenant-scoped，但隔离应主要在 workspace 层完成，而不
 
 - HTTP 入口按 header 定 tenant
 - 外部 channel 入口按 workspace 归属定 tenant
-- 最终都在“绑定当前 workspace 上下文”这一层汇合
+- 最终都在”绑定当前 workspace 上下文”这一层汇合
+
+### 10.1 Channel 层租户绑定实施要求
+
+当前所有 channel 实现（DingTalk、Feishu、Telegram、Discord、QQ、Weixin、WeCom、iMessage、XiaoYi、Mattermost、Matrix、MQTT、Voice、Console）的消息处理路径 `_consume_one_request()` 均未绑定租户上下文。这是多租户隔离的关键缺口，必须在第三阶段完成修复。
+
+#### 绑定位置
+
+在 `BaseChannel._consume_one_request()` 入口处统一绑定，而非在每个子类中重复实现：
+
+```python
+async def _consume_one_request(self, payload: Any) -> None:
+    tenant_id = self._resolve_tenant()
+    with bind_tenant_context(
+        tenant_id=tenant_id,
+        user_id=self._extract_sender_id(payload),
+        workspace_dir=self._workspace.workspace_dir,
+    ):
+        # 原有处理逻辑
+```
+
+#### 租户来源
+
+Channel 实例在创建时已绑定到特定 tenant workspace（由 `TenantWorkspacePool` 管理），因此：
+
+- `tenant_id` 来自 channel 所属 workspace 的 tenant 元数据
+- 不需要从消息 payload 中解析 tenant
+- `Workspace` 类需要暴露 `tenant_id` 属性供 channel 使用
+
+#### 验收条件
+
+- 所有 channel 消息处理必须在 `bind_tenant_context()` 内执行
+- channel 内的文件写入、memory 操作、config 读取都解析到正确的 tenant workspace
+- 不同 tenant 的 channel 实例之间无共享可变状态
 
 ---
 
@@ -690,6 +794,36 @@ Memory 必须 tenant-scoped，但隔离应主要在 workspace 层完成，而不
 - tenant secrets
 
 只要其中任意一项仍落在全局目录，多租户隔离就没有闭环。
+
+### 12.6 Channel 层租户上下文缺失
+
+重点检查：
+
+- `BaseChannel._consume_one_request()` 是否在处理前绑定了 tenant context
+- 所有 14 个 channel 实现是否都通过基类统一绑定
+- channel 内的文件写入、memory 操作是否解析到正确的 tenant workspace
+
+当前状态：所有 channel 实现均未绑定租户上下文，是最大的隔离缺口。
+
+### 12.7 os.environ 全局污染
+
+重点检查：
+
+- `load_envs_into_environ()` 是否仍在启动时将租户 secret 加载到全局 `os.environ`
+- `skills_manager.py` 是否仍直接写 `os.environ[key] = value`
+- `runner.py` 是否仍从 `./` 加载 `.env` 到全局环境
+- 子进程是否继承了包含其他租户 secret 的全局环境
+
+`os.environ` 是进程级共享状态，任何租户 secret 写入 `os.environ` 都等同于跨租户泄露。
+
+### 12.8 Cron Job 创建路径 tenant_id 缺失
+
+重点检查：
+
+- `POST /cron/jobs` 和 `PUT /cron/jobs/{job_id}` 是否从 request context 注入 tenant_id
+- CLI `copaw cron create` 是否传递 tenant 标识
+- Heartbeat 自动创建的 job 是否携带 tenant_id
+- 是否存在 `tenant_id=None` 的持久化 job
 
 ---
 

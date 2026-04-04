@@ -11,6 +11,7 @@ from pathlib import Path
 import aiofiles
 from pydantic import BaseModel, Field
 
+from ..config.context import get_current_workspace_dir
 from ..constant import WORKING_DIR, TOKEN_USAGE_FILE
 
 logger = logging.getLogger(__name__)
@@ -67,7 +68,8 @@ class TokenUsageManager:
     _lock = threading.Lock()
 
     def __init__(self) -> None:
-        self._path: Path = (WORKING_DIR / TOKEN_USAGE_FILE).expanduser()
+        workspace_dir = get_current_workspace_dir() or WORKING_DIR
+        self._path: Path = (workspace_dir / TOKEN_USAGE_FILE).expanduser()
         self._file_lock = asyncio.Lock()
 
     async def _load_data(self) -> dict:

@@ -15,10 +15,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 from starlette.types import ASGIApp
 
-from ..config.context import (
+from copaw.config.context import (
     set_current_workspace_dir,
     reset_current_workspace_dir,
 )
+from copaw.tenant_models import TenantModelManager, TenantModelContext
+from copaw.tenant_models.exceptions import TenantModelNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,7 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
         tenant_id = getattr(request.state, "tenant_id", None)
         workspace = None
         workspace_token = None
+        model_config_token = None
 
         try:
             # Load workspace if tenant_id is available
@@ -91,6 +94,30 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
                         f"TenantWorkspaceMiddleware: loaded workspace for "
                         f"tenant={tenant_id}, path={workspace.workspace_dir}",
                     )
+
+                    # Load and bind tenant model configuration
+                    try:
+                        model_config = TenantModelManager.load(tenant_id)
+                        model_config_token = TenantModelContext.set_config(
+                            model_config,
+                        )
+                        logger.debug(
+                            "TenantWorkspaceMiddleware: loaded model config for tenant=%s",
+                            tenant_id,
+                        )
+                    except TenantModelNotFoundError:
+                        # Config doesn't exist for tenant or default - will use system defaults
+                        logger.debug(
+                            "No model config found for tenant=%s, using system defaults",
+                            tenant_id,
+                        )
+                    except (OSError, ValueError) as e:
+                        # Config file read/parse error - log and continue
+                        logger.warning(
+                            "Failed to load model config for tenant %s: %s",
+                            tenant_id,
+                            e,
+                        )
                 elif self._require_workspace:
                     # Workspace required but not found
                     logger.warning(
@@ -122,9 +149,19 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
             return response
 
         finally:
+            # Reset model configuration context if set
+            if model_config_token:
+                try:
+                    TenantModelContext.reset_config(model_config_token)
+                except Exception as e:  # noqa: BLE001
+                    logger.error("Failed to reset model config context: %s", e)
+
             # Reset workspace context if set
             if workspace_token:
-                reset_current_workspace_dir(workspace_token)
+                try:
+                    reset_current_workspace_dir(workspace_token)
+                except Exception as e:  # noqa: BLE001
+                    logger.error("Failed to reset workspace context: %s", e)
 
     async def _get_workspace(
         self,
@@ -142,17 +179,19 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
         """
         # Get tenant workspace pool from app state
         pool = getattr(request.app.state, "tenant_workspace_pool", None)
-        if not pool:
+        if pool is None:
             logger.warning("TenantWorkspacePool not available in app.state")
             return None
 
         try:
             # Get or create workspace for tenant
-            # Note: This is synchronous in the pool but thread-safe
-            workspace = pool.get_or_create(tenant_id)
+            # Note: This is now async and will start the workspace
+            workspace = await pool.get_or_create(tenant_id)
             return workspace
         except Exception as e:
-            logger.error(f"Error loading workspace for tenant {tenant_id}: {e}")
+            logger.error(
+                f"Error loading workspace for tenant {tenant_id}: {e}",
+            )
             return None
 
     def _is_workspace_exempt(self, path: str) -> bool:
@@ -165,25 +204,27 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
             True if the route is exempt, False otherwise.
         """
         # Same exemptions as tenant identity for consistency
-        exempt_paths = frozenset([
-            "/health",
-            "/healthz",
-            "/ready",
-            "/readyz",
-            "/alive",
-            "/api/version",
-            "/docs",
-            "/redoc",
-            "/openapi.json",
-            "/api/auth/login",
-            "/api/auth/register",
-            "/api/auth/refresh",
-            "/api/auth/logout",
-            "/logo.png",
-            "/dark-logo.png",
-            "/copaw-symbol.svg",
-            "/copaw-dark.png",
-        ])
+        exempt_paths = frozenset(
+            [
+                "/health",
+                "/healthz",
+                "/ready",
+                "/readyz",
+                "/alive",
+                "/api/version",
+                "/docs",
+                "/redoc",
+                "/openapi.json",
+                "/api/auth/login",
+                "/api/auth/register",
+                "/api/auth/refresh",
+                "/api/auth/logout",
+                "/logo.png",
+                "/dark-logo.png",
+                "/copaw-symbol.svg",
+                "/copaw-dark.png",
+            ],
+        )
 
         if path in exempt_paths:
             return True

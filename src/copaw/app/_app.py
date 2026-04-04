@@ -292,18 +292,11 @@ app = FastAPI(
     openapi_url="/openapi.json" if DOCS_ENABLED else None,
 )
 
-# Add tenant identity middleware first (extracts tenant/user from headers)
-app.add_middleware(TenantIdentityMiddleware, default_tenant_id=None)
-
-# Add tenant workspace middleware second (loads workspace from pool)
-app.add_middleware(TenantWorkspaceMiddleware)
-
-# Add agent context middleware for agent-scoped routes
-app.add_middleware(AgentContextMiddleware)
-
-app.add_middleware(AuthMiddleware)
-
 # Apply CORS middleware if CORS_ORIGINS is set
+# Note: add_middleware inserts at the beginning of the stack, so the LAST
+# added middleware wraps the OUTERMOST and executes FIRST on requests.
+# Order (last-added = first-executed): CORSMiddleware -> AuthMiddleware ->
+#   AgentContextMiddleware -> TenantWorkspaceMiddleware -> TenantIdentityMiddleware
 if CORS_ORIGINS:
     origins = [o.strip() for o in CORS_ORIGINS.split(",") if o.strip()]
     app.add_middleware(
@@ -314,6 +307,19 @@ if CORS_ORIGINS:
         allow_headers=["*"],
         expose_headers=["Content-Disposition"],
     )
+
+app.add_middleware(AuthMiddleware)
+
+# Add agent context middleware for agent-scoped routes
+app.add_middleware(AgentContextMiddleware)
+
+# Add tenant workspace middleware (loads workspace from pool)
+# Must execute after TenantIdentityMiddleware sets tenant_id
+app.add_middleware(TenantWorkspaceMiddleware)
+
+# Add tenant identity middleware last so it executes FIRST
+# This must set tenant_id before TenantWorkspaceMiddleware needs it
+app.add_middleware(TenantIdentityMiddleware, default_tenant_id=None)
 
 
 # Console static dir: env, or copaw package data (console), or cwd.

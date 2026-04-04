@@ -206,15 +206,18 @@ async def get_push_messages(
     request: Request,
     session_id: str | None = Query(None, description="Session id"),
 ):
-    """Return pending push messages for the current tenant session."""
-    from ..console_push_store import take
+    """Return pending push messages for the current tenant session.
 
-    if not session_id:
-        raise HTTPException(
-            status_code=400,
-            detail="session_id is required",
-        )
+    If session_id is provided, returns messages for that specific session.
+    If session_id is not provided, returns all messages for the tenant.
+    """
+    from ..console_push_store import take, take_all
 
     tenant_id = getattr(request.state, "tenant_id", None)
-    messages = await take(session_id, tenant_id=tenant_id)
+
+    if session_id:
+        messages = await take(session_id, tenant_id=tenant_id)
+    else:
+        messages = await take_all(tenant_id=tenant_id)
+
     return {"messages": messages}

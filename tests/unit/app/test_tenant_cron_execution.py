@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Cron executor tenant context regression tests."""
 import asyncio
+import importlib
 import importlib.util
 import sys
 import types
@@ -11,8 +12,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 SRC_ROOT = Path(__file__).parent.parent.parent.parent / "src"
-_CONTEXT_FILE = SRC_ROOT / "copaw" / "config" / "context.py"
-_TENANT_CONTEXT_FILE = SRC_ROOT / "copaw" / "app" / "tenant_context.py"
 _MODELS_FILE = SRC_ROOT / "copaw" / "app" / "crons" / "models.py"
 _EXECUTOR_FILE = SRC_ROOT / "copaw" / "app" / "crons" / "executor.py"
 
@@ -31,26 +30,8 @@ channels_schema = types.ModuleType("copaw.app.channels.schema")
 channels_schema.DEFAULT_CHANNEL = "console"
 sys.modules["copaw.app.channels.schema"] = channels_schema
 
-
-context_spec = importlib.util.spec_from_file_location(
-    "copaw.config.context",
-    _CONTEXT_FILE,
-)
-context_module = importlib.util.module_from_spec(context_spec)
-sys.modules["copaw.config.context"] = context_module
-assert context_spec is not None and context_spec.loader is not None
-context_spec.loader.exec_module(context_module)
-
-
-tenant_context_spec = importlib.util.spec_from_file_location(
-    "copaw.app.tenant_context",
-    _TENANT_CONTEXT_FILE,
-)
-tenant_context_module = importlib.util.module_from_spec(tenant_context_spec)
-sys.modules["copaw.app.tenant_context"] = tenant_context_module
-assert tenant_context_spec is not None and tenant_context_spec.loader is not None
-tenant_context_spec.loader.exec_module(tenant_context_module)
-
+context_module = importlib.import_module("copaw.config.context")
+importlib.import_module("copaw.app.tenant_context")
 
 models_spec = importlib.util.spec_from_file_location(
     "copaw.app.crons.models",
@@ -82,7 +63,7 @@ ScheduleSpec = models_module.ScheduleSpec
 
 
 def _get_current_workspace_dir():
-    return sys.modules["copaw.config.context"].get_current_workspace_dir()
+    return context_module.get_current_workspace_dir()
 
 
 class _Runner:

@@ -15,6 +15,11 @@ try:
     from .envs import load_envs_into_environ
 
     load_envs_into_environ()
+
+    # Load environment-specific defaults (dev/prd) based on COPAW_ENV.
+    from .config.envs import load_env_defaults
+
+    load_env_defaults()
 except Exception as exc:
     # Best effort: package import should not fail if env bootstrap fails.
     _bootstrap_err = exc
