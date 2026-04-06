@@ -134,9 +134,10 @@ def _select_provider_interactive(
     prompt_text: str = "Select provider:",
     *,
     default_pid: str = "",
+    tenant_id: str | None = None,
 ) -> str:
     """Prompt user to pick a provider. Returns provider_id."""
-    manager = _manager()
+    manager = _manager(tenant_id)
     all_providers = _all_provider_objects(manager)
 
     labels: list[str] = []
@@ -160,13 +161,16 @@ def _select_provider_interactive(
 
 def configure_provider_api_key_interactive(
     provider_id: str | None = None,
+    *,
+    tenant_id: str | None = None,
 ) -> str:
     """Interactively configure a provider's API key. Returns provider_id."""
-    manager = _manager()
+    manager = _manager(tenant_id)
 
     if provider_id is None:
         provider_id = _select_provider_interactive(
             "Select provider to configure API key:",
+            tenant_id=tenant_id,
         )
 
     defn = manager.get_provider(provider_id)
@@ -242,9 +246,13 @@ def configure_provider_api_key_interactive(
     return provider_id
 
 
-def _add_models_interactive(provider_id: str) -> None:
+def _add_models_interactive(
+    provider_id: str,
+    *,
+    tenant_id: str | None = None,
+) -> None:
     """Interactively add models to a provider after configuration."""
-    manager = _manager()
+    manager = _manager(tenant_id)
     defn = manager.get_provider(provider_id)
     if defn is None:
         click.echo(
@@ -347,9 +355,13 @@ def _select_llm_model(defn, pid, current_slot, *, use_defaults):
     )
 
 
-def configure_llm_slot_interactive(*, use_defaults: bool = False) -> None:
+def configure_llm_slot_interactive(
+    *,
+    use_defaults: bool = False,
+    tenant_id: str | None = None,
+) -> None:
     """Interactively configure the active LLM model slot."""
-    manager = _manager()
+    manager = _manager(tenant_id)
     all_providers = _all_provider_objects(manager)
     current_slot = manager.get_active_model()
 
@@ -434,20 +446,24 @@ def configure_llm_slot_interactive(*, use_defaults: bool = False) -> None:
     click.echo(f"✓ LLM: {defn.name} / {model}")
 
 
-def configure_providers_interactive(*, use_defaults: bool = False) -> None:
+def configure_providers_interactive(
+    *,
+    use_defaults: bool = False,
+    tenant_id: str | None = None,
+) -> None:
     """Full interactive setup: configure provider → add models →
     activate LLM."""
     if use_defaults:
-        configure_llm_slot_interactive(use_defaults=True)
+        configure_llm_slot_interactive(use_defaults=True, tenant_id=tenant_id)
         return
 
     click.echo("\n--- Provider Configuration ---")
     while True:
-        pid = configure_provider_api_key_interactive()
+        pid = configure_provider_api_key_interactive(tenant_id=tenant_id)
 
         # For local providers (llamacpp, mlx, ollama),
         # skip to model activation directly
-        manager = _manager()
+        manager = _manager(tenant_id)
         defn = manager.get_provider(pid)
         if defn is None:
             click.echo(
@@ -459,15 +475,15 @@ def configure_providers_interactive(*, use_defaults: bool = False) -> None:
             raise SystemExit(1)
         if defn.is_local or pid == "ollama":
             click.echo(f"\n--- Activate {defn.name} Model ---")
-            configure_llm_slot_interactive()
+            configure_llm_slot_interactive(tenant_id=tenant_id)
             return
 
-        _add_models_interactive(pid)
+        _add_models_interactive(pid, tenant_id=tenant_id)
         if not click.confirm("Configure another provider?", default=False):
             break
 
     click.echo("\n--- Activate LLM Model ---")
-    configure_llm_slot_interactive()
+    configure_llm_slot_interactive(tenant_id=tenant_id)
 
 
 @click.group("models")
@@ -561,25 +577,34 @@ def list_cmd(ctx: click.Context) -> None:
 
 
 @models_group.command("config")
-def config_cmd() -> None:
+@click.pass_context
+def config_cmd(ctx: click.Context) -> None:
     """Interactively configure providers and active models."""
-    # Note: configure_providers_interactive uses _manager() internally
-    # which defaults to "default" tenant. For full multi-tenant CLI support,
-    # the interactive functions would need to be refactored.
-    configure_providers_interactive()
+    tenant_id = _get_tenant_id(ctx)
+    configure_providers_interactive(tenant_id=tenant_id)
 
 
 @models_group.command("config-key")
 @click.argument("provider_id", required=False, default=None)
-def config_key_cmd(provider_id: str | None) -> None:
+@click.pass_context
+def config_key_cmd(
+    ctx: click.Context,
+    provider_id: str | None,
+) -> None:
     """Configure a provider's API key."""
-    configure_provider_api_key_interactive(provider_id)
+    tenant_id = _get_tenant_id(ctx)
+    configure_provider_api_key_interactive(
+        provider_id,
+        tenant_id=tenant_id,
+    )
 
 
 @models_group.command("set-llm")
-def set_llm_cmd() -> None:
+@click.pass_context
+def set_llm_cmd(ctx: click.Context) -> None:
     """Interactively set the active LLM model."""
-    configure_llm_slot_interactive()
+    tenant_id = _get_tenant_id(ctx)
+    configure_llm_slot_interactive(tenant_id=tenant_id)
 
 
 @models_group.command("add-provider")

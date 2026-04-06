@@ -273,23 +273,27 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
             import fcntl
 
             with open(lock_file, "w", encoding="utf-8") as f:
-                # Try to acquire exclusive lock (non-blocking)
-                try:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except (IOError, OSError):
-                    # Another process is initializing, wait and return
-                    logger.debug(
-                        "Waiting for concurrent provider initialization "
-                        "for tenant %s",
-                        tenant_id,
-                    )
-                    time.sleep(0.1)
-                    # Recheck after wait
-                    if tenant_providers_dir.exists():
-                        return
-                    # Otherwise continue with initialization
+                # Wait until we acquire the lock or another process initializes
+                # Only lock holder may proceed with initialization
+                while True:
+                    try:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break  # Acquired lock, proceed with initialization
+                    except (IOError, OSError):
+                        # Another process is initializing, wait and recheck
+                        logger.debug(
+                            "Waiting for concurrent provider initialization "
+                            "for tenant %s",
+                            tenant_id,
+                        )
+                        time.sleep(0.05)
+                        # Recheck after wait - if directory exists, another
+                        # process completed initialization
+                        if tenant_providers_dir.exists():
+                            return
 
-                # Double-check after acquiring lock
+                # Double-check after acquiring lock (another process may have
+                # completed while we were waiting)
                 if tenant_providers_dir.exists():
                     return
 
@@ -301,16 +305,28 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
                         "from default tenant",
                         tenant_id,
                     )
-                    shutil.copytree(default_dir, tenant_providers_dir)
-                    logger.info(
-                        "Provider config initialized for tenant %s",
-                        tenant_id,
-                    )
+                    try:
+                        shutil.copytree(default_dir, tenant_providers_dir)
+                        logger.info(
+                            "Provider config initialized for tenant %s",
+                            tenant_id,
+                        )
+                    except Exception as copy_error:
+                        # Copy failed - log error and re-raise to prevent
+                        # silent degradation to empty config
+                        logger.error(
+                            "Failed to copy provider config from default "
+                            "for tenant %s: %s",
+                            tenant_id,
+                            copy_error,
+                        )
+                        raise
                 else:
-                    # Create empty directory structure
+                    # Create empty directory structure (only when default
+                    # doesn't exist or is empty - this is expected behavior)
                     logger.info(
                         "Creating empty provider config structure "
-                        "for tenant %s",
+                        "for tenant %s (default has no config)",
                         tenant_id,
                     )
                     tenant_providers_dir.mkdir(parents=True, exist_ok=True)
@@ -321,23 +337,20 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
         except Exception as e:
-            logger.warning(
+            logger.error(
                 "Failed to initialize provider config for tenant %s: %s",
                 tenant_id,
                 e,
             )
-            # Ensure directory exists even on error
-            if not tenant_providers_dir.exists():
-                tenant_providers_dir.mkdir(parents=True, exist_ok=True)
-                (tenant_providers_dir / "builtin").mkdir(exist_ok=True)
-                (tenant_providers_dir / "custom").mkdir(exist_ok=True)
+            # Don't create empty config on unexpected error - this would
+            # mask real issues and create an invalid state. Re-raise to
+            # let the caller handle the failure.
+            raise
         finally:
-            # Clean up lock file
-            try:
-                if lock_file.exists():
-                    lock_file.unlink()
-            except Exception:
-                pass
+            # Keep lock file for reuse - frequent deletion/recreation can
+            # cause race conditions. The flock mechanism doesn't require
+            # the file to be deleted.
+            pass
 
     def _is_workspace_exempt(self, path: str) -> bool:
         """Check if a route is exempt from workspace requirements.
