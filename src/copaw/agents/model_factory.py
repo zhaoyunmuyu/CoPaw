@@ -753,7 +753,15 @@ def create_model_and_formatter(
     # Create chat model from agent-specific or global config
     if model_slot and model_slot.provider_id and model_slot.model:
         # Use agent-specific model (tenant-isolated)
-        manager = ProviderManager.get_instance()
+        # Get tenant-specific provider manager
+        try:
+            from copaw.config.context import get_current_tenant_id
+
+            tenant_id = get_current_tenant_id()
+        except Exception:
+            tenant_id = None
+
+        manager = ProviderManager.get_instance(tenant_id)
         provider = manager.get_provider(model_slot.provider_id)
         if provider is None:
             raise ValueError(

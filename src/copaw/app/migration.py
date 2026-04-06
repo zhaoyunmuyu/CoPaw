@@ -193,7 +193,6 @@ def _do_migrate_legacy_workspace() -> bool:
         },
         # Preserve legacy fields with values from migrated agent config
         running=default_agent_config.running,
-        llm_routing=default_agent_config.llm_routing,
         language=default_agent_config.language,
         system_prompt_files=default_agent_config.system_prompt_files,
     )

@@ -43,15 +43,27 @@ ActiveModelWriteScope = Literal["global", "agent"]
 
 
 def get_provider_manager(request: Request) -> ProviderManager:
-    """Get the provider manager from app state.
+    """Get the tenant-specific provider manager.
 
     Args:
         request: FastAPI request object
+
+    Returns:
+        ProviderManager instance for the current tenant.
+
+    Raises:
+        HTTPException: If tenant ID is not available in request context.
     """
-    provider_manager = getattr(request.app.state, "provider_manager", None)
-    if provider_manager is None:
-        provider_manager = ProviderManager.get_instance()
-    return provider_manager
+    # Get tenant ID from request state (set by TenantIdentityMiddleware)
+    tenant_id: str | None = getattr(request.state, "tenant_id", None)
+
+    if tenant_id is None:
+        # For exempt routes or backward compatibility, use default tenant
+        tenant_id = "default"
+        logger.debug("No tenant ID in request, using default tenant")
+
+    # Return tenant-specific provider manager
+    return ProviderManager.get_instance(tenant_id)
 
 
 class ProviderConfigRequest(BaseModel):

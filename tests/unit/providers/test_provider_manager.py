@@ -270,7 +270,9 @@ def test_migrate_legacy_file_and_persist_active_model(
     legacy_ollama = manager.get_provider("ollama")
     assert legacy_ollama.base_url == "http://myhost:11434"
 
-    active_model_file = isolated_secret_dir / "providers" / "active_model.json"
+    active_model_file = (
+        isolated_secret_dir / "default" / "providers" / "active_model.json"
+    )
     assert active_model_file.exists()
 
 
@@ -420,7 +422,7 @@ def test_provider_from_data_fallback_to_openai(isolated_secret_dir) -> None:
 def test_init_from_storage_migrates_with_different_provider(
     isolated_secret_dir,
 ) -> None:
-    builtin_path = isolated_secret_dir / "providers" / "builtin"
+    builtin_path = isolated_secret_dir / "default" / "providers" / "builtin"
     builtin_path.mkdir(parents=True, exist_ok=True)
 
     legacy_minimax_provider = {
@@ -471,3 +473,142 @@ def test_init_from_storage_migrates_with_different_provider(
     assert (
         manager.get_provider("ollama").base_url == "http://legacy-ollama:11434"
     )
+
+
+# =============================================================================
+# Tenant Isolation Tests
+# =============================================================================
+
+
+class TestProviderManagerTenantIsolation:
+    """Tests for ProviderManager tenant isolation functionality."""
+
+    def test_default_tenant_uses_default_path(
+        self,
+        isolated_secret_dir,
+    ) -> None:
+        """Default tenant uses path with 'default' in it."""
+        manager = ProviderManager()
+
+        assert manager.tenant_id == "default"
+        assert "default" in str(manager.root_path)
+        assert (
+            manager.root_path == isolated_secret_dir / "default" / "providers"
+        )
+
+    def test_custom_tenant_uses_tenant_path(self, isolated_secret_dir) -> None:
+        """Custom tenant uses path with tenant_id in it."""
+        manager = ProviderManager(tenant_id="tenant-a")
+
+        assert manager.tenant_id == "tenant-a"
+        assert "tenant-a" in str(manager.root_path)
+        assert (
+            manager.root_path == isolated_secret_dir / "tenant-a" / "providers"
+        )
+
+    def test_get_instance_returns_default_without_args(
+        self,
+        isolated_secret_dir,
+    ) -> None:
+        """get_instance() without args returns default tenant manager."""
+        manager = ProviderManager.get_instance()
+
+        assert manager.tenant_id == "default"
+
+    def test_get_instance_returns_specific_tenant(
+        self,
+        isolated_secret_dir,
+    ) -> None:
+        """get_instance(tenant_id) returns specific tenant manager."""
+        manager_a = ProviderManager.get_instance("tenant-a")
+        manager_b = ProviderManager.get_instance("tenant-b")
+
+        assert manager_a.tenant_id == "tenant-a"
+        assert manager_b.tenant_id == "tenant-b"
+        assert manager_a is not manager_b
+
+    def test_get_instance_caches_instances(self, isolated_secret_dir) -> None:
+        """get_instance caches and returns same instance for same tenant."""
+        manager_1 = ProviderManager.get_instance("cached-tenant")
+        manager_2 = ProviderManager.get_instance("cached-tenant")
+
+        assert manager_1 is manager_2
+
+    def test_different_tenants_have_isolated_storage(
+        self,
+        isolated_secret_dir,
+    ) -> None:
+        """Different tenants have isolated storage directories."""
+        manager_a = ProviderManager.get_instance("tenant-a")
+        manager_b = ProviderManager.get_instance("tenant-b")
+
+        # Update provider for tenant-a
+        manager_a.update_provider("openai", {"api_key": "sk-tenant-a"})
+
+        # Update provider for tenant-b
+        manager_b.update_provider("openai", {"api_key": "sk-tenant-b"})
+
+        # Verify isolation
+        assert manager_a.get_provider("openai").api_key == "sk-tenant-a"
+        assert manager_b.get_provider("openai").api_key == "sk-tenant-b"
+
+        # Verify files are in different directories
+        assert manager_a.root_path != manager_b.root_path
+        assert (manager_a.root_path / "builtin" / "openai.json").exists()
+        assert (manager_b.root_path / "builtin" / "openai.json").exists()
+
+    def test_active_model_isolated_per_tenant(
+        self,
+        isolated_secret_dir,
+    ) -> None:
+        """Active model configuration is isolated per tenant."""
+        manager_a = ProviderManager.get_instance("active-a")
+        manager_b = ProviderManager.get_instance("active-b")
+
+        # Set different active models
+        manager_a.active_model = ModelSlotConfig(
+            provider_id="openai",
+            model="gpt-4",
+        )
+        manager_a.save_active_model(manager_a.active_model)
+
+        manager_b.active_model = ModelSlotConfig(
+            provider_id="anthropic",
+            model="claude-3",
+        )
+        manager_b.save_active_model(manager_b.active_model)
+
+        # Reload and verify isolation
+        reloaded_a = ProviderManager.get_instance("active-a")
+        reloaded_b = ProviderManager.get_instance("active-b")
+
+        assert reloaded_a.active_model.provider_id == "openai"
+        assert reloaded_a.active_model.model == "gpt-4"
+        assert reloaded_b.active_model.provider_id == "anthropic"
+        assert reloaded_b.active_model.model == "claude-3"
+
+    def test_get_tenant_root_path_static_method(
+        self,
+        isolated_secret_dir,
+    ) -> None:
+        """_get_tenant_root_path returns correct path for tenant."""
+        path_default = ProviderManager._get_tenant_root_path("default")
+        path_tenant = ProviderManager._get_tenant_root_path("my-tenant")
+
+        assert path_default == isolated_secret_dir / "default" / "providers"
+        assert path_tenant == isolated_secret_dir / "my-tenant" / "providers"
+
+    def test_instances_dict_is_class_attribute(self) -> None:
+        """_instances is a class-level attribute shared across instances."""
+        assert hasattr(ProviderManager, "_instances")
+        assert isinstance(ProviderManager._instances, dict)
+
+    def test_instances_lock_is_class_attribute(self) -> None:
+        """_instances_lock is a class-level lock."""
+        assert hasattr(ProviderManager, "_instances_lock")
+        import threading
+
+        assert isinstance(
+            ProviderManager._instances_lock,
+            type(threading.Lock()),
+        )

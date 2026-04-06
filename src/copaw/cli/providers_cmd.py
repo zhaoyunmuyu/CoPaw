@@ -71,8 +71,16 @@ def _wait_for_local_model_download(
         raise click.Abort() from exc
 
 
-def _manager() -> ProviderManager:
-    return ProviderManager.get_instance()
+def _manager(tenant_id: str | None = None) -> ProviderManager:
+    """Get ProviderManager instance for a tenant.
+
+    Args:
+        tenant_id: Tenant ID for multi-tenant mode. If None, uses "default".
+
+    Returns:
+        ProviderManager instance for the specified tenant.
+    """
+    return ProviderManager.get_instance(tenant_id)
 
 
 def _mask_api_key(api_key: str) -> str:
@@ -114,8 +122,8 @@ def _all_provider_objects(manager: ProviderManager) -> list[Provider]:
     return objs
 
 
-def _get_ollama_host() -> str:
-    manager = _manager()
+def _get_ollama_host(tenant_id: str | None = None) -> str:
+    manager = _manager(tenant_id)
     provider = manager.get_provider("ollama")
     if provider is None or not provider.base_url:
         return "http://127.0.0.1:11434"
@@ -463,14 +471,38 @@ def configure_providers_interactive(*, use_defaults: bool = False) -> None:
 
 
 @click.group("models")
-def models_group() -> None:
+@click.option(
+    "--tenant-id",
+    "-t",
+    default=None,
+    help="Tenant ID for multi-tenant mode (default: 'default')",
+)
+@click.pass_context
+def models_group(ctx: click.Context, tenant_id: str | None) -> None:
     """Manage LLM models and provider configuration."""
+    # Store tenant_id in context for use by subcommands
+    ctx.ensure_object(dict)
+    ctx.obj["tenant_id"] = tenant_id
+
+
+def _get_tenant_id(ctx: click.Context) -> str | None:
+    """Get tenant ID from Click context.
+
+    Args:
+        ctx: Click context object.
+
+    Returns:
+        Tenant ID if set, None otherwise.
+    """
+    return ctx.obj.get("tenant_id") if ctx.obj else None
 
 
 @models_group.command("list")
-def list_cmd() -> None:
+@click.pass_context
+def list_cmd(ctx: click.Context) -> None:
     """Show all providers and their current configuration."""
-    manager = _manager()
+    tenant_id = _get_tenant_id(ctx)
+    manager = _manager(tenant_id)
 
     click.echo("\n=== Providers ===")
     for defn in _all_provider_objects(manager):
@@ -531,6 +563,9 @@ def list_cmd() -> None:
 @models_group.command("config")
 def config_cmd() -> None:
     """Interactively configure providers and active models."""
+    # Note: configure_providers_interactive uses _manager() internally
+    # which defaults to "default" tenant. For full multi-tenant CLI support,
+    # the interactive functions would need to be refactored.
     configure_providers_interactive()
 
 
@@ -552,14 +587,17 @@ def set_llm_cmd() -> None:
 @click.option("--name", "-n", required=True, help="Human-readable name")
 @click.option("--base-url", "-u", default="", help="Default API base URL")
 @click.option("--api-key-prefix", default="", help="Expected API key prefix")
+@click.pass_context
 def add_provider_cmd(
+    ctx: click.Context,
     provider_id: str,
     name: str,
     base_url: str,
     api_key_prefix: str,
 ) -> None:
     """Add a new custom provider."""
-    manager = _manager()
+    tenant_id = _get_tenant_id(ctx)
+    manager = _manager(tenant_id)
     try:
         provider_info = asyncio.run(
             manager.add_custom_provider(
@@ -593,9 +631,15 @@ def add_provider_cmd(
 @models_group.command("remove-provider")
 @click.argument("provider_id")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
-def remove_provider_cmd(provider_id: str, yes: bool) -> None:
+@click.pass_context
+def remove_provider_cmd(
+    ctx: click.Context,
+    provider_id: str,
+    yes: bool,
+) -> None:
     """Remove a custom provider."""
-    manager = _manager()
+    tenant_id = _get_tenant_id(ctx)
+    manager = _manager(tenant_id)
     if provider_id in manager.builtin_providers:
         click.echo(
             click.style(
@@ -624,9 +668,16 @@ def remove_provider_cmd(provider_id: str, yes: bool) -> None:
 @click.argument("provider_id")
 @click.option("--model-id", "-m", required=True, help="Model identifier")
 @click.option("--model-name", "-n", required=True, help="Model display name")
-def add_model_cmd(provider_id: str, model_id: str, model_name: str) -> None:
+@click.pass_context
+def add_model_cmd(
+    ctx: click.Context,
+    provider_id: str,
+    model_id: str,
+    model_name: str,
+) -> None:
     """Add a model to any provider (built-in or custom)."""
-    manager = _manager()
+    tenant_id = _get_tenant_id(ctx)
+    manager = _manager(tenant_id)
     # Prevent manual model addition for Ollama
     if provider_id == "ollama":
         click.echo(
@@ -657,9 +708,15 @@ def add_model_cmd(provider_id: str, model_id: str, model_name: str) -> None:
 @models_group.command("remove-model")
 @click.argument("provider_id")
 @click.option("--model-id", "-m", required=True, help="Model identifier")
-def remove_model_cmd(provider_id: str, model_id: str) -> None:
+@click.pass_context
+def remove_model_cmd(
+    ctx: click.Context,
+    provider_id: str,
+    model_id: str,
+) -> None:
     """Remove a user-added model from any provider."""
-    manager = _manager()
+    tenant_id = _get_tenant_id(ctx)
+    manager = _manager(tenant_id)
     # Prevent manual model removal for Ollama
     if provider_id == "ollama":
         click.echo(

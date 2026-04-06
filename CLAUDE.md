@@ -169,10 +169,43 @@ CoPaw supports serving multiple users concurrently with full data isolation. Eac
 
 **CLI/Single-user mode:** Use `copay app --user-id <id>` for single-user mode (uses `set_current_user()` for process-wide directory setting).
 
+### Provider Configuration Isolation
+
+Provider configurations (API keys, base URLs, active model selection) are now tenant-isolated:
+
+```
+~/.copaw.secret/
+├── default/
+│   └── providers/          # Default tenant provider config
+│       ├── builtin/        # Built-in provider configs (openai.json, etc.)
+│       ├── custom/         # Custom provider configs
+│       └── active_model.json
+├── alice/
+│   └── providers/          # Alice's isolated provider config
+├── bob/
+│   └── providers/          # Bob's isolated provider config
+```
+
+**Key features:**
+- Each tenant has completely isolated provider configuration
+- `ProviderManager.get_instance(tenant_id)` returns tenant-specific manager
+- New tenants automatically inherit configuration from default tenant on first access
+- CLI supports `--tenant-id` flag for multi-tenant management
+
+**Migration from global storage:**
+Run the migration script to move existing global provider config to tenant-isolated storage:
+
+```bash
+python scripts/migrate_provider_config.py --dry-run   # Preview changes
+python scripts/migrate_provider_config.py             # Perform migration
+```
+
+This creates a backup at `~/.copaw.secret/providers.backup.<timestamp>/` before migrating.
+
 ### Key Configuration Files
 
 - `config.json` (working dir): Runtime config for channels, agents, MCP, heartbeat
-- `providers.json` (working dir): Active LLM provider and model selection
+- `providers/` (secret dir): **Tenant-isolated** LLM provider configurations per tenant at `~/.copaw.secret/{tenant_id}/providers/`
 - `.env` (working dir): API keys (DASHSCOPE_API_KEY, TAVILY_API_KEY, etc.)
 
 ### Skills System
@@ -204,6 +237,19 @@ To add a built-in provider:
 
 Tests are in `tests/`. Use pytest markers:
 - `@pytest.mark.slow` for slow tests (skip with `-m "not slow"`)
+
+**Important:** Always run tests using the project's virtual environment:
+
+```bash
+# Run all tests with venv
+venv/bin/python -m pytest
+
+# Run specific test file
+venv/bin/python -m pytest tests/test_session.py
+
+# Run specific test directory
+venv/bin/python -m pytest tests/unit/tenant_models/ -v
+```
 
 ### Pre-commit Hooks
 

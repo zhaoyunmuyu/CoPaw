@@ -5,6 +5,9 @@ providers, adding/removing custom providers, and fetching provider details."""
 
 import asyncio
 import os
+import threading
+from copy import deepcopy
+from pathlib import Path
 from typing import Dict, List
 import logging
 import json
@@ -570,14 +573,22 @@ class ProviderManager:
     including built-in and custom ones."""
 
     _instance = None
+    _instances: dict[str, "ProviderManager"] = {}
+    _instances_lock = threading.Lock()
 
-    def __init__(self) -> None:
+    def __init__(self, tenant_id: str = "default") -> None:
+        """Initialize provider manager for a specific tenant.
+
+        Args:
+            tenant_id: The tenant ID for isolated storage. Defaults to "default".
+        """
         # Initialize provider manager, load providers from registry and store
         # any necessary state (e.g., cached models).
+        self.tenant_id = tenant_id
         self.builtin_providers: Dict[str, Provider] = {}
         self.custom_providers: Dict[str, Provider] = {}
         self.active_model: ModelSlotConfig | None = None
-        self.root_path = SECRET_DIR / "providers"
+        self.root_path = self._get_tenant_root_path(tenant_id)
         self.builtin_path = self.root_path / "builtin"
         self.custom_path = self.root_path / "custom"
         self._prepare_disk_storage()
@@ -589,6 +600,74 @@ class ProviderManager:
         self._init_from_storage()
         self._apply_default_annotations()
 
+    @staticmethod
+    def _get_tenant_root_path(tenant_id: str) -> Path:
+        """Get the root path for a tenant's provider configuration.
+
+        Args:
+            tenant_id: The tenant ID.
+
+        Returns:
+            Path to the tenant's provider configuration directory.
+        """
+        return SECRET_DIR / tenant_id / "providers"
+
+    @staticmethod
+    def get_instance(tenant_id: str | None = None) -> "ProviderManager":
+        """Get a ProviderManager instance for a specific tenant.
+
+        This method implements a multi-instance singleton pattern where
+        each tenant has its own isolated ProviderManager instance.
+
+        Args:
+            tenant_id: The tenant ID. If None, uses "default" tenant.
+
+        Returns:
+            ProviderManager instance for the specified tenant.
+        """
+        tenant_id = tenant_id or "default"
+
+        # Fast path: check if instance exists without lock
+        if tenant_id in ProviderManager._instances:
+            return ProviderManager._instances[tenant_id]
+
+        # Slow path: create instance with lock
+        with ProviderManager._instances_lock:
+            # Double-check after acquiring lock
+            if tenant_id not in ProviderManager._instances:
+                ProviderManager._instances[tenant_id] = ProviderManager(
+                    tenant_id,
+                )
+            return ProviderManager._instances[tenant_id]
+
+    @staticmethod
+    def get_active_chat_model() -> ChatModelBase:
+        """Get the currently active provider/model configuration.
+
+        .. deprecated::
+            This method is deprecated in multi-tenant environments.
+            Use TenantModelContext.get_config() for tenant-isolated model selection.
+        """
+        import warnings
+
+        warnings.warn(
+            "get_active_chat_model() accesses global active model which is not "
+            "isolated per tenant. In multi-tenant environments, use "
+            "TenantModelContext.get_config() for proper tenant isolation.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        manager = ProviderManager.get_instance()
+        model = manager.get_active_model()
+        if model is None or model.provider_id == "" or model.model == "":
+            raise ValueError("No active model configured.")
+        provider = manager.get_provider(model.provider_id)
+        if provider is None:
+            raise ValueError(
+                f"Active provider '{model.provider_id}' not found.",
+            )
+        return provider.get_chat_model_instance(model.model)
+
     def _prepare_disk_storage(self):
         """Prepare directory structure"""
         for path in [self.root_path, self.builtin_path, self.custom_path]:
@@ -599,21 +678,22 @@ class ProviderManager:
                 pass
 
     def _init_builtins(self):
-        self._add_builtin(PROVIDER_COPAW)
-        self._add_builtin(PROVIDER_MODELSCOPE)
-        self._add_builtin(PROVIDER_DASHSCOPE)
-        self._add_builtin(PROVIDER_ALIYUN_CODINGPLAN)
-        self._add_builtin(PROVIDER_OPENAI)
-        self._add_builtin(PROVIDER_AZURE_OPENAI)
-        self._add_builtin(PROVIDER_KIMI_CN)
-        self._add_builtin(PROVIDER_KIMI_INTL)
-        self._add_builtin(PROVIDER_DEEPSEEK)
-        self._add_builtin(PROVIDER_ANTHROPIC)
-        # self._add_builtin(PROVIDER_GEMINI)
-        self._add_builtin(PROVIDER_MINIMAX_CN)
-        self._add_builtin(PROVIDER_MINIMAX)
-        self._add_builtin(PROVIDER_OLLAMA)
-        self._add_builtin(PROVIDER_LMSTUDIO)
+        # Deep copy builtin providers to ensure per-tenant isolation
+        self._add_builtin(deepcopy(PROVIDER_COPAW))
+        self._add_builtin(deepcopy(PROVIDER_MODELSCOPE))
+        self._add_builtin(deepcopy(PROVIDER_DASHSCOPE))
+        self._add_builtin(deepcopy(PROVIDER_ALIYUN_CODINGPLAN))
+        self._add_builtin(deepcopy(PROVIDER_OPENAI))
+        self._add_builtin(deepcopy(PROVIDER_AZURE_OPENAI))
+        self._add_builtin(deepcopy(PROVIDER_KIMI_CN))
+        self._add_builtin(deepcopy(PROVIDER_KIMI_INTL))
+        self._add_builtin(deepcopy(PROVIDER_DEEPSEEK))
+        self._add_builtin(deepcopy(PROVIDER_ANTHROPIC))
+        # self._add_builtin(deepcopy(PROVIDER_GEMINI))
+        self._add_builtin(deepcopy(PROVIDER_MINIMAX_CN))
+        self._add_builtin(deepcopy(PROVIDER_MINIMAX))
+        self._add_builtin(deepcopy(PROVIDER_OLLAMA))
+        self._add_builtin(deepcopy(PROVIDER_LMSTUDIO))
 
     def _add_builtin(self, provider: Provider):
         self.builtin_providers[provider.id] = provider
@@ -1134,38 +1214,3 @@ class ProviderManager:
                 "extra_models": [ModelInfo(id=model_id, name=model_id)],
             },
         )
-
-    @staticmethod
-    def get_instance() -> "ProviderManager":
-        """Get the singleton instance of ProviderManager."""
-        if ProviderManager._instance is None:
-            ProviderManager._instance = ProviderManager()
-        return ProviderManager._instance
-
-    @staticmethod
-    def get_active_chat_model() -> ChatModelBase:
-        """Get the currently active provider/model configuration.
-
-        .. deprecated::
-            This method is deprecated in multi-tenant environments.
-            Use TenantModelContext.get_config() for tenant-isolated model selection.
-        """
-        import warnings
-
-        warnings.warn(
-            "get_active_chat_model() accesses global active model which is not "
-            "isolated per tenant. In multi-tenant environments, use "
-            "TenantModelContext.get_config() for proper tenant isolation.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        manager = ProviderManager.get_instance()
-        model = manager.get_active_model()
-        if model is None or model.provider_id == "" or model.model == "":
-            raise ValueError("No active model configured.")
-        provider = manager.get_provider(model.provider_id)
-        if provider is None:
-            raise ValueError(
-                f"Active provider '{model.provider_id}' not found.",
-            )
-        return provider.get_chat_model_instance(model.model)

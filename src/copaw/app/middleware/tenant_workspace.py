@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=unused-import,too-many-branches
 """Tenant workspace middleware for multi-tenant isolation.
 
 Loads tenant workspace from TenantWorkspacePool, stores it in request.state,
@@ -8,6 +9,8 @@ Middleware ordering: Must come after TenantIdentityMiddleware and before
 AgentContextMiddleware.
 """
 import logging
+import shutil
+from pathlib import Path
 from typing import Callable, Awaitable
 
 from fastapi import Request, HTTPException
@@ -19,6 +22,8 @@ from copaw.config.context import (
     set_current_workspace_dir,
     reset_current_workspace_dir,
 )
+from copaw.constant import SECRET_DIR
+from copaw.providers.provider_manager import ProviderManager
 from copaw.tenant_models import TenantModelManager, TenantModelContext
 from copaw.tenant_models.exceptions import TenantModelNotFoundError
 
@@ -78,6 +83,9 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
         try:
             # Load workspace if tenant_id is available
             if tenant_id:
+                # Ensure tenant provider config exists
+                await self._ensure_tenant_provider_config(tenant_id)
+
                 workspace = await self._get_workspace(request, tenant_id)
 
                 if workspace:
@@ -193,6 +201,107 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
                 f"Error loading workspace for tenant {tenant_id}: {e}",
             )
             return None
+
+    async def _ensure_tenant_provider_config(
+        self,
+        tenant_id: str,
+    ) -> None:
+        """Ensure tenant provider configuration exists.
+
+        If the tenant's provider configuration does not exist, it will be
+        initialized by copying from the default tenant's configuration.
+        If the default tenant has no configuration, an empty directory
+        structure will be created.
+
+        Args:
+            tenant_id: The tenant ID to ensure configuration for.
+
+        Note:
+            This method is idempotent - calling it multiple times for the
+            same tenant is safe and will not overwrite existing configuration.
+        """
+        tenant_providers_dir = SECRET_DIR / tenant_id / "providers"
+
+        # Fast path: already exists
+        if tenant_providers_dir.exists():
+            return
+
+        # Use lock file to handle concurrent initialization
+        lock_file = tenant_providers_dir.parent / ".provider_init.lock"
+        try:
+            # Create parent directory if needed
+            tenant_providers_dir.parent.mkdir(parents=True, exist_ok=True)
+
+            # Simple file-based locking
+            import time
+            import fcntl
+
+            with open(lock_file, "w", encoding="utf-8") as f:
+                # Try to acquire exclusive lock (non-blocking)
+                try:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except (IOError, OSError):
+                    # Another process is initializing, wait and return
+                    logger.debug(
+                        "Waiting for concurrent provider initialization "
+                        "for tenant %s",
+                        tenant_id,
+                    )
+                    time.sleep(0.1)
+                    # Recheck after wait
+                    if tenant_providers_dir.exists():
+                        return
+                    # Otherwise continue with initialization
+
+                # Double-check after acquiring lock
+                if tenant_providers_dir.exists():
+                    return
+
+                # Try to copy from default tenant
+                default_dir = SECRET_DIR / "default" / "providers"
+                if default_dir.exists() and any(default_dir.iterdir()):
+                    logger.info(
+                        "Initializing provider config for tenant %s "
+                        "from default tenant",
+                        tenant_id,
+                    )
+                    shutil.copytree(default_dir, tenant_providers_dir)
+                    logger.info(
+                        "Provider config initialized for tenant %s",
+                        tenant_id,
+                    )
+                else:
+                    # Create empty directory structure
+                    logger.info(
+                        "Creating empty provider config structure "
+                        "for tenant %s",
+                        tenant_id,
+                    )
+                    tenant_providers_dir.mkdir(parents=True, exist_ok=True)
+                    (tenant_providers_dir / "builtin").mkdir(exist_ok=True)
+                    (tenant_providers_dir / "custom").mkdir(exist_ok=True)
+
+                # Release lock
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+        except Exception as e:
+            logger.warning(
+                "Failed to initialize provider config for tenant %s: %s",
+                tenant_id,
+                e,
+            )
+            # Ensure directory exists even on error
+            if not tenant_providers_dir.exists():
+                tenant_providers_dir.mkdir(parents=True, exist_ok=True)
+                (tenant_providers_dir / "builtin").mkdir(exist_ok=True)
+                (tenant_providers_dir / "custom").mkdir(exist_ok=True)
+        finally:
+            # Clean up lock file
+            try:
+                if lock_file.exists():
+                    lock_file.unlink()
+            except Exception:
+                pass
 
     def _is_workspace_exempt(self, path: str) -> bool:
         """Check if a route is exempt from workspace requirements.
