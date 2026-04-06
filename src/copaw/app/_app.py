@@ -14,7 +14,6 @@ from agentscope_runtime.engine.app import AgentApp
 
 from ..config import load_config  # pylint: disable=no-name-in-module
 from ..config.utils import get_config_path
-from ..config.context import tenant_context
 from ..constant import DOCS_ENABLED, LOG_LEVEL_ENV, CORS_ORIGINS, WORKING_DIR
 from ..__version__ import __version__
 from ..utils.logging import setup_logger, add_copaw_file_handler
@@ -25,15 +24,10 @@ from .routers import router as api_router, create_agent_scoped_router
 from .routers.agent_scoped import AgentContextMiddleware
 from .routers.voice import voice_router
 from ..envs import load_envs_into_environ
-from ..providers.provider_manager import ProviderManager
-from ..local_models.manager import LocalModelManager
 from .multi_agent_manager import MultiAgentManager
 from .workspace.tenant_pool import TenantWorkspacePool
 from .migration import (
-    migrate_legacy_workspace_to_default_agent,
-    migrate_legacy_skills_to_skill_pool,
     ensure_default_agent_exists,
-    ensure_qa_agent_exists,
 )
 from .channels.registry import register_custom_channel_routes
 
@@ -169,47 +163,18 @@ async def lifespan(
 
     auto_register_from_env()
 
-    try:
-        from ..utils.telemetry import (
-            collect_and_upload_telemetry,
-            has_telemetry_been_collected,
-            is_telemetry_opted_out,
-        )
-
-        if not is_telemetry_opted_out(
-            WORKING_DIR,
-        ) and not has_telemetry_been_collected(WORKING_DIR):
-            collect_and_upload_telemetry(WORKING_DIR)
-    except Exception:
-        logger.debug(
-            "Telemetry collection skipped due to error",
-            exc_info=True,
-        )
-
-    # --- Multi-agent migration and initialization ---
-    logger.info("Checking for legacy config migration...")
-    migrate_legacy_workspace_to_default_agent()
+    # --- Minimal startup: only ensure default agent declaration exists ---
+    logger.info("Performing minimal startup...")
     ensure_default_agent_exists()
-    migrate_legacy_skills_to_skill_pool()
-    ensure_qa_agent_exists()
 
-    # --- Tenant workspace pool initialization ---
-    logger.info("Initializing TenantWorkspacePool...")
+    # --- Tenant workspace pool initialization (registry only, no runtime) ---
+    logger.info("Initializing TenantWorkspacePool (registry only)...")
     tenant_workspace_pool = TenantWorkspacePool(WORKING_DIR)
     app.state.tenant_workspace_pool = tenant_workspace_pool
 
-    # --- Multi-agent manager initialization ---
-    logger.info("Initializing MultiAgentManager...")
+    # --- Multi-agent manager initialization (container only, no agents started) ---
+    logger.info("Initializing MultiAgentManager (container only)...")
     multi_agent_manager = MultiAgentManager()
-
-    # Start all configured agents (handled by manager)
-    await multi_agent_manager.start_all_configured_agents()
-
-    # --- Model provider manager (non-reloadable, in-memory) ---
-    provider_manager = ProviderManager.get_instance()
-
-    # --- Local model manager initialization ---
-    local_model_manager = LocalModelManager.get_instance()
 
     # Expose to endpoints - multi-agent manager
     app.state.multi_agent_manager = multi_agent_manager
@@ -228,24 +193,14 @@ async def lifespan(
 
     app.state.get_agent_by_id = _get_agent_by_id
 
-    # Global managers (shared across all agents)
-    app.state.provider_manager = provider_manager
-    app.state.local_model_manager = local_model_manager
-
-    provider_manager.start_local_model_resume(local_model_manager)
-
-    # Setup approval service with default agent's channel_manager
-    default_agent = await multi_agent_manager.get_agent("default")
-    if default_agent.channel_manager:
-        from .approvals import get_approval_service
-
-        get_approval_service().set_channel_manager(
-            default_agent.channel_manager,
-        )
+    # Note: ProviderManager, LocalModelManager, skill pool, and QA agent
+    # are initialized on-demand via their respective feature entrypoints.
+    # See design.md for lazy-loading architecture.
 
     startup_elapsed = time.time() - startup_start_time
-    logger.debug(
-        f"Application startup completed in {startup_elapsed:.3f} seconds",
+    logger.info(
+        f"Application startup completed in {startup_elapsed:.3f} seconds "
+        f"(minimal initialization - runtimes deferred to first use)",
     )
 
     try:

@@ -192,13 +192,17 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
             return None
 
         try:
-            # Get or create workspace for tenant
-            # Note: This is now async and will start the workspace
-            workspace = await pool.get_or_create(tenant_id)
-            return workspace
+            # Ensure tenant is bootstrapped (minimal - directories only)
+            await pool.ensure_bootstrap(tenant_id)
+
+            # Note: Workspace runtime is NOT started here.
+            # It will be started on-demand via MultiAgentManager.get_agent()
+            # when a request actually needs the agent runtime.
+            # Return None here since we don't have a workspace runtime yet.
+            return None
         except Exception as e:
             logger.error(
-                f"Error loading workspace for tenant {tenant_id}: {e}",
+                f"Error bootstrapping tenant {tenant_id}: {e}",
             )
             return None
 

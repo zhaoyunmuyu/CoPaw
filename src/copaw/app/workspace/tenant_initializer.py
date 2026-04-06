@@ -1,19 +1,15 @@
 # -*- coding: utf-8 -*-
 """Tenant directory bootstrapper.
 
-Creates the directory structure and seeds default agents / skill pool
-for a single tenant.  Used by both ``copaw init --tenant-id`` (CLI) and
-``TenantWorkspacePool.get_or_create`` (runtime) so the bootstrap logic
-lives in one place.
+Creates the directory structure and seeds default agents for a single tenant.
+Used by both ``copaw init --tenant-id`` (CLI) and ``TenantWorkspacePool`` (runtime)
+so the bootstrap logic lives in one place.
 """
 from pathlib import Path
 
 from ..migration import (
     ensure_default_agent_exists,
-    ensure_qa_agent_exists,
-    migrate_legacy_skills_to_skill_pool,
 )
-from ...agents.skills_manager import ensure_skill_pool_initialized
 
 
 class TenantInitializer:
@@ -25,7 +21,7 @@ class TenantInitializer:
         self.tenant_dir = self.base_working_dir / tenant_id
 
     def ensure_directory_structure(self) -> None:
-        """Create the tenant directory skeleton."""
+        """Create the tenant directory skeleton (minimal bootstrap)."""
         for path in (
             self.tenant_dir,
             self.tenant_dir / "workspaces",
@@ -35,21 +31,21 @@ class TenantInitializer:
             path.mkdir(parents=True, exist_ok=True)
 
     def ensure_default_agent(self) -> None:
-        """Ensure the default agent workspace exists."""
+        """Ensure the default agent workspace exists (minimal bootstrap).
+
+        This only creates the agent declaration and directory structure,
+        not the runtime.
+        """
         ensure_default_agent_exists(working_dir=self.tenant_dir)
 
-    def ensure_qa_agent(self) -> None:
-        """Ensure the builtin QA agent workspace exists."""
-        ensure_qa_agent_exists(working_dir=self.tenant_dir)
+    def initialize_minimal(self) -> None:
+        """Run minimal bootstrap sequence (idempotent).
 
-    def ensure_skill_pool(self) -> None:
-        """Ensure the skill pool is initialized and legacy skills migrated."""
-        ensure_skill_pool_initialized(working_dir=self.tenant_dir)
-        migrate_legacy_skills_to_skill_pool(working_dir=self.tenant_dir)
+        This is called on first tenant access and only ensures:
+        - Directory structure exists
+        - Default agent declaration exists
 
-    def initialize(self) -> None:
-        """Run the full bootstrap sequence (idempotent)."""
+        No runtime components are started.
+        """
         self.ensure_directory_structure()
         self.ensure_default_agent()
-        self.ensure_qa_agent()
-        self.ensure_skill_pool()
