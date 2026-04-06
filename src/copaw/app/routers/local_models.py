@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request, Depends
@@ -13,15 +14,34 @@ from ...providers.provider_manager import ProviderManager
 
 router = APIRouter(prefix="/local-models", tags=["local-models"])
 
+logger = logging.getLogger(__name__)
+
 
 def get_local_model_manager(request: Request) -> LocalModelManager:
-    """Helper to get the LocalModelManager instance from app state."""
-    return request.app.state.local_model_manager
+    """Get the LocalModelManager instance (lazy initialization).
+
+    First checks app.state for cached instance, otherwise creates via
+    LocalModelManager.get_instance() and caches in app.state.
+    """
+    manager = getattr(request.app.state, "local_model_manager", None)
+    if manager is None:
+        manager = LocalModelManager.get_instance()
+        request.app.state.local_model_manager = manager
+        logger.debug("Lazy-initialized LocalModelManager")
+    return manager
 
 
 def get_provider_manager(request: Request) -> ProviderManager:
-    """Helper to get the ProviderManager instance from app state."""
-    return request.app.state.provider_manager
+    """Get the tenant-specific ProviderManager instance (lazy initialization).
+
+    Uses tenant_id from request state for proper tenant isolation.
+    Falls back to 'default' tenant if no tenant context available.
+    """
+    tenant_id: str | None = getattr(request.state, "tenant_id", None)
+    if tenant_id is None:
+        tenant_id = "default"
+        logger.debug("No tenant ID in request, using default tenant")
+    return ProviderManager.get_instance(tenant_id)
 
 
 class ServerStatus(BaseModel):

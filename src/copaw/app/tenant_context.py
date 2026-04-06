@@ -10,9 +10,6 @@ from pathlib import Path
 from typing import Generator
 
 from copaw.config.context import (
-    current_tenant_id,
-    current_user_id,
-    current_workspace_dir,
     TenantContextError,
 )
 
@@ -62,7 +59,9 @@ def bind_tenant_context(
         if user_id is not None:
             tokens.append(("user", set_current_user_id(user_id)))
         if workspace_dir is not None:
-            tokens.append(("workspace", set_current_workspace_dir(workspace_dir)))
+            tokens.append(
+                ("workspace", set_current_workspace_dir(workspace_dir)),
+            )
         yield
     finally:
         # Reset in reverse order to restore state correctly
@@ -160,7 +159,13 @@ def bind_request_context(
     tenant_id = request.headers.get("X-Tenant-Id")
     user_id = request.headers.get("X-User-Id")
     workspace = getattr(request.state, "workspace", None)
-    workspace_dir = workspace.path if workspace else None
+    # Support both workspace_dir (standard) and path (legacy) attributes
+    if workspace is not None:
+        workspace_dir = getattr(workspace, "workspace_dir", None)
+        if workspace_dir is None:
+            workspace_dir = getattr(workspace, "path", None)
+    else:
+        workspace_dir = None
 
     with bind_tenant_context(
         tenant_id=tenant_id,

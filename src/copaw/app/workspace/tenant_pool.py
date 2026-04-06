@@ -84,6 +84,20 @@ class TenantWorkspacePool:
         """
         return self._base_working_dir / tenant_id
 
+    def get_tenant_workspace_dir(self, tenant_id: str) -> Path:
+        """Get the workspace directory for a tenant (public).
+
+        This is a public method to compute the tenant's workspace directory
+        path without requiring the workspace runtime to be started.
+
+        Args:
+            tenant_id: The tenant identifier.
+
+        Returns:
+            Path to the tenant's workspace directory.
+        """
+        return self._get_tenant_workspace_dir(tenant_id)
+
     async def _get_or_create_bootstrap_lock(
         self,
         tenant_id: str,
@@ -168,9 +182,17 @@ class TenantWorkspacePool:
     ) -> Workspace:
         """Get existing workspace or create new one for tenant.
 
-        DEPRECATED: Use ensure_bootstrap() + MultiAgentManager.get_agent() instead.
-        This method is kept for backward compatibility but delegates to
-        MultiAgentManager for workspace creation.
+        DEPRECATED: This method is deprecated and no longer provides caching.
+        Each call creates a new MultiAgentManager instance, which means:
+        - No caching: repeated calls do not guarantee the same workspace instance
+        - No lifecycle management: workspaces created via this method are not
+          tracked by stop_all() or other pool lifecycle methods
+
+        Use ensure_bootstrap() + MultiAgentManager.get_agent() instead for
+        proper lazy loading and caching.
+
+        This method is kept temporarily for backward compatibility but will be
+        removed in a future version.
 
         Args:
             tenant_id: The tenant identifier.
@@ -182,13 +204,29 @@ class TenantWorkspacePool:
         Raises:
             RuntimeError: If workspace creation or startup fails.
         """
+        import warnings
+
+        warnings.warn(
+            "TenantWorkspacePool.get_or_create() is deprecated and no longer "
+            "provides caching semantics. Use ensure_bootstrap() + "
+            "MultiAgentManager.get_agent() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        logger.warning(
+            "TenantWorkspacePool.get_or_create() is deprecated for tenant=%s. "
+            "Use ensure_bootstrap() + MultiAgentManager.get_agent() instead.",
+            tenant_id,
+        )
+
         from ..multi_agent_manager import MultiAgentManager
 
         # Ensure tenant is bootstrapped first
         await self.ensure_bootstrap(tenant_id)
 
         # Delegate workspace creation and startup to MultiAgentManager
-        # This ensures proper lazy loading and caching
+        # Note: This creates a new MultiAgentManager instance each time,
+        # which breaks caching semantics. This is why the method is deprecated.
         multi_agent_manager = MultiAgentManager()
         return await multi_agent_manager.get_agent(
             agent_id,
