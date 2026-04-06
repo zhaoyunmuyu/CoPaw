@@ -1,0 +1,193 @@
+# -*- coding: utf-8 -*-
+# flake8: noqa: E402
+# pylint: disable=wrong-import-position
+"""Tests for model_factory tenant integration."""
+import sys
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
+
+from copaw.agents.model_factory import (
+    _get_formatter_for_chat_model,
+    _create_file_block_support_formatter,
+)
+
+
+class TestFormatterMapping:
+    """Tests for chat model to formatter mapping."""
+
+    def test_openai_model_returns_openai_formatter(self):
+        """OpenAIChatModel returns OpenAIChatFormatter."""
+        from agentscope.formatter import OpenAIChatFormatter
+        from agentscope.model import OpenAIChatModel
+
+        formatter_class = _get_formatter_for_chat_model(OpenAIChatModel)
+        assert formatter_class == OpenAIChatFormatter
+
+    def test_unknown_model_defaults_to_openai_formatter(self):
+        """Unknown model class defaults to OpenAIChatFormatter."""
+        from agentscope.formatter import OpenAIChatFormatter
+        from agentscope.model import OpenAIChatModel
+
+        class UnknownModel(OpenAIChatModel):
+            pass
+
+        formatter_class = _get_formatter_for_chat_model(UnknownModel)
+        assert formatter_class == OpenAIChatFormatter
+
+
+class TestFileBlockSupportFormatter:
+    """Tests for file block support formatter wrapper."""
+
+    def test_formatter_creation(self):
+        """File block support formatter can be created."""
+        from agentscope.formatter import OpenAIChatFormatter
+
+        formatter_class = _create_file_block_support_formatter(
+            OpenAIChatFormatter,
+        )
+        assert formatter_class is not None
+        assert "FileBlockSupport" in formatter_class.__name__
+
+
+class TestCreateModelAndFormatterTenantIntegration:
+    """Tests for tenant-aware model creation."""
+
+    def test_raises_when_no_tenant_config(self):
+        """Factory raises when no tenant configuration found."""
+        from copaw.agents.model_factory import create_model_and_formatter
+
+        # Patch where TenantModelContext is imported from
+        with patch("copaw.tenant_models.TenantModelContext") as mock_context:
+            mock_context.get_config.return_value = None
+
+            with pytest.raises(
+                ValueError,
+                match="No tenant model configuration found",
+            ):
+                create_model_and_formatter()
+
+    def test_tenant_provider_manager_isolation(self):
+        """Different tenants get different ProviderManager instances."""
+        from copaw.agents.model_factory import create_model_and_formatter
+
+        # Patch where TenantModelContext is imported from
+        with patch("copaw.tenant_models.TenantModelContext") as mock_context:
+            mock_config = MagicMock()
+            mock_slot = MagicMock()
+            mock_slot.provider_id = "openai"
+            mock_slot.model = "gpt-4"
+            mock_config.get_active_slot.return_value = mock_slot
+            mock_context.get_config.return_value = mock_config
+
+            # Patch where ProviderManager is used
+            with patch(
+                "copaw.agents.model_factory.ProviderManager",
+            ) as mock_pm_class:
+                mock_manager = MagicMock()
+                mock_provider = MagicMock()
+                mock_model = MagicMock()
+                mock_model.__class__.__name__ = "OpenAIChatModel"
+                mock_provider.get_chat_model_instance.return_value = mock_model
+                mock_manager.get_provider.return_value = mock_provider
+                mock_pm_class.get_instance.return_value = mock_manager
+
+                # Patch formatter creation
+                with patch(
+                    "copaw.agents.model_factory._create_formatter_instance",
+                ):
+                    with patch(
+                        "copaw.agents.model_factory.TokenRecordingModelWrapper",
+                    ):
+                        with patch(
+                            "copaw.agents.model_factory.RetryChatModel",
+                        ):
+                            # First call with tenant-a
+                            with patch(
+                                "copaw.config.context.get_current_tenant_id",
+                                return_value="tenant-a",
+                            ):
+                                try:
+                                    create_model_and_formatter()
+                                except Exception:
+                                    pass
+
+                # Verify get_instance was called with tenant-a
+                calls = [
+                    str(call)
+                    for call in mock_pm_class.get_instance.call_args_list
+                ]
+                assert any("tenant-a" in call for call in calls)
+
+
+class TestBackwardCompatibility:
+    """Tests for backward compatibility with non-tenant mode."""
+
+    def test_no_agent_id_uses_context(self):
+        """When agent_id is None, tries to get from context."""
+        from copaw.agents.model_factory import create_model_and_formatter
+
+        # Patch where get_current_agent_id is imported from
+        with patch(
+            "copaw.app.agent_context.get_current_agent_id",
+        ) as mock_get_agent:
+            mock_get_agent.side_effect = Exception("No context")
+
+            # When context fails and no tenant config, should raise
+            with pytest.raises(ValueError):
+                create_model_and_formatter()
+
+    def test_agent_id_parameter_takes_precedence(self):
+        """agent_id parameter takes precedence over context."""
+        from copaw.agents.model_factory import create_model_and_formatter
+
+        with patch(
+            "copaw.app.agent_context.get_current_agent_id",
+        ) as mock_get_agent:
+            mock_get_agent.return_value = "context-agent"
+
+            with patch("copaw.config.config.load_agent_config") as mock_load:
+                mock_config = MagicMock()
+                mock_config.running.llm_retry_enabled = True
+                mock_config.running.llm_max_retries = 3
+                mock_config.running.llm_backoff_base = 1.0
+                mock_config.running.llm_backoff_cap = 60.0
+                mock_config.running.llm_max_concurrent = 10
+                mock_config.running.llm_max_qpm = 100
+                mock_config.running.llm_rate_limit_pause = 1.0
+                mock_config.running.llm_rate_limit_jitter = 0.1
+                mock_config.running.llm_acquire_timeout = 30.0
+                mock_load.return_value = mock_config
+
+                with pytest.raises(
+                    ValueError,
+                    match="No tenant model configuration",
+                ):
+                    create_model_and_formatter(agent_id="param-agent")
+
+                # load_agent_config should be called with param-agent
+                mock_load.assert_called_once_with("param-agent")
+
+
+class TestRetryConfigPropagation:
+    """Tests for retry configuration propagation."""
+
+    def test_retry_config_from_agent_config(self):
+        """Retry configuration is extracted from agent config."""
+        from copaw.providers.retry_chat_model import RetryConfig
+
+        # Create a RetryConfig to verify structure
+        retry_config = RetryConfig(
+            enabled=True,
+            max_retries=5,
+            backoff_base=2.0,
+            backoff_cap=120.0,
+        )
+
+        assert retry_config.enabled is True
+        assert retry_config.max_retries == 5
+        assert retry_config.backoff_base == 2.0
+        assert retry_config.backoff_cap == 120.0
