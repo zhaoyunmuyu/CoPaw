@@ -21,13 +21,13 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-# Add parent directory to path for imports before importing copaw modules
+# Add parent directory to path for imports before importing swe modules
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # pylint: disable=wrong-import-position
-from copaw.constant import SECRET_DIR, WORKING_DIR
-from copaw.tenant_models.manager import TenantModelManager
-from copaw.tenant_models.models import (
+from swe.constant import SECRET_DIR, WORKING_DIR
+from swe.tenant_models.manager import TenantModelManager
+from swe.tenant_models.models import (
     ModelSlot,
     RoutingConfig,
     TenantModelConfig,
