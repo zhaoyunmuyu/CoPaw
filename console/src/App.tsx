@@ -18,6 +18,9 @@ import "dayjs/locale/ru";
 dayjs.extend(relativeTime);
 import MainLayout from "./layouts/MainLayout";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
+// ==================== 品牌主题 (Kun He) ====================
+import { BrandThemeProvider, useBrandTheme } from "./contexts/BrandThemeContext";
+// ==================== 品牌主题结束 ====================
 import LoginPage from "./pages/Login";
 import { authApi } from "./api/modules/auth";
 import { languageApi } from "./api/modules/language";
@@ -112,6 +115,11 @@ function AppInner() {
   const { i18n } = useTranslation();
   const { isDark } = useTheme();
 
+  // ==================== 品牌主题 (Kun He) ====================
+  // 获取动态品牌配置，用于设置主题色
+  const { theme: brandTheme } = useBrandTheme();
+  // ==================== 品牌主题结束 ====================
+
   // ==================== 语言默认值调整 (Kun He) ====================
   // 将默认语言从 "en" 改为 "zh"（中文）
   // 同时将默认 locale 从 enUS 改为 zhCN
@@ -161,8 +169,8 @@ function AppInner() {
       <GlobalStyle />
       <ConfigProvider
         {...bailianTheme}
-        prefix="copaw"
-        prefixCls="copaw"
+        prefix="swe"
+        prefixCls="swe"
         locale={antdLocale}
         theme={{
           ...(bailianTheme as any)?.theme,
@@ -170,7 +178,10 @@ function AppInner() {
             ? antdTheme.darkAlgorithm
             : antdTheme.defaultAlgorithm,
           token: {
-            colorPrimary: "#FF7F16",
+            // ==================== 品牌主题 (Kun He) ====================
+            // 使用动态品牌主题色
+            colorPrimary: brandTheme.primaryColor,
+            // ==================== 品牌主题结束 ====================
           },
         }}
       >
@@ -195,7 +206,12 @@ function AppInner() {
 function App() {
   return (
     <ThemeProvider>
-      <AppInner />
+      {/* ==================== 品牌主题 (Kun He) ==================== */}
+      {/* 包裹 BrandThemeProvider，根据 source 动态切换品牌配置 */}
+      <BrandThemeProvider>
+        <AppInner />
+      </BrandThemeProvider>
+      {/* ==================== 品牌主题结束 ==================== */}
     </ThemeProvider>
   );
 }

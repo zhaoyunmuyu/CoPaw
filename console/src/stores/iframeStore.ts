@@ -86,7 +86,7 @@ export const useIframeStore = create<IframeStore>()(
       setAuthHeaders: (authHeaders) => set({ authHeaders }),
     }),
     {
-      name: "copaw-iframe-context",
+      name: "swe-iframe-context",
       partialize: (state) => ({
         userId: state.userId,
         clawName: state.clawName,

@@ -21,7 +21,7 @@ import { api } from "../../../../api";
 const WECOM_SDK_URL =
   "https://wwcdn.weixin.qq.com/node/wework/js/wecom-aibot-sdk@0.1.0.min.js";
 
-const WECOM_SOURCE = "copaw";
+const WECOM_SOURCE = "swe";
 
 interface WecomBotInfo {
   botid: string;

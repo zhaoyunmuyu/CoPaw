@@ -26,7 +26,7 @@ export default createGlobalStyle`
     flex-direction: column;
     gap: 10px;
     margin-top: 10px;
-    width: 360px;
+    width: 454px;
     margin: 10px auto;
   }
 

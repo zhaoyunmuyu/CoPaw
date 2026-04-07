@@ -4,10 +4,11 @@ const defaultConfig = {
   theme: {
     colorPrimary: "#FF7F16",
     darkMode: false,
-    prefix: "copaw",
+    prefix: "swe",
     leftHeader: {
       logo: "",
-      title: "Work with CoPaw",
+      title: "",
+      // title: "Work with Swe",
     },
   },
   sender: {
@@ -19,7 +20,7 @@ const defaultConfig = {
     greeting: "Hello, how can I help you today?",
     description:
       "I am a helpful assistant that can help you with your questions.",
-    avatar: `${import.meta.env.BASE_URL}copaw-symbol.svg`,
+    avatar: `${import.meta.env.BASE_URL}swe-symbol.png`,
     prompts: [
       {
         value: "Let's start a new journey!",
@@ -40,13 +41,19 @@ export function getDefaultConfig(t: TFunction) {
     ...defaultConfig,
     sender: {
       ...defaultConfig.sender,
-      disclaimer: t("chat.disclaimer"),
+      disclaimer: "",
+      // disclaimer: t("chat.disclaimer"),
     },
     welcome: {
       ...defaultConfig.welcome,
       greeting: t("chat.greeting"),
       description: t("chat.description"),
-      prompts: [{ value: t("chat.prompt1") }, { value: t("chat.prompt2") }],
+      prompts: [
+        { value: t("chat.prompt1") },
+        { value: "3月12日至3月19日上证指数累计下跌达3.07%，帮我找到可能受影响的客户，并提供沟通建议" }, 
+        { value: "帮我监控管户客户风险异动" },
+        { value: "我需要营销基金007119，帮我找客户" },
+      ],
     },
   };
 }

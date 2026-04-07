@@ -29,6 +29,9 @@ import { useChatAnywhereInput } from "@/components/agentscope-chat";
 // 使用统一的 getUserId/getChannel helper
 import { getUserId, getChannel } from "../../utils/identity";
 // ==================== userId 统一整改结束 ====================
+// ==================== 品牌主题 (Kun He) ====================
+import { useBrandTheme } from "../../contexts/BrandThemeContext";
+// ==================== 品牌主题结束 ====================
 import styles from "./index.module.less";
 import { IconButton } from "@agentscope-ai/design";
 import ChatActionGroup from "./components/ChatActionGroup";
@@ -273,6 +276,10 @@ export default function ChatPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { isDark } = useTheme();
+  // ==================== 品牌主题 (Kun He) ====================
+  // 获取动态品牌配置，用于 welcome avatar
+  const { theme: brandTheme } = useBrandTheme();
+  // ==================== 品牌主题结束 ====================
   const chatId = useMemo(() => {
     const match = location.pathname.match(/^\/chat\/(.+)$/);
     return match?.[1];
@@ -594,9 +601,13 @@ export default function ChatPage() {
       },
       welcome: {
         ...i18nConfig.welcome,
-        nick: "CoPaw",
-        avatar:
-          "https://gw.alicdn.com/imgextra/i2/O1CN01pyXzjQ1EL1PuZMlSd_!!6000000000334-2-tps-288-288.png",
+        nick: brandTheme.brandName,
+        // ==================== 品牌主题 (Kun He) ====================
+        // 使用动态品牌 avatar
+        avatar: brandTheme.avatar
+          ? `${import.meta.env.BASE_URL}${brandTheme.avatar.replace(/^\//, "")}`
+          : undefined,
+        // ==================== 品牌主题结束 ====================
       },
       sender: {
         ...(i18nConfig as any)?.sender,

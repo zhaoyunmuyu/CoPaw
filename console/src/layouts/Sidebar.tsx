@@ -12,7 +12,9 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAppMessage } from "../hooks/useAppMessage";
-import AgentSelector from "../components/AgentSelector";
+// ==================== 选择智能体 (Kun He) - 已注释 ====================
+// import AgentSelector from "../components/AgentSelector";
+// ==================== 选择智能体结束 (Kun He) - 已注释 ====================
 import {
   SparkChatTabFill,
   SparkWifiLine,
@@ -353,10 +355,11 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
         collapsed ? ` ${styles.siderCollapsed}` : ""
       }${isDark ? ` ${styles.siderDark}` : ""}`}
     >
-      <div className={styles.agentSelectorContainer}>
+      {/* ==================== 选择智能体 (Kun He) - 已注释 ==================== */}
+      {/* <div className={styles.agentSelectorContainer}>
         <AgentSelector collapsed={collapsed} />
-      </div>
-
+      </div> */}
+      {/* ==================== 选择智能体结束 (Kun He) - 已注释 ==================== */}
       {collapsed ? (
         <nav className={styles.collapsedNav}>
           {collapsedNavItems.map((item) => {
