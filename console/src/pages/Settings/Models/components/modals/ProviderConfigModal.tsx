@@ -254,6 +254,25 @@ interface ProviderConfigModalProps {
   onSaved: () => void;
 }
 
+const OPENAI_COMPATIBLE_CHAT_MODELS = [
+  {
+    value: "OpenAIChatModel",
+    label: "OpenAIChatModel",
+  },
+  {
+    value: "KimiChatModel",
+    label: "KimiChatModel",
+  },
+];
+
+const ALL_CHAT_MODEL_OPTIONS = [
+  ...OPENAI_COMPATIBLE_CHAT_MODELS,
+  {
+    value: "AnthropicChatModel",
+    label: "AnthropicChatModel",
+  },
+];
+
 export function ProviderConfigModal({
   provider,
   activeModels,
@@ -270,6 +289,10 @@ export function ProviderConfigModal({
   const { message } = useAppMessage();
   const selectedChatModel = Form.useWatch("chat_model", form);
   const canEditBaseUrl = !provider.freeze_url;
+  const canEditChatModel =
+    provider.is_custom ||
+    provider.chat_model === "OpenAIChatModel" ||
+    provider.chat_model === "KimiChatModel";
 
   const parseGenerateConfig = (value?: string) => {
     const trimmed = value?.trim();
@@ -544,7 +567,7 @@ export function ProviderConfigModal({
         }}
         onValuesChange={() => setFormDirty(true)}
       >
-        {provider.is_custom && (
+        {canEditChatModel && (
           <Form.Item
             name="chat_model"
             label={t("models.protocol")}
@@ -557,17 +580,11 @@ export function ProviderConfigModal({
             extra={t("models.protocolHint")}
           >
             <Select
-              disabled
-              options={[
-                {
-                  value: "OpenAIChatModel",
-                  label: t("models.protocolOpenAI"),
-                },
-                {
-                  value: "AnthropicChatModel",
-                  label: t("models.protocolAnthropic"),
-                },
-              ]}
+              options={
+                provider.is_custom
+                  ? ALL_CHAT_MODEL_OPTIONS
+                  : OPENAI_COMPATIBLE_CHAT_MODELS
+              }
             />
           </Form.Item>
         )}

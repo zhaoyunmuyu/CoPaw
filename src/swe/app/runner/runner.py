@@ -7,12 +7,12 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, AsyncGenerator
 
 from agentscope.message import Msg, TextBlock
 from agentscope.pipeline import stream_printing_messages
 from agentscope_runtime.engine.runner import Runner
-from agentscope_runtime.engine.schemas.agent_schemas import AgentRequest
+from agentscope_runtime.engine.schemas.agent_schemas import AgentRequest, Event
 from agentscope_runtime.engine.schemas.exception import AgentException
 from dotenv import load_dotenv
 
@@ -23,6 +23,7 @@ from .command_dispatch import (
 )
 from .query_error_dump import write_query_error_dump
 from .session import SafeJSONSession
+from .stream_boundary import normalize_reasoning_boundary_stream
 from .utils import build_env_context
 from ..channels.schema import DEFAULT_CHANNEL
 from ...agents.react_agent import SWEAgent
@@ -547,6 +548,17 @@ class AgentRunner(Runner):
                 session_id,
                 exc_info=True,
             )
+
+    async def stream_query(
+        self,
+        request,
+        **kwargs,
+    ) -> AsyncGenerator[Event, None]:
+        """Wrap base streaming to normalize reasoning end boundaries."""
+        async for event in normalize_reasoning_boundary_stream(
+            super().stream_query(request, **kwargs),
+        ):
+            yield event
 
     async def init_handler(self, *args, **kwargs):
         """

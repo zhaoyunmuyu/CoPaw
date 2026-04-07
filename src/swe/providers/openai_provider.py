@@ -11,6 +11,9 @@ from typing import TYPE_CHECKING, Any, List
 from agentscope.model import ChatModelBase
 from openai import APIError, AsyncOpenAI
 
+from swe.providers.chat_model_registry import (
+    is_openai_compatible_chat_model,
+)
 from swe.providers.provider import ModelInfo, Provider
 
 if TYPE_CHECKING:
@@ -24,6 +27,17 @@ CODING_DASHSCOPE_BASE_URL = "https://coding.dashscope.aliyuncs.com/v1"
 
 class OpenAIProvider(Provider):
     """Provider implementation for OpenAI API and compatible endpoints."""
+
+    def update_config(self, config: dict) -> None:
+        """Allow OpenAI-compatible providers to switch local chat model."""
+        super().update_config(config)
+
+        if (
+            "chat_model" in config
+            and config["chat_model"] is not None
+            and is_openai_compatible_chat_model(str(config["chat_model"]))
+        ):
+            self.chat_model = str(config["chat_model"])
 
     def _client(self, timeout: float = 5) -> AsyncOpenAI:
         return AsyncOpenAI(
@@ -125,6 +139,7 @@ class OpenAIProvider(Provider):
 
     def get_chat_model_instance(self, model_id: str) -> ChatModelBase:
         from .openai_chat_model_compat import OpenAIChatModelCompat
+        from .kimi_chat_model import KimiChatModel
 
         client_kwargs = {"base_url": self.base_url}
 
@@ -153,7 +168,11 @@ class OpenAIProvider(Provider):
                 ),
             }
 
-        return OpenAIChatModelCompat(
+        model_cls = OpenAIChatModelCompat
+        if self.chat_model == "KimiChatModel":
+            model_cls = KimiChatModel
+
+        return model_cls(
             model_name=model_id,
             stream=True,
             api_key=self.api_key,
