@@ -20,8 +20,16 @@ from ..constant import (
     LLM_RATE_LIMIT_JITTER,
     LLM_RATE_LIMIT_PAUSE,
     WORKING_DIR,
+    TRACING_ENABLED,
+    TRACING_BATCH_SIZE,
+    TRACING_FLUSH_INTERVAL,
+    TRACING_RETENTION_DAYS,
+    TRACING_SANITIZE_OUTPUT,
+    TRACING_MAX_OUTPUT_LENGTH,
+    TRACING_STORAGE_PATH,
 )
 from ..providers.models import ModelSlotConfig
+from ..tracing.config import TracingConfig
 
 
 def generate_short_agent_id() -> str:
@@ -554,6 +562,19 @@ class AgentsRunningConfig(BaseModel):
             "Memory manager backend type. "
             "Currently only 'remelight' is supported."
         ),
+    )
+
+    tracing: TracingConfig = Field(
+        default_factory=lambda: TracingConfig(
+            enabled=TRACING_ENABLED,
+            batch_size=TRACING_BATCH_SIZE,
+            flush_interval=TRACING_FLUSH_INTERVAL,
+            retention_days=TRACING_RETENTION_DAYS,
+            sanitize_output=TRACING_SANITIZE_OUTPUT,
+            max_output_length=TRACING_MAX_OUTPUT_LENGTH,
+            storage_path=TRACING_STORAGE_PATH or None,
+        ),
+        description="Tracing configuration for request tracking and analytics",
     )
 
     @property

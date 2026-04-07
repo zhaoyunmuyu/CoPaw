@@ -27,6 +27,7 @@ import SecurityPage from "../../pages/Settings/Security";
 import TokenUsagePage from "../../pages/Settings/TokenUsage";
 import VoiceTranscriptionPage from "../../pages/Settings/VoiceTranscription";
 import AgentsPage from "../../pages/Settings/Agents";
+import AnalyticsPage from "../../pages/Analytics";
 import { useIframeStore } from "../../stores/iframeStore";
 
 const { Content } = Layout;
@@ -49,6 +50,11 @@ const pathToKey: Record<string, string> = {
   "/security": "security",
   "/token-usage": "token-usage",
   "/voice-transcription": "voice-transcription",
+  "/analytics/overview": "analytics-overview",
+  "/analytics/users": "analytics-users",
+  "/analytics/sessions": "analytics-sessions",
+  "/analytics/messages": "analytics-messages",
+  "/analytics/traces": "analytics-traces",
 };
 
 export default function MainLayout() {
@@ -96,6 +102,7 @@ export default function MainLayout() {
                 path="/voice-transcription"
                 element={<VoiceTranscriptionPage />}
               />
+              <Route path="/analytics/*" element={<AnalyticsPage />} />
             </Routes>
           </div>
         </Content>

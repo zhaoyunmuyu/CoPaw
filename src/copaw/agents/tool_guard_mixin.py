@@ -19,6 +19,7 @@ from typing import Any, Literal
 from agentscope.message import Msg
 
 from ..security.tool_guard.models import TOOL_GUARD_DENIED_MARK
+from ..tracing import has_trace_manager, get_trace_manager, get_current_trace
 
 logger = logging.getLogger(__name__)
 
@@ -257,6 +258,65 @@ class ToolGuardMixin:
     # _acting override
     # ------------------------------------------------------------------
 
+    async def _emit_tool_trace_start(
+        self,
+        tool_name: str,
+        tool_input: dict[str, Any],
+        mcp_server: str | None,
+    ) -> str:
+        """Emit tool call start trace event.
+
+        Returns span_id or empty string.
+        """
+        if not has_trace_manager():
+            return ""
+        try:
+            trace_ctx = get_current_trace()
+            if trace_ctx:
+                trace_mgr = get_trace_manager()
+                return await trace_mgr.emit_tool_call_start(
+                    trace_id=trace_ctx.trace_id,
+                    tool_name=tool_name,
+                    tool_input=tool_input,
+                    user_id=trace_ctx.user_id,
+                    session_id=trace_ctx.session_id,
+                    channel=trace_ctx.channel,
+                    mcp_server=mcp_server,
+                )
+        except Exception as e:
+            logger.debug("Failed to emit tool start event: %s", e)
+        return ""
+
+    async def _emit_tool_trace_end(
+        self,
+        span_id: str,
+        tool_output: dict | str | None,
+        error: str | None = None,
+    ) -> None:
+        """Emit tool call end trace event."""
+        if not span_id or not has_trace_manager():
+            return
+        try:
+            trace_ctx = get_current_trace()
+            if trace_ctx:
+                trace_mgr = get_trace_manager()
+                output_str: str | None = None
+                if error is None:
+                    if tool_output and isinstance(tool_output, dict):
+                        output_str = tool_output.get("content") or str(
+                            tool_output,
+                        )
+                    elif tool_output:
+                        output_str = str(tool_output)
+                await trace_mgr.emit_tool_call_end(
+                    trace_id=trace_ctx.trace_id,
+                    span_id=span_id,
+                    tool_output=output_str,
+                    error=error,
+                )
+        except Exception as e:
+            logger.debug("Failed to emit tool end event: %s", e)
+
     async def _acting(self, tool_call) -> dict | None:  # noqa: C901
         """Intercept sensitive tool calls before execution.
 
@@ -276,6 +336,16 @@ class ToolGuardMixin:
         """
         self._ensure_tool_guard()
 
+        tool_name = str(tool_call.get("name", ""))
+        tool_input = tool_call.get("input", {})
+        mcp_server = tool_call.get("mcp_server")
+
+        span_id = await self._emit_tool_trace_start(
+            tool_name,
+            tool_input,
+            mcp_server,
+        )
+
         action: _GuardAction | None = None
         async with self._tool_guard_lock:
             try:
@@ -288,25 +358,30 @@ class ToolGuardMixin:
                 )
 
         if action is not None:
-            return await self._execute_guard_action(action, tool_call)
+            result = await self._execute_guard_action(action, tool_call)
+            await self._emit_tool_trace_end(span_id, result)
+            return result
 
-        result = await super()._acting(tool_call)  # type: ignore[misc]
+        try:
+            result = await super()._acting(tool_call)  # type: ignore[misc]
+            await self._emit_tool_trace_end(span_id, result)
 
-        if getattr(self, "_tool_guard_forced_replay_active", False):
-            tool_name = str(tool_call.get("name", ""))
-            tool_input = tool_call.get("input", {})
-            self._tool_guard_forced_replay_active = False
-            self._tool_guard_replay_done = {
-                "tool_name": tool_name,
-                "tool_input": tool_input,
-                "remaining_queue": getattr(
-                    self,
-                    "_tool_guard_replay_queue",
-                    [],
-                ),
-            }
+            if getattr(self, "_tool_guard_forced_replay_active", False):
+                self._tool_guard_forced_replay_active = False
+                self._tool_guard_replay_done = {
+                    "tool_name": tool_name,
+                    "tool_input": tool_input,
+                    "remaining_queue": getattr(
+                        self,
+                        "_tool_guard_replay_queue",
+                        [],
+                    ),
+                }
+            return result
 
-        return result
+        except Exception as e:
+            await self._emit_tool_trace_end(span_id, None, error=str(e))
+            raise
 
     async def _decide_guard_action(
         self,

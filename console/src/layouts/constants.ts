@@ -15,6 +15,7 @@ export const DEFAULT_OPEN_KEYS = [
   "control-group",
   "agent-group",
   "settings-group",
+  "analytics-group",
 ];
 
 export const KEY_TO_PATH: Record<string, string> = {
@@ -35,6 +36,11 @@ export const KEY_TO_PATH: Record<string, string> = {
   security: "/security",
   "token-usage": "/token-usage",
   "voice-transcription": "/voice-transcription",
+  "analytics-overview": "/analytics/overview",
+  "analytics-users": "/analytics/users",
+  "analytics-sessions": "/analytics/sessions",
+  "analytics-messages": "/analytics/messages",
+  "analytics-traces": "/analytics/traces",
 };
 
 export const KEY_TO_LABEL: Record<string, string> = {
@@ -54,6 +60,11 @@ export const KEY_TO_LABEL: Record<string, string> = {
   security: "nav.security",
   "token-usage": "nav.tokenUsage",
   agents: "nav.agents",
+  "analytics-overview": "nav.analyticsOverview",
+  "analytics-users": "nav.analyticsUsers",
+  "analytics-sessions": "nav.analyticsSessions",
+  "analytics-messages": "nav.analyticsMessages",
+  "analytics-traces": "nav.analyticsTraces",
 };
 
 // ── URL helpers ───────────────────────────────────────────────────────────

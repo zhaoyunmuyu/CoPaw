@@ -5,21 +5,36 @@ from contextvars import ContextVar
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env file from project root before reading any env vars
-_env_path = Path(__file__).resolve().parent.parent.parent / ".env"
-if _env_path.exists():
-    load_dotenv(_env_path)
+# Project root directory
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# Load base .env file first (contains COPAW_ENV)
+_base_env_path = _PROJECT_ROOT / ".env"
+if _base_env_path.exists():
+    load_dotenv(_base_env_path, override=False)
+
+# Determine environment and load corresponding env file
+_env = os.environ.get("COPAW_ENV", "dev").lower()
+_env_file = _PROJECT_ROOT / f".env.{_env}"
+if _env_file.exists():
+    load_dotenv(_env_file, override=True)
 
 
-_ENV_VAR_OVERRIDES: ContextVar[dict[str, str]] = ContextVar(
+_ENV_VAR_OVERRIDES: ContextVar[dict[str, str] | None] = ContextVar(
     "copaw_env_var_overrides",
-    default={},
+    default=None,
 )
+
+
+def _get_overrides() -> dict[str, str]:
+    """Get current env var overrides, returning empty dict if not set."""
+    val = _ENV_VAR_OVERRIDES.get()
+    return val if val is not None else {}
 
 
 @contextmanager
 def env_var_overrides(overrides: dict[str, str]):
-    current = dict(_ENV_VAR_OVERRIDES.get())
+    current = _get_overrides().copy()
     current.update(overrides)
     token = _ENV_VAR_OVERRIDES.set(current)
     try:
@@ -37,7 +52,7 @@ class EnvVarLoader:
     def get_bool(env_var: str, default: bool = False) -> bool:
         """Get a boolean environment variable,
         interpreting common truthy values."""
-        overrides = _ENV_VAR_OVERRIDES.get()
+        overrides = _get_overrides()
         val = overrides.get(
             env_var,
             os.environ.get(env_var, str(default)),
@@ -55,7 +70,7 @@ class EnvVarLoader:
         """Get a float environment variable with optional bounds
         and infinity handling."""
         try:
-            overrides = _ENV_VAR_OVERRIDES.get()
+            overrides = _get_overrides()
             value = float(
                 overrides.get(env_var, os.environ.get(env_var, str(default))),
             )
@@ -80,7 +95,7 @@ class EnvVarLoader:
     ) -> int:
         """Get an integer environment variable with optional bounds."""
         try:
-            overrides = _ENV_VAR_OVERRIDES.get()
+            overrides = _get_overrides()
             value = int(
                 overrides.get(env_var, os.environ.get(env_var, str(default))),
             )
@@ -95,7 +110,7 @@ class EnvVarLoader:
     @staticmethod
     def get_str(env_var: str, default: str = "") -> str:
         """Get a string environment variable with a default fallback."""
-        overrides = _ENV_VAR_OVERRIDES.get()
+        overrides = _get_overrides()
         return overrides.get(env_var, os.environ.get(env_var, default))
 
 
@@ -137,6 +152,59 @@ BUILTIN_QA_AGENT_SKILL_NAMES: tuple[str, ...] = (
 TOKEN_USAGE_FILE = EnvVarLoader.get_str(
     "COPAW_TOKEN_USAGE_FILE",
     "token_usage.json",
+)
+
+# Tracing configuration
+TRACING_ENABLED = EnvVarLoader.get_bool("COPAW_TRACING_ENABLED", False)
+TRACING_BATCH_SIZE = EnvVarLoader.get_int(
+    "COPAW_TRACING_BATCH_SIZE",
+    100,
+    min_value=1,
+)
+TRACING_FLUSH_INTERVAL = EnvVarLoader.get_int(
+    "COPAW_TRACING_FLUSH_INTERVAL",
+    5,
+    min_value=1,
+)
+TRACING_RETENTION_DAYS = EnvVarLoader.get_int(
+    "COPAW_TRACING_RETENTION_DAYS",
+    30,
+    min_value=0,
+)
+TRACING_SANITIZE_OUTPUT = EnvVarLoader.get_bool(
+    "COPAW_TRACING_SANITIZE_OUTPUT",
+    True,
+)
+TRACING_MAX_OUTPUT_LENGTH = EnvVarLoader.get_int(
+    "COPAW_TRACING_MAX_OUTPUT_LENGTH",
+    500,
+    min_value=100,
+)
+TRACING_STORAGE_PATH = EnvVarLoader.get_str("COPAW_TRACING_STORAGE_PATH", "")
+
+# Tracing database configuration (optional - uses JSON if not set)
+TRACING_DB_HOST = EnvVarLoader.get_str("COPAW_TRACING_DB_HOST", "")
+TRACING_DB_PORT = EnvVarLoader.get_int(
+    "COPAW_TRACING_DB_PORT",
+    3306,
+    min_value=1,
+    max_value=65535,
+)
+TRACING_DB_USER = EnvVarLoader.get_str("COPAW_TRACING_DB_USER", "root")
+TRACING_DB_PASSWORD = EnvVarLoader.get_str("COPAW_TRACING_DB_PASSWORD", "")
+TRACING_DB_NAME = EnvVarLoader.get_str(
+    "COPAW_TRACING_DB_NAME",
+    "copaw_tracing",
+)
+TRACING_DB_MIN_CONN = EnvVarLoader.get_int(
+    "COPAW_TRACING_DB_MIN_CONN",
+    2,
+    min_value=1,
+)
+TRACING_DB_MAX_CONN = EnvVarLoader.get_int(
+    "COPAW_TRACING_DB_MAX_CONN",
+    10,
+    min_value=1,
 )
 
 CONFIG_FILE = EnvVarLoader.get_str("COPAW_CONFIG_FILE", "config.json")

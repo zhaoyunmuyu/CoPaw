@@ -14,7 +14,19 @@ from agentscope_runtime.engine.app import AgentApp
 
 from ..config import load_config  # pylint: disable=no-name-in-module
 from ..config.utils import get_config_path
-from ..constant import DOCS_ENABLED, LOG_LEVEL_ENV, CORS_ORIGINS, WORKING_DIR
+from ..constant import (
+    DOCS_ENABLED,
+    LOG_LEVEL_ENV,
+    CORS_ORIGINS,
+    WORKING_DIR,
+    TRACING_DB_HOST,
+    TRACING_DB_PORT,
+    TRACING_DB_USER,
+    TRACING_DB_PASSWORD,
+    TRACING_DB_NAME,
+    TRACING_DB_MIN_CONN,
+    TRACING_DB_MAX_CONN,
+)
 from ..__version__ import __version__
 from ..utils.logging import setup_logger, add_copaw_file_handler
 from .auth import AuthMiddleware
@@ -30,6 +42,8 @@ from .migration import (
     ensure_default_agent_exists,
 )
 from .channels.registry import register_custom_channel_routes
+from ..tracing import init_trace_manager, close_trace_manager
+from ..tracing.config import TracingConfig, TDSQLConfig
 
 # Apply log level on load so reload child process gets same level as CLI.
 logger = setup_logger(os.environ.get(LOG_LEVEL_ENV, "info"))
@@ -197,6 +211,58 @@ async def lifespan(
     # are initialized on-demand via their respective feature entrypoints.
     # See design.md for lazy-loading architecture.
 
+    # --- Initialize tracing manager ---
+    try:
+        from ..config.config import load_agent_config
+
+        agent_config = load_agent_config("default")
+        tracing_config = agent_config.running.tracing
+
+        # Check if database is configured via environment variables
+        if TRACING_DB_HOST:
+            database_config = TDSQLConfig(
+                host=TRACING_DB_HOST,
+                port=TRACING_DB_PORT,
+                user=TRACING_DB_USER,
+                password=TRACING_DB_PASSWORD,
+                database=TRACING_DB_NAME,
+                min_connections=TRACING_DB_MIN_CONN,
+                max_connections=TRACING_DB_MAX_CONN,
+            )
+            tracing_config = TracingConfig(
+                enabled=tracing_config.enabled,
+                batch_size=tracing_config.batch_size,
+                flush_interval=tracing_config.flush_interval,
+                retention_days=tracing_config.retention_days,
+                sanitize_output=tracing_config.sanitize_output,
+                max_output_length=tracing_config.max_output_length,
+                storage_path=tracing_config.storage_path,
+                database=database_config,
+            )
+            storage_path = (
+                Path(tracing_config.storage_path)
+                if tracing_config.storage_path
+                else WORKING_DIR / "tracing"
+            )
+            await init_trace_manager(tracing_config, storage_path)
+            logger.info(
+                "Tracing manager initialized (database storage: %s)",
+                TRACING_DB_HOST,
+            )
+        else:
+            storage_path = (
+                Path(tracing_config.storage_path)
+                if tracing_config.storage_path
+                else WORKING_DIR / "tracing"
+            )
+            await init_trace_manager(tracing_config, storage_path)
+            logger.info(
+                "Tracing manager initialized (JSON file storage, enabled: %s)",
+                tracing_config.enabled,
+            )
+    except Exception as e:
+        logger.warning("Failed to initialize tracing manager: %s", e)
+
     startup_elapsed = time.time() - startup_start_time
     logger.info(
         f"Application startup completed in {startup_elapsed:.3f} seconds "
@@ -206,6 +272,13 @@ async def lifespan(
     try:
         yield
     finally:
+        # Close tracing manager
+        try:
+            await close_trace_manager()
+            logger.info("Tracing manager closed")
+        except Exception as e:
+            logger.warning("Error closing tracing manager: %s", e)
+
         local_model_mgr = getattr(app.state, "local_model_manager", None)
         if local_model_mgr is not None:
             logger.info("Stopping local model server...")

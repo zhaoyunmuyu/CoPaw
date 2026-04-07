@@ -35,6 +35,11 @@ import {
   SparkMenuExpandLine,
   SparkMenuFoldLine,
   SparkOtherLine,
+  SparkChartLine,
+  SparkLineChartLine,
+  SparkMessageSquareLine,
+  SparkFileSearchLine,
+  SparkFileTextLine,
 } from "@agentscope-ai/icons";
 import { clearAuthToken } from "../api/config";
 import { authApi } from "../api/modules/auth";
@@ -234,6 +239,36 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       path: "/voice-transcription",
       label: t("nav.voiceTranscription"),
     },
+    {
+      key: "analytics-overview",
+      icon: <SparkChartLine size={18} />,
+      path: "/analytics/overview",
+      label: t("nav.analyticsOverview", "Overview"),
+    },
+    {
+      key: "analytics-users",
+      icon: <SparkUserGroupLine size={18} />,
+      path: "/analytics/users",
+      label: t("nav.analyticsUsers", "Users"),
+    },
+    {
+      key: "analytics-sessions",
+      icon: <SparkMessageSquareLine size={18} />,
+      path: "/analytics/sessions",
+      label: t("nav.analyticsSessions", "Sessions"),
+    },
+    {
+      key: "analytics-messages",
+      icon: <SparkFileSearchLine size={18} />,
+      path: "/analytics/messages",
+      label: t("nav.analyticsMessages", "Messages"),
+    },
+    {
+      key: "analytics-traces",
+      icon: <SparkFileTextLine size={18} />,
+      path: "/analytics/traces",
+      label: t("nav.analyticsTraces", "Traces"),
+    },
   ];
 
   // ── Menu items ────────────────────────────────────────────────────────────
@@ -339,6 +374,37 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
           key: "voice-transcription",
           label: collapsed ? null : t("nav.voiceTranscription"),
           icon: <SparkMicLine size={16} />,
+        },
+      ],
+    },
+    {
+      key: "analytics-group",
+      label: collapsed ? null : t("nav.analytics", "Analytics"),
+      children: [
+        {
+          key: "analytics-overview",
+          label: collapsed ? null : t("nav.analyticsOverview", "Overview"),
+          icon: <SparkLineChartLine size={16} />,
+        },
+        {
+          key: "analytics-users",
+          label: collapsed ? null : t("nav.analyticsUsers", "Users"),
+          icon: <SparkUserGroupLine size={16} />,
+        },
+        {
+          key: "analytics-sessions",
+          label: collapsed ? null : t("nav.analyticsSessions", "Sessions"),
+          icon: <SparkMessageSquareLine size={16} />,
+        },
+        {
+          key: "analytics-messages",
+          label: collapsed ? null : t("nav.analyticsMessages", "Messages"),
+          icon: <SparkFileSearchLine size={16} />,
+        },
+        {
+          key: "analytics-traces",
+          label: collapsed ? null : t("nav.analyticsTraces", "Traces"),
+          icon: <SparkFileTextLine size={16} />,
         },
       ],
     },
