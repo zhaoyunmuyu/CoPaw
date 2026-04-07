@@ -1,22 +1,93 @@
 # Repository Guidelines
 
+## Deployment Environment
+
+- OS: Linux 3.15 内核
+- 部署方式: Kubernetes 容器多实例部署
+- 外部依赖:
+  - Redis 集群（可连接）
+  - MySQL 数据库（可连接）
+
 ## Project Structure & Module Organization
 
 Core Python code lives in `src/copaw/`. Key areas include `cli/` for the `copaw` entrypoints, `app/channels/` for channel adapters, `providers/` and `local_models/` for model integration, and `agents/skills/` for built-in skills. Tests live in `tests/`, with focused suites such as `tests/lock/`, `tests/store/`, and `tests/app/backup/`. Frontend apps are split into `console/` (main web UI) and `website/` (docs/site). Deployment helpers live under `deploy/` and `scripts/`; longer-form design notes are in `docs/superpowers/specs/`.
 
-## Build, Test, and Development Commands
+## Testing
 
-Use Python 3.10-3.13.
+Tests are in `tests/`. Use pytest markers:
 
-- `pip install -e ".[dev]"`: install CoPaw in editable mode with test and lint tooling.
-- `pre-commit install && pre-commit run --all-files`: run the required local quality gate.
-- `pytest`: run the Python test suite.
-- `copaw init --defaults` then `copaw app`: initialize config and start the app locally.
-- `cd console && npm ci && npm run dev`: run the Console in Vite dev mode.
-- `cd console && npm run build`: type-check and build the Console.
-- `cd website && pnpm install --frozen-lockfile && pnpm run build`: build the docs website and search index.
+**Important:** Always run tests using the project's virtual environment:
 
+```bash
+# Run all tests with venv
+venv/bin/python -m pytest
+
+# Run specific test file
+venv/bin/python -m pytest tests/test_session.py
+
+# Run specific test directory
+venv/bin/python -m pytest tests/unit/tenant_models/ -v
 ## Coding Style & Naming Conventions
+
+
+## Multi-User Concurrent Support
+
+CoPaw supports serving multiple users concurrently with full data isolation. Each user's request is routed to their own directory:
+
+```
+~/.copaw/
+├── alice/
+│   ├── config.json
+│   ├── active_skills/
+│   ├── customized_skills/
+│   ├── memory/
+│   ├── models/
+│   └── sessions/
+├── bob/
+│   └── ...
+└── (default user)
+    └── ...
+```
+
+**Implementation:**
+- `src/copaw/constant.py` provides `contextvars`-based request isolation
+- `set_request_user_id(user_id)` sets the current request's user context
+- `get_request_working_dir()` returns the user-specific working directory
+- `AgentRunner.query_handler()` automatically sets up request context per query
+
+**Key functions:**
+- `get_request_working_dir()` - Request-scoped working directory
+- `get_request_secret_dir()` - Request-scoped secret directory (providers.json)
+- `get_active_skills_dir()` - Request-scoped active skills directory
+- `get_memory_dir()` - Request-scoped memory directory
+- `get_models_dir()` - Request-scoped models directory
+
+**Channel requests:** User isolation is automatic - each channel message carries `sender_id` which becomes `request.user_id`, and `query_handler` sets the context.
+
+**CLI/Single-user mode:** Use `copay app --user-id <id>` for single-user mode (uses `set_current_user()` for process-wide directory setting).
+
+## Provider Configuration Isolation
+
+Provider configurations (API keys, base URLs, active model selection) are now tenant-isolated:
+
+```
+~/.copaw.secret/
+├── default/
+│   └── providers/          # Default tenant provider config
+│       ├── builtin/        # Built-in provider configs (openai.json, etc.)
+│       ├── custom/         # Custom provider configs
+│       └── active_model.json
+├── alice/
+│   └── providers/          # Alice's isolated provider config
+├── bob/
+│   └── providers/          # Bob's isolated provider config
+```
+
+**Key features:**
+- Each tenant has completely isolated provider configuration
+- `ProviderManager.get_instance(tenant_id)` returns tenant-specific manager
+- New tenants automatically inherit configuration from default tenant on first access
+- CLI supports `--tenant-id` flag for multi-tenant management
 
 Python uses 4-space indentation, `snake_case` modules, and Black with a 79-character line length. Pre-commit also runs mypy, flake8, pylint, Bandit, and basic file hygiene hooks. TypeScript/React in `console/` and `website/` uses 2-space indentation, `PascalCase` component names, and Prettier 3; `console/` additionally enforces ESLint rules via `npm run lint`. Follow existing directory naming such as `channel.py`, `registry.py`, and `test_redlock.py`.
 
