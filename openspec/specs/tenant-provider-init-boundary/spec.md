@@ -1,4 +1,10 @@
-## ADDED Requirements
+# tenant-provider-init-boundary Specification
+
+## Purpose
+
+This specification defines the boundary between tenant workspace initialization and tenant provider storage initialization, ensuring that provider-related initialization occurs only when provider features are actually needed, not as part of generic tenant request processing.
+
+## Requirements
 
 ### Requirement: Provider initialization occurs only at provider feature boundaries
 The backend SHALL initialize tenant provider storage only when a request or runtime path actually uses provider-backed functionality. Generic tenant middleware MUST NOT materialize tenant provider storage as part of request entry.

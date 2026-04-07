@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "openspec": {
+      "command": "node",
+      "args": [
+        "/tmp/node-v20.18.0-darwin-arm64/lib/node_modules/@igor-olikh/openspec-mcp-server/dist/index.js"
+      ],
+      "cwd": "/Users/zhangbiao/Downloads/git/CoPaw"
+    }
+  }
+}
