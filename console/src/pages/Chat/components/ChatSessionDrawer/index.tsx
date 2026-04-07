@@ -2,11 +2,13 @@ import React, { useCallback, useMemo, useState } from "react";
 import { Drawer } from "antd";
 import { IconButton } from "@agentscope-ai/design";
 import { SparkOperateRightLine } from "@agentscope-ai/icons";
+// ==================== 组件引入方式变更 (Kun He) ====================
 import {
   useChatAnywhereSessionsState,
   useChatAnywhereSessions,
   type IAgentScopeRuntimeWebUISession,
 } from '@/components/agentscope-chat';
+// ==================== 组件引入方式变更结束 ====================
 import { useTranslation } from "react-i18next";
 import { chatApi } from "../../../../api/modules/chat";
 import sessionApi from "../../sessionApi";

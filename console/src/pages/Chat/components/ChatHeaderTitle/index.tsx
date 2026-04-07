@@ -1,5 +1,7 @@
 import React from "react";
+// ==================== 组件引入方式变更 (Kun He) ====================
 import { useChatAnywhereSessionsState } from '@/components/agentscope-chat';
+// ==================== 组件引入方式变更结束 ====================
 import styles from "./index.module.less";
 
 const ChatHeaderTitle: React.FC = () => {

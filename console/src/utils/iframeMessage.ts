@@ -1,8 +1,28 @@
 /**
+ * ============================================================
  * iframe postMessage 通信核心逻辑
+ * Author: Kun He
+ * Date: 2026-04-07
+ * ============================================================
  *
  * 处理与父级 iframe 应用的消息通信
  * 包含安全验证、消息处理、状态存储
+ *
+ * 消息流程：
+ * 1. 子窗口启动时发送 READY_RESPONSE (initialized: false)
+ * 2. 父窗口收到后发送 USER_DATA 消息
+ * 3. 子窗口处理 USER_DATA，存储上下文，发送 READY_RESPONSE (initialized: true)
+ *
+ * 安全机制：
+ * - 来源白名单验证 (ALLOWED_ORIGINS)
+ * - 消息格式验证 (validateMessage)
+ *
+ * 相关文件：
+ * - types/iframe.ts: 类型定义
+ * - stores/iframeStore.ts: 状态存储
+ * - api/authHeaders.ts: headers 构建
+ * - layouts/MainLayout/index.tsx: Sidebar 显示控制
+ * ============================================================
  */
 import type {
   IframeUserDataMessage,
@@ -41,6 +61,7 @@ let cleanupFn: (() => void) | null = null;
 
 /**
  * 将值转换为布尔值
+ * 用于处理父窗口可能传递的字符串 "true"/"false"
  * @param value - 值（可能是 boolean 或字符串 "true"/"false")
  * @returns 布尔值
  */
@@ -94,6 +115,14 @@ function validateMessage(data: unknown): data is IframeIncomingMessage {
 
 /**
  * 处理 USER_DATA 消息
+ * 父窗口发送的用户数据消息处理逻辑
+ *
+ * 处理步骤：
+ * 1. 构建 authHeaders，将 sapId 作为 X-User-Id
+ * 2. 存储上下文参数到 iframeStore
+ * 3. 标记初始化完成
+ * 4. 发送确认响应给父窗口
+ *
  * @param message - 用户数据消息
  * @param origin - 来源 origin
  */
@@ -101,12 +130,15 @@ function handleUserDataMessage(message: IframeUserDataMessage, origin: string): 
   const store = useIframeStore.getState();
 
   // 构建认证 headers，将 sapId 作为 X-User-Id
+  // 父窗口传递的 auth 数组也会合并到 authHeaders
   const authHeaders = message.auth ?? [];
   if (message.sapId) {
     authHeaders.push({ headerName: "X-User-Id", headerValue: message.sapId });
   }
 
-  // 存储上下文参数，sapId 存储为 userId
+  // 存储上下文参数：
+  // - sapId 存储为 userId
+  // - hideMenu/isSuperManager 通过 toBoolean 转换为布尔值
   store.setContext({
     userId: message.sapId ?? null,
     clawName: message.clawName ?? null,
@@ -124,6 +156,7 @@ function handleUserDataMessage(message: IframeUserDataMessage, origin: string): 
   // 发送确认响应
   sendMessageToParent({ type: "READY_RESPONSE", initialized: true });
 
+  // 日志输出：记录接收到的参数，便于调试
   console.info("[IframeMessage] Initialized with context from parent:", {
     origin,
     userId: message.sapId,
@@ -212,6 +245,12 @@ export function sendMessageToParent(message: IframeOutgoingMessage): void {
  *
  * 应在 main.tsx 中尽早调用，确保不遗漏任何消息
  * 自动检测是否在 iframe 中运行，非 iframe 环境不注册监听器
+ *
+ * 初始化流程：
+ * 1. 检查是否已在 iframe 中运行（非 iframe 环境跳过）
+ * 2. 注册 message 事件监听器
+ * 3. 发送 READY_RESPONSE (initialized: false) 通知父窗口
+ * 4. 等待父窗口发送 USER_DATA 消息
  */
 export function initIframeMessageListener(): void {
   // 防止重复注册
@@ -242,7 +281,8 @@ export function initIframeMessageListener(): void {
 
   console.info("[IframeMessage] Listener registered");
 
-  // 通知父窗口准备就绪，可以发送初始化消息
+  // 通知父窗口准备就绪，可以发送初始化消息 (USER_DATA)
+  // initialized: false 表示等待父窗口发送数据
   sendMessageToParent({ type: "READY_RESPONSE", initialized: false });
 }
 

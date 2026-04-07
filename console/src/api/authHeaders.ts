@@ -1,5 +1,10 @@
 import { getApiToken } from "./config";
+
+// ==================== userId 统一整改 (Kun He) ====================
+// 使用统一的 getUserId helper，遵循优先级：iframe > window > session > default
+import { getUserId } from "../utils/identity";
 import { getIframeContext } from "../stores/iframeStore";
+// ==================== userId 统一整改结束 ====================
 
 /**
  * 构建认证和上下文相关的请求 headers
@@ -34,22 +39,31 @@ export function buildAuthHeaders(): Record<string, string> {
     console.warn("Failed to get selected agent from storage:", error);
   }
 
-  // 3. iframe 上下文参数（从父级 iframe 接收的参数）
-  const iframeContext = getIframeContext();
-
-  // 用户 ID（默认值为 "default"）
-  const userId = iframeContext.userId || "default";
+  // 3. 用户 ID 和租户 ID
+  // ==================== userId 统一整改 (Kun He) ====================
+  // 使用统一的 getUserId() 获取用户 ID
+  // 优先级：iframe userId > window.currentUserId > DEFAULT_USER_ID
+  // X-Tenant-Id 与 X-User-Id 保持一致
+  const userId = getUserId();
   headers["X-User-Id"] = userId;
   headers["X-Tenant-Id"] = userId;
 
-  // 4. 自定义 headers 数组（循环设置）
+  // 4. 自定义 headers 数组（父窗口通过 auth 字段传递）
+  // 注意：排除 X-User-Id，因为已由 getUserId() 处理
+  const iframeContext = getIframeContext();
   if (iframeContext.authHeaders?.length) {
     for (const item of iframeContext.authHeaders) {
-      if (item.headerName && item.headerValue !== undefined) {
+      // 跳过 X-User-Id，避免覆盖上面设置的值
+      if (
+        item.headerName &&
+        item.headerValue !== undefined &&
+        item.headerName !== "X-User-Id"
+      ) {
         headers[item.headerName] = item.headerValue;
       }
     }
   }
+  // ==================== userId 统一整改结束 ====================
 
   return headers;
 }

@@ -1,8 +1,10 @@
+// ==================== 组件引入方式变更 (Kun He) ====================
 import {
   IAgentScopeRuntimeWebUISession,
   IAgentScopeRuntimeWebUISessionAPI,
   IAgentScopeRuntimeWebUIMessage,
 } from "@/components/agentscope-chat";
+// ==================== 组件引入方式变更结束 ====================
 import api, {
   type ChatSpec,
   type ChatHistory,
@@ -11,12 +13,15 @@ import api, {
 } from "../../../api";
 import { toDisplayUrl } from "../utils";
 
+// ==================== userId 统一整改 (Kun He) ====================
+// 使用统一的 getUserId/getChannel helper
+import { getUserId, getChannel } from "../../../utils/identity";
+// ==================== userId 统一整改结束 ====================
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_USER_ID = "default";
-const DEFAULT_CHANNEL = "console";
 const DEFAULT_SESSION_NAME = "New Chat";
 const ROLE_TOOL = "tool";
 const ROLE_USER = "user";
@@ -440,14 +445,17 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
 
   private createEmptySession(sessionId: string): ExtendedSession {
     window.currentSessionId = sessionId;
-    window.currentUserId = DEFAULT_USER_ID;
-    window.currentChannel = DEFAULT_CHANNEL;
+    // ==================== userId 统一整改 (Kun He) ====================
+    // 使用 getUserId() 获取用户 ID，优先级：iframe > window > default
+    window.currentUserId = getUserId();
+    window.currentChannel = getChannel();
+    // ==================== userId 统一整改结束 ====================
     return {
       id: sessionId,
       name: DEFAULT_SESSION_NAME,
       sessionId,
-      userId: DEFAULT_USER_ID,
-      channel: DEFAULT_CHANNEL,
+      userId: getUserId(),
+      channel: getChannel(),
       messages: [],
       meta: {},
     } as ExtendedSession;
@@ -455,8 +463,11 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
 
   private updateWindowVariables(session: ExtendedSession): void {
     window.currentSessionId = session.sessionId || "";
-    window.currentUserId = session.userId || DEFAULT_USER_ID;
-    window.currentChannel = session.channel || DEFAULT_CHANNEL;
+    // ==================== userId 统一整改 (Kun He) ====================
+    // 使用 getUserId() 获取用户 ID，传入 session.userId 作为候选值
+    window.currentUserId = getUserId(session.userId);
+    window.currentChannel = getChannel(session.channel);
+    // ==================== userId 统一整改结束 ====================
   }
 
   private getLocalSession(sessionId: string): IAgentScopeRuntimeWebUISession {
@@ -566,8 +577,10 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
           id: sessionId,
           name: fromList.name || DEFAULT_SESSION_NAME,
           sessionId: fromList.sessionId || sessionId,
-          userId: fromList.userId || DEFAULT_USER_ID,
-          channel: fromList.channel || DEFAULT_CHANNEL,
+          // ==================== userId 统一整改 (Kun He) ====================
+          userId: getUserId(fromList.userId),
+          channel: getChannel(fromList.channel),
+          // ==================== userId 统一整改结束 ====================
           messages,
           meta: fromList.meta || {},
           realId: fromList.realId,
@@ -605,8 +618,10 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
           id: sessionId,
           name: refreshed.name || DEFAULT_SESSION_NAME,
           sessionId: refreshed.sessionId || sessionId,
-          userId: refreshed.userId || DEFAULT_USER_ID,
-          channel: refreshed.channel || DEFAULT_CHANNEL,
+          // ==================== userId 统一整改 (Kun He) ====================
+          userId: getUserId(refreshed.userId),
+          channel: getChannel(refreshed.channel),
+          // ==================== userId 统一整改结束 ====================
           messages,
           meta: refreshed.meta || {},
           realId: refreshed.realId,
@@ -637,8 +652,10 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
       id: sessionId,
       name: fromList?.name || sessionId,
       sessionId: fromList?.sessionId || sessionId,
-      userId: fromList?.userId || DEFAULT_USER_ID,
-      channel: fromList?.channel || DEFAULT_CHANNEL,
+      // ==================== userId 统一整改 (Kun He) ====================
+      userId: getUserId(fromList?.userId),
+      channel: getChannel(fromList?.channel),
+      // ==================== userId 统一整改结束 ====================
       messages,
       meta: fromList?.meta || {},
       generating,
@@ -683,12 +700,15 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
   async createSession(session: Partial<IAgentScopeRuntimeWebUISession>) {
     session.id = Date.now().toString();
 
+    // ==================== userId 统一整改 (Kun He) ====================
+    // 使用 getUserId() 获取用户 ID
     const extended: ExtendedSession = {
       ...session,
       sessionId: session.id,
-      userId: DEFAULT_USER_ID,
-      channel: DEFAULT_CHANNEL,
+      userId: getUserId(),
+      channel: getChannel(),
     } as ExtendedSession;
+    // ==================== userId 统一整改结束 ====================
 
     this.updateWindowVariables(extended);
     // this.sessionList.unshift(extended);

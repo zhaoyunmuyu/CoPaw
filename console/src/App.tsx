@@ -111,10 +111,15 @@ function AppInner() {
   const basename = getRouterBasename(window.location.pathname);
   const { i18n } = useTranslation();
   const { isDark } = useTheme();
+
+  // ==================== 语言默认值调整 (Kun He) ====================
+  // 将默认语言从 "en" 改为 "zh"（中文）
+  // 同时将默认 locale 从 enUS 改为 zhCN
   const lang = i18n.resolvedLanguage || i18n.language || "zh";
   const [antdLocale, setAntdLocale] = useState<Locale>(
     antdLocaleMap[lang] ?? zhCN,
   );
+  // ==================== 语言默认值调整结束 ====================
 
   useEffect(() => {
     if (!localStorage.getItem("language")) {
@@ -133,6 +138,8 @@ function AppInner() {
   }, []);
 
   useEffect(() => {
+    // ==================== 语言默认值调整 (Kun He) ====================
+    // 将语言回退默认值从 "en" 改为 "zh"/"zh-cn"
     const handleLanguageChanged = (lng: string) => {
       const shortLng = lng.split("-")[0];
       setAntdLocale(antdLocaleMap[shortLng] ?? zhCN);
@@ -141,6 +148,7 @@ function AppInner() {
 
     // Set initial dayjs locale
     dayjs.locale(dayjsLocaleMap[lang.split("-")[0]] ?? "zh-cn");
+    // ==================== 语言默认值调整结束 ====================
 
     i18n.on("languageChanged", handleLanguageChanged);
     return () => {

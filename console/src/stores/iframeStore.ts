@@ -1,8 +1,27 @@
 /**
+ * ============================================================
  * iframe 上下文状态存储
+ * Author: Kun He
+ * Date: 2026-04-07
+ * ============================================================
  *
  * 使用 Zustand 管理从父级 iframe 接收的参数
  * 支持持久化到 sessionStorage
+ *
+ * 存储字段：
+ * - userId: 用户 ID（来自父窗口的 sapId 参数）
+ * - clawName: Claw 名称
+ * - space: 空间标识
+ * - source: 来源标识
+ * - hideMenu: 是否隐藏菜单
+ * - isSuperManager: 是否为超级管理员
+ * - authHeaders: 自定义 headers 数组
+ * - parentOrigin: 父窗口来源 origin
+ *
+ * 相关文件：
+ * - types/iframe.ts: 类型定义
+ * - utils/iframeMessage.ts: 消息处理逻辑
+ * ============================================================
  */
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
