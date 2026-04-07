@@ -6,4 +6,5 @@ declare global {
   }
 }
 
-export {};
+// iframe postMessage 通信类型导出
+export type { AuthHeaderItem, IframeContext } from "./types/iframe";

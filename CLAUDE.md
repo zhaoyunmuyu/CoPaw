@@ -48,17 +48,17 @@ pytest tests/ -k "memory"  # by keyword
 
 ```bash
 cd console
-npm ci
-npm run build      # Build to dist/
-npm run format     # Format code (required before PR)
-npm run dev        # Development server
+pnpm install
+pnpm run build      # Build to dist/
+pnpm run format     # Format code (required before PR)
+pnpm run dev        # Development server
 ```
 
 ### Full Setup from Source
 
 ```bash
 # Build console first
-cd console && npm ci && npm run build
+cd console && pnpm install && pnpm run build
 cd ..
 
 # Copy console build to package

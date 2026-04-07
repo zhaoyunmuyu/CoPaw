@@ -1,5 +1,11 @@
 import { Layout } from "antd";
-import { Routes, Route, useLocation, Navigate } from "react-router-dom";
+import {
+  Routes,
+  Route,
+  useLocation,
+  Navigate,
+  useSearchParams,
+} from "react-router-dom";
 import Sidebar from "../Sidebar";
 import Header from "../Header";
 import ConsoleCronBubble from "../../components/ConsoleCronBubble";
@@ -21,6 +27,7 @@ import SecurityPage from "../../pages/Settings/Security";
 import TokenUsagePage from "../../pages/Settings/TokenUsage";
 import VoiceTranscriptionPage from "../../pages/Settings/VoiceTranscription";
 import AgentsPage from "../../pages/Settings/Agents";
+import { useIframeStore } from "../../stores/iframeStore";
 
 const { Content } = Layout;
 
@@ -46,14 +53,24 @@ const pathToKey: Record<string, string> = {
 
 export default function MainLayout() {
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const currentPath = location.pathname;
   const selectedKey = pathToKey[currentPath] || "chat";
+
+  // 获取 iframe context 中的 hideMenu
+  const hideMenu = useIframeStore((state) => state.hideMenu);
+  // 获取 URL 参数中的 origin
+  const originParam = searchParams.get("origin");
+
+  // 判断是否隐藏 Sidebar
+  // origin === "Y" 或 hideMenu 为 true 时隐藏
+  const shouldHideSidebar = originParam === "Y" || hideMenu;
 
   return (
     <Layout className={styles.mainLayout}>
       <Header />
       <Layout>
-        <Sidebar selectedKey={selectedKey} />
+        {!shouldHideSidebar && <Sidebar selectedKey={selectedKey} />}
         <Content className="page-container">
           <ConsoleCronBubble />
           <div className="page-content">
