@@ -28,6 +28,7 @@ from ..mcp import MCPClientManager
 from ..crons.manager import CronManager
 from ..crons.repo.json_repo import JsonJobRepository
 from ...config.config import load_agent_config
+from ...agents.memory import ReMeLightMemoryManager
 
 if TYPE_CHECKING:
     from ..channels.base import BaseChannel
@@ -37,8 +38,6 @@ logger = logging.getLogger(__name__)
 
 def _resolve_memory_class(backend: str) -> type:
     """Return the memory manager class for the given backend name."""
-    from ...agents.memory import ReMeLightMemoryManager
-
     if backend == "remelight":
         return ReMeLightMemoryManager
     raise ValueError(f"Unsupported memory manager backend: '{backend}'")

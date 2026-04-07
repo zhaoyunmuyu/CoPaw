@@ -14,6 +14,7 @@ from ..config.context import (
     get_current_user_id,
     TenantContextError,
 )
+from .middleware.tenant_workspace import TenantWorkspaceContext
 
 if TYPE_CHECKING:
     from .workspace import Workspace
@@ -98,14 +99,32 @@ async def get_agent_for_request(
 
     # Load tenant-aware config for fallback and validation
     config = None
-    if workspace is not None and not explicit_agent_requested:
+    # Only return cached workspace if it's a real Workspace (not TenantWorkspaceContext)
+    if (
+        workspace is not None
+        and not isinstance(
+            workspace,
+            TenantWorkspaceContext,
+        )
+        and not explicit_agent_requested
+    ):
         return workspace
     if not target_agent_id:
         # Fallback to active agent from config
         config = _get_tenant_aware_config(tenant_id)
-        target_agent_id = target_agent_id or config.agents.active_agent or "default"
+        target_agent_id = (
+            target_agent_id or config.agents.active_agent or "default"
+        )
 
-    if workspace is not None and getattr(workspace, "agent_id", None) == target_agent_id:
+    # Only return cached workspace if it's a real Workspace (not TenantWorkspaceContext)
+    if (
+        workspace is not None
+        and not isinstance(
+            workspace,
+            TenantWorkspaceContext,
+        )
+        and getattr(workspace, "agent_id", None) == target_agent_id
+    ):
         return workspace
 
     # Check if agent exists and is enabled (using tenant-aware config)
@@ -141,7 +160,9 @@ async def get_agent_for_request(
     manager = request.app.state.multi_agent_manager
 
     try:
-        workspace = await manager.get_agent(target_agent_id, tenant_id=tenant_id)
+        workspace = await manager.get_agent(
+            target_agent_id, tenant_id=tenant_id
+        )
         if not workspace:
             raise HTTPException(
                 status_code=404,
@@ -228,7 +249,7 @@ def get_tenant_workspace_strict(request: Request) -> "Workspace":
     if workspace is None:
         raise TenantContextError(
             "Tenant workspace not bound to request. "
-            "Ensure tenant workspace middleware is installed."
+            "Ensure tenant workspace middleware is installed.",
         )
     return workspace
 
