@@ -197,6 +197,28 @@ def init_cmd(
             else:
                 mark_telemetry_collected(WORKING_DIR, opted_out=True)
 
+    # --- Copy init config files (config.json and providers.json templates) ---
+    # Must be done BEFORE TenantInitializer.initialize_full() because that
+    # creates an empty config.json via ensure_default_agent()
+    from ..agents.utils import copy_init_config_files
+
+    click.echo("\n=== Initial Configuration Files ===")
+    config_copied, providers_copied = copy_init_config_files(
+        tenant_id=tenant_id,
+        force=force,
+        skip_existing=False,  # Always copy templates, they will be merged later
+    )
+    if config_copied:
+        click.echo("✓ Copied config.json template (channels, MCP settings)")
+    else:
+        click.echo("✓ config.json already exists or not copied")
+    if providers_copied:
+        click.echo(
+            "✓ Copied providers.json template (model provider settings)",
+        )
+    else:
+        click.echo("✓ providers.json already exists or not copied")
+
     # --- Bootstrap tenant directory structure ---
     click.echo("\n=== Default Workspace Initialization ===")
     initializer = TenantInitializer(WORKING_DIR, tenant_id)
