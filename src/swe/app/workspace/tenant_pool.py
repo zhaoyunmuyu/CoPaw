@@ -143,19 +143,34 @@ class TenantWorkspacePool:
                     self._mark_access(entry)
                     return
 
-            # Perform minimal bootstrap (outside registry lock to avoid blocking)
+            # Perform seeded bootstrap (outside registry lock to avoid blocking)
             workspace_dir = self._get_tenant_workspace_dir(tenant_id)
             logger.info(
                 f"Bootstrapping tenant directory: {tenant_id} at {workspace_dir}",
             )
 
             try:
-                # Bootstrap tenant directory structure and default agent only
+                # Bootstrap tenant with seeded skills (no QA agent, no runtime start)
                 initializer = TenantInitializer(
                     self._base_working_dir,
                     tenant_id,
                 )
-                initializer.initialize_minimal()
+                bootstrap_result = initializer.ensure_seeded_bootstrap()
+
+                # Log seeding results
+                pool_seed = bootstrap_result.get("pool_seed", {})
+                workspace_seed = bootstrap_result.get("workspace_seed", {})
+                if pool_seed.get("seeded"):
+                    logger.info(
+                        f"Tenant {tenant_id} skill pool seeded from "
+                        f"{pool_seed.get('source')}: "
+                        f"{pool_seed.get('skills', [])}",
+                    )
+                if workspace_seed.get("seeded"):
+                    logger.info(
+                        f"Tenant {tenant_id} workspace skills seeded: "
+                        f"{workspace_seed.get('skills', [])}",
+                    )
 
                 # Register in pool (no workspace runtime created)
                 async with self._registry_lock:
