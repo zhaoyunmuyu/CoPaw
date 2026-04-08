@@ -15,6 +15,11 @@ from ...config import get_heartbeat_config
 
 from ..tenant_context import bind_tenant_context
 from ..console_push_store import append as push_store_append
+from .coordination import (
+    CoordinationConfig,
+    CronCoordination,
+    execution_lock_context,
+)
 from .executor import CronExecutor
 from .heartbeat import (
     is_cron_expression,
@@ -36,6 +41,15 @@ class _Runtime:
 
 
 class CronManager:
+    """Manages scheduled cron jobs and heartbeat.
+
+    This class has been refactored to support Redis-coordinated leadership:
+    - Passive initialization: The manager is created but scheduler not started
+    - Explicit activation: When leadership is acquired, start() is called
+    - Explicit deactivation: When leadership is lost, stop() is called
+    - Reload from repo: When configuration changes, reload() rebuilds schedule
+    """
+
     def __init__(
         self,
         *,
@@ -44,12 +58,18 @@ class CronManager:
         channel_manager: Any,
         timezone: str = "UTC",  # pylint: disable=redefined-outer-name
         agent_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        coordination_config: Optional[CoordinationConfig] = None,
     ):
         self._repo = repo
         self._runner = runner
         self._channel_manager = channel_manager
         self._agent_id = agent_id
-        self._scheduler = AsyncIOScheduler(timezone=timezone)
+        self._tenant_id = tenant_id
+        self._timezone = timezone
+
+        # Scheduler is created but NOT started in __init__
+        self._scheduler: Optional[AsyncIOScheduler] = None
         self._executor = CronExecutor(
             runner=runner,
             channel_manager=channel_manager,
@@ -60,10 +80,173 @@ class CronManager:
         self._rt: Dict[str, _Runtime] = {}
         self._started = False
 
-    async def start(self) -> None:
+        # Coordination for multi-instance leadership
+        self._coordination: Optional[CronCoordination] = None
+        if coordination_config is not None and coordination_config.enabled:
+            self._coordination = CronCoordination(
+                tenant_id=tenant_id,
+                agent_id=agent_id or "default",
+                config=coordination_config,
+            )
+            # Set reload callback
+            self._coordination.set_reload_callback(self._on_reload_signal)
+
+        self._active_jobs: set[str] = set()  # Track which jobs are scheduled
+
+    @property
+    def is_started(self) -> bool:
+        """Check if the scheduler is currently started."""
+        return self._started
+
+    @property
+    def is_leader(self) -> bool:
+        """Check if this instance is the current leader (if coordination enabled)."""
+        if self._coordination is None:
+            return True  # No coordination = always leader
+        return self._coordination.is_leader
+
+    async def initialize(self) -> None:
+        """Passive initialization - prepare resources but don't start scheduler.
+
+        This is called during workspace setup. The scheduler is NOT started
+        here - that happens in activate() when leadership is confirmed.
+        """
+        async with self._lock:
+            if self._scheduler is not None:
+                return
+
+            self._scheduler = AsyncIOScheduler(timezone=self._timezone)
+            logger.debug(
+                "CronManager initialized (passive): agent=%s",
+                self._agent_id,
+            )
+
+    async def connect_coordination(self) -> bool:
+        """Connect to Redis coordination.
+
+        Returns True if connected/coordination enabled, False otherwise.
+        """
+        if self._coordination is None:
+            return True  # No coordination needed
+
+        return await self._coordination.connect()
+
+    async def disconnect_coordination(self) -> None:
+        """Disconnect from Redis coordination."""
+        if self._coordination is not None:
+            await self._coordination.disconnect()
+
+    async def activate(self) -> bool:
+        """Activate scheduling - acquire leadership and start scheduler.
+
+        Returns True if this instance became the active leader,
+        False if this is a follower.
+        """
+        await self.initialize()
+
+        # Connect coordination first
+        await self.connect_coordination()
+
+        if self._coordination is not None:
+            # Try to acquire leadership
+            is_leader = await self._coordination.activate()
+            if not is_leader:
+                logger.info(
+                    "CronManager activated as follower: agent=%s",
+                    self._agent_id,
+                )
+                return False
+            logger.info(
+                "CronManager activated as leader: agent=%s instance=%s",
+                self._agent_id,
+                self._coordination.instance_id,
+            )
+        else:
+            logger.info(
+                "CronManager activated (no coordination): agent=%s",
+                self._agent_id,
+            )
+
+        # Start the scheduler
+        await self._do_start()
+        return True
+
+    async def deactivate(self) -> None:
+        """Deactivate scheduling - stop scheduler and release leadership."""
+        await self._do_stop()
+
+        if self._coordination is not None:
+            await self._coordination.deactivate()
+            logger.info(
+                "CronManager deactivated: agent=%s",
+                self._agent_id,
+            )
+
+    async def reload(self) -> None:
+        """Reload jobs from repository and rebuild schedule.
+
+        This is called when:
+        - A reload signal is received from another instance
+        - Local cron mutations are made
+        """
+        async with self._lock:
+            if not self._started or self._scheduler is None:
+                logger.debug(
+                    "Cannot reload: scheduler not started (agent=%s)",
+                    self._agent_id,
+                )
+                return
+
+            logger.info(
+                "Reloading cron schedule from repository: agent=%s",
+                self._agent_id,
+            )
+
+            # Clear existing jobs (except heartbeat)
+            jobs_to_remove = [
+                job_id for job_id in self._active_jobs
+                if job_id != HEARTBEAT_JOB_ID
+            ]
+            for job_id in jobs_to_remove:
+                if self._scheduler.get_job(job_id):
+                    self._scheduler.remove_job(job_id)
+                self._active_jobs.discard(job_id)
+
+            # Load jobs from repo
+            try:
+                jobs_file = await self._repo.load()
+                for job in jobs_file.jobs:
+                    try:
+                        await self._register_or_update(job)
+                    except Exception as e:  # pylint: disable=broad-except
+                        logger.warning(
+                            "Skipping invalid cron job during reload: "
+                            "job_id=%s name=%s error=%s",
+                            job.id,
+                            job.name,
+                            repr(e),
+                        )
+            except Exception as e:  # pylint: disable=broad-except
+                logger.error("Failed to reload jobs from repository: %s", e)
+
+            # Reload heartbeat
+            await self._update_heartbeat()
+
+            logger.info(
+                "Cron schedule reloaded: agent=%s jobs=%d",
+                self._agent_id,
+                len(self._active_jobs),
+            )
+
+    async def _do_start(self) -> None:
+        """Internal: Start the scheduler and load initial jobs."""
         async with self._lock:
             if self._started:
                 return
+
+            if self._scheduler is None:
+                raise RuntimeError("CronManager not initialized")
+
             jobs_file = await self._repo.load()
 
             self._scheduler.start()
@@ -92,29 +275,68 @@ class CronManager:
                         )
 
             # Heartbeat: scheduled job when enabled in config
-            hb = get_heartbeat_config(self._agent_id)
-            if getattr(hb, "enabled", False):
-                trigger = self._build_heartbeat_trigger(hb.every)
-                self._scheduler.add_job(
-                    self._heartbeat_callback,
-                    trigger=trigger,
-                    id=HEARTBEAT_JOB_ID,
-                    replace_existing=True,
-                )
-                logger.info(
-                    "Heartbeat job scheduled for agent %s: every=%s",
-                    self._agent_id,
-                    hb.every,
-                )
+            await self._update_heartbeat()
 
             self._started = True
+            logger.info(
+                "CronManager started: agent=%s jobs=%d",
+                self._agent_id,
+                len(self._active_jobs),
+            )
 
-    async def stop(self) -> None:
+    async def _do_stop(self) -> None:
+        """Internal: Stop the scheduler."""
         async with self._lock:
             if not self._started:
                 return
-            self._scheduler.shutdown(wait=False)
+            if self._scheduler is not None:
+                self._scheduler.shutdown(wait=False)
             self._started = False
+            self._active_jobs.clear()
+            logger.info("CronManager stopped: agent=%s", self._agent_id)
+
+    def _on_reload_signal(self) -> None:
+        """Callback invoked when a reload signal is received."""
+        logger.info(
+            "Received reload signal, scheduling reload: agent=%s",
+            self._agent_id,
+        )
+        # Schedule reload in the event loop
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.reload())
+        except RuntimeError:
+            # No event loop running - this shouldn't happen in normal operation
+            logger.warning(
+                "Cannot schedule reload: no event loop (agent=%s)",
+                self._agent_id,
+            )
+
+    async def _update_heartbeat(self) -> None:
+        """Update heartbeat job based on current config."""
+        if self._scheduler is None:
+            return
+
+        # Remove existing heartbeat job if present
+        if self._scheduler.get_job(HEARTBEAT_JOB_ID):
+            self._scheduler.remove_job(HEARTBEAT_JOB_ID)
+            self._active_jobs.discard(HEARTBEAT_JOB_ID)
+
+        hb = get_heartbeat_config(self._agent_id)
+        if getattr(hb, "enabled", False):
+            trigger = self._build_heartbeat_trigger(hb.every)
+            self._scheduler.add_job(
+                self._heartbeat_callback,
+                trigger=trigger,
+                id=HEARTBEAT_JOB_ID,
+                replace_existing=True,
+            )
+            self._active_jobs.add(HEARTBEAT_JOB_ID)
+            logger.info(
+                "Heartbeat job scheduled for agent %s: every=%s",
+                self._agent_id,
+                hb.every,
+            )
 
     # ----- read/state -----
 
@@ -129,33 +351,37 @@ class CronManager:
 
     # ----- write/control -----
 
+
     async def create_or_replace_job(self, spec: CronJobSpec) -> None:
         async with self._lock:
             await self._repo.upsert_job(spec)
-            if self._started:
+            if self._started and self._scheduler is not None:
                 await self._register_or_update(spec)
 
     async def delete_job(self, job_id: str) -> bool:
         async with self._lock:
-            if self._started and self._scheduler.get_job(job_id):
-                self._scheduler.remove_job(job_id)
+            if self._started and self._scheduler is not None:
+                if self._scheduler.get_job(job_id):
+                    self._scheduler.remove_job(job_id)
+                self._active_jobs.discard(job_id)
             self._states.pop(job_id, None)
             self._rt.pop(job_id, None)
             return await self._repo.delete_job(job_id)
 
     async def pause_job(self, job_id: str) -> None:
         async with self._lock:
-            self._scheduler.pause_job(job_id)
+            if self._started and self._scheduler is not None:
+                self._scheduler.pause_job(job_id)
 
     async def resume_job(self, job_id: str) -> None:
         async with self._lock:
-            self._scheduler.resume_job(job_id)
+            if self._started and self._scheduler is not None:
+                self._scheduler.resume_job(job_id)
 
     async def reschedule_heartbeat(self) -> None:
         """Reload heartbeat config and update or remove the heartbeat job.
 
-        Note: CronManager should always be started during workspace
-        initialization, so this method assumes self._started is True.
+        Note: This should be called after activate() when the manager is leader.
         """
         async with self._lock:
             if not self._started:
@@ -165,30 +391,13 @@ class CronManager:
                 )
                 return
 
-            hb = get_heartbeat_config(self._agent_id)
-
-            # Remove existing heartbeat job if present
-            if self._scheduler.get_job(HEARTBEAT_JOB_ID):
-                self._scheduler.remove_job(HEARTBEAT_JOB_ID)
-
-            # Add heartbeat job if enabled
-            if getattr(hb, "enabled", False):
-                trigger = self._build_heartbeat_trigger(hb.every)
-                self._scheduler.add_job(
-                    self._heartbeat_callback,
-                    trigger=trigger,
-                    id=HEARTBEAT_JOB_ID,
-                    replace_existing=True,
-                )
-                logger.info(
-                    "heartbeat rescheduled: every=%s",
-                    hb.every,
-                )
-            else:
-                logger.info("heartbeat disabled, job removed")
+            await self._update_heartbeat()
 
     async def run_job(self, job_id: str) -> None:
         """Trigger a job to run in the background (fire-and-forget).
+
+        This is a MANUAL execution - it bypasses the execution lock and
+        does NOT participate in timed de-duplication.
 
         Raises KeyError if the job does not exist.
         The actual execution happens asynchronously; errors are logged
@@ -198,7 +407,8 @@ class CronManager:
         if not job:
             raise KeyError(f"Job not found: {job_id}")
         logger.info(
-            "cron run_job (async): job_id=%s channel=%s task_type=%s "
+            "cron run_job (manual, bypasses execution lock): "
+            "job_id=%s channel=%s task_type=%s "
             "target_user_id=%s target_session_id=%s",
             job_id,
             job.dispatch.channel,
@@ -208,7 +418,7 @@ class CronManager:
         )
         task = asyncio.create_task(
             self._execute_once(job),
-            name=f"cron-run-{job_id}",
+            name=f"c ron-run-{job_id}",
         )
         task.add_done_callback(lambda t: self._task_done_cb(t, job))
 
@@ -251,6 +461,9 @@ class CronManager:
     # ----- internal -----
 
     async def _register_or_update(self, spec: CronJobSpec) -> None:
+        if self._scheduler is None:
+            return
+
         # Validate and build trigger first. If cron is invalid, fail fast
         # without mutating scheduler/runtime state.
         trigger = self._build_trigger(spec)
@@ -272,6 +485,7 @@ class CronManager:
             misfire_grace_time=spec.runtime.misfire_grace_seconds,
             replace_existing=True,
         )
+        self._active_jobs.add(spec.id)
 
         if not spec.enabled:
             self._scheduler.pause_job(spec.id)
@@ -323,20 +537,56 @@ class CronManager:
         return IntervalTrigger(seconds=interval_seconds)
 
     async def _scheduled_callback(self, job_id: str) -> None:
+        """Callback invoked by APScheduler for timed execution.
+
+        This uses the execution lock to prevent duplicate runs during
+        leadership transitions.
+        """
         job = await self._repo.get_job(job_id)
         if not job:
             return
 
-        await self._execute_once(job)
+        # Use execution lock for timed execution
+        if self._coordination is not None:
+            async with execution_lock_context(
+                self._coordination,
+                job_id,
+                job.runtime.timeout_seconds,
+            ) as acquired:
+                if not acquired:
+                    logger.info(
+                        "Skipping duplicate timed execution: "
+                        "job_id=%s (another instance holds the lock)",
+                        job_id,
+                    )
+                    st = self._states.get(job_id, CronJobState())
+                    st.last_status = "skipped"
+                    st.last_run_at = datetime.now(timezone.utc)
+                    self._states[job_id] = st
+                    return
+
+                await self._execute_once(job)
+        else:
+            # No coordination - execute directly
+            await self._execute_once(job)
 
         # refresh next_run
-        aps_job = self._scheduler.get_job(job_id)
-        st = self._states.get(job_id, CronJobState())
-        st.next_run_at = aps_job.next_run_time if aps_job else None
-        self._states[job_id] = st
+        if self._scheduler is not None:
+            aps_job = self._scheduler.get_job(job_id)
+            st = self._states.get(job_id, CronJobState())
+            st.next_run_at = aps_job.next_run_time if aps_job else None
+            self._states[job_id] = st
 
     async def _heartbeat_callback(self) -> None:
         """Run one heartbeat (HEARTBEAT.md as query, optional dispatch)."""
+        # Check if we're still the leader
+        if self._coordination is not None and not self._coordination.is_leader:
+            logger.debug(
+                "Skipping heartbeat: not leader (agent=%s)",
+                self._agent_id,
+            )
+            return
+
         try:
             # Get workspace_dir from runner if available
             workspace_dir = None
@@ -402,3 +652,19 @@ class CronManager:
             finally:
                 st.last_run_at = datetime.now(timezone.utc)
                 self._states[job.id] = st
+
+    # ----- Legacy API compatibility -----
+
+    async def start(self) -> None:
+        """Legacy start method - calls activate().
+
+        DEPRECATED: Use activate() instead for proper coordination support.
+        """
+        await self.activate()
+
+    async def stop(self) -> None:
+        """Legacy stop method - calls deactivate().
+
+        DEPRECATED: Use deactivate() instead for proper coordination support.
+        """
+        await self.deactivate()

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 from pathlib import Path
-from typing import Optional, Union, Dict, List, Literal
+from typing import Any, Optional, Union, Dict, List, Literal
 
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 import shortuuid
@@ -20,6 +20,14 @@ from ..constant import (
     LLM_RATE_LIMIT_JITTER,
     LLM_RATE_LIMIT_PAUSE,
     WORKING_DIR,
+    CRON_COORDINATION_ENABLED,
+    CRON_CLUSTER_MODE,
+    CRON_REDIS_URL,
+    CRON_CLUSTER_NODES,
+    CRON_LEASE_TTL_SECONDS,
+    CRON_LEASE_RENEW_INTERVAL_SECONDS,
+    CRON_LEASE_RENEW_FAILURE_THRESHOLD,
+    CRON_LOCK_SAFETY_MARGIN_SECONDS,
 )
 from ..providers.models import ModelSlotConfig
 
@@ -913,44 +921,94 @@ class SecurityConfig(BaseModel):
     )
 
 
+def _parse_cluster_nodes(env_value: str) -> List[Dict[str, Any]]:
+    """Parse cluster nodes from environment variable string.
+
+    Format: "host1:port1,host2:port2,host3:port3"
+    Returns: [{"host": "host1", "port": port1}, ...]
+    """
+    if not env_value or not env_value.strip():
+        return []
+
+    nodes = []
+    for node_str in env_value.split(","):
+        node_str = node_str.strip()
+        if not node_str:
+            continue
+        if ":" in node_str:
+            host, port_str = node_str.rsplit(":", 1)
+            try:
+                port = int(port_str)
+            except ValueError:
+                port = 6379
+            nodes.append({"host": host.strip(), "port": port})
+        else:
+            nodes.append({"host": node_str, "port": 6379})
+    return nodes
+
+
 class CronCoordinationConfig(BaseModel):
     """Redis-based cron coordination configuration.
 
     Controls multi-instance cron leadership election and execution locking.
+    Supports both standalone Redis and Redis Cluster modes.
+    Configuration can be set via config.json or environment variables.
     """
 
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = Field(
-        default=False,
+        default=CRON_COORDINATION_ENABLED,
         description="Enable Redis coordination for cron leadership election",
     )
+    # Connection mode: standalone or cluster
+    cluster_mode: bool = Field(
+        default=CRON_CLUSTER_MODE,
+        description="Use Redis Cluster mode instead of standalone Redis",
+    )
+    # Standalone mode configuration
     redis_url: str = Field(
-        default="redis://localhost:6379/0",
-        description="Redis connection URL for coordination",
+        default=CRON_REDIS_URL,
+        description="Redis connection URL for standalone mode",
+    )
+    # Cluster mode configuration
+    cluster_nodes: List[Dict[str, Any]] = Field(
+        default_factory=lambda: _parse_cluster_nodes(CRON_CLUSTER_NODES),
+        description="List of cluster nodes as dicts with 'host' and 'port' keys. "
+        "Example: [{'host': 'node1', 'port': 6379}, {'host': 'node2', 'port': 6379}]",
+    )
+    cluster_skip_full_coverage_check: bool = Field(
+        default=True,
+        description="Skip full coverage check for cluster (useful with some cluster setups)",
+    )
+    cluster_max_connections: int = Field(
+        default=50,
+        ge=1,
+        le=500,
+        description="Maximum connections in cluster mode",
     )
     # Lease configuration
     lease_ttl_seconds: int = Field(
-        default=30,
+        default=CRON_LEASE_TTL_SECONDS,
         ge=5,
         le=300,
         description="Lease TTL in seconds (must be > renew interval)",
     )
     lease_renew_interval_seconds: int = Field(
-        default=10,
+        default=CRON_LEASE_RENEW_INTERVAL_SECONDS,
         ge=1,
         le=60,
         description="How often to renew lease",
     )
     lease_renew_failure_threshold: int = Field(
-        default=3,
+        default=CRON_LEASE_RENEW_FAILURE_THRESHOLD,
         ge=1,
         le=10,
         description="Consecutive failures before considering lease lost",
     )
     # Execution lock configuration
     lock_safety_margin_seconds: int = Field(
-        default=30,
+        default=CRON_LOCK_SAFETY_MARGIN_SECONDS,
         ge=5,
         le=300,
         description="Additional time added to job timeout for execution lock",
@@ -1105,13 +1163,21 @@ def load_agent_config(
     with open(agent_config_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
+    # Ensure required fields exist for legacy data
+    if "id" not in data:
+        data["id"] = agent_id
+    if "name" not in data:
+        data["name"] = agent_id.title()
+
     # Normalize legacy ~/.swe-bound paths to current WORKING_DIR.
     # This keeps SWE_WORKING_DIR effective even if existing agent.json
     # contains older hard-coded paths like "~/.swe/media".
     try:
         from .utils import _normalize_working_dir_bound_paths
 
-        data = _normalize_working_dir_bound_paths(data)
+        normalized_data = _normalize_working_dir_bound_paths(data)
+        if isinstance(normalized_data, dict):
+            data = normalized_data
     except Exception:
         pass
 

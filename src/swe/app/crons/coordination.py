@@ -1,0 +1,712 @@
+# -*- coding: utf-8 -*-
+"""Redis-backed coordination for cron leadership and execution locking.
+
+This module provides primitives for:
+- Agent lease: Leadership election per tenant+agent
+- Execution lock: Timed job de-duplication across instances
+- Reload pub/sub: Notify leader of cron configuration changes
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import uuid
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from typing import AsyncGenerator, Callable, Optional, Any
+
+logger = logging.getLogger(__name__)
+
+# Optional Redis import - coordination is disabled if redis is not available
+Redis = Any
+RedisError = Exception
+redis_lib = None
+
+REDIS_AVAILABLE = False
+try:
+    import redis.asyncio as _redis_lib
+    from redis.asyncio.cluster import ClusterNode
+
+    redis_lib = _redis_lib
+    ClusterNode = ClusterNode
+    REDIS_AVAILABLE = True
+    Redis = redis_lib.Redis
+    RedisError = redis_lib.RedisError
+except ImportError:
+    ClusterNode = None  # type: ignore
+
+
+@dataclass
+class CoordinationConfig:
+    """Configuration for Redis coordination."""
+
+    enabled: bool = False
+    # Redis connection - supports both standalone and cluster modes
+    redis_url: str = "redis://localhost:6379/0"
+    # Cluster mode configuration
+    cluster_mode: bool = False
+    cluster_nodes: Optional[list] = None  # List of ClusterNode or dict {"host": str, "port": int}
+    cluster_startup_nodes: Optional[list] = None
+    # Additional cluster options
+    cluster_skip_full_coverage_check: bool = True
+    cluster_max_connections: int = 50
+    # Lease configuration
+    lease_ttl_seconds: int = 30
+    lease_renew_interval_seconds: int = 10
+    lease_renew_failure_threshold: int = 3
+    # Execution lock configuration
+    lock_ttl_seconds: int = 120  # Default, should be derived from job timeout
+    lock_safety_margin_seconds: int = 30
+    # Reload pub/sub configuration
+    reload_channel_prefix: str = "swe:cron:reload"
+
+
+class CronCoordinationError(Exception):
+    """Base exception for coordination errors."""
+
+    pass
+
+
+class LeaseLostError(CronCoordinationError):
+    """Raised when the agent lease is lost."""
+
+    pass
+
+
+class RedisNotAvailableError(CronCoordinationError):
+    """Raised when Redis is not available but coordination is requested."""
+
+    pass
+
+
+class AgentLease:
+    """Redis-backed lease for cron leadership per tenant+agent.
+
+    Only one instance can hold the lease for a given tenant+agent at a time.
+    The lease must be periodically renewed. If renewal fails, the holder
+    must deactivate scheduling.
+    """
+
+    def __init__(
+        self,
+        redis_client: Any,
+        tenant_id: Optional[str],
+        agent_id: str,
+        instance_id: str,
+        config: CoordinationConfig,
+    ):
+        self._redis = redis_client
+        self._tenant_id = tenant_id or "default"
+        self._agent_id = agent_id
+        self._instance_id = instance_id
+        self._config = config
+
+        self._key = f"swe:cron:lease:{self._tenant_id}:{agent_id}"
+        self._owned = False
+        self._renew_task: Optional[asyncio.Task] = None
+        self._stop_renew = asyncio.Event()
+        self._consecutive_failures = 0
+
+    @property
+    def is_owned(self) -> bool:
+        """Check if this instance currently owns the lease."""
+        return self._owned
+
+    async def acquire(self) -> bool:
+        """Attempt to acquire the lease.
+
+        Returns True if lease was acquired, False otherwise.
+        """
+        if not REDIS_AVAILABLE:
+            raise RedisNotAvailableError("Redis is not available")
+
+        try:
+            # Try to set the key with NX (only if not exists) and EX (expiry)
+            acquired = await self._redis.set(
+                self._key,
+                self._instance_id,
+                nx=True,
+                ex=self._config.lease_ttl_seconds,
+            )
+            if acquired:
+                self._owned = True
+                self._consecutive_failures = 0
+                logger.info(
+                    "Acquired cron lease: tenant=%s agent=%s instance=%s",
+                    self._tenant_id,
+                    self._agent_id,
+                    self._instance_id,
+                )
+                # Start background renewal task
+                self._start_renewal()
+                return True
+            else:
+                # Check if we already own it (maybe after restart)
+                current = await self._redis.get(self._key)
+                if current and current.decode() == self._instance_id:
+                    self._owned = True
+                    self._consecutive_failures = 0
+                    logger.info(
+                        "Reclaimed existing cron lease: tenant=%s agent=%s",
+                        self._tenant_id,
+                        self._agent_id,
+                    )
+                    self._start_renewal()
+                    return True
+                return False
+        except Exception as e:
+            logger.warning("Failed to acquire lease: %s", e)
+            return False
+
+    async def release(self) -> None:
+        """Release the lease.
+
+        Safe to call even if lease is not owned.
+        """
+        if not self._owned:
+            return
+
+        # Stop renewal first
+        await self._stop_renewal()
+
+        try:
+            # Only delete if we still own it (compare instance_id)
+            current = await self._redis.get(self._key)
+            if current and current.decode() == self._instance_id:
+                await self._redis.delete(self._key)
+                logger.info(
+                    "Released cron lease: tenant=%s agent=%s",
+                    self._tenant_id,
+                    self._agent_id,
+                )
+        except Exception as e:
+            logger.warning("Error releasing lease: %s", e)
+        finally:
+            self._owned = False
+
+    def _start_renewal(self) -> None:
+        """Start the background lease renewal task."""
+        if self._renew_task is not None:
+            return
+        self._stop_renew.clear()
+        self._renew_task = asyncio.create_task(
+            self._renew_loop(),
+            name=f"lease-renew-{self._tenant_id}-{self._agent_id}",
+        )
+
+    async def _stop_renewal(self) -> None:
+        """Stop the background lease renewal task."""
+        if self._renew_task is None:
+            return
+        self._stop_renew.set()
+        try:
+            await asyncio.wait_for(self._renew_task, timeout=5.0)
+        except asyncio.TimeoutError:
+            self._renew_task.cancel()
+            try:
+                await self._renew_task
+            except asyncio.CancelledError:
+                pass
+        self._renew_task = None
+
+    async def _renew_loop(self) -> None:
+        """Background task that periodically renews the lease."""
+        while not self._stop_renew.is_set():
+            try:
+                await asyncio.wait_for(
+                    self._stop_renew.wait(),
+                    timeout=self._config.lease_renew_interval_seconds,
+                )
+                return  # Stop requested
+            except asyncio.TimeoutError:
+                pass
+
+            try:
+                # Renew the lease only if we still own it
+                current = await self._redis.get(self._key)
+                if not current or current.decode() != self._instance_id:
+                    # Lease was stolen or expired
+                    logger.warning(
+                        "Lease lost (stolen or expired): tenant=%s agent=%s",
+                        self._tenant_id,
+                        self._agent_id,
+                    )
+                    self._owned = False
+                    return
+
+                # Extend the lease
+                await self._redis.expire(self._key, self._config.lease_ttl_seconds)
+                self._consecutive_failures = 0
+                logger.debug(
+                    "Renewed cron lease: tenant=%s agent=%s",
+                    self._tenant_id,
+                    self._agent_id,
+                )
+            except Exception as e:
+                self._consecutive_failures += 1
+                logger.warning(
+                    "Lease renewal failed (%d/%d): %s",
+                    self._consecutive_failures,
+                    self._config.lease_renew_failure_threshold,
+                    e,
+                )
+                if (
+                    self._consecutive_failures
+                    >= self._config.lease_renew_failure_threshold
+                ):
+                    logger.error(
+                        "Lease renewal failed too many times, "
+                        "considering lease lost: tenant=%s agent=%s",
+                        self._tenant_id,
+                        self._agent_id,
+                    )
+                    self._owned = False
+                    return
+
+
+class ExecutionLock:
+    """Redis-backed execution lock for timed job de-duplication.
+
+    Prevents duplicate execution of the same timed job across instances
+    during leadership transitions.
+    """
+
+    def __init__(
+        self,
+        redis_client: Any,
+        tenant_id: Optional[str],
+        agent_id: str,
+        job_id: str,
+        ttl_seconds: int,
+    ):
+        self._redis = redis_client
+        self._tenant_id = tenant_id or "default"
+        self._agent_id = agent_id
+        self._job_id = job_id
+        self._ttl_seconds = ttl_seconds
+        self._key = f"swe:cron:exec:{self._tenant_id}:{agent_id}:{job_id}"
+
+    async def acquire(self) -> bool:
+        """Attempt to acquire the execution lock.
+
+        Returns True if lock was acquired, False if already locked.
+        """
+        if not REDIS_AVAILABLE:
+            raise RedisNotAvailableError("Redis is not available")
+
+        try:
+            # Try to set with NX (only if not exists)
+            acquired = await self._redis.set(
+                self._key,
+                str(uuid.uuid4()),
+                nx=True,
+                ex=self._ttl_seconds,
+            )
+            return bool(acquired)
+        except Exception as e:
+            logger.warning("Failed to acquire execution lock: %s", e)
+            # Fail safe: don't execute if we can't confirm lock
+            return False
+
+    async def release(self) -> None:
+        """Release the execution lock."""
+        try:
+            await self._redis.delete(self._key)
+        except Exception as e:
+            logger.warning("Error releasing execution lock: %s", e)
+
+
+class ReloadPublisher:
+    """Publishes reload signals for cron configuration changes."""
+
+    def __init__(
+        self,
+        redis_client: Any,
+        config: CoordinationConfig,
+    ):
+        self._redis = redis_client
+        self._config = config
+
+    async def publish(self, tenant_id: Optional[str], agent_id: str) -> bool:
+        """Publish a reload signal for the given tenant+agent.
+
+        Returns True if published successfully, False otherwise.
+        """
+        if not REDIS_AVAILABLE:
+            raise RedisNotAvailableError("Redis is not available")
+
+        try:
+            channel = f"{self._config.reload_channel_prefix}:{tenant_id or 'default'}:{agent_id}"
+            message = json.dumps({
+                "tenant_id": tenant_id or "default",
+                "agent_id": agent_id,
+                "timestamp": str(uuid.uuid4()),  # Unique id for dedup
+            })
+            await self._redis.publish(channel, message)
+            logger.debug(
+                "Published cron reload signal: tenant=%s agent=%s",
+                tenant_id,
+                agent_id,
+            )
+            return True
+        except Exception as e:
+            logger.warning("Failed to publish reload signal: %s", e)
+            return False
+
+
+class ReloadSubscriber:
+    """Subscribes to reload signals for cron configuration changes."""
+
+    def __init__(
+        self,
+        redis_client: Any,
+        tenant_id: Optional[str],
+        agent_id: str,
+        config: CoordinationConfig,
+        on_reload: Callable[[], None],
+    ):
+        self._redis = redis_client
+        self._tenant_id = tenant_id or "default"
+        self._agent_id = agent_id
+        self._config = config
+        self._on_reload = on_reload
+        self._channel = f"{config.reload_channel_prefix}:{self._tenant_id}:{agent_id}"
+        self._task: Optional[asyncio.Task] = None
+        self._stop_event = asyncio.Event()
+
+    async def start(self) -> None:
+        """Start the subscriber."""
+        if not REDIS_AVAILABLE:
+            raise RedisNotAvailableError("Redis is not available")
+
+        if self._task is not None:
+            return
+
+        self._stop_event.clear()
+        self._task = asyncio.create_task(
+            self._subscribe_loop(),
+            name=f"reload-sub-{self._tenant_id}-{self._agent_id}",
+        )
+        logger.debug(
+            "Started reload subscriber: tenant=%s agent=%s",
+            self._tenant_id,
+            self._agent_id,
+        )
+
+    async def stop(self) -> None:
+        """Stop the subscriber."""
+        if self._task is None:
+            return
+
+        self._stop_event.set()
+        try:
+            await asyncio.wait_for(self._task, timeout=5.0)
+        except asyncio.TimeoutError:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        self._task = None
+        logger.debug(
+            "Stopped reload subscriber: tenant=%s agent=%s",
+            self._tenant_id,
+            self._agent_id,
+        )
+
+    async def _subscribe_loop(self) -> None:
+        """Background task that listens for reload signals."""
+        try:
+            async with self._redis.pubsub() as pubsub:
+                await pubsub.subscribe(self._channel)
+                logger.info(
+                    "Subscribed to reload channel: %s",
+                    self._channel,
+                )
+
+                while not self._stop_event.is_set():
+                    try:
+                        message = await asyncio.wait_for(
+                            pubsub.get_message(ignore_subscribe_messages=True),
+                            timeout=1.0,
+                        )
+                        if message is not None:
+                            logger.info(
+                                "Received reload signal for tenant=%s agent=%s",
+                                self._tenant_id,
+                                self._agent_id,
+                            )
+                            try:
+                                self._on_reload()
+                            except Exception:  # pylint: disable=broad-except
+                                logger.exception("Reload callback failed")
+                    except asyncio.TimeoutError:
+                        continue
+                    except Exception as e:
+                        logger.warning("Redis error in subscribe loop: %s", e)
+                        await asyncio.sleep(1.0)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # pylint: disable=broad-except
+            logger.exception("Subscribe loop failed")
+
+
+class CronCoordination:
+    """Main coordination interface for cron leadership and locking.
+
+    This class manages the lifecycle of:
+    - Agent lease (leadership election)
+    - Reload pub/sub (configuration change notifications)
+    """
+
+    def __init__(
+        self,
+        tenant_id: Optional[str],
+        agent_id: str,
+        config: CoordinationConfig,
+    ):
+        self._tenant_id = tenant_id
+        self._agent_id = agent_id
+        self._config = config
+        self._instance_id = str(uuid.uuid4())
+
+        self._redis: Optional[Any] = None
+        self._lease: Optional[AgentLease] = None
+        self._reload_subscriber: Optional[ReloadSubscriber] = None
+        self._on_reload: Optional[Callable[[], None]] = None
+
+    @property
+    def instance_id(self) -> str:
+        """Get the unique instance ID."""
+        return self._instance_id
+
+    @property
+    def is_leader(self) -> bool:
+        """Check if this instance is the current leader."""
+        if self._lease is None:
+            return False
+        return self._lease.is_owned
+
+    async def connect(self) -> bool:
+        """Connect to Redis (standalone or cluster mode).
+
+        Returns True if connected successfully, False otherwise.
+        """
+        if not REDIS_AVAILABLE:
+            logger.warning("Redis is not available (redis-py not installed)")
+            return False
+
+        if not self._config.enabled:
+            logger.debug("Coordination is disabled in config")
+            return False
+
+        try:
+            if self._config.cluster_mode:
+                # Connect to Redis Cluster
+                self._redis = await self._connect_cluster()
+            else:
+                # Connect to standalone Redis
+                if redis_lib is None:
+                    raise RedisNotAvailableError("Redis library not available")
+                self._redis = redis_lib.from_url(
+                    self._config.redis_url,
+                    decode_responses=False,
+                )
+
+            # Test connection
+            if self._redis is not None:
+                await self._redis.ping()
+            logger.info(
+                "Connected to Redis for cron coordination: %s (cluster=%s)",
+                self._config.redis_url if not self._config.cluster_mode else "cluster",
+                self._config.cluster_mode,
+            )
+            return True
+        except Exception as e:
+            logger.warning("Failed to connect to Redis: %s", e)
+            self._redis = None
+            return False
+
+    async def _connect_cluster(self) -> Any:
+        """Connect to Redis Cluster.
+
+        Returns Redis cluster client.
+        """
+        if not redis_lib:
+            raise RedisNotAvailableError("Redis library not available")
+
+        # Import cluster-specific classes
+        from redis.asyncio.cluster import RedisCluster
+
+        # Build startup nodes
+        startup_nodes = self._config.cluster_startup_nodes
+        if not startup_nodes and self._config.cluster_nodes:
+            # Convert cluster_nodes to startup_nodes format
+            startup_nodes = []
+            for node in self._config.cluster_nodes:
+                if isinstance(node, dict):
+                    startup_nodes.append({"host": node["host"], "port": node["port"]})
+                elif ClusterNode:
+                    startup_nodes.append(node)
+
+        if not startup_nodes:
+            # Parse from redis_url if no nodes specified
+            # Expected format: redis://host1:port1,host2:port2,host3:port3
+            url = self._config.redis_url
+            if url.startswith("redis://"):
+                url = url[8:]
+            nodes = []
+            for host_port in url.split(","):
+                if ":" in host_port:
+                    host, port_str = host_port.rsplit(":", 1)
+                    nodes.append({"host": host, "port": int(port_str)})
+                else:
+                    nodes.append({"host": host_port, "port": 6379})
+            startup_nodes = nodes
+
+        logger.debug("Connecting to Redis Cluster with nodes: %s", startup_nodes)
+
+        cluster = RedisCluster(
+            startup_nodes=startup_nodes,
+            max_connections=self._config.cluster_max_connections,
+            decode_responses=False,
+        )
+        return cluster
+
+    async def disconnect(self) -> None:
+        """Disconnect from Redis."""
+        await self.deactivate()
+
+        if self._redis is not None:
+            try:
+                await self._redis.close()
+            except Exception as e:  # pylint: disable=broad-except
+                logger.warning("Error closing Redis connection: %s", e)
+            self._redis = None
+
+    async def activate(self) -> bool:
+        """Activate this instance as a leader candidate.
+
+        This acquires the lease and starts listening for reload signals.
+        Returns True if this instance became the leader, False if follower.
+        """
+        if self._redis is None:
+            logger.debug("Cannot activate: not connected to Redis")
+            return True  # Run without coordination if Redis unavailable
+
+        # Create and acquire lease
+        self._lease = AgentLease(
+            redis_client=self._redis,
+            tenant_id=self._tenant_id,
+            agent_id=self._agent_id,
+            instance_id=self._instance_id,
+            config=self._config,
+        )
+
+        acquired = await self._lease.acquire()
+
+        # Start reload subscriber regardless of leader/follower status
+        if self._on_reload is not None:
+            self._reload_subscriber = ReloadSubscriber(
+                redis_client=self._redis,
+                tenant_id=self._tenant_id,
+                agent_id=self._agent_id,
+                config=self._config,
+                on_reload=self._on_reload,
+            )
+            await self._reload_subscriber.start()
+
+        return acquired
+
+    async def deactivate(self) -> None:
+        """Deactivate this instance, releasing leadership if held."""
+        if self._reload_subscriber is not None:
+            await self._reload_subscriber.stop()
+            self._reload_subscriber = None
+
+        if self._lease is not None:
+            await self._lease.release()
+            self._lease = None
+
+    async def publish_reload(self) -> bool:
+        """Publish a reload signal.
+
+        Can be called from any instance (leader or follower).
+        """
+        if self._redis is None:
+            return False
+
+        publisher = ReloadPublisher(
+            redis_client=self._redis,
+            config=self._config,
+        )
+        return await publisher.publish(self._tenant_id, self._agent_id)
+
+    def set_reload_callback(self, callback: Callable[[], None]) -> None:
+        """Set the callback to invoke when a reload signal is received."""
+        self._on_reload = callback
+
+    def create_execution_lock(self, job_id: str, timeout_seconds: int) -> ExecutionLock:
+        """Create an execution lock for a specific job.
+
+        Args:
+            job_id: The job ID to lock
+            timeout_seconds: The job timeout (lock will cover timeout + margin)
+
+        Returns:
+            ExecutionLock instance
+        """
+        if self._redis is None:
+            raise RedisNotAvailableError("Not connected to Redis")
+
+        ttl = timeout_seconds + self._config.lock_safety_margin_seconds
+        return ExecutionLock(
+            redis_client=self._redis,
+            tenant_id=self._tenant_id,
+            agent_id=self._agent_id,
+            job_id=job_id,
+            ttl_seconds=ttl,
+        )
+
+    async def ensure_connected(self) -> bool:
+        """Ensure Redis connection is active, reconnect if needed.
+
+        Returns True if connected, False otherwise.
+        """
+        if self._redis is None:
+            return await self.connect()
+
+        try:
+            await self._redis.ping()
+            return True
+        except Exception:
+            logger.warning("Redis connection lost, attempting to reconnect")
+            self._redis = None
+            return await self.connect()
+
+
+@asynccontextmanager
+async def execution_lock_context(
+    coordination: CronCoordination,
+    job_id: str,
+    timeout_seconds: int,
+) -> AsyncGenerator[bool, None]:
+    """Async context manager for acquiring/releasing execution lock.
+
+    Usage:
+        async with execution_lock_context(coord, job_id, timeout) as acquired:
+            if acquired:
+                # Execute the job
+                pass
+            else:
+                # Skip duplicate execution
+                pass
+    """
+    lock = coordination.create_execution_lock(job_id, timeout_seconds)
+    acquired = await lock.acquire()
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            await lock.release()

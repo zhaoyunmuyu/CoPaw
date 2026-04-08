@@ -26,6 +26,7 @@ from ..runner import AgentRunner
 from ..runner.task_tracker import TaskTracker
 from ..mcp import MCPClientManager
 from ..crons.manager import CronManager
+from ..crons.coordination import CoordinationConfig
 from ..crons.repo.json_repo import JsonJobRepository
 from ...config.config import load_agent_config
 from ...agents.memory import ReMeLightMemoryManager
@@ -148,6 +149,39 @@ class Workspace:
         if self.runner is not None:
             self.runner._manager = manager  # pylint: disable=protected-access
 
+    def _get_cron_coordination_config(self) -> "CoordinationConfig":
+        """Get coordination config from agent configuration.
+
+        Returns:
+            CoordinationConfig for cron leadership election
+        """
+        # Try to get from root config first
+        try:
+            from ...config.utils import load_config, get_tenant_config_path
+
+            config_path = get_tenant_config_path(self.tenant_id)
+            config = load_config(config_path)
+            if hasattr(config, 'cron_coordination'):
+                cc = config.cron_coordination
+                return CoordinationConfig(
+                    enabled=cc.enabled,
+                    redis_url=cc.redis_url,
+                    cluster_mode=cc.cluster_mode,
+                    cluster_nodes=cc.cluster_nodes if cc.cluster_mode else None,
+                    cluster_skip_full_coverage_check=cc.cluster_skip_full_coverage_check,
+                    cluster_max_connections=cc.cluster_max_connections,
+                    lease_ttl_seconds=cc.lease_ttl_seconds,
+                    lease_renew_interval_seconds=cc.lease_renew_interval_seconds,
+                    lease_renew_failure_threshold=cc.lease_renew_failure_threshold,
+                    lock_safety_margin_seconds=cc.lock_safety_margin_seconds,
+                    reload_channel_prefix=cc.reload_channel_prefix,
+                )
+        except Exception:  # pylint: disable=broad-exempt
+            pass
+
+        # Return default (disabled)
+        return CoordinationConfig()
+
     def _register_services(  # pylint: disable=too-many-statements
         self,
     ) -> None:
@@ -262,9 +296,11 @@ class Workspace:
                     ),
                     "timezone": "UTC",
                     "agent_id": ws.agent_id,
+                    "tenant_id": ws.tenant_id,
+                    "coordination_config": ws._get_cron_coordination_config(),
                 },
-                start_method="start",
-                stop_method="stop",
+                start_method="activate",
+                stop_method="deactivate",
                 priority=40,
                 concurrent_init=False,
             ),

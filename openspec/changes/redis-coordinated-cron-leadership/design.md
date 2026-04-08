@@ -94,6 +94,35 @@ For this stage, the team explicitly does not want to redesign the rest of the ru
 - [Manual runs can overlap with scheduled runs] -> Keep this as intentional behavior and document that timed de-duplication does not apply to explicit operator-triggered executions.
 - [Additional moving parts in workspace startup] -> Isolate Redis concerns in a dedicated coordination layer so `CronManager` remains focused on local scheduling behavior.
 
+## Redis Cluster Support
+
+For high-availability deployments, the coordination layer supports Redis Cluster mode:
+
+### Decision: Redis Cluster vs Standalone
+
+**Choice:** Support both standalone Redis and Redis Cluster modes via configuration.
+
+**Rationale:**
+- Many production environments use Redis Cluster for high availability
+- Standalone Redis is simpler for development and small deployments
+- Both modes use the same Redis primitives (SET NX, EXPIRE, PUBLISH, SUBSCRIBE)
+- The redis-py library provides a unified interface with minor connection differences
+
+**Configuration:**
+- `cluster_mode: false` (default) - Use standalone Redis with `redis_url`
+- `cluster_mode: true` - Use Redis Cluster with `cluster_nodes` list
+- Cluster nodes can be specified as:
+  - A list of dicts: `[{"host": "node1", "port": 6379}, ...]`
+  - Parsed from redis_url: `redis://node1:6379,node2:6379,node3:6379`
+
+### Cluster-Specific Considerations
+
+1. **Pub/Sub in Cluster Mode:** Redis Cluster supports pub/sub but clients must subscribe to the correct node. The redis-py-cluster library handles this transparently.
+
+2. **Key Distribution:** All coordination keys use the same prefix `swe:cron:` which ensures they hash to the same slot (if using hash tags) or are distributed consistently.
+
+3. **Failover Handling:** The Redis client library handles node failover automatically. The coordination layer treats this as a brief connection interruption and will retry operations.
+
 ## Migration Plan
 
 1. Introduce Redis-backed coordination primitives for agent lease, timed job lock, and reload pub/sub.

@@ -58,3 +58,21 @@ The backend SHALL stop active scheduling when leadership can no longer be renewe
 #### Scenario: Redis outage does not promote a follower without a lease
 - **WHEN** a follower instance cannot reach Redis to establish confirmed lease ownership
 - **THEN** the backend SHALL keep cron scheduling inactive for that tenant-agent workspace
+
+### Requirement: Support Redis Cluster mode for high availability
+The backend SHALL support Redis Cluster mode as an alternative to standalone Redis for cron coordination, enabling high-availability deployments.
+
+#### Scenario: Redis Cluster mode configuration
+- **WHEN** cron coordination is configured with `cluster_mode: true`
+- **THEN** the backend SHALL connect to a Redis Cluster using the configured cluster nodes
+- **AND** all coordination operations (lease acquisition, execution locks, pub/sub) SHALL work with the cluster
+
+#### Scenario: Cluster node failover
+- **WHEN** the connected Redis Cluster node becomes unavailable
+- **THEN** the Redis client library SHALL automatically failover to another available node in the cluster
+- **AND** cron coordination SHALL continue operating without interruption (may experience brief delays during failover)
+
+#### Scenario: Standalone Redis backward compatibility
+- **WHEN** cron coordination is configured with `cluster_mode: false` (default)
+- **THEN** the backend SHALL connect to a standalone Redis instance using the configured `redis_url`
+- **AND** existing deployments without cluster support SHALL continue to work
