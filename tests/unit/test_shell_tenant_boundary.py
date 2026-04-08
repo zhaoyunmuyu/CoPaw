@@ -81,61 +81,90 @@ class TestExtractPathTokens:
     def test_extracts_absolute_paths(self):
         """Should extract absolute paths from commands."""
         cmd = "cat /etc/passwd && ls /var/log"
-        file_paths, _ = _extract_path_tokens(cmd)
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
         assert "/etc/passwd" in file_paths
         assert "/var/log" in file_paths
+        assert has_code_exec is False
 
     def test_extracts_relative_paths(self):
         """Should extract relative paths from commands."""
         cmd = "cat ./file.txt && ls ../parent"
-        file_paths, _ = _extract_path_tokens(cmd)
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
         assert "./file.txt" in file_paths
         assert "../parent" in file_paths
+        assert has_code_exec is False
 
     def test_extracts_paths_after_flags(self):
         """Should extract paths following file-related flags."""
         cmd = "cat -f /path/to/file --input ./input.txt -o /output.txt"
-        file_paths, _ = _extract_path_tokens(cmd)
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
         assert "/path/to/file" in file_paths
         assert "./input.txt" in file_paths
         assert "/output.txt" in file_paths
+        assert has_code_exec is False
 
     def test_extracts_tilde_paths(self):
         """Should extract paths starting with tilde."""
         cmd = "cat ~/.bashrc && cp ~/file.txt /dest"
-        file_paths, _ = _extract_path_tokens(cmd)
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
         assert "~/.bashrc" in file_paths
         assert "~/file.txt" in file_paths
+        assert has_code_exec is False
 
     def test_no_false_positives(self):
         """Should not extract non-path tokens."""
         cmd = "echo hello world 123"
-        file_paths, _ = _extract_path_tokens(cmd)
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
         assert "hello" not in file_paths
         assert "world" not in file_paths
         assert "123" not in file_paths
+        assert has_code_exec is False
 
     def test_string_arguments_not_treated_as_paths(self):
-        """String arguments to non-file flags should not be treated as paths."""
+        """String arguments to echo flags should not be treated as paths."""
         cmd = 'echo -n "/etc/hosts"'
-        file_paths, _ = _extract_path_tokens(cmd)
-        # /etc/hosts is argument to -n flag (not a file path flag), should not be extracted
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
+        # /etc/hosts is argument to -n flag in echo command (exempt), should not be extracted
         assert "/etc/hosts" not in file_paths
+        assert has_code_exec is False
 
-    def test_code_exec_flags_extract_paths_from_code(self):
-        """Paths inside code strings should be extracted."""
+    def test_code_exec_flags_detected(self):
+        """Commands with -c/-e flags should be flagged for rejection."""
         cmd = 'python -c "print(open(\'/etc/passwd\').read())"'
-        file_paths, code_strings = _extract_path_tokens(cmd)
-        # The code string should be captured
-        assert len(code_strings) == 1
-        # And /etc/passwd should be extracted from within the code
-        assert "/etc/passwd" in file_paths
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
+        # Should detect code execution flag
+        assert has_code_exec is True
+        # Should NOT extract paths from code strings (we reject the whole command)
+        assert "/etc/passwd" not in file_paths
 
     def test_printf_string_not_treated_as_path(self):
         """printf format strings should not be treated as paths."""
         cmd = 'printf -- "/etc/hosts\\n"'
-        file_paths, _ = _extract_path_tokens(cmd)
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
         assert "/etc/hosts" not in file_paths
+        assert has_code_exec is False
+
+    def test_cat_with_double_dash_extracts_path(self):
+        """cat -- /etc/hosts should extract /etc/hosts as path."""
+        cmd = "cat -- /etc/hosts"
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
+        assert "/etc/hosts" in file_paths
+        assert has_code_exec is False
+
+    def test_cp_with_double_dash_extracts_paths(self):
+        """cp -- /src /dst should extract both paths."""
+        cmd = "cp -- /etc/passwd /tmp/copied.txt"
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
+        assert "/etc/passwd" in file_paths
+        assert "/tmp/copied.txt" in file_paths
+        assert has_code_exec is False
+
+    def test_tar_with_absolute_path_extracts_path(self):
+        """tar -xf /etc/hosts should extract /etc/hosts as path."""
+        cmd = "tar -xf /etc/hosts"
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
+        assert "/etc/hosts" in file_paths
+        assert has_code_exec is False
 
 
 # =============================================================================
@@ -199,6 +228,33 @@ class TestValidateShellPaths:
             # ../ from subdir/nested should resolve to subdir, which is within tenant
             result = _validate_shell_paths("cat ../file.txt", base_dir=subdir)
             assert result is None
+
+    def test_code_exec_flag_rejected(self, mock_working_dir: Path):
+        """Should reject commands with -c/-e code execution flags."""
+        tenant_dir = mock_working_dir / "test_tenant"
+        with tenant_context(tenant_id="test_tenant"):
+            result = _validate_shell_paths(
+                'python -c "print(open(\'/etc/passwd\').read())"',
+                base_dir=tenant_dir
+            )
+            assert result is not None
+            assert "code execution flags" in result
+
+    def test_double_dash_paths_validated(self, mock_working_dir: Path):
+        """cat -- /etc/hosts should reject /etc/hosts as outside tenant."""
+        tenant_dir = mock_working_dir / "test_tenant"
+        with tenant_context(tenant_id="test_tenant"):
+            result = _validate_shell_paths("cat -- /etc/hosts", base_dir=tenant_dir)
+            assert result is not None
+            assert "outside the allowed workspace" in result
+
+    def test_tar_with_absolute_path_rejected(self, mock_working_dir: Path):
+        """tar -xf /etc/hosts should reject /etc/hosts as outside tenant."""
+        tenant_dir = mock_working_dir / "test_tenant"
+        with tenant_context(tenant_id="test_tenant"):
+            result = _validate_shell_paths("tar -xf /etc/hosts", base_dir=tenant_dir)
+            assert result is not None
+            assert "outside the allowed workspace" in result
 
 
 # =============================================================================
@@ -316,3 +372,13 @@ class TestExecuteShellCommand:
             result = await execute_shell_command("cat ../other_tenant/secret.txt")
 
             assert "outside the allowed workspace" in result.content[0]["text"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_code_exec_in_command(self, mock_working_dir: Path):
+        """Should reject commands with code execution flags."""
+        from swe.agents.tools.shell import execute_shell_command
+
+        with tenant_context(tenant_id="test_tenant"):
+            result = await execute_shell_command('python -c "print(1)"')
+
+            assert "code execution flags" in result.content[0]["text"]

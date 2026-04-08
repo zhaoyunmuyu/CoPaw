@@ -6,7 +6,6 @@
 import asyncio
 import locale
 import os
-import re
 import shlex
 import signal
 import subprocess
@@ -25,70 +24,53 @@ from ...security.tenant_path_boundary import (
 )
 
 
-# Known file-related flags that take file paths as arguments
-_FILE_PATH_FLAGS = frozenset({
-    # Common file flags
-    "-f", "--file", "-i", "--input", "-o", "--output",
-    "-d", "--directory", "-p", "--path",
-    "--config", "--conf", "--data", "--log",
-    # Input/Output
-    "-in", "-out", "--in", "--out",
-    "--output-file", "--input-file",
-    # Source/Dest
-    "-s", "--source", "--src", "--dest", "--destination",
-    # Certificate/Key files
-    "--cert", "--key", "--ca-cert",
-    # Database
-    "--db", "--database", "--db-file",
+# Commands that take string arguments which may look like paths
+# but should NOT be treated as file paths
+_STRING_ARG_COMMANDS = frozenset({
+    "echo", "/bin/echo", "/usr/bin/echo",
+    "printf", "/usr/bin/printf",
 })
 
 # Known code-execution flags that take code/script as arguments
+# Commands with these flags are rejected entirely
 _CODE_EXEC_FLAGS = frozenset({
     "-c", "-e", "--eval", "-eval",
     "-exec", "--exec",
     "-command", "--command",
 })
 
-# Regex to extract paths from within code strings (for -c, -e flags)
-# Matches paths like /etc/passwd, /var/log, etc.
-_PATH_IN_CODE_PATTERN = re.compile(
-    r'["\'\']([a-zA-Z0-9_./~\-]*(?:/|\\)[a-zA-Z0-9_./~\-]*)["\'\']|'
-    r'\(([\'"]?)(/[^\'"\s)]+)\2\)'
-)
 
-
-def _extract_paths_from_code(code: str) -> list[str]:
-    """Extract potential file paths from code/script content.
+def _is_path_like(token: str) -> bool:
+    """Check if a token looks like a file path.
 
     Args:
-        code: The code/script string to analyze.
+        token: The token to check.
 
     Returns:
-        List of potential file paths found in the code.
+        True if the token looks like a path (starts with /, ./, ../, or ~).
     """
-    paths = []
-    # Look for patterns like open('/path'), file="/path", '/path/to/file'
-    # Simple heuristic: look for quoted absolute paths
-    for match in re.finditer(r'["\'](/[a-zA-Z0-9_./~\-]+)["\']', code):
-        path = match.group(1)
-        if path and len(path) > 1:
-            paths.append(path)
-    return paths
+    return token.startswith(('/', './', '../', '~'))
 
 
-def _extract_path_tokens(command: str) -> tuple[list[str], list[str]]:
-    """Extract path tokens from shell command, distinguishing file args from code args.
+
+def _extract_path_tokens(command: str) -> tuple[list[str], bool]:
+    """Extract path tokens from shell command.
+
+    Implements a "path-first" validation strategy:
+    - Any token that looks like a path (/..., ./..., ../..., ~...) is validated
+    - Only exempt: echo/printf commands (their non-flag args are treated as strings)
+    - Commands with -c/-e flags are flagged for rejection
 
     Args:
         command: The shell command string.
 
     Returns:
-        Tuple of (file_paths, code_strings) where:
-        - file_paths: List of explicit file path tokens
-        - code_strings: List of code/script strings (from -c, -e flags)
+        Tuple of (file_paths, has_code_exec) where:
+        - file_paths: List of explicit file path tokens found
+        - has_code_exec: True if command contains code execution flags (-c, -e)
     """
     file_paths = []
-    code_strings = []
+    has_code_exec = False
 
     # Split command into tokens for better parsing
     try:
@@ -97,47 +79,45 @@ def _extract_path_tokens(command: str) -> tuple[list[str], list[str]]:
         # If shlex fails, fall back to simple parsing
         tokens = command.split()
 
+    if not tokens:
+        return file_paths, has_code_exec
+
+    # Check if this is an exempt command (echo, printf)
+    cmd_name = tokens[0]
+    is_exempt_cmd = cmd_name in _STRING_ARG_COMMANDS
+
     i = 0
     while i < len(tokens):
         token = tokens[i]
 
-        # Check for file path flags
-        if token in _FILE_PATH_FLAGS:
-            if i + 1 < len(tokens):
-                next_token = tokens[i + 1]
-                # Check if it looks like a path
-                if next_token.startswith(('/', './', '../', '~')):
-                    file_paths.append(next_token)
-                i += 1
+        # Check for code execution flags - these cause immediate rejection
+        if token in _CODE_EXEC_FLAGS:
+            has_code_exec = True
+            i += 1
+            continue
 
-        # Check for code execution flags
-        elif token in _CODE_EXEC_FLAGS:
-            if i + 1 < len(tokens):
-                code = tokens[i + 1]
-                code_strings.append(code)
-                # Also extract paths from the code
-                paths_in_code = _extract_paths_from_code(code)
-                file_paths.extend(paths_in_code)
-                i += 1
-
-        # Check for standalone paths (not after flags)
-        elif token.startswith(('/', './', '../', '~')):
-            # Skip if it's just a flag value that looks like a path
-            # (e.g., echo -n "/etc/hosts" - the /etc/hosts is not a standalone path)
-            # Check if previous token is a simple flag (not in our known lists)
-            if i > 0:
-                prev = tokens[i - 1]
-                if prev.startswith('-') and prev not in _FILE_PATH_FLAGS:
-                    # This is likely an argument to a non-file flag, skip
-                    pass
+        # Check for path-like tokens
+        if _is_path_like(token):
+            # For exempt commands (echo/printf), only treat as path if not
+            # preceded by a flag (to handle: echo -n "/etc/hosts")
+            if is_exempt_cmd:
+                if i > 0:
+                    prev = tokens[i - 1]
+                    if prev.startswith('-'):
+                        # This is likely a flag argument, skip
+                        pass
+                    else:
+                        file_paths.append(token)
                 else:
-                    file_paths.append(token)
+                    # First token after command name - for echo/printf this is text
+                    pass
             else:
+                # Non-exempt command: any path-like token is a file path
                 file_paths.append(token)
 
         i += 1
 
-    return file_paths, code_strings
+    return file_paths, has_code_exec
 
 
 def _validate_shell_paths(command: str, base_dir: Path) -> Optional[str]:
@@ -150,7 +130,14 @@ def _validate_shell_paths(command: str, base_dir: Path) -> Optional[str]:
     Returns:
         Error message if any path escapes the tenant boundary, None otherwise.
     """
-    file_paths, _ = _extract_path_tokens(command)
+    file_paths, has_code_exec = _extract_path_tokens(command)
+
+    # Reject commands with code execution flags (-c, -e, etc.)
+    if has_code_exec:
+        return (
+            "Error: Shell commands with code execution flags (-c, -e, etc.) "
+            "are not allowed for security reasons."
+        )
 
     for token in file_paths:
         # Skip checking if it's clearly not a path
