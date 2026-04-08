@@ -20,7 +20,7 @@ The backend startup lazy-loading work reduced cold start, but the first request 
 
 ## Impact
 
-- Affected backend middleware: `src/copaw/app/middleware/tenant_workspace.py`
-- Affected provider/model initialization paths: `src/copaw/app/routers/providers.py`, `src/copaw/app/routers/local_models.py`, `src/copaw/agents/model_factory.py`
-- Affected provider subsystem ownership boundary: `src/copaw/providers/provider_manager.py`
+- Affected backend middleware: `src/swe/app/middleware/tenant_workspace.py`
+- Affected provider/model initialization paths: `src/swe/app/routers/providers.py`, `src/swe/app/routers/local_models.py`, `src/swe/agents/model_factory.py`
+- Affected provider subsystem ownership boundary: `src/swe/providers/provider_manager.py`
 - No frontend/API contract changes are required for this iteration.

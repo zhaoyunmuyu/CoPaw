@@ -14,6 +14,9 @@ from typing import TYPE_CHECKING
 from agentscope.message import Msg, TextBlock
 from agentscope.tool import Toolkit, ToolResponse
 
+# Pre-import heavy dependencies to avoid first-request latency
+from reme.reme_light import ReMeLight
+
 from swe.agents.memory.base_memory_manager import BaseMemoryManager
 from swe.agents.model_factory import create_model_and_formatter
 from swe.agents.tools import read_file, write_file, edit_file
@@ -89,8 +92,6 @@ See: https://docs.trychroma.com/docs/overview/troubleshooting#sqlite
                     memory_backend = "local"
         else:
             memory_backend = backend_env
-
-        from reme.reme_light import ReMeLight
 
         emb_config = self.get_embedding_config()
         vector_enabled = bool(emb_config["base_url"]) and bool(

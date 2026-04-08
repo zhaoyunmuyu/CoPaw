@@ -14,6 +14,7 @@ from ..config.context import (
     get_current_user_id,
     TenantContextError,
 )
+from .middleware.tenant_workspace import TenantWorkspaceContext
 
 if TYPE_CHECKING:
     from .workspace import Workspace
@@ -23,6 +24,64 @@ _current_agent_id: ContextVar[Optional[str]] = ContextVar(
     "current_agent_id",
     default=None,
 )
+
+
+def _resolve_tenant_id(request: Request) -> Optional[str]:
+    """Resolve tenant ID from context or request state."""
+    tenant_id = get_current_tenant_id()
+    if tenant_id is None:
+        tenant_id = getattr(request.state, "tenant_id", None)
+    return tenant_id
+
+
+def _resolve_user_id(request: Request) -> Optional[str]:
+    """Resolve user ID from context or request state."""
+    user_id = get_current_user_id()
+    if user_id is None:
+        user_id = getattr(request.state, "user_id", None)
+    return user_id
+
+
+def _resolve_target_agent_id(
+    request: Request,
+    agent_id: Optional[str] = None,
+) -> tuple[Optional[str], bool]:
+    """Resolve target agent ID from various sources.
+
+    Returns:
+        Tuple of (target_agent_id, explicit_agent_requested)
+    """
+    target_agent_id = agent_id
+    explicit = target_agent_id is not None
+
+    if not target_agent_id and hasattr(request.state, "agent_id"):
+        target_agent_id = request.state.agent_id
+        explicit = target_agent_id is not None
+
+    if not target_agent_id:
+        target_agent_id = request.headers.get("X-Agent-Id")
+        explicit = target_agent_id is not None
+
+    return target_agent_id, explicit
+
+
+def _get_cached_workspace(
+    request: Request,
+    target_agent_id: Optional[str],
+    explicit_requested: bool,
+) -> Optional["Workspace"]:
+    """Get cached workspace if valid and matches target agent."""
+    workspace = getattr(request.state, "workspace", None)
+    if workspace is None or isinstance(workspace, TenantWorkspaceContext):
+        return None
+    if explicit_requested:
+        return None
+    if (
+        target_agent_id
+        and getattr(workspace, "agent_id", None) != target_agent_id
+    ):
+        return None
+    return workspace
 
 
 def _get_tenant_aware_config(tenant_id: Optional[str] = None):
@@ -67,51 +126,29 @@ async def get_agent_for_request(
     """
     from fastapi import HTTPException
 
-    # Step 1: Resolve tenant context
-    tenant_id = get_current_tenant_id()
-    if tenant_id is None:
-        # Try to get from request state (set by tenant middleware)
-        tenant_id = getattr(request.state, "tenant_id", None)
+    # Resolve contexts and target agent
+    tenant_id = _resolve_tenant_id(request)
+    user_id = _resolve_user_id(request)
+    target_agent_id, explicit_agent_requested = _resolve_target_agent_id(
+        request,
+        agent_id,
+    )
 
-    # Step 1b: Prefer tenant workspace already bound by middleware when it
-    # matches the resolved target agent.
-    workspace = getattr(request.state, "workspace", None)
-
-    # Step 2: Resolve user context
-    user_id = get_current_user_id()
-    if user_id is None:
-        user_id = getattr(request.state, "user_id", None)
-
-    # Step 3: Determine which agent to use
-    target_agent_id = agent_id
-    explicit_agent_requested = target_agent_id is not None
-
-    # Check request.state.agent_id (from agent-scoped router)
-    if not target_agent_id and hasattr(request.state, "agent_id"):
-        target_agent_id = request.state.agent_id
-        explicit_agent_requested = target_agent_id is not None
-
-    # Check X-Agent-Id header
-    if not target_agent_id:
-        target_agent_id = request.headers.get("X-Agent-Id")
-        explicit_agent_requested = target_agent_id is not None
-
-    # Load tenant-aware config for fallback and validation
-    config = None
-    if workspace is not None and not explicit_agent_requested:
-        return workspace
-    if not target_agent_id:
-        # Fallback to active agent from config
-        config = _get_tenant_aware_config(tenant_id)
-        target_agent_id = target_agent_id or config.agents.active_agent or "default"
-
-    if workspace is not None and getattr(workspace, "agent_id", None) == target_agent_id:
+    # Check for cached workspace
+    workspace = _get_cached_workspace(
+        request,
+        target_agent_id,
+        explicit_agent_requested,
+    )
+    if workspace:
         return workspace
 
-    # Check if agent exists and is enabled (using tenant-aware config)
-    if config is None:
-        config = _get_tenant_aware_config(tenant_id)
+    # Load config and determine target agent
+    config = _get_tenant_aware_config(tenant_id)
+    if not target_agent_id:
+        target_agent_id = config.agents.active_agent or "default"
 
+    # Check if agent exists and is enabled
     if target_agent_id not in config.agents.profiles:
         raise HTTPException(
             status_code=404,
@@ -141,7 +178,10 @@ async def get_agent_for_request(
     manager = request.app.state.multi_agent_manager
 
     try:
-        workspace = await manager.get_agent(target_agent_id, tenant_id=tenant_id)
+        workspace = await manager.get_agent(
+            target_agent_id,
+            tenant_id=tenant_id,
+        )
         if not workspace:
             raise HTTPException(
                 status_code=404,
@@ -228,7 +268,7 @@ def get_tenant_workspace_strict(request: Request) -> "Workspace":
     if workspace is None:
         raise TenantContextError(
             "Tenant workspace not bound to request. "
-            "Ensure tenant workspace middleware is installed."
+            "Ensure tenant workspace middleware is installed.",
         )
     return workspace
 

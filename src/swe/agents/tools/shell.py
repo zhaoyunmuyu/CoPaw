@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 # flake8: noqa: E501
 # pylint: disable=line-too-long
-"""The shell command tool."""
+"""The shell command tool with tenant path boundary enforcement."""
 
 import asyncio
 import locale
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -16,8 +17,172 @@ from typing import Optional
 from agentscope.message import TextBlock
 from agentscope.tool import ToolResponse
 
-from ...constant import WORKING_DIR
-from ...config.context import get_current_workspace_dir
+from ...security.tenant_path_boundary import (
+    is_path_within_tenant_with_base,
+    get_current_tenant_root,
+    TenantPathBoundaryError,
+)
+
+
+# Commands that take string arguments which may look like paths
+# but should NOT be treated as file paths
+_STRING_ARG_COMMANDS = frozenset({
+    "echo", "/bin/echo", "/usr/bin/echo",
+    "printf", "/usr/bin/printf",
+})
+
+# Known code-execution flags that take code/script as arguments
+# Commands with these flags are rejected entirely
+_CODE_EXEC_FLAGS = frozenset({
+    "-c", "-e", "--eval", "-eval",
+    "-exec", "--exec",
+    "-command", "--command",
+})
+
+
+def _is_path_like(token: str) -> bool:
+    """Check if a token looks like a file path.
+
+    Args:
+        token: The token to check.
+
+    Returns:
+        True if the token looks like a path (starts with /, ./, ../, or ~).
+    """
+    return token.startswith(('/', './', '../', '~'))
+
+
+
+def _extract_path_tokens(command: str) -> tuple[list[str], bool]:
+    """Extract path tokens from shell command.
+
+    Implements a "path-first" validation strategy:
+    - Any token that looks like a path (/..., ./..., ../..., ~...) is validated
+    - Only exempt: echo/printf commands (their non-flag args are treated as strings)
+    - Commands with -c/-e flags are flagged for rejection
+
+    Args:
+        command: The shell command string.
+
+    Returns:
+        Tuple of (file_paths, has_code_exec) where:
+        - file_paths: List of explicit file path tokens found
+        - has_code_exec: True if command contains code execution flags (-c, -e)
+    """
+    file_paths = []
+    has_code_exec = False
+
+    # Split command into tokens for better parsing
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        # If shlex fails, fall back to simple parsing
+        tokens = command.split()
+
+    if not tokens:
+        return file_paths, has_code_exec
+
+    # Check if this is an exempt command (echo, printf)
+    cmd_name = tokens[0]
+    is_exempt_cmd = cmd_name in _STRING_ARG_COMMANDS
+
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+
+        # Check for code execution flags - these cause immediate rejection
+        if token in _CODE_EXEC_FLAGS:
+            has_code_exec = True
+            i += 1
+            continue
+
+        # Check for path-like tokens
+        if _is_path_like(token):
+            # For exempt commands (echo/printf), only treat as path if not
+            # preceded by a flag (to handle: echo -n "/etc/hosts")
+            if is_exempt_cmd:
+                if i > 0:
+                    prev = tokens[i - 1]
+                    if prev.startswith('-'):
+                        # This is likely a flag argument, skip
+                        pass
+                    else:
+                        file_paths.append(token)
+                else:
+                    # First token after command name - for echo/printf this is text
+                    pass
+            else:
+                # Non-exempt command: any path-like token is a file path
+                file_paths.append(token)
+
+        i += 1
+
+    return file_paths, has_code_exec
+
+
+def _validate_shell_paths(command: str, base_dir: Path) -> Optional[str]:
+    """Validate that all explicit file paths in the command are within tenant boundary.
+
+    Args:
+        command: The shell command to validate.
+        base_dir: The base directory for resolving relative paths (typically the cwd).
+
+    Returns:
+        Error message if any path escapes the tenant boundary, None otherwise.
+    """
+    file_paths, has_code_exec = _extract_path_tokens(command)
+
+    # Reject commands with code execution flags (-c, -e, etc.)
+    if has_code_exec:
+        return (
+            "Error: Shell commands with code execution flags (-c, -e, etc.) "
+            "are not allowed for security reasons."
+        )
+
+    for token in file_paths:
+        # Skip checking if it's clearly not a path
+        if not token or token in (".", ".."):
+            continue
+
+        # Check if the path is within tenant boundary, using base_dir for relative paths
+        if not is_path_within_tenant_with_base(token, base_dir=base_dir):
+            return (
+                f"Error: Shell command contains path outside the allowed workspace: "
+                f"'{token}'"
+            )
+
+    return None
+
+
+def _resolve_cwd(cwd: Optional[Path]) -> Path:
+    """Resolve and validate the working directory against tenant boundary.
+
+    Args:
+        cwd: The requested working directory, or None to use tenant root.
+
+    Returns:
+        The resolved working directory path.
+
+    Raises:
+        TenantPathBoundaryError: If the cwd is outside the tenant workspace
+                                 or tenant context is missing.
+    """
+    tenant_root = get_current_tenant_root()
+
+    if cwd is None:
+        return tenant_root
+
+    # Resolve the cwd and validate it's within tenant root
+    resolved_cwd = cwd.resolve()
+    try:
+        resolved_cwd.relative_to(tenant_root.resolve())
+    except ValueError:
+        raise TenantPathBoundaryError(
+            f"Working directory '{cwd}' is outside the tenant workspace boundary.",
+            resolved_path=resolved_cwd,
+        )
+
+    return resolved_cwd
 
 
 def _kill_process_tree_win32(pid: int) -> None:
@@ -57,7 +222,7 @@ def _collapse_embedded_newlines(cmd: str) -> str:
        wrapper *already* breaks at newlines, so this is no worse.
     3. On Unix, callers should prefer ``&&`` / ``;`` over raw newlines for
        multi-command sequences; a stray newline inside an argument is
-       almost certainly a JSON artefact.
+      almost certainly a JSON artefact.
     """
     if "\n" not in cmd:
         return cmd
@@ -229,7 +394,7 @@ async def execute_shell_command(
             Default is 60 seconds.
         cwd (`Optional[Path]`, defaults to `None`):
             The working directory for the command execution.
-            If None, defaults to WORKING_DIR.
+            If None, defaults to the current tenant workspace.
 
     Returns:
         `ToolResponse`:
@@ -240,11 +405,30 @@ async def execute_shell_command(
 
     cmd = _collapse_embedded_newlines((command or "").strip())
 
-    # Use current workspace_dir from context, fallback to WORKING_DIR
-    if cwd is not None:
-        working_dir = cwd
-    else:
-        working_dir = get_current_workspace_dir() or WORKING_DIR
+    # Validate and resolve the working directory against tenant boundary
+    try:
+        working_dir = _resolve_cwd(cwd)
+    except TenantPathBoundaryError as e:
+        return ToolResponse(
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: {e}",
+                ),
+            ],
+        )
+
+    # Validate explicit path tokens in the command, using working_dir as base for relative paths
+    path_error = _validate_shell_paths(cmd, base_dir=working_dir)
+    if path_error:
+        return ToolResponse(
+            content=[
+                TextBlock(
+                    type="text",
+                    text=path_error,
+                ),
+            ],
+        )
 
     # Ensure the venv Python is on PATH for subprocesses
     env = os.environ.copy()

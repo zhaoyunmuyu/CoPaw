@@ -2,13 +2,18 @@
 """Load image or video files into the LLM context for analysis."""
 
 import mimetypes
-import os
 import unicodedata
 from pathlib import Path
 from typing import Optional
 
 from agentscope.message import ImageBlock, TextBlock, VideoBlock
 from agentscope.tool import ToolResponse
+
+from ...security.tenant_path_boundary import (
+    resolve_tenant_path,
+    TenantPathBoundaryError,
+    make_permission_denied_response,
+)
 
 _IMAGE_EXTENSIONS = {
     ".png",
@@ -35,20 +40,25 @@ def _validate_media_path(
     file_path: str,
     allowed_extensions: set[str],
     mime_prefix: str,
-) -> tuple[Path, Optional[ToolResponse]]:
-    """Validate a media file path.
+) -> tuple[Optional[Path], Optional[ToolResponse]]:
+    """Validate a media file path using tenant boundary.
 
     Returns ``(resolved_path, None)`` on success or
     ``(_, error_response)`` on failure.
     """
-    file_path = unicodedata.normalize(
-        "NFC",
-        os.path.expanduser(file_path),
-    )
-    resolved = Path(file_path).resolve()
+    # Normalize the path
+    file_path = unicodedata.normalize("NFC", file_path)
+
+    # Validate path against tenant boundary
+    try:
+        resolved = resolve_tenant_path(file_path)
+    except TenantPathBoundaryError:
+        return None, ToolResponse(
+            content=[TextBlock(**make_permission_denied_response("View media"))],
+        )
 
     if not resolved.exists() or not resolved.is_file():
-        return resolved, ToolResponse(
+        return None, ToolResponse(
             content=[
                 TextBlock(
                     type="text",
@@ -63,7 +73,7 @@ def _validate_media_path(
     if ext not in allowed_extensions and (
         not mime or not mime.startswith(f"{mime_prefix}/")
     ):
-        return resolved, ToolResponse(
+        return None, ToolResponse(
             content=[
                 TextBlock(
                     type="text",
@@ -95,8 +105,10 @@ async def view_image(image_path: str) -> ToolResponse:
         _IMAGE_EXTENSIONS,
         "image",
     )
-    if err is not None:
-        return err
+    if err is not None or resolved is None:
+        return err if err is not None else ToolResponse(
+            content=[TextBlock(type="text", text="Error: Failed to validate media path.")],
+        )
 
     return ToolResponse(
         content=[
@@ -131,8 +143,10 @@ async def view_video(video_path: str) -> ToolResponse:
         _VIDEO_EXTENSIONS,
         "video",
     )
-    if err is not None:
-        return err
+    if err is not None or resolved is None:
+        return err if err is not None else ToolResponse(
+            content=[TextBlock(type="text", text="Error: Failed to validate media path.")],
+        )
 
     return ToolResponse(
         content=[

@@ -85,7 +85,7 @@ logs/
 
 # vibe coding
 .claude
-.codex/
+.codex
 *.tmp
 
 # Build cache

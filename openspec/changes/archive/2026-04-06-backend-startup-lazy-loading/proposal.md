@@ -1,6 +1,6 @@
 ## Why
 
-CoPaw backend cold start is slowed by eager initialization in `lifespan()`, including telemetry, migrations, QA agent setup, provider/local model managers, and agent prewarming. In a multi-tenant deployment this couples startup cost to tenant and agent footprint, delaying readiness and blurring runtime isolation boundaries.
+SWE backend cold start is slowed by eager initialization in `lifespan()`, including telemetry, migrations, QA agent setup, provider/local model managers, and agent prewarming. In a multi-tenant deployment this couples startup cost to tenant and agent footprint, delaying readiness and blurring runtime isolation boundaries.
 
 ## What Changes
 
@@ -22,6 +22,6 @@ CoPaw backend cold start is slowed by eager initialization in `lifespan()`, incl
 
 ## Impact
 
-- Affected code: `src/copaw/app/_app.py`, `src/copaw/app/multi_agent_manager.py`, `src/copaw/app/workspace/tenant_initializer.py`, `src/copaw/app/workspace/tenant_pool.py`, `src/copaw/app/workspace/workspace.py`, `src/copaw/app/middleware/tenant_workspace.py`, and related provider/skills initialization paths.
+- Affected code: `src/swe/app/_app.py`, `src/swe/app/multi_agent_manager.py`, `src/swe/app/workspace/tenant_initializer.py`, `src/swe/app/workspace/tenant_pool.py`, `src/swe/app/workspace/workspace.py`, `src/swe/app/middleware/tenant_workspace.py`, and related provider/skills initialization paths.
 - Affected behavior: FastAPI readiness semantics, tenant bootstrap flow, agent runtime startup timing, provider/local model initialization timing, and maintenance/migration entrypoints.
 - Operational impact: service becomes ready sooner, while first tenant/agent/provider/skills access may pay deferred initialization cost.

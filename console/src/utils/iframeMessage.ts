@@ -3,19 +3,6 @@
  * iframe postMessage 通信核心逻辑
  * Author: Kun He
  * Date: 2026-04-07
- * ============================================================
- *
- * 处理与父级 iframe 应用的消息通信
- * 包含安全验证、消息处理、状态存储
- *
- * 消息流程：
- * 1. 子窗口启动时发送 READY_RESPONSE (initialized: false)
- * 2. 父窗口收到后发送 USER_DATA 消息
- * 3. 子窗口处理 USER_DATA，存储上下文，发送 READY_RESPONSE (initialized: true)
- *
- * 安全机制：
- * - 来源白名单验证 (ALLOWED_ORIGINS)
- * - 消息格式验证 (validateMessage)
  *
  * 相关文件：
  * - types/iframe.ts: 类型定义
@@ -28,7 +15,6 @@ import type {
   IframeUserDataMessage,
   IframeIncomingMessage,
   IframeOutgoingMessage,
-  IframeReadyResponse,
 } from "../types/iframe";
 import { useIframeStore, getIframeContext } from "../stores/iframeStore";
 // ==================== 客户信息查询 (Kun He) ====================
@@ -42,9 +28,6 @@ import {
 
 /**
  * 允许的来源白名单
- *
- * 开发环境默认允许 localhost
- * 生产环境通过环境变量配置
  */
 const ALLOWED_ORIGINS: string[] = [
   // 开发环境
@@ -147,7 +130,6 @@ async function handleUserDataMessage(message: IframeUserDataMessage, origin: str
 
   // 存储上下文参数：
   // - sapId 存储为 userId
-  // - hideMenu/isSuperManager 通过 toBoolean 转换为布尔值
   store.setContext({
     userId: message.sapId ?? null,
     clawName: message.clawName ?? null,
@@ -159,7 +141,6 @@ async function handleUserDataMessage(message: IframeUserDataMessage, origin: str
     parentOrigin: origin,
   });
 
-  // ==================== 客户信息查询 (Kun He) ====================
   // 检查 URL 参数 origin === "Y"，如果是则调用客户信息查询接口
   const urlParams = new URLSearchParams(window.location.search);
   const originParam = urlParams.get("origin");
@@ -214,7 +195,6 @@ async function handleUserDataMessage(message: IframeUserDataMessage, origin: str
       console.error("[IframeMessage] Customer info fetch error:", error);
     }
 
-    // ==================== 用户初始化 (Kun He) ====================
     // 在调用完客户信息接口后，检查是否需要调用初始化接口
     // 获取最新的 userId（可能被客户信息接口更新过）
     const currentUserId = store.userId;
@@ -246,9 +226,7 @@ async function handleUserDataMessage(message: IframeUserDataMessage, origin: str
         console.info("[IframeMessage] User already initialized, skipping init API");
       }
     }
-    // ==================== 用户初始化结束 ====================
   }
-  // ==================== 客户信息查询结束 ====================
 
   // 标记初始化完成
   store.markInitialized();

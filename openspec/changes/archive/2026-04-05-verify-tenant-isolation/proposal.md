@@ -1,6 +1,6 @@
 ## Why
 
-The CoPaw project implements multi-tenant support through `contextvars`-based request isolation, but there is no comprehensive verification that the implementation actually guarantees complete tenant isolation. We need to verify that user data (config, memory, sessions, skills) is properly isolated between tenants and that there are no data leakage vulnerabilities.
+The SWE project implements multi-tenant support through `contextvars`-based request isolation, but there is no comprehensive verification that the implementation actually guarantees complete tenant isolation. We need to verify that user data (config, memory, sessions, skills) is properly isolated between tenants and that there are no data leakage vulnerabilities.
 
 ## What Changes
 
@@ -20,7 +20,7 @@ The CoPaw project implements multi-tenant support through `contextvars`-based re
 
 ## Impact
 
-- Test coverage for `src/copaw/constant.py` (request isolation utilities)
+- Test coverage for `src/swe/constant.py` (request isolation utilities)
 - Verification of `AgentRunner.query_handler()` tenant context setup
 - Validation of all directory getters: `get_request_working_dir()`, `get_request_secret_dir()`, `get_active_skills_dir()`, `get_memory_dir()`, `get_models_dir()`
 - Channel request isolation verification across all platform connectors

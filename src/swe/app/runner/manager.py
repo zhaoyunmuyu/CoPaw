@@ -35,8 +35,9 @@ class ChatManager:
         """
         self._repo = repo
         self._lock = asyncio.Lock()
+        repo_path = getattr(repo, "path", "<unknown>")
         logger.info(
-            f"ChatManager created with repo path: {repo.path}",
+            f"ChatManager created with repo path: {repo_path}",
         )
 
     # ----- Read Operations -----

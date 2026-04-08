@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 # flake8: noqa: E501
 # pylint: disable=line-too-long,too-many-return-statements
-import os
 import mimetypes
 import unicodedata
 
@@ -14,6 +13,11 @@ from agentscope.message import (
 )
 
 from ..schema import FileBlock
+from ...security.tenant_path_boundary import (
+    resolve_tenant_path,
+    TenantPathBoundaryError,
+    make_permission_denied_response,
+)
 
 
 def _auto_as_type(mt: str) -> str:
@@ -43,30 +47,40 @@ async def send_file_to_user(
     # Normalize the path: expand ~ and fix Unicode normalization differences
     # (e.g. macOS stores filenames as NFD but paths from the LLM arrive as NFC,
     # causing os.path.exists to return False for files that do exist).
-    file_path = os.path.expanduser(unicodedata.normalize("NFC", file_path))
+    file_path = unicodedata.normalize("NFC", file_path)
 
-    if not os.path.exists(file_path):
+    # Validate path against tenant boundary
+    try:
+        resolved_path = resolve_tenant_path(file_path)
+    except TenantPathBoundaryError:
+        return ToolResponse(
+            content=[TextBlock(**make_permission_denied_response("Send file"))],
+        )
+
+    import os
+
+    if not os.path.exists(resolved_path):
         return ToolResponse(
             content=[
                 TextBlock(
                     type="text",
-                    text=f"Error: The file {file_path} does not exist.",
+                    text=f"Error: The file {resolved_path} does not exist.",
                 ),
             ],
         )
 
-    if not os.path.isfile(file_path):
+    if not os.path.isfile(resolved_path):
         return ToolResponse(
             content=[
                 TextBlock(
                     type="text",
-                    text=f"Error: The path {file_path} is not a file.",
+                    text=f"Error: The path {resolved_path} is not a file.",
                 ),
             ],
         )
 
     # Detect MIME type
-    mime_type, _ = mimetypes.guess_type(file_path)
+    mime_type, _ = mimetypes.guess_type(resolved_path)
     if mime_type is None:
         # Default to application/octet-stream for unknown types
         mime_type = "application/octet-stream"
@@ -74,7 +88,7 @@ async def send_file_to_user(
 
     try:
         # Use local file URL instead of base64
-        absolute_path = os.path.abspath(file_path)
+        absolute_path = os.path.abspath(resolved_path)
         file_url = f"file://{absolute_path}"
         source = {"type": "url", "url": file_url}
 
@@ -105,7 +119,7 @@ async def send_file_to_user(
                 FileBlock(
                     type="file",
                     source=source,
-                    filename=os.path.basename(file_path),
+                    filename=os.path.basename(resolved_path),
                 ),
                 TextBlock(type="text", text="File sent successfully."),
             ],

@@ -3,7 +3,7 @@
 ## 1. Test Setup and Fixtures
 
 - [x] 1.1 Create test file `tests/test_tenant_isolation.py` with pytest-asyncio configuration
-- [x] 1.2 Create fixture for temporary user directories (mock `~/.copaw/`)
+- [x] 1.2 Create fixture for temporary user directories (mock `~/.swe/`)
 - [x] 1.3 Create fixture for concurrent request simulation with context reset
 - [x] 1.4 Create helper function to simulate multiple concurrent users
 
@@ -39,8 +39,8 @@
 
 ## 6. Code Audit and Documentation
 
-- [x] 6.1 Audit `src/copaw/constant.py` for any isolation gaps
-- [x] 6.2 Audit `src/copaw/app/runner/` for context handling issues
+- [x] 6.1 Audit `src/swe/constant.py` for any isolation gaps
+- [x] 6.2 Audit `src/swe/app/runner/` for context handling issues
 - [x] 6.3 Document any identified vulnerabilities or weaknesses
 - [x] 6.4 Create summary report of verification findings
 

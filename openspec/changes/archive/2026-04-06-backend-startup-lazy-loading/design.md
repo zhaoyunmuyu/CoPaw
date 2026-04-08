@@ -1,6 +1,6 @@
 ## Context
 
-Current CoPaw backend cold start is slowed by excessive synchronous initialization inside `lifespan()`. The current startup flow includes telemetry, legacy workspace migration, legacy skills migration, QA agent initialization, starting all configured agents, eager initialization of `ProviderManager` and `LocalModelManager`, and prewarming the default agent. This delays service readiness and couples startup cost to tenant/agent footprint in multi-tenant deployments.
+Current SWE backend cold start is slowed by excessive synchronous initialization inside `lifespan()`. The current startup flow includes telemetry, legacy workspace migration, legacy skills migration, QA agent initialization, starting all configured agents, eager initialization of `ProviderManager` and `LocalModelManager`, and prewarming the default agent. This delays service readiness and couples startup cost to tenant/agent footprint in multi-tenant deployments.
 
 Existing lazy-loading structures include `MultiAgentManager.get_agent()` and `TenantWorkspacePool.get_or_create()`, but they still trigger too much work: tenant bootstrap, workspace startup, skill pool initialization, and legacy migrations are still mixed into the request path.
 

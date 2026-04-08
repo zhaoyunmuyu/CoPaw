@@ -157,6 +157,11 @@ class TestSkillPoolSeeding:
 
     def test_seed_skill_pool_skips_when_pool_exists(self, tmp_path):
         """Seeding is skipped when tenant already has skill pool state."""
+        from swe.agents.skills_manager import (
+            get_pool_skill_manifest_path,
+            _write_json_atomic,
+        )
+
         # Setup default tenant
         default_init = TenantInitializer(tmp_path, "default")
         default_init.ensure_directory_structure()
@@ -171,7 +176,7 @@ class TestSkillPoolSeeding:
             encoding="utf-8",
         )
 
-        # Create new tenant with existing skill pool
+        # Create new tenant with existing skill pool (with manifest)
         new_init = TenantInitializer(tmp_path, "new-tenant")
         new_init.ensure_directory_structure()
 
@@ -183,6 +188,13 @@ class TestSkillPoolSeeding:
         (existing_skill / "SKILL.md").write_text(
             "---\nname: existing-skill\ndescription: Existing\n---\n",
             encoding="utf-8",
+        )
+
+        # Create manifest to indicate "complete" pool state
+        manifest_path = get_pool_skill_manifest_path(working_dir=new_init.tenant_dir)
+        _write_json_atomic(
+            manifest_path,
+            {"skills": {"existing-skill": {"name": "existing-skill"}}},
         )
 
         # Try to seed - should be skipped
@@ -211,6 +223,98 @@ class TestSkillPoolSeeding:
         assert result["source"] == "builtin"
         # Should have builtin skills
         assert len(result["skills"]) > 0
+
+    def test_seed_skill_pool_without_source_manifest(self, tmp_path):
+        """Seeding works when source has skill directories but no manifest."""
+        # Setup default tenant with skills but NO manifest
+        default_init = TenantInitializer(tmp_path, "default")
+        default_init.ensure_directory_structure()
+
+        # Create default tenant skill pool with skills on disk only
+        default_pool = get_skill_pool_dir(working_dir=default_init.tenant_dir)
+        default_pool.mkdir(parents=True, exist_ok=True)
+
+        skill_dir = default_pool / "manifestless-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: manifestless-skill\ndescription: No Manifest\n---\n",
+            encoding="utf-8",
+        )
+
+        # Verify NO manifest exists
+        manifest_path = get_pool_skill_manifest_path(
+            working_dir=default_init.tenant_dir,
+        )
+        assert not manifest_path.exists()
+
+        # Create new tenant and seed from default
+        new_init = TenantInitializer(tmp_path, "new-tenant")
+        new_init.ensure_directory_structure()
+
+        result = new_init.seed_skill_pool_from_default()
+
+        # Should still seed from disk content
+        assert result["seeded"] is True
+        assert result["source"] == "default"
+        assert "manifestless-skill" in result["skills"]
+
+        # Verify skill was copied and manifest was created
+        target_pool = get_skill_pool_dir(working_dir=new_init.tenant_dir)
+        assert (target_pool / "manifestless-skill" / "SKILL.md").exists()
+        target_manifest = get_pool_skill_manifest_path(
+            working_dir=new_init.tenant_dir,
+        )
+        assert target_manifest.exists()
+
+    def test_seed_skill_pool_preserves_config(self, tmp_path):
+        """Pool seeding preserves config field from source manifest."""
+        # Setup default tenant with skills and config
+        default_init = TenantInitializer(tmp_path, "default")
+        default_init.ensure_directory_structure()
+
+        default_pool = get_skill_pool_dir(working_dir=default_init.tenant_dir)
+        default_pool.mkdir(parents=True, exist_ok=True)
+
+        skill_dir = default_pool / "config-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: config-skill\ndescription: Config Skill\n---\n",
+            encoding="utf-8",
+        )
+
+        # Create manifest with config
+        manifest_path = get_pool_skill_manifest_path(
+            working_dir=default_init.tenant_dir,
+        )
+        _write_json_atomic(
+            manifest_path,
+            {
+                "skills": {
+                    "config-skill": {
+                        "name": "config-skill",
+                        "config": {"api_key": "secret123", "timeout": 30},
+                    },
+                },
+            },
+        )
+
+        # Create new tenant and seed from default
+        new_init = TenantInitializer(tmp_path, "new-tenant")
+        new_init.ensure_directory_structure()
+
+        result = new_init.seed_skill_pool_from_default()
+
+        assert result["seeded"] is True
+        assert "config-skill" in result["skills"]
+
+        # Verify config was preserved in target manifest
+        target_manifest = get_pool_skill_manifest_path(
+            working_dir=new_init.tenant_dir,
+        )
+        manifest_data = json.loads(target_manifest.read_text(encoding="utf-8"))
+        skill_entry = manifest_data.get("skills", {}).get("config-skill", {})
+
+        assert skill_entry.get("config") == {"api_key": "secret123", "timeout": 30}
 
 
 class TestDefaultWorkspaceSkillSeeding:
@@ -278,6 +382,11 @@ class TestDefaultWorkspaceSkillSeeding:
 
     def test_seed_workspace_skills_skips_when_skills_exist(self, tmp_path):
         """Seeding is skipped when workspace already has skills."""
+        from swe.agents.skills_manager import (
+            get_workspace_skill_manifest_path,
+            _write_json_atomic,
+        )
+
         # Setup default tenant
         default_init = TenantInitializer(tmp_path, "default")
         default_init.ensure_directory_structure()
@@ -293,7 +402,7 @@ class TestDefaultWorkspaceSkillSeeding:
             encoding="utf-8",
         )
 
-        # Create new tenant with existing workspace skills
+        # Create new tenant with existing workspace skills (with manifest)
         new_init = TenantInitializer(tmp_path, "new-tenant")
         new_init.ensure_directory_structure()
 
@@ -306,6 +415,13 @@ class TestDefaultWorkspaceSkillSeeding:
         (existing_skill / "SKILL.md").write_text(
             "---\nname: existing-skill\ndescription: Existing\n---\n",
             encoding="utf-8",
+        )
+
+        # Create manifest to indicate "complete" workspace skill state
+        manifest_path = get_workspace_skill_manifest_path(new_workspace)
+        _write_json_atomic(
+            manifest_path,
+            {"skills": {"existing-skill": {"name": "existing-skill"}}},
         )
 
         # Try to seed - should be skipped
@@ -332,6 +448,44 @@ class TestDefaultWorkspaceSkillSeeding:
 
         assert result["seeded"] is False
         assert not result["skills"]
+
+    def test_seed_workspace_without_source_manifest(self, tmp_path):
+        """Workspace seeding works when source has skills but no manifest."""
+        # Setup default tenant with workspace skills but NO manifest
+        default_init = TenantInitializer(tmp_path, "default")
+        default_init.ensure_directory_structure()
+
+        default_workspace = default_init.tenant_dir / "workspaces" / "default"
+        default_skills = get_workspace_skills_dir(default_workspace)
+        default_skills.mkdir(parents=True, exist_ok=True)
+
+        skill_dir = default_skills / "manifestless-ws-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: manifestless-ws-skill\ndescription: No Manifest\n---\n",
+            encoding="utf-8",
+        )
+
+        # Verify NO manifest exists
+        manifest_path = get_workspace_skill_manifest_path(default_workspace)
+        assert not manifest_path.exists()
+
+        # Create new tenant and seed workspace skills
+        new_init = TenantInitializer(tmp_path, "new-tenant")
+        new_init.ensure_directory_structure()
+
+        result = new_init.seed_default_workspace_skills_from_default()
+
+        # Should still seed from disk content
+        assert result["seeded"] is True
+        assert "manifestless-ws-skill" in result["skills"]
+
+        # Verify skill was copied and manifest was created
+        new_workspace = new_init.tenant_dir / "workspaces" / "default"
+        new_skills = get_workspace_skills_dir(new_workspace)
+        assert (new_skills / "manifestless-ws-skill" / "SKILL.md").exists()
+        new_manifest = get_workspace_skill_manifest_path(new_workspace)
+        assert new_manifest.exists()
 
 
 class TestFullInitialization:
@@ -428,3 +582,60 @@ class TestFullInitialization:
         new_workspace = new_init.tenant_dir / "workspaces" / "default"
         new_skills = get_workspace_skills_dir(new_workspace)
         assert not new_skills.exists() or not any(new_skills.iterdir())
+
+    def test_runtime_bootstrap_does_not_create_qa_agent(self, tmp_path):
+        """Runtime bootstrap (ensure_seeded_bootstrap) does NOT create QA agent."""
+        from swe.constant import BUILTIN_QA_AGENT_ID
+
+        # Setup default tenant with skills
+        default_init = TenantInitializer(tmp_path, "default")
+        default_init.ensure_directory_structure()
+
+        default_pool = get_skill_pool_dir(working_dir=default_init.tenant_dir)
+        default_pool.mkdir(parents=True, exist_ok=True)
+
+        skill_dir = default_pool / "default-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: default-skill\ndescription: Default\n---\n",
+            encoding="utf-8",
+        )
+
+        # Run runtime bootstrap
+        new_init = TenantInitializer(tmp_path, "new-tenant")
+        result = new_init.ensure_seeded_bootstrap()
+
+        # Skills should be seeded
+        assert result["pool_seed"]["seeded"] is True
+
+        # QA agent should NOT be created in runtime bootstrap
+        assert not (new_init.tenant_dir / "workspaces" / BUILTIN_QA_AGENT_ID).exists()
+
+    def test_full_initialization_creates_qa_agent(self, tmp_path):
+        """Full initialization (CLI) DOES create QA agent."""
+        from swe.constant import BUILTIN_QA_AGENT_ID
+
+        # Setup default tenant with skills
+        default_init = TenantInitializer(tmp_path, "default")
+        default_init.ensure_directory_structure()
+
+        default_pool = get_skill_pool_dir(working_dir=default_init.tenant_dir)
+        default_pool.mkdir(parents=True, exist_ok=True)
+
+        skill_dir = default_pool / "default-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: default-skill\ndescription: Default\n---\n",
+            encoding="utf-8",
+        )
+
+        # Run full initialization
+        new_init = TenantInitializer(tmp_path, "new-tenant")
+        result = new_init.initialize_full()
+
+        # Skills should be seeded
+        assert result["pool_seed"]["seeded"] is True
+
+        # QA agent SHOULD be created in full initialization
+        assert result["qa_agent"] is True
+        assert (new_init.tenant_dir / "workspaces" / BUILTIN_QA_AGENT_ID).exists()

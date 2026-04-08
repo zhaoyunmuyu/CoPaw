@@ -759,9 +759,9 @@ html.dark-mode [class*="chat-anywhere"] [class*="message"] a {
   background: #fff !important;
 }
 
-/* .swe-chat-anywhere-input {
+.swe-chat-anywhere-input {
   background: #fff !important;
-} */
+}
 
 /* Chat bubble list max-width override */
 .swe-chat-anywhere-message-list .swe-bubble-list {

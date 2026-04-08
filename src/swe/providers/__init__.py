@@ -5,9 +5,6 @@ from __future__ import annotations
 
 from .provider import ModelInfo, Provider, ProviderInfo
 
-ActiveModelsInfo = None
-ProviderManager = None
-
 __all__ = [
     "ActiveModelsInfo",
     "ModelInfo",

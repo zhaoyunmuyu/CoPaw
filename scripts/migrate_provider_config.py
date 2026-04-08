@@ -4,10 +4,10 @@
 """Migration script for provider configuration from global to tenant-isolated storage.
 
 This script migrates existing global provider configuration from:
-    ~/.copaw.secret/providers/
+    ~/.swe.secret/providers/
 
 To the new tenant-isolated structure:
-    ~/.copaw.secret/default/providers/
+    ~/.swe.secret/default/providers/
 
 Usage:
     python scripts/migrate_provider_config.py [--dry-run]
@@ -27,7 +27,7 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from copaw.constant import SECRET_DIR
+from swe.constant import SECRET_DIR
 
 
 logger = logging.getLogger(__name__)

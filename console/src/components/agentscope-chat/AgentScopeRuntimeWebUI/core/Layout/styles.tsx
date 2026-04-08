@@ -27,7 +27,7 @@ export default createGlobalStyle`
   position: relative;
   width: 0;
   flex: 1;
-  background: ${(p) => p.theme.colorFillTertiary};
+  // background: ${(p) => p.theme.colorFillTertiary};
 
   &-header {
     height: 54px;
