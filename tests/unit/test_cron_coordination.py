@@ -76,7 +76,9 @@ class TestAgentLease:
     """Tests for AgentLease - leader election per tenant+agent."""
 
     async def test_lease_acquire_and_release(
-        self, redis_client, coordination_config
+        self,
+        redis_client,
+        coordination_config,
     ):
         """Test basic lease acquisition and release."""
         lease = AgentLease(
@@ -100,7 +102,9 @@ class TestAgentLease:
         assert not lease.is_owned
 
     async def test_lease_prevents_duplicate_acquisition(
-        self, redis_client, coordination_config
+        self,
+        redis_client,
+        coordination_config,
     ):
         """Test that only one instance can hold the lease."""
         lease1 = AgentLease(
@@ -175,7 +179,9 @@ class TestAgentLease:
         await lease.release()
 
     async def test_lease_lost_when_key_deleted(
-        self, redis_client, coordination_config
+        self,
+        redis_client,
+        coordination_config,
     ):
         """Test that lease is lost if key is externally deleted."""
         lease = AgentLease(
@@ -194,7 +200,9 @@ class TestAgentLease:
         await redis_client.delete(lease._key)
 
         # Wait for renewal cycle to detect loss
-        await asyncio.sleep(coordination_config.lease_renew_interval_seconds + 1)
+        await asyncio.sleep(
+            coordination_config.lease_renew_interval_seconds + 1
+        )
 
         # Lease should be lost
         assert not lease.is_owned
@@ -204,7 +212,9 @@ class TestExecutionLock:
     """Tests for ExecutionLock - timed job de-duplication."""
 
     async def test_execution_lock_acquire_and_release(
-        self, redis_client, coordination_config
+        self,
+        redis_client,
+        coordination_config,
     ):
         """Test basic lock acquisition and release."""
         lock = ExecutionLock(
@@ -239,7 +249,9 @@ class TestExecutionLock:
 
         await lock2.release()
 
-    async def test_execution_lock_expires(self, redis_client, coordination_config):
+    async def test_execution_lock_expires(
+        self, redis_client, coordination_config
+    ):
         """Test that lock expires after TTL."""
         lock = ExecutionLock(
             redis_client=redis_client,
@@ -270,7 +282,9 @@ class TestExecutionLock:
         await lock2.release()
 
     async def test_execution_lock_isolated_per_job(
-        self, redis_client, coordination_config
+        self,
+        redis_client,
+        coordination_config,
     ):
         """Test that locks for different jobs don't interfere."""
         lock1 = ExecutionLock(
@@ -303,7 +317,9 @@ class TestCronCoordination:
 
     async def test_connect_without_redis_raises_error(self):
         """Test that connection fails gracefully if Redis unavailable."""
-        config = CoordinationConfig(enabled=True, redis_url="redis://invalid:6379")
+        config = CoordinationConfig(
+            enabled=True, redis_url="redis://invalid:6379"
+        )
         coord = CronCoordination(
             tenant_id="test",
             agent_id="test-agent",
@@ -325,10 +341,12 @@ class TestCronCoordination:
 
         # Should return True when disabled (no coordination needed)
         connected = await coord.connect()
-        assert connected is False  # Returns False because coordination is disabled
+        assert (
+            connected is False
+        )  # Returns False because coordination is disabled
 
     async def test_activate_without_connection(self, coordination_config):
-        """Test that activation without connection runs in no-coordination mode."""
+        """Test that activation without connection raises error."""
         # Don't connect first
         coord = CronCoordination(
             tenant_id="test",
@@ -336,13 +354,13 @@ class TestCronCoordination:
             config=coordination_config,
         )
 
-        # Activate without connecting - should return True (run without coordination)
-        is_leader = await coord.activate()
-        assert is_leader is True
+        # Activate without connecting - should raise RedisNotAvailableError
+        with pytest.raises(RedisNotAvailableError):
+            await coord.activate()
 
-        await coord.deactivate()
-
-    async def test_publish_reload_without_connection(self, coordination_config):
+    async def test_publish_reload_without_connection(
+        self, coordination_config
+    ):
         """Test that publish_reload returns False if not connected."""
         coord = CronCoordination(
             tenant_id="test",
@@ -400,7 +418,9 @@ class TestCronCoordinationWithRedis:
         await coord.disconnect()
 
     async def test_two_instances_leader_election(
-        self, redis_client, coordination_config
+        self,
+        redis_client,
+        coordination_config,
     ):
         """Test leader election with two coordination instances."""
         coord1 = CronCoordination(
@@ -458,7 +478,9 @@ class TestCronCoordinationWithRedis:
         await coord.deactivate()
         await coord.disconnect()
 
-    async def test_create_execution_lock(self, redis_client, coordination_config):
+    async def test_create_execution_lock(
+        self, redis_client, coordination_config
+    ):
         """Test creating execution lock through coordination."""
         coord = CronCoordination(
             tenant_id="test-tenant",
@@ -480,7 +502,9 @@ class TestCronCoordinationWithRedis:
         await lock.release()
         await coord.disconnect()
 
-    async def test_create_execution_lock_without_connection(self, coordination_config):
+    async def test_create_execution_lock_without_connection(
+        self, coordination_config
+    ):
         """Test that creating execution lock without connection raises error."""
         coord = CronCoordination(
             tenant_id="test-tenant",

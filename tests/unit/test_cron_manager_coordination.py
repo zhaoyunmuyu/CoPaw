@@ -106,7 +106,10 @@ class TestCronManagerLifecycle:
     """Tests for CronManager lifecycle with coordination."""
 
     async def test_manager_without_coordination(
-        self, temp_jobs_file, mock_runner, mock_channel_manager
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
     ):
         """Test manager works without coordination (backwards compatible)."""
         repo = JsonJobRepository(temp_jobs_file)
@@ -134,7 +137,10 @@ class TestCronManagerLifecycle:
         assert not manager.is_started
 
     async def test_manager_with_coordination_disabled(
-        self, temp_jobs_file, mock_runner, mock_channel_manager
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
     ):
         """Test manager with disabled coordination."""
         config = CoordinationConfig(enabled=False)
@@ -161,7 +167,11 @@ class TestCronManagerWithRedis:
     """Tests for CronManager that require Redis."""
 
     async def test_manager_activation_with_redis(
-        self, temp_jobs_file, mock_runner, mock_channel_manager, coordination_config
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+        coordination_config,
     ):
         """Test manager activation with Redis coordination."""
         repo = JsonJobRepository(temp_jobs_file)
@@ -175,18 +185,29 @@ class TestCronManagerWithRedis:
         )
 
         # Activate - should connect and acquire leadership
-        is_leader = await manager.activate()
-        # Note: If Redis is not running, this may return True (no-coordination mode)
-        assert isinstance(is_leader, bool)
+        # If Redis is not running, this will raise RuntimeError
+        try:
+            is_leader = await manager.activate()
+            assert isinstance(is_leader, bool)
 
-        if is_leader:
-            assert manager.is_started
-            assert manager.is_leader
+            if is_leader:
+                assert manager.is_started
+                assert manager.is_leader
 
-        await manager.deactivate()
+            await manager.deactivate()
+        except RuntimeError as e:
+            # Redis not available - this is expected if Redis is not running
+            assert (
+                "Redis coordination is enabled but Redis is not available"
+                in str(e)
+            )
 
     async def test_two_managers_leader_election(
-        self, temp_jobs_file, mock_runner, mock_channel_manager, coordination_config
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+        coordination_config,
     ):
         """Test that only one manager becomes leader."""
         # Create two separate repos pointing to the same file
@@ -210,24 +231,34 @@ class TestCronManagerWithRedis:
             coordination_config=coordination_config,
         )
 
-        # Activate first manager - should become leader
-        is_leader1 = await manager1.activate()
+        # Activate first manager - should become leader (or raise if Redis unavailable)
+        try:
+            is_leader1 = await manager1.activate()
 
-        # If Redis is running and coordination worked
-        if is_leader1:
-            assert manager1.is_leader
+            # If Redis is running and coordination worked
+            if is_leader1:
+                assert manager1.is_leader
 
-            # Activate second manager - should be follower
-            is_leader2 = await manager2.activate()
-            assert not is_leader2
-            assert not manager2.is_leader
-            assert not manager2.is_started
+                # Activate second manager - should be follower
+                is_leader2 = await manager2.activate()
+                assert not is_leader2
+                assert not manager2.is_leader
+                assert not manager2.is_started
+        except RuntimeError as e:
+            # Redis not available - this is expected if Redis is not running
+            assert (
+                "Redis coordination is enabled but Redis is not available"
+                in str(e)
+            )
 
         await manager1.deactivate()
         await manager2.deactivate()
 
     async def test_manager_reload(
-        self, temp_jobs_file, mock_runner, mock_channel_manager
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
     ):
         """Test manager reload functionality."""
         config = CoordinationConfig(enabled=False)
@@ -280,7 +311,10 @@ class TestCronManagerManualRun:
     """Tests for manual run_job bypassing execution lock."""
 
     async def test_run_job_bypasses_execution_lock(
-        self, temp_jobs_file, mock_runner, mock_channel_manager
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
     ):
         """Test that manual run_job does not use execution lock."""
         config = CoordinationConfig(enabled=False)
@@ -328,7 +362,10 @@ class TestCronManagerManualRun:
         await manager.deactivate()
 
     async def test_run_job_nonexistent_raises_keyerror(
-        self, temp_jobs_file, mock_runner, mock_channel_manager
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
     ):
         """Test that run_job raises KeyError for nonexistent job."""
         config = CoordinationConfig(enabled=False)
@@ -354,7 +391,10 @@ class TestCronManagerState:
     """Tests for CronManager state tracking."""
 
     async def test_job_state_tracking(
-        self, temp_jobs_file, mock_runner, mock_channel_manager
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
     ):
         """Test that job state is properly tracked."""
         config = CoordinationConfig(enabled=False)

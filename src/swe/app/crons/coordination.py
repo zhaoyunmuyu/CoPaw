@@ -46,7 +46,9 @@ class CoordinationConfig:
     redis_url: str = "redis://localhost:6379/0"
     # Cluster mode configuration
     cluster_mode: bool = False
-    cluster_nodes: Optional[list] = None  # List of ClusterNode or dict {"host": str, "port": int}
+    cluster_nodes: Optional[
+        list
+    ] = None  # List of ClusterNode or dict {"host": str, "port": int}
     cluster_startup_nodes: Optional[list] = None
     # Additional cluster options
     cluster_skip_full_coverage_check: bool = True
@@ -95,12 +97,14 @@ class AgentLease:
         agent_id: str,
         instance_id: str,
         config: CoordinationConfig,
+        on_lease_lost: Optional[Callable[[], None]] = None,
     ):
         self._redis = redis_client
         self._tenant_id = tenant_id or "default"
         self._agent_id = agent_id
         self._instance_id = instance_id
         self._config = config
+        self._on_lease_lost = on_lease_lost
 
         self._key = f"swe:cron:lease:{self._tenant_id}:{agent_id}"
         self._owned = False
@@ -212,57 +216,70 @@ class AgentLease:
 
     async def _renew_loop(self) -> None:
         """Background task that periodically renews the lease."""
-        while not self._stop_renew.is_set():
-            try:
-                await asyncio.wait_for(
-                    self._stop_renew.wait(),
-                    timeout=self._config.lease_renew_interval_seconds,
-                )
-                return  # Stop requested
-            except asyncio.TimeoutError:
-                pass
+        lease_lost = False
+        try:
+            while not self._stop_renew.is_set():
+                try:
+                    await asyncio.wait_for(
+                        self._stop_renew.wait(),
+                        timeout=self._config.lease_renew_interval_seconds,
+                    )
+                    return  # Stop requested
+                except asyncio.TimeoutError:
+                    pass
 
-            try:
-                # Renew the lease only if we still own it
-                current = await self._redis.get(self._key)
-                if not current or current.decode() != self._instance_id:
-                    # Lease was stolen or expired
+                try:
+                    # Renew the lease only if we still own it
+                    current = await self._redis.get(self._key)
+                    if not current or current.decode() != self._instance_id:
+                        # Lease was stolen or expired
+                        logger.warning(
+                            "Lease lost (stolen or expired): tenant=%s agent=%s",
+                            self._tenant_id,
+                            self._agent_id,
+                        )
+                        self._owned = False
+                        lease_lost = True
+                        return
+
+                    # Extend the lease
+                    await self._redis.expire(
+                        self._key, self._config.lease_ttl_seconds
+                    )
+                    self._consecutive_failures = 0
+                    logger.debug(
+                        "Renewed cron lease: tenant=%s agent=%s",
+                        self._tenant_id,
+                        self._agent_id,
+                    )
+                except Exception as e:
+                    self._consecutive_failures += 1
                     logger.warning(
-                        "Lease lost (stolen or expired): tenant=%s agent=%s",
-                        self._tenant_id,
-                        self._agent_id,
+                        "Lease renewal failed (%d/%d): %s",
+                        self._consecutive_failures,
+                        self._config.lease_renew_failure_threshold,
+                        e,
                     )
-                    self._owned = False
-                    return
-
-                # Extend the lease
-                await self._redis.expire(self._key, self._config.lease_ttl_seconds)
-                self._consecutive_failures = 0
-                logger.debug(
-                    "Renewed cron lease: tenant=%s agent=%s",
-                    self._tenant_id,
-                    self._agent_id,
-                )
-            except Exception as e:
-                self._consecutive_failures += 1
-                logger.warning(
-                    "Lease renewal failed (%d/%d): %s",
-                    self._consecutive_failures,
-                    self._config.lease_renew_failure_threshold,
-                    e,
-                )
-                if (
-                    self._consecutive_failures
-                    >= self._config.lease_renew_failure_threshold
-                ):
-                    logger.error(
-                        "Lease renewal failed too many times, "
-                        "considering lease lost: tenant=%s agent=%s",
-                        self._tenant_id,
-                        self._agent_id,
-                    )
-                    self._owned = False
-                    return
+                    if (
+                        self._consecutive_failures
+                        >= self._config.lease_renew_failure_threshold
+                    ):
+                        logger.error(
+                            "Lease renewal failed too many times, "
+                            "considering lease lost: tenant=%s agent=%s",
+                            self._tenant_id,
+                            self._agent_id,
+                        )
+                        self._owned = False
+                        lease_lost = True
+                        return
+        finally:
+            # Call the lease lost callback if lease was lost
+            if lease_lost and self._on_lease_lost is not None:
+                try:
+                    self._on_lease_lost()
+                except Exception:  # pylint: disable=broad-except
+                    logger.exception("Lease lost callback failed")
 
 
 class ExecutionLock:
@@ -286,6 +303,11 @@ class ExecutionLock:
         self._job_id = job_id
         self._ttl_seconds = ttl_seconds
         self._key = f"swe:cron:exec:{self._tenant_id}:{agent_id}:{job_id}"
+
+    @property
+    def ttl_seconds(self) -> int:
+        """Get the TTL of the execution lock in seconds."""
+        return self._ttl_seconds
 
     async def acquire(self) -> bool:
         """Attempt to acquire the execution lock.
@@ -338,11 +360,13 @@ class ReloadPublisher:
 
         try:
             channel = f"{self._config.reload_channel_prefix}:{tenant_id or 'default'}:{agent_id}"
-            message = json.dumps({
-                "tenant_id": tenant_id or "default",
-                "agent_id": agent_id,
-                "timestamp": str(uuid.uuid4()),  # Unique id for dedup
-            })
+            message = json.dumps(
+                {
+                    "tenant_id": tenant_id or "default",
+                    "agent_id": agent_id,
+                    "timestamp": str(uuid.uuid4()),  # Unique id for dedup
+                }
+            )
             await self._redis.publish(channel, message)
             logger.debug(
                 "Published cron reload signal: tenant=%s agent=%s",
@@ -371,7 +395,9 @@ class ReloadSubscriber:
         self._agent_id = agent_id
         self._config = config
         self._on_reload = on_reload
-        self._channel = f"{config.reload_channel_prefix}:{self._tenant_id}:{agent_id}"
+        self._channel = (
+            f"{config.reload_channel_prefix}:{self._tenant_id}:{agent_id}"
+        )
         self._task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
 
@@ -475,6 +501,7 @@ class CronCoordination:
         self._lease: Optional[AgentLease] = None
         self._reload_subscriber: Optional[ReloadSubscriber] = None
         self._on_reload: Optional[Callable[[], None]] = None
+        self._on_lease_lost: Optional[Callable[[], None]] = None
 
     @property
     def instance_id(self) -> str:
@@ -519,7 +546,9 @@ class CronCoordination:
                 await self._redis.ping()
             logger.info(
                 "Connected to Redis for cron coordination: %s (cluster=%s)",
-                self._config.redis_url if not self._config.cluster_mode else "cluster",
+                self._config.redis_url
+                if not self._config.cluster_mode
+                else "cluster",
                 self._config.cluster_mode,
             )
             return True
@@ -546,7 +575,9 @@ class CronCoordination:
             startup_nodes = []
             for node in self._config.cluster_nodes:
                 if isinstance(node, dict):
-                    startup_nodes.append({"host": node["host"], "port": node["port"]})
+                    startup_nodes.append(
+                        {"host": node["host"], "port": node["port"]}
+                    )
                 elif ClusterNode:
                     startup_nodes.append(node)
 
@@ -565,7 +596,9 @@ class CronCoordination:
                     nodes.append({"host": host_port, "port": 6379})
             startup_nodes = nodes
 
-        logger.debug("Connecting to Redis Cluster with nodes: %s", startup_nodes)
+        logger.debug(
+            "Connecting to Redis Cluster with nodes: %s", startup_nodes
+        )
 
         cluster = RedisCluster(
             startup_nodes=startup_nodes,
@@ -590,10 +623,18 @@ class CronCoordination:
 
         This acquires the lease and starts listening for reload signals.
         Returns True if this instance became the leader, False if follower.
+
+        Raises:
+            RedisNotAvailableError: If coordination is enabled but Redis is not available.
         """
         if self._redis is None:
-            logger.debug("Cannot activate: not connected to Redis")
-            return True  # Run without coordination if Redis unavailable
+            logger.error(
+                "Cannot activate: Redis coordination enabled but not connected"
+            )
+            raise RedisNotAvailableError(
+                "Redis coordination is enabled but Redis is not available. "
+                "Please check Redis connection or disable coordination.",
+            )
 
         # Create and acquire lease
         self._lease = AgentLease(
@@ -602,6 +643,7 @@ class CronCoordination:
             agent_id=self._agent_id,
             instance_id=self._instance_id,
             config=self._config,
+            on_lease_lost=self._on_lease_lost,
         )
 
         acquired = await self._lease.acquire()
@@ -647,7 +689,13 @@ class CronCoordination:
         """Set the callback to invoke when a reload signal is received."""
         self._on_reload = callback
 
-    def create_execution_lock(self, job_id: str, timeout_seconds: int) -> ExecutionLock:
+    def set_lease_lost_callback(self, callback: Callable[[], None]) -> None:
+        """Set the callback to invoke when the lease is lost."""
+        self._on_lease_lost = callback
+
+    def create_execution_lock(
+        self, job_id: str, timeout_seconds: int
+    ) -> ExecutionLock:
         """Create an execution lock for a specific job.
 
         Args:
@@ -702,11 +750,22 @@ async def execution_lock_context(
             else:
                 # Skip duplicate execution
                 pass
+
+    Note: The lock is NOT released when the context exits. It will
+    naturally expire after timeout + safety_margin. This prevents
+    duplicate executions if another instance takes over leadership.
     """
     lock = coordination.create_execution_lock(job_id, timeout_seconds)
     acquired = await lock.acquire()
     try:
         yield acquired
     finally:
+        # Do NOT release the lock - let it expire naturally.
+        # This prevents duplicate executions during leadership transitions.
+        # The lock TTL covers: timeout_seconds + lock_safety_margin_seconds
         if acquired:
-            await lock.release()
+            logger.debug(
+                "Execution lock will expire naturally: job_id=%s (TTL=%ds)",
+                job_id,
+                lock.ttl_seconds,
+            )

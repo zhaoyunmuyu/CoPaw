@@ -88,8 +88,9 @@ class CronManager:
                 agent_id=agent_id or "default",
                 config=coordination_config,
             )
-            # Set reload callback
+            # Set callbacks
             self._coordination.set_reload_callback(self._on_reload_signal)
+            self._coordination.set_lease_lost_callback(self._on_lease_lost)
 
         self._active_jobs: set[str] = set()  # Track which jobs are scheduled
 
@@ -141,13 +142,28 @@ class CronManager:
 
         Returns True if this instance became the active leader,
         False if this is a follower.
+
+        Raises:
+            RedisNotAvailableError: If coordination is enabled but Redis is not available.
         """
         await self.initialize()
 
         # Connect coordination first
-        await self.connect_coordination()
+        connected = await self.connect_coordination()
 
         if self._coordination is not None:
+            # Coordination is enabled - we must connect to Redis
+            if not connected:
+                logger.error(
+                    "CronManager failed to activate: Redis coordination enabled "
+                    "but Redis is not available (agent=%s)",
+                    self._agent_id,
+                )
+                raise RuntimeError(
+                    "Redis coordination is enabled but Redis is not available. "
+                    "Please check Redis connection or disable coordination.",
+                )
+
             # Try to acquire leadership
             is_leader = await self._coordination.activate()
             if not is_leader:
@@ -204,7 +220,8 @@ class CronManager:
 
             # Clear existing jobs (except heartbeat)
             jobs_to_remove = [
-                job_id for job_id in self._active_jobs
+                job_id
+                for job_id in self._active_jobs
                 if job_id != HEARTBEAT_JOB_ID
             ]
             for job_id in jobs_to_remove:
@@ -312,6 +329,26 @@ class CronManager:
                 self._agent_id,
             )
 
+    def _on_lease_lost(self) -> None:
+        """Callback invoked when the leadership lease is lost.
+
+        This stops the scheduler to prevent duplicate executions.
+        """
+        logger.warning(
+            "Lease lost callback invoked, deactivating scheduler: agent=%s",
+            self._agent_id,
+        )
+        # Schedule deactivate in the event loop
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.deactivate())
+        except RuntimeError:
+            # No event loop running - this shouldn't happen in normal operation
+            logger.warning(
+                "Cannot schedule deactivate: no event loop (agent=%s)",
+                self._agent_id,
+            )
+
     async def _update_heartbeat(self) -> None:
         """Update heartbeat job based on current config."""
         if self._scheduler is None:
@@ -351,7 +388,6 @@ class CronManager:
 
     # ----- write/control -----
 
-
     async def create_or_replace_job(self, spec: CronJobSpec) -> None:
         async with self._lock:
             await self._repo.upsert_job(spec)
@@ -368,15 +404,59 @@ class CronManager:
             self._rt.pop(job_id, None)
             return await self._repo.delete_job(job_id)
 
-    async def pause_job(self, job_id: str) -> None:
-        async with self._lock:
-            if self._started and self._scheduler is not None:
-                self._scheduler.pause_job(job_id)
+    async def pause_job(self, job_id: str) -> bool:
+        """Pause a job - disables execution and persists to repository.
 
-    async def resume_job(self, job_id: str) -> None:
+        Args:
+            job_id: The job ID to pause.
+
+        Returns:
+            True if job was found and paused, False otherwise.
+        """
         async with self._lock:
+            # Get current job from repo
+            job = await self._repo.get_job(job_id)
+            if not job:
+                return False
+
+            # Update the job to disabled
+            if job.enabled:
+                disabled_job = job.model_copy(update={"enabled": False})
+                await self._repo.upsert_job(disabled_job)
+
+            # Pause in scheduler if started
             if self._started and self._scheduler is not None:
-                self._scheduler.resume_job(job_id)
+                if self._scheduler.get_job(job_id):
+                    self._scheduler.pause_job(job_id)
+
+            return True
+
+    async def resume_job(self, job_id: str) -> bool:
+        """Resume a paused job - enables execution and persists to repository.
+
+        Args:
+            job_id: The job ID to resume.
+
+        Returns:
+            True if job was found and resumed, False otherwise.
+        """
+        async with self._lock:
+            # Get current job from repo
+            job = await self._repo.get_job(job_id)
+            if not job:
+                return False
+
+            # Update the job to enabled
+            if not job.enabled:
+                enabled_job = job.model_copy(update={"enabled": True})
+                await self._repo.upsert_job(enabled_job)
+
+            # Resume in scheduler if started
+            if self._started and self._scheduler is not None:
+                if self._scheduler.get_job(job_id):
+                    self._scheduler.resume_job(job_id)
+
+            return True
 
     async def reschedule_heartbeat(self) -> None:
         """Reload heartbeat config and update or remove the heartbeat job.
@@ -542,6 +622,15 @@ class CronManager:
         This uses the execution lock to prevent duplicate runs during
         leadership transitions.
         """
+        # Check if we're still the leader
+        if self._coordination is not None and not self._coordination.is_leader:
+            logger.debug(
+                "Skipping scheduled job: not leader (agent=%s, job=%s)",
+                self._agent_id,
+                job_id,
+            )
+            return
+
         job = await self._repo.get_job(job_id)
         if not job:
             return
@@ -594,7 +683,10 @@ class CronManager:
                 workspace_dir = self._runner.workspace_dir
 
             tenant_id = None
-            if hasattr(self._runner, "_workspace") and self._runner._workspace is not None:
+            if (
+                hasattr(self._runner, "_workspace")
+                and self._runner._workspace is not None
+            ):
                 tenant_id = getattr(self._runner._workspace, "tenant_id", None)
 
             with bind_tenant_context(
