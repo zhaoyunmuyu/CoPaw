@@ -131,7 +131,10 @@ class Workspace:
     def config(self):
         """Get agent configuration."""
         if self._config is None:
-            self._config = load_agent_config(self.agent_id)
+            self._config = load_agent_config(
+                self.agent_id,
+                tenant_id=self.tenant_id,
+            )
         return self._config
 
     def set_manager(self, manager) -> None:
@@ -335,7 +338,10 @@ class Workspace:
 
         try:
             # 1. Load agent configuration
-            self._config = load_agent_config(self.agent_id)
+            self._config = load_agent_config(
+                self.agent_id,
+                tenant_id=self.tenant_id,
+            )
             logger.debug(f"Loaded config for agent: {self.agent_id}")
 
             # 2. Start all services via ServiceManager

@@ -163,7 +163,10 @@ async def create_mcp_config_watcher(ws: "Workspace", _):
     from ...config.config import load_agent_config
 
     def mcp_config_loader():
-        agent_config = load_agent_config(ws.agent_id)
+        agent_config = load_agent_config(
+            ws.agent_id,
+            tenant_id=ws.tenant_id,
+        )
         return agent_config.mcp
 
     watcher = MCPConfigWatcher(

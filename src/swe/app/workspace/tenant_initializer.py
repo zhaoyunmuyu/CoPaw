@@ -7,6 +7,7 @@ so the bootstrap logic lives in one place.
 """
 import json
 import logging
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,15 @@ logger = logging.getLogger(__name__)
 
 class TenantInitializer:
     """Bootstrap a tenant directory with required structure and agents."""
+
+    _WORKSPACE_TEMPLATE_FILES = (
+        "AGENTS.md",
+        "BOOTSTRAP.md",
+        "HEARTBEAT.md",
+        "MEMORY.md",
+        "PROFILE.md",
+        "SOUL.md",
+    )
 
     def __init__(self, base_working_dir: Path, tenant_id: str):
         self.base_working_dir = Path(base_working_dir).expanduser().resolve()
@@ -42,6 +52,29 @@ class TenantInitializer:
         not the runtime.
         """
         ensure_default_agent_exists(working_dir=self.tenant_dir)
+
+    def has_seeded_bootstrap(self) -> bool:
+        """Return True when the tenant bootstrap scaffold is present."""
+        default_workspace = self.tenant_dir / "workspaces" / "default"
+        required_paths = [
+            self.tenant_dir / "config.json",
+            default_workspace,
+            default_workspace / "agent.json",
+            default_workspace / "chats.json",
+            default_workspace / "jobs.json",
+            default_workspace / "token_usage.json",
+            default_workspace / "sessions",
+            default_workspace / "memory",
+        ]
+        required_paths.extend(
+            default_workspace / filename
+            for filename in self._WORKSPACE_TEMPLATE_FILES
+        )
+
+        return (
+            all(path.exists() for path in required_paths)
+            and self._has_skill_pool_state()
+        )
 
     def initialize_minimal(self) -> None:
         """Run minimal bootstrap sequence (idempotent).
@@ -77,13 +110,22 @@ class TenantInitializer:
         """
         result: dict[str, Any] = {
             "minimal": False,
+            "config_seed": {},
             "pool_seed": {},
             "workspace_seed": {},
+            "workspace_scaffold": {},
         }
+        config_existed = (self.tenant_dir / "config.json").exists()
 
         # Step 1: Minimal initialization
         self.initialize_minimal()
         result["minimal"] = True
+
+        # Step 1.5: Seed tenant root config from default template on
+        # first bootstrap or after external deletion.
+        result["config_seed"] = self.seed_tenant_config_from_default(
+            overwrite=not config_existed,
+        )
 
         # Step 2: Seed skill pool from default (or builtin fallback)
         # Note: This raises RuntimeError on complete failure (including builtin fallback)
@@ -92,6 +134,9 @@ class TenantInitializer:
         # Step 3: Seed default workspace skills from default tenant
         # Note: This raises RuntimeError on failure
         result["workspace_seed"] = self.seed_default_workspace_skills_from_default()
+
+        # Step 4: Ensure the default workspace scaffold is complete.
+        result["workspace_scaffold"] = self.ensure_default_workspace_scaffold()
 
         return result
 
@@ -225,6 +270,108 @@ class TenantInitializer:
                 copied.append(item.name)
 
         return copied
+
+    def seed_tenant_config_from_default(
+        self,
+        *,
+        overwrite: bool = False,
+    ) -> dict[str, Any]:
+        """Seed tenant config.json from default tenant without copying refs."""
+        from ...config.utils import load_config, save_config
+
+        target_config_path = self.tenant_dir / "config.json"
+        source_config_path = self.base_working_dir / "default" / "config.json"
+        result: dict[str, Any] = {"seeded": False, "source": None}
+
+        if not source_config_path.exists():
+            return result
+        if target_config_path.exists() and not overwrite:
+            return result
+
+        target_config = load_config(target_config_path)
+        source_config = load_config(source_config_path)
+        merged_config = source_config.model_copy(deep=True)
+
+        # Keep tenant-local workspace refs created during minimal bootstrap.
+        merged_config.agents.profiles = target_config.agents.profiles
+        merged_config.agents.active_agent = (
+            target_config.agents.active_agent
+            or source_config.agents.active_agent
+            or "default"
+        )
+
+        save_config(merged_config, target_config_path)
+        result["seeded"] = True
+        result["source"] = "default"
+        return result
+
+    def ensure_default_workspace_scaffold(self) -> dict[str, Any]:
+        """Ensure runtime-required workspace files exist for default agent."""
+        from ...agents.utils.setup_utils import copy_md_files
+        from ...config.config import AgentProfileConfig, load_agent_config
+
+        default_workspace = self.tenant_dir / "workspaces" / "default"
+        default_workspace.mkdir(parents=True, exist_ok=True)
+
+        for dirname in ("sessions", "memory", "skills"):
+            (default_workspace / dirname).mkdir(parents=True, exist_ok=True)
+
+        tenant_config_path = self.tenant_dir / "config.json"
+        target_agent_config_path = default_workspace / "agent.json"
+        default_template_workspace = (
+            self.base_working_dir / "default" / "workspaces" / "default"
+        )
+        source_agent_config_path = default_template_workspace / "agent.json"
+        if (
+            not target_agent_config_path.exists()
+            and source_agent_config_path.exists()
+        ):
+            agent_payload = json.loads(
+                source_agent_config_path.read_text(encoding="utf-8"),
+            )
+            agent_payload["workspace_dir"] = str(default_workspace)
+            agent_config_model = AgentProfileConfig(**agent_payload)
+            target_agent_config_path.write_text(
+                json.dumps(
+                    agent_config_model.model_dump(exclude_none=True),
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+        agent_config = load_agent_config(
+            "default",
+            config_path=tenant_config_path,
+        )
+
+        copied_files: list[str] = []
+        for filename in self._WORKSPACE_TEMPLATE_FILES:
+            source_file = default_template_workspace / filename
+            target_file = default_workspace / filename
+            if target_file.exists():
+                continue
+            if source_file.exists():
+                shutil.copy2(source_file, target_file)
+                copied_files.append(filename)
+
+        copied_files.extend(
+            copy_md_files(
+                agent_config.language or "zh",
+                skip_existing=True,
+                workspace_dir=default_workspace,
+            ),
+        )
+
+        token_usage_path = default_workspace / "token_usage.json"
+        if not token_usage_path.exists():
+            token_usage_path.write_text("[]", encoding="utf-8")
+
+        return {
+            "agent_json": (default_workspace / "agent.json").exists(),
+            "copied_files": sorted(set(copied_files)),
+            "token_usage": token_usage_path.exists(),
+        }
 
     def _prepare_source_pool_state(
         self,

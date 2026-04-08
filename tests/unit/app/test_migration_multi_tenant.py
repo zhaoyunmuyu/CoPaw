@@ -11,6 +11,13 @@ import swe.app.migration as migration_module
 import swe.constant as constant_module
 from swe.agents.skills_manager import ensure_skill_pool_initialized
 from swe.app.migration import ensure_default_agent_exists, ensure_qa_agent_exists
+from swe.config.config import (
+    Config,
+    AgentsConfig,
+    AgentProfileRef,
+    load_agent_config,
+)
+from swe.config.utils import save_config
 from swe.constant import BUILTIN_QA_AGENT_ID
 
 
@@ -78,3 +85,35 @@ def test_ensure_skill_pool_initialized_uses_tenant_working_dir(
     assert (tenant_dir / "skill_pool").is_dir()
     assert created in (True, False)
     assert not (global_dir / "skill_pool").exists()
+
+
+def test_load_agent_config_creates_agent_json_under_tenant_config_path(
+    tmp_path,
+):
+    tenant_dir = tmp_path / "tenant-delta"
+    workspace_dir = tenant_dir / "workspaces" / "default"
+
+    save_config(
+        Config(
+            agents=AgentsConfig(
+                active_agent="default",
+                profiles={
+                    "default": AgentProfileRef(
+                        id="default",
+                        workspace_dir=str(workspace_dir),
+                    ),
+                },
+                language="en",
+            ),
+        ),
+        tenant_dir / "config.json",
+    )
+
+    agent_config = load_agent_config(
+        "default",
+        config_path=tenant_dir / "config.json",
+    )
+
+    assert agent_config.workspace_dir == str(workspace_dir)
+    assert (workspace_dir / "agent.json").exists()
+    assert not (tmp_path / "config.json").exists()

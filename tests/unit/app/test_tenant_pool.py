@@ -5,6 +5,7 @@ Tests lazy creation, cache hits, concurrent creation safety, and stop-all cleanu
 """
 # pylint: disable=wrong-import-position,protected-access,unused-import
 import asyncio
+import json
 import sys
 from pathlib import Path
 
@@ -16,6 +17,12 @@ from swe.app.workspace.tenant_pool import (  # noqa: E402
     TenantWorkspacePool,
     TenantWorkspaceEntry,
 )
+from swe.config.config import (  # noqa: E402
+    Config,
+    AgentsConfig,
+    AgentProfileRef,
+)
+from swe.config.utils import save_config  # noqa: E402
 
 
 @pytest.fixture(name="mock_working_dir")
@@ -447,6 +454,80 @@ class TestTenantBootstrapConcurrency:
         for tenant_id in results:
             tenant_pool = get_skill_pool_dir(working_dir=tmp_path / tenant_id)
             assert (tenant_pool / "shared-skill-0" / "SKILL.md").exists()
+
+    def test_ensure_bootstrap_repairs_cached_tenant_scaffold(self, tmp_path):
+        """ensure_bootstrap self-heals missing files for cached tenants."""
+        default_tenant = tmp_path / "default"
+        default_workspace = default_tenant / "workspaces" / "default"
+        default_workspace.mkdir(parents=True)
+
+        save_config(
+            Config(
+                agents=AgentsConfig(
+                    active_agent="default",
+                    profiles={
+                        "default": AgentProfileRef(
+                            id="default",
+                            workspace_dir=str(default_workspace),
+                        ),
+                    },
+                    language="zh",
+                ),
+            ),
+            default_tenant / "config.json",
+        )
+
+        (default_workspace / "AGENTS.md").write_text(
+            "# agents\n",
+            encoding="utf-8",
+        )
+        (default_workspace / "BOOTSTRAP.md").write_text(
+            "# bootstrap\n",
+            encoding="utf-8",
+        )
+        (default_workspace / "HEARTBEAT.md").write_text(
+            "# heartbeat\n",
+            encoding="utf-8",
+        )
+        (default_workspace / "MEMORY.md").write_text(
+            "# memory\n",
+            encoding="utf-8",
+        )
+        (default_workspace / "PROFILE.md").write_text(
+            "# profile\n",
+            encoding="utf-8",
+        )
+        (default_workspace / "SOUL.md").write_text(
+            "# soul\n",
+            encoding="utf-8",
+        )
+
+        pool = TenantWorkspacePool(tmp_path)
+
+        async def run_test():
+            await pool.ensure_bootstrap("tenant-heal")
+
+            workspace = tmp_path / "tenant-heal" / "workspaces" / "default"
+            (tmp_path / "tenant-heal" / "config.json").unlink()
+            (workspace / "AGENTS.md").unlink()
+            (workspace / "agent.json").unlink()
+            (workspace / "token_usage.json").unlink()
+
+            await pool.ensure_bootstrap("tenant-heal")
+
+            return workspace
+
+        workspace = asyncio.run(run_test())
+
+        assert (tmp_path / "tenant-heal" / "config.json").exists()
+        assert (workspace / "AGENTS.md").exists()
+        assert (workspace / "agent.json").exists()
+        assert (workspace / "token_usage.json").exists()
+
+        token_usage = json.loads(
+            (workspace / "token_usage.json").read_text(encoding="utf-8"),
+        )
+        assert token_usage == []
 
 
 class TestTenantWorkspaceDirectoryLayout:
