@@ -11,34 +11,34 @@ from fastapi.testclient import TestClient
 SRC_ROOT = Path(__file__).parent.parent.parent.parent / "src"
 sys.path.insert(0, str(SRC_ROOT))
 
-if "copaw.app.crons" not in sys.modules:
-    pkg = types.ModuleType("copaw.app.crons")
-    pkg.__path__ = [str(SRC_ROOT / "copaw" / "app" / "crons")]
-    sys.modules["copaw.app.crons"] = pkg
+if "swe.app.crons" not in sys.modules:
+    pkg = types.ModuleType("swe.app.crons")
+    pkg.__path__ = [str(SRC_ROOT / "swe" / "app" / "crons")]
+    sys.modules["swe.app.crons"] = pkg
 
-channels_schema_module = types.ModuleType("copaw.app.channels.schema")
+channels_schema_module = types.ModuleType("swe.app.channels.schema")
 channels_schema_module.DEFAULT_CHANNEL = "console"
-sys.modules["copaw.app.channels.schema"] = channels_schema_module
+sys.modules["swe.app.channels.schema"] = channels_schema_module
 
 models_spec = importlib.util.spec_from_file_location(
-    "copaw.app.crons.models",
-    SRC_ROOT / "copaw" / "app" / "crons" / "models.py",
+    "swe.app.crons.models",
+    SRC_ROOT / "swe" / "app" / "crons" / "models.py",
 )
 models_module = importlib.util.module_from_spec(models_spec)
-sys.modules["copaw.app.crons.models"] = models_module
+sys.modules["swe.app.crons.models"] = models_module
 assert models_spec is not None and models_spec.loader is not None
 models_spec.loader.exec_module(models_module)
 
-manager_module = types.ModuleType("copaw.app.crons.manager")
+manager_module = types.ModuleType("swe.app.crons.manager")
 manager_module.CronManager = object
-sys.modules["copaw.app.crons.manager"] = manager_module
+sys.modules["swe.app.crons.manager"] = manager_module
 
 api_spec = importlib.util.spec_from_file_location(
-    "copaw.app.crons.api",
-    SRC_ROOT / "copaw" / "app" / "crons" / "api.py",
+    "swe.app.crons.api",
+    SRC_ROOT / "swe" / "app" / "crons" / "api.py",
 )
 api_module = importlib.util.module_from_spec(api_spec)
-sys.modules["copaw.app.crons.api"] = api_module
+sys.modules["swe.app.crons.api"] = api_module
 assert api_spec is not None and api_spec.loader is not None
 api_spec.loader.exec_module(api_module)
 

@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { useLocation } from "react-router-dom";
+// ==================== 组件引入方式变更 (Kun He) ====================
 import { useChatAnywhereSessionsState } from '@/components/agentscope-chat';
+// ==================== 组件引入方式变更结束 ====================
 
 /**
  * URL chatId → context currentSessionId (one direction of bidirectional sync).

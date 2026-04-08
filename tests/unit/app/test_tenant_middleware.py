@@ -19,14 +19,14 @@ class TestAppInitialization:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_tenant_workspace_pool_import(self):
         """TenantWorkspacePool can be imported."""
-        from copaw.app.workspace.tenant_pool import TenantWorkspacePool
+        from swe.app.workspace.tenant_pool import TenantWorkspacePool
 
         assert TenantWorkspacePool is not None
 
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_tenant_workspace_pool_initialization(self, tmp_path):
         """TenantWorkspacePool initializes with base directory."""
-        from copaw.app.workspace.tenant_pool import TenantWorkspacePool
+        from swe.app.workspace.tenant_pool import TenantWorkspacePool
 
         pool = TenantWorkspacePool(tmp_path / "tenants")
         assert pool._base_working_dir.exists()
@@ -38,7 +38,7 @@ class TestAppInitialization:
         agent_ctx_path = (
             Path(__file__).parent.parent.parent.parent
             / "src"
-            / "copaw"
+            / "swe"
             / "app"
             / "agent_context.py"
         )
@@ -61,7 +61,7 @@ class TestTenantFirstResolution:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_get_active_agent_id_accepts_tenant_id(self):
         """get_active_agent_id accepts optional tenant_id parameter."""
-        from copaw.app.agent_context import get_active_agent_id
+        from swe.app.agent_context import get_active_agent_id
 
         # Should work without tenant_id
         result = get_active_agent_id()
@@ -74,7 +74,7 @@ class TestTenantFirstResolution:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_get_current_agent_id_accepts_tenant_id(self):
         """get_current_agent_id accepts optional tenant_id parameter."""
-        from copaw.app.agent_context import get_current_agent_id
+        from swe.app.agent_context import get_current_agent_id
 
         # Should work without tenant_id
         result = get_current_agent_id()
@@ -91,7 +91,7 @@ class TestTenantContextIntegration:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_tenant_context_error_import(self):
         """TenantContextError can be imported from config.context."""
-        from copaw.config.context import TenantContextError
+        from swe.config.context import TenantContextError
 
         assert TenantContextError is not None
         assert issubclass(TenantContextError, RuntimeError)
@@ -104,7 +104,7 @@ class TestTenantContextIntegration:
         context_path = (
             Path(__file__).parent.parent.parent.parent
             / "src"
-            / "copaw"
+            / "swe"
             / "config"
             / "context.py"
         )
@@ -127,7 +127,7 @@ class TestTenantContextIntegration:
         context_path = (
             Path(__file__).parent.parent.parent.parent
             / "src"
-            / "copaw"
+            / "swe"
             / "config"
             / "context.py"
         )
@@ -151,7 +151,7 @@ class TestTenantContextIntegration:
         context_path = (
             Path(__file__).parent.parent.parent.parent
             / "src"
-            / "copaw"
+            / "swe"
             / "config"
             / "context.py"
         )
@@ -178,7 +178,7 @@ class TestMiddlewareOrdering:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_agent_context_middleware_dispatch_signature(self):
         """AgentContextMiddleware has correct dispatch signature."""
-        from copaw.app.routers.agent_scoped import AgentContextMiddleware
+        from swe.app.routers.agent_scoped import AgentContextMiddleware
 
         # Middleware should be callable and have dispatch method
         assert hasattr(AgentContextMiddleware, "dispatch")

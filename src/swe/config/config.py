@@ -96,6 +96,28 @@ class FeishuConfig(BaseChannelConfig):
     domain: Literal["feishu", "lark"] = "feishu"
 
 
+class ZhaohuConfig(BaseChannelConfig):
+    enabled: bool = True
+    # push_url: str = "https://agentframework.paasst.cmbchina.cn/exp-msg/push"  # dev
+    push_url: str = (
+        "https://agentframework.paas.cmbchina.cn/exp-msg/push"  # prd
+    )
+    sys_id: str = "RMS"
+    filter_thinking: bool = True
+    # robot_open_id: str = "4BB6901683AE5BF632E5D00405B3F8AF"  # dev
+    robot_open_id: str = "77D1CCFC2E210ED714ACC3093BFC9BAB"  # prd
+    channel: str = "ZH"
+    net: str = "DMZ"
+    # user_query_url (dev):
+    # "https://lq13gateway.paas.cmbchina.cn/agent-evaluate/evaluate/getYstUserList"
+    user_query_url: str = (
+        "https://llm-evaluate.paas.cmbchina.cn/evaluate/getYstUserList"  # prd
+    )
+    extract_url: str = (
+        "http://wplus-slots.paas.cmbchina.cn/api/extract/slots"  # prd/st
+    )
+
+
 class QQConfig(BaseChannelConfig):
     app_id: str = ""
     client_secret: str = ""
@@ -172,7 +194,7 @@ class VoiceChannelConfig(BaseChannelConfig):
     tts_voice: str = "en-US-Journey-D"
     stt_provider: str = "deepgram"
     language: str = "en-US"
-    welcome_greeting: str = "Hi! This is CoPaw. How can I help you?"
+    welcome_greeting: str = "Hi! This is SWE. How can I help you?"
 
 
 class XiaoYiConfig(BaseChannelConfig):
@@ -190,7 +212,7 @@ class WeixinConfig(BaseChannelConfig):
 
     bot_token:      Bearer token obtained after QR code login.
     bot_token_file: Path to persist/load the bot_token
-                    (default ~/.copaw/weixin_bot_token).
+                    (default ~/.swe/weixin_bot_token).
     base_url:       iLink API base URL (leave empty to use default).
     media_dir:      Local directory for downloaded media files.
     """
@@ -210,6 +232,7 @@ class ChannelConfig(BaseModel):
     discord: DiscordConfig = DiscordConfig()
     dingtalk: DingTalkConfig = DingTalkConfig()
     feishu: FeishuConfig = FeishuConfig()
+    zhaohu: ZhaohuConfig = ZhaohuConfig()
     qq: QQConfig = QQConfig()
     telegram: TelegramConfig = TelegramConfig()
     mattermost: MattermostConfig = MattermostConfig()
@@ -1119,11 +1142,33 @@ ChannelConfigUnion = Union[
 # Agent configuration utility functions
 
 
-def load_agent_config(agent_id: str) -> AgentProfileConfig:
+def _resolve_agent_root_config_path(
+    config_path: Path | None = None,
+    tenant_id: str | None = None,
+) -> Path | None:
+    """Resolve the root config path for agent load/save helpers."""
+    if config_path is not None:
+        return Path(config_path).expanduser()
+    if tenant_id is None:
+        return None
+
+    from .utils import get_tenant_config_path
+
+    return get_tenant_config_path(tenant_id)
+
+
+def load_agent_config(
+    agent_id: str,
+    config_path: Path | None = None,
+    *,
+    tenant_id: str | None = None,
+) -> AgentProfileConfig:
     """Load agent's complete configuration from workspace/agent.json.
 
     Args:
         agent_id: Agent ID to load
+        config_path: Optional root config.json path to resolve agent refs from
+        tenant_id: Optional tenant ID to resolve tenant-scoped root config
 
     Returns:
         AgentProfileConfig: Complete agent configuration
@@ -1133,7 +1178,11 @@ def load_agent_config(agent_id: str) -> AgentProfileConfig:
     """
     from .utils import load_config
 
-    config = load_config()
+    resolved_config_path = _resolve_agent_root_config_path(
+        config_path=config_path,
+        tenant_id=tenant_id,
+    )
+    config = load_config(resolved_config_path)
 
     if agent_id not in config.agents.profiles:
         raise ValueError(f"Agent '{agent_id}' not found in config")
@@ -1187,15 +1236,20 @@ def load_agent_config(agent_id: str) -> AgentProfileConfig:
             ),
         )
         # Save for future use
-        save_agent_config(agent_id, fallback_config)
+        save_agent_config(
+            agent_id,
+            fallback_config,
+            config_path=resolved_config_path,
+            tenant_id=tenant_id,
+        )
         return fallback_config
 
     with open(agent_config_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    # Normalize legacy ~/.copaw-bound paths to current WORKING_DIR.
-    # This keeps COPAW_WORKING_DIR effective even if existing agent.json
-    # contains older hard-coded paths like "~/.copaw/media".
+    # Normalize legacy ~/.swe-bound paths to current WORKING_DIR.
+    # This keeps SWE_WORKING_DIR effective even if existing agent.json
+    # contains older hard-coded paths like "~/.swe/media".
     try:
         from .utils import _normalize_working_dir_bound_paths
 
@@ -1209,19 +1263,28 @@ def load_agent_config(agent_id: str) -> AgentProfileConfig:
 def save_agent_config(
     agent_id: str,
     agent_config: AgentProfileConfig,
+    config_path: Path | None = None,
+    *,
+    tenant_id: str | None = None,
 ) -> None:
     """Save agent configuration to workspace/agent.json.
 
     Args:
         agent_id: Agent ID
         agent_config: Complete agent configuration to save
+        config_path: Optional root config.json path to resolve agent refs from
+        tenant_id: Optional tenant ID to resolve tenant-scoped root config
 
     Raises:
         ValueError: If agent ID not found in root config
     """
     from .utils import load_config
 
-    config = load_config()
+    resolved_config_path = _resolve_agent_root_config_path(
+        config_path=config_path,
+        tenant_id=tenant_id,
+    )
+    config = load_config(resolved_config_path)
 
     if agent_id not in config.agents.profiles:
         raise ValueError(f"Agent '{agent_id}' not found in config")
@@ -1276,7 +1339,7 @@ def migrate_legacy_config_to_multi_agent() -> bool:
     default_agent_config = AgentProfileConfig(
         id="default",
         name="Default Agent",
-        description="Default CoPaw agent",
+        description="Default SWE agent",
         workspace_dir=str(default_workspace),
         channels=config.channels if config.channels else None,
         mcp=config.mcp if config.mcp else None,
@@ -1315,9 +1378,9 @@ def migrate_legacy_config_to_multi_agent() -> bool:
         )
 
     # Migrate existing workspace files from legacy default working dir.
-    # When COPAW_WORKING_DIR is customized, historical data may still exist
-    # under "~/.copaw".
-    old_workspace = Path("~/.copaw").expanduser().resolve()
+    # When SWE_WORKING_DIR is customized, historical data may still exist
+    # under "~/.swe".
+    old_workspace = Path("~/.swe").expanduser().resolve()
 
     # Move sessions, memory, and other workspace files
     for item_name in ["sessions", "memory", "jobs.json"]:

@@ -23,7 +23,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
-from copaw.providers.provider_manager import ProviderManager
+from swe.providers.provider_manager import ProviderManager
 
 
 class TestDeferredProviderInitialization:
@@ -39,12 +39,12 @@ class TestDeferredProviderInitialization:
         provider storage initialization.
         """
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             tenant_id = "test-tenant-no-provider"
             tenant_providers_dir = (
-                tmp_path / ".copaw.secret" / tenant_id / "providers"
+                tmp_path / ".swe.secret" / tenant_id / "providers"
             )
 
             # Verify provider storage does not exist initially
@@ -52,7 +52,7 @@ class TestDeferredProviderInitialization:
 
             # Simulate workspace bootstrap (without provider initialization)
             # This mimics what TenantWorkspaceMiddleware does now
-            workspace_dir = tmp_path / ".copaw" / tenant_id
+            workspace_dir = tmp_path / ".swe" / tenant_id
             workspace_dir.mkdir(parents=True)
 
             # Verify provider storage was NOT created
@@ -67,7 +67,7 @@ class TestDeferredProviderInitialization:
         Verifies that the middleware has been updated to remove the
         _ensure_tenant_provider_config call.
         """
-        from copaw.app.middleware.tenant_workspace import (
+        from swe.app.middleware.tenant_workspace import (
             TenantWorkspaceMiddleware,
         )
 
@@ -101,12 +101,12 @@ class TestProviderAPIInitialization:
         accessing provider management APIs.
         """
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             tenant_id = "api-init-tenant"
             tenant_providers_dir = (
-                tmp_path / ".copaw.secret" / tenant_id / "providers"
+                tmp_path / ".swe.secret" / tenant_id / "providers"
             )
 
             # Verify storage does not exist initially
@@ -123,12 +123,12 @@ class TestProviderAPIInitialization:
     def test_ensure_storage_is_idempotent(self, tmp_path):
         """ensure_tenant_provider_storage can be called multiple times safely."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             tenant_id = "idempotent-tenant"
             tenant_providers_dir = (
-                tmp_path / ".copaw.secret" / tenant_id / "providers"
+                tmp_path / ".swe.secret" / tenant_id / "providers"
             )
 
             # First call creates storage
@@ -149,11 +149,11 @@ class TestProviderAPIInitialization:
     def test_ensure_storage_copies_from_default(self, tmp_path):
         """ensure_tenant_provider_storage copies from default tenant if available."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             # Setup default tenant with configuration
-            default_dir = tmp_path / ".copaw.secret" / "default" / "providers"
+            default_dir = tmp_path / ".swe.secret" / "default" / "providers"
             default_dir.mkdir(parents=True)
             default_builtin = default_dir / "builtin"
             default_builtin.mkdir()
@@ -175,7 +175,7 @@ class TestProviderAPIInitialization:
             # Create a new tenant
             tenant_id = "inherit-tenant"
             tenant_providers_dir = (
-                tmp_path / ".copaw.secret" / tenant_id / "providers"
+                tmp_path / ".swe.secret" / tenant_id / "providers"
             )
 
             # Ensure storage for new tenant
@@ -199,12 +199,12 @@ class TestConcurrentInitialization:
     def test_concurrent_ensure_storage_is_safe(self, tmp_path):
         """Concurrent calls to ensure_tenant_provider_storage are safe."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             tenant_id = "concurrent-init-tenant"
             tenant_providers_dir = (
-                tmp_path / ".copaw.secret" / tenant_id / "providers"
+                tmp_path / ".swe.secret" / tenant_id / "providers"
             )
 
             results = []
@@ -238,11 +238,11 @@ class TestConcurrentInitialization:
     def test_concurrent_ensure_storage_with_default_copy(self, tmp_path):
         """Concurrent initialization with default tenant copy is safe."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             # Setup default tenant
-            default_dir = tmp_path / ".copaw.secret" / "default" / "providers"
+            default_dir = tmp_path / ".swe.secret" / "default" / "providers"
             default_dir.mkdir(parents=True)
             default_builtin = default_dir / "builtin"
             default_builtin.mkdir()
@@ -278,7 +278,7 @@ class TestConcurrentInitialization:
             assert len(errors) == 0, f"Errors during concurrent copy: {errors}"
 
             # Verify storage was created correctly
-            tenant_dir = tmp_path / ".copaw.secret" / tenant_id / "providers"
+            tenant_dir = tmp_path / ".swe.secret" / tenant_id / "providers"
             assert tenant_dir.exists()
             assert (tenant_dir / "builtin" / "test-provider.json").exists()
 
@@ -289,8 +289,8 @@ class TestTenantIsolationPreserved:
     def test_tenant_isolation_after_deferred_init(self, tmp_path):
         """Tenant isolation works correctly with deferred initialization."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             # Initialize storage for two tenants
             tenant_a = "isolated-a"
@@ -320,8 +320,8 @@ class TestTenantIsolationPreserved:
     def test_default_tenant_isolation_preserved(self, tmp_path):
         """Default tenant isolation works with deferred initialization."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             # Ensure default tenant storage exists
             ProviderManager.ensure_tenant_provider_storage("default")
@@ -355,13 +355,13 @@ class TestEmptyDirectoryCreation:
     def test_empty_structure_when_default_empty(self, tmp_path):
         """Empty directory structure is created when default has no config."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             # Don't create default tenant config
             tenant_id = "empty-default-tenant"
             tenant_providers_dir = (
-                tmp_path / ".copaw.secret" / tenant_id / "providers"
+                tmp_path / ".swe.secret" / tenant_id / "providers"
             )
 
             # Ensure storage
@@ -382,12 +382,12 @@ class TestNoneTenantHandling:
     def test_none_tenant_defaults_to_default(self, tmp_path):
         """None tenant_id defaults to 'default' for ensure_tenant_provider_storage."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             # Call with None
             ProviderManager.ensure_tenant_provider_storage(None)
 
             # Verify default tenant storage was created
-            default_dir = tmp_path / ".copaw.secret" / "default" / "providers"
+            default_dir = tmp_path / ".swe.secret" / "default" / "providers"
             assert default_dir.exists()

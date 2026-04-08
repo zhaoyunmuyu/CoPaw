@@ -12,8 +12,8 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from copaw.app.middleware.tenant_identity import TenantIdentityMiddleware
-from copaw.app.routers.settings import router
+from swe.app.middleware.tenant_identity import TenantIdentityMiddleware
+from swe.app.routers.settings import router
 
 app = FastAPI()
 app.add_middleware(
@@ -45,7 +45,7 @@ def _use_tmp_settings(tmp_path: Path):
         return tmp_path / (tenant_id or "default")
 
     with patch(
-        "copaw.app.routers.settings.get_tenant_working_dir",
+        "swe.app.routers.settings.get_tenant_working_dir",
         mock_get_tenant_working_dir,
     ):
         yield {

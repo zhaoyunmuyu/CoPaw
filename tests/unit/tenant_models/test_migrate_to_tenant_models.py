@@ -10,7 +10,7 @@ from unittest.mock import patch
 import pytest
 
 # Import migration functions
-from copaw.tenant_models.models import (
+from swe.tenant_models.models import (
     ModelSlot,
     RoutingConfig,
     TenantModelConfig,
@@ -241,9 +241,9 @@ def test_save_and_verify_tenant_config():
             "scripts.migrate_to_tenant_models.WORKING_DIR",
             working_dir,
         ):
-            with patch("copaw.tenant_models.manager.SECRET_DIR", working_dir):
+            with patch("swe.tenant_models.manager.SECRET_DIR", working_dir):
                 # Clear cache to ensure fresh load
-                from copaw.tenant_models.manager import TenantModelManager
+                from swe.tenant_models.manager import TenantModelManager
 
                 TenantModelManager._cache.clear()
 
@@ -281,9 +281,9 @@ def test_full_migration_workflow_without_legacy():
             "scripts.migrate_to_tenant_models.WORKING_DIR",
             working_dir,
         ):
-            with patch("copaw.tenant_models.manager.SECRET_DIR", working_dir):
+            with patch("swe.tenant_models.manager.SECRET_DIR", working_dir):
                 # Clear cache
-                from copaw.tenant_models.manager import TenantModelManager
+                from swe.tenant_models.manager import TenantModelManager
 
                 TenantModelManager._cache.clear()
 
@@ -328,9 +328,9 @@ def test_full_migration_workflow_with_legacy():
             "scripts.migrate_to_tenant_models.WORKING_DIR",
             working_dir,
         ):
-            with patch("copaw.tenant_models.manager.SECRET_DIR", working_dir):
+            with patch("swe.tenant_models.manager.SECRET_DIR", working_dir):
                 # Clear cache
-                from copaw.tenant_models.manager import TenantModelManager
+                from swe.tenant_models.manager import TenantModelManager
 
                 TenantModelManager._cache.clear()
 

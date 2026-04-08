@@ -17,7 +17,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 from starlette.types import ASGIApp
 
-from copaw.config.context import (
+from swe.config.context import (
     set_current_workspace_dir,
     reset_current_workspace_dir,
 )
@@ -231,8 +231,8 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
                 "/api/auth/logout",
                 "/logo.png",
                 "/dark-logo.png",
-                "/copaw-symbol.svg",
-                "/copaw-dark.png",
+                "/swe-symbol.svg",
+                "/swe-dark.png",
             ],
         )
 

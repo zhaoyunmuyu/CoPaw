@@ -16,7 +16,7 @@ The system SHALL ensure that `get_request_working_dir()`, `get_request_secret_di
 
 #### Scenario: Directory paths contain user ID
 - **WHEN** user "alice" calls `get_request_working_dir()`
-- **THEN** the returned path ends with `.copaw/alice/`
+- **THEN** the returned path ends with `.swe/alice/`
 
 #### Scenario: Different users get different directories
 - **WHEN** user "alice" and user "bob" both call `get_request_working_dir()`

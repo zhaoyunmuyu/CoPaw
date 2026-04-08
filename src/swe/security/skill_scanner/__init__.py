@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Skill security scanner for CoPaw.
+Skill security scanner for SWE.
 
 Scans skills for security threats before they are activated or installed.
 
@@ -20,7 +20,7 @@ orchestrator.
 
 Quick start::
 
-    from copaw.security.skill_scanner import SkillScanner
+    from swe.security.skill_scanner import SkillScanner
 
     scanner = SkillScanner()
     result = scanner.scan_skill("/path/to/skill_directory")
@@ -95,9 +95,9 @@ def _load_scanner_config() -> Any:
 def _get_scan_mode(cfg: Any = None) -> str:
     """Return the effective scan mode: ``block``, ``warn``, or ``off``.
 
-    Priority: env ``COPAW_SKILL_SCAN_MODE`` > config > default ``warn``.
+    Priority: env ``SWE_SKILL_SCAN_MODE`` > config > default ``warn``.
     """
-    env = os.environ.get("COPAW_SKILL_SCAN_MODE")
+    env = os.environ.get("SWE_SKILL_SCAN_MODE")
     if env is not None:
         val = env.lower().strip()
         if val in _VALID_MODES:
@@ -181,7 +181,7 @@ def _get_blocked_history_path() -> Path:
 
         return WORKING_DIR / _BLOCKED_HISTORY_FILE
     except Exception:
-        return Path.home() / ".copaw" / _BLOCKED_HISTORY_FILE
+        return Path.home() / ".swe" / _BLOCKED_HISTORY_FILE
 
 
 @dataclass

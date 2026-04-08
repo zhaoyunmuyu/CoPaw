@@ -4,9 +4,9 @@ from contextvars import Token
 
 import pytest
 
-from copaw.config.context import TenantContextError
-from copaw.tenant_models.context import TenantModelContext
-from copaw.tenant_models.models import (
+from swe.config.context import TenantContextError
+from swe.tenant_models.context import TenantModelContext
+from swe.tenant_models.models import (
     ModelSlot,
     RoutingConfig,
     TenantModelConfig,

@@ -1,18 +1,27 @@
 # -*- coding: utf-8 -*-
-# pylint: disable=redefined-outer-name,unused-argument,protected-access
+# pylint: disable=redefined-outer-name,unused-argument,protected-access,wrong-import-position,reimported
 from __future__ import annotations
 
 import json
+import sys
+import types
 from types import SimpleNamespace
 
 import pytest
 
-import copaw.providers.provider_manager as provider_manager_module
-from copaw.providers.anthropic_provider import AnthropicProvider
-from copaw.providers.models import ModelSlotConfig
-from copaw.providers.openai_provider import OpenAIProvider
-from copaw.providers.provider import ModelInfo
-from copaw.providers.provider_manager import ProviderManager
+fcntl_stub = types.ModuleType("fcntl")
+fcntl_stub.flock = lambda *args, **kwargs: None
+fcntl_stub.LOCK_EX = 1
+fcntl_stub.LOCK_NB = 2
+fcntl_stub.LOCK_UN = 8
+sys.modules.setdefault("fcntl", fcntl_stub)
+
+import swe.providers.provider_manager as provider_manager_module
+from swe.providers.anthropic_provider import AnthropicProvider
+from swe.providers.models import ModelSlotConfig
+from swe.providers.openai_provider import OpenAIProvider
+from swe.providers.provider import ModelInfo
+from swe.providers.provider_manager import ProviderManager
 
 
 LEGACY_PROVIDER = {
@@ -78,7 +87,7 @@ LEGACY_PROVIDER = {
 
 @pytest.fixture
 def isolated_secret_dir(monkeypatch, tmp_path):
-    secret_dir = tmp_path / ".copaw.secret"
+    secret_dir = tmp_path / ".swe.secret"
     monkeypatch.setattr(provider_manager_module, "SECRET_DIR", secret_dir)
     return secret_dir
 
@@ -160,9 +169,9 @@ async def test_resume_local_model_restores_server_and_runtime_state(
     isolated_secret_dir,
 ) -> None:
     manager = ProviderManager()
-    model_id = "AgentScope/CoPaw-flash-2B-Q4_K_M"
+    model_id = "AgentScope/SWE-flash-2B-Q4_K_M"
     manager.update_provider(
-        "copaw-local",
+        "swe-local",
         {
             "base_url": "http://127.0.0.1:9000/v1",
             "extra_models": [
@@ -174,7 +183,7 @@ async def test_resume_local_model_restores_server_and_runtime_state(
         },
     )
     manager.active_model = ModelSlotConfig(
-        provider_id="copaw-local",
+        provider_id="swe-local",
         model=model_id,
     )
     manager.save_active_model(manager.active_model)
@@ -197,7 +206,7 @@ async def test_resume_local_model_restores_server_and_runtime_state(
 
     await manager._resume_local_model(local_manager)
 
-    provider = manager.get_provider("copaw-local")
+    provider = manager.get_provider("swe-local")
 
     assert local_manager.restored_model_id == model_id
     assert provider is not None
@@ -475,6 +484,20 @@ def test_init_from_storage_migrates_with_different_provider(
     )
 
 
+def test_openai_provider_can_resolve_kimi_chat_model_cls() -> None:
+    provider = OpenAIProvider(
+        id="openai",
+        name="OpenAI",
+        base_url="https://api.openai.com/v1",
+        api_key="sk-test",
+        chat_model="KimiChatModel",
+    )
+
+    from swe.providers.kimi_chat_model import KimiChatModel
+
+    assert provider.get_chat_model_cls() == KimiChatModel
+
+
 # =============================================================================
 # Tenant Isolation Tests
 # =============================================================================
@@ -623,7 +646,7 @@ class TestLegacyTenantModelsRecovery:
     ) -> None:
         """ProviderManager recovers active model from legacy tenant_models.json."""
         import json
-        from copaw.tenant_models.manager import TenantModelManager
+        from swe.tenant_models.manager import TenantModelManager
 
         # Create legacy tenant_models.json
         tenant_id = "legacy-tenant"
@@ -653,7 +676,8 @@ class TestLegacyTenantModelsRecovery:
         legacy_path = TenantModelManager.get_config_path(tenant_id)
         legacy_path.parent.mkdir(parents=True, exist_ok=True)
         legacy_path.write_text(
-            json.dumps(legacy_config, indent=2), encoding="utf-8"
+            json.dumps(legacy_config, indent=2),
+            encoding="utf-8",
         )
 
         # Create provider config for this tenant
@@ -698,7 +722,7 @@ class TestLegacyTenantModelsRecovery:
     ) -> None:
         """No recovery when active_model.json already exists."""
         import json
-        from copaw.tenant_models.manager import TenantModelManager
+        from swe.tenant_models.manager import TenantModelManager
 
         tenant_id = "existing-tenant"
 
@@ -735,7 +759,8 @@ class TestLegacyTenantModelsRecovery:
         legacy_path = TenantModelManager.get_config_path(tenant_id)
         legacy_path.parent.mkdir(parents=True, exist_ok=True)
         legacy_path.write_text(
-            json.dumps(legacy_config, indent=2), encoding="utf-8"
+            json.dumps(legacy_config, indent=2),
+            encoding="utf-8",
         )
 
         # Initialize ProviderManager
@@ -752,7 +777,7 @@ class TestLegacyTenantModelsRecovery:
     ) -> None:
         """Recovery falls back to default tenant if tenant-specific config missing."""
         import json
-        from copaw.tenant_models.manager import TenantModelManager
+        from swe.tenant_models.manager import TenantModelManager
 
         # Create default tenant legacy config
         default_tenant_id = "default"
@@ -768,7 +793,7 @@ class TestLegacyTenantModelsRecovery:
             },
         }
         default_legacy_path = TenantModelManager.get_config_path(
-            default_tenant_id
+            default_tenant_id,
         )
         default_legacy_path.parent.mkdir(parents=True, exist_ok=True)
         default_legacy_path.write_text(

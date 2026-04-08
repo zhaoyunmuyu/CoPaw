@@ -21,6 +21,7 @@ from ..config.config import (
     DingTalkConfig,
     FeishuConfig,
     IMessageChannelConfig,
+    ZhaohuConfig,
     QQConfig,
     VoiceChannelConfig,
     load_agent_config,
@@ -51,6 +52,7 @@ _ALL_CHANNEL_NAMES = {
     "telegram": "Telegram",
     "dingtalk": "DingTalk",
     "feishu": "Feishu",
+    "zhaohu": "Zhaohu",
     "qq": "QQ",
     "console": "Console",
     "voice": "Twilio",
@@ -58,7 +60,7 @@ _ALL_CHANNEL_NAMES = {
 # Public alias for tests and external use.
 CHANNEL_NAMES = _ALL_CHANNEL_NAMES
 
-# Template for `copaw channels install <key>` stub (channel key substituted).
+# Template for `swe channels install <key>` stub (channel key substituted).
 CHANNEL_TEMPLATE = '''# -*- coding: utf-8 -*-
 """Custom channel: {key}. Edit and implement required methods."""
 from __future__ import annotations
@@ -71,8 +73,8 @@ from agentscope_runtime.engine.schemas.agent_schemas import (
     ContentType,
 )
 
-from copaw.app.channels.base import BaseChannel
-from copaw.app.channels.schema import ChannelType
+from swe.app.channels.base import BaseChannel
+from swe.app.channels.schema import ChannelType
 
 
 class CustomChannel(BaseChannel):
@@ -383,6 +385,73 @@ def configure_feishu(current_config: FeishuConfig) -> FeishuConfig:
     return current_config
 
 
+def configure_zhaohu(current_config: ZhaohuConfig) -> ZhaohuConfig:
+    """Configure Zhaohu channel interactively."""
+    click.echo("\n=== Configure Zhaohu Channel ===")
+
+    enabled = prompt_confirm(
+        "Enable Zhaohu channel?",
+        default=current_config.enabled,
+    )
+
+    if not enabled:
+        current_config.enabled = False
+        return current_config
+
+    current_config.enabled = True
+
+    bot_prefix = click.prompt(
+        "Bot prefix (e.g., @bot)",
+        default=current_config.bot_prefix or "[BOT]",
+        type=str,
+    )
+    current_config.bot_prefix = bot_prefix
+
+    push_url = click.prompt(
+        "Zhaohu Push URL",
+        default=current_config.push_url or "",
+        type=str,
+    )
+    current_config.push_url = push_url
+
+    sys_id = click.prompt(
+        "Zhaohu Sys ID",
+        default=current_config.sys_id or "",
+        type=str,
+    )
+    current_config.sys_id = sys_id
+
+    robot_open_id = click.prompt(
+        "Zhaohu Robot Open ID",
+        default=current_config.robot_open_id or "",
+        type=str,
+    )
+    current_config.robot_open_id = robot_open_id
+
+    channel = click.prompt(
+        "Zhaohu Channel Code",
+        default=current_config.channel or "ZH",
+        type=str,
+    )
+    current_config.channel = channel
+
+    net = click.prompt(
+        "Zhaohu Network",
+        default=current_config.net or "DMZ",
+        type=str,
+    )
+    current_config.net = net
+
+    request_timeout = click.prompt(
+        "Request timeout (seconds)",
+        default=current_config.request_timeout or 15.0,
+        type=float,
+    )
+    current_config.request_timeout = request_timeout
+
+    return current_config
+
+
 def configure_qq(current_config: QQConfig) -> QQConfig:
     """Configure QQ channel interactively."""
     click.echo("\n=== Configure QQ Channel ===")
@@ -597,7 +666,7 @@ def configure_voice(
     welcome_greeting = click.prompt(
         "Welcome greeting",
         default=current_config.welcome_greeting
-        or "Hi! This is CoPaw. How can I help you?",
+        or "Hi! This is SWE. How can I help you?",
         type=str,
     )
     current_config.welcome_greeting = welcome_greeting
@@ -639,6 +708,7 @@ _ALL_CHANNEL_CONFIGURATORS = {
     "telegram": ("Telegram", configure_telegram),
     "dingtalk": ("DingTalk", configure_dingtalk),
     "feishu": ("Feishu", configure_feishu),
+    "zhaohu": ("Zhaohu", configure_zhaohu),
     "qq": ("QQ", configure_qq),
     "console": ("Console", configure_console),
     "voice": ("Twilio", configure_voice),
@@ -956,7 +1026,7 @@ def _install_channel_to_dir(
     )
     click.echo(
         f"✓ Created {dest_file}. Edit and add config with "
-        "`copaw channels config`.",
+        "`swe channels config`.",
     )
 
 
@@ -1135,12 +1205,12 @@ def configure_cmd(agent_id: str) -> None:
 @click.option(
     "--target-user",
     required=True,
-    help=("Target user ID (REQUIRED, get from 'copaw chats list' query)"),
+    help=("Target user ID (REQUIRED, get from 'swe chats list' query)"),
 )
 @click.option(
     "--target-session",
     required=True,
-    help=("Target session ID (REQUIRED, get from 'copaw chats list' query)"),
+    help=("Target session ID (REQUIRED, get from 'swe chats list' query)"),
 )
 @click.option(
     "--text",
@@ -1173,32 +1243,32 @@ def send_cmd(
     \b
     Complete Usage Flow:
       Step 1 - Query available sessions (REQUIRED):
-        copaw chats list --agent-id my_bot --channel console
+        swe chats list --agent-id my_bot --channel console
 
       Step 2 - Extract parameters from query output:
         user_id: "alice"
         session_id: "alice_session_001"
 
       Step 3 - Send message using queried parameters:
-        copaw channels send --agent-id my_bot --channel console \\
+        swe channels send --agent-id my_bot --channel console \\
           --target-user alice --target-session alice_session_001 \\
           --text "Hello!"
 
     \b
     Examples with jq automation:
       # Query and auto-extract parameters
-      SESSIONS=$(copaw chats list --agent-id bot --channel console)
+      SESSIONS=$(swe chats list --agent-id bot --channel console)
       USER=$(echo "$SESSIONS" | jq -r '.[0].user_id')
       SESSION=$(echo "$SESSIONS" | jq -r '.[0].session_id')
 
       # Send message
-      copaw channels send --agent-id bot --channel console \\
+      swe channels send --agent-id bot --channel console \\
         --target-user "$USER" --target-session "$SESSION" \\
         --text "Automated notification"
 
     \b
     Prerequisites:
-      1. MUST use 'copaw chats list' to get valid target-user and
+      1. MUST use 'swe chats list' to get valid target-user and
          target-session
       2. Ensure the channel is properly configured
       3. All 5 parameters are required (no defaults)

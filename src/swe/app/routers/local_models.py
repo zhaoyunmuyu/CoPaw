@@ -259,7 +259,7 @@ async def start_llamacpp_server(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     provider_manager.update_provider(
-        "copaw-local",
+        "swe-local",
         {
             "base_url": f"http://127.0.0.1:{port}/v1",
             "extra_models": [
@@ -271,7 +271,7 @@ async def start_llamacpp_server(
         },
     )
     await provider_manager.activate_model(
-        provider_id="copaw-local",
+        provider_id="swe-local",
         model_id=payload.model_id,
     )
     return StartServerResponse(
@@ -292,7 +292,7 @@ async def stop_llamacpp_server(
     """Stop the active llama.cpp server."""
     await model_manager.shutdown_server()
     provider_manager.update_provider(
-        "copaw-local",
+        "swe-local",
         {
             "base_url": "",
             "extra_models": [],

@@ -24,6 +24,10 @@ from pydantic import BaseModel, Field
 from ..constant import env_var_overrides
 from ..security.skill_scanner import scan_skill_directory
 from .utils.file_handling import read_text_file_with_encoding_fallback
+from ..utils.fs_text import (
+    log_sanitized_fs_text,
+    sanitize_fs_text,
+)
 
 try:
     import fcntl
@@ -194,12 +198,150 @@ def _directory_tree(directory: Path) -> dict[str, Any]:
         return tree
 
     for item in sorted(directory.iterdir()):
+        sanitized = sanitize_fs_text(item.name)
+        display_name = sanitized.value
+        log_sanitized_fs_text(
+            logger,
+            source=f"skills.directory_tree:{directory}",
+            original=item.name,
+            sanitized=sanitized,
+        )
         if item.is_file():
-            tree[item.name] = None
+            tree[display_name] = None
         elif item.is_dir():
-            tree[item.name] = _directory_tree(item)
+            tree[display_name] = _directory_tree(item)
 
     return tree
+
+
+def _sanitize_file_name_for_disk(name: str) -> str:
+    """Return a filesystem-safe display name for a single path segment."""
+    sanitized = sanitize_fs_text(name)
+    return sanitized.value or name
+
+
+def _sanitize_md_name_for_disk(name: str) -> str:
+    """Return a sanitized markdown filename preserving the extension."""
+    path = Path(name)
+    sanitized_name = _sanitize_file_name_for_disk(path.name)
+    if sanitized_name.lower().endswith(".md"):
+        return sanitized_name
+    return f"{sanitized_name}.md"
+
+
+def _build_unique_file_name(
+    name: str,
+    existing_names: set[str],
+) -> str:
+    """Return a unique filename preserving the original extension."""
+    path = Path(name)
+    stem = path.stem
+    suffix = path.suffix
+    candidate = name
+    if candidate not in existing_names:
+        return candidate
+    suggested = suggest_conflict_name(
+        stem,
+        {Path(n).stem for n in existing_names},
+    )
+    return f"{suggested}{suffix}"
+
+
+def _merge_existing_metadata(
+    existing: dict[str, Any] | None,
+    fresh: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge legacy metadata keys while preferring fresh computed values."""
+    merged = dict(existing or {})
+    merged.update(fresh)
+    return merged
+
+
+def _rename_skill_dirs_to_utf8_safe(
+    root_dir: Path,
+    manifest_path: Path,
+    default_payload: dict[str, Any],
+) -> dict[str, str]:
+    """Rename unsafe top-level skill directory names and migrate manifest keys."""
+    root_dir.mkdir(parents=True, exist_ok=True)
+
+    if manifest_path.exists():
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            payload = default_payload
+    else:
+        payload = default_payload
+
+    payload.setdefault("skills", {})
+    skills = payload["skills"]
+
+    renamed: dict[str, str] = {}
+    existing_names = {
+        path.name for path in root_dir.iterdir() if path.is_dir()
+    }
+    changed = False
+
+    for skill_dir in sorted(root_dir.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+        sanitized = sanitize_fs_text(skill_dir.name)
+        log_sanitized_fs_text(
+            logger,
+            source=f"skills.rename_root:{root_dir}",
+            original=skill_dir.name,
+            sanitized=sanitized,
+        )
+        if not sanitized.changed or sanitized.value == skill_dir.name:
+            continue
+
+        target_name = sanitized.value or skill_dir.name
+        existing_names.discard(skill_dir.name)
+        if target_name in existing_names:
+            target_name = suggest_conflict_name(target_name, existing_names)
+
+        skill_dir.rename(root_dir / target_name)
+        existing_names.add(target_name)
+        renamed[skill_dir.name] = target_name
+        changed = True
+
+        if skill_dir.name in skills:
+            skills[target_name] = skills.pop(skill_dir.name)
+
+    if changed:
+        _write_json_atomic(manifest_path, payload)
+
+    return renamed
+
+
+def _resolve_child_by_raw_or_sanitized(
+    base_dir: Path,
+    requested_name: str,
+) -> Path | None:
+    """Resolve a direct child using either its raw or sanitized name."""
+    children = {child.name: child for child in base_dir.iterdir()}
+    exact = children.get(requested_name)
+    if exact is not None:
+        return exact
+
+    for child_name, child in sorted(children.items()):
+        sanitized = sanitize_fs_text(child_name)
+        if sanitized.value == requested_name:
+            return child
+    return None
+
+
+def _resolve_path_by_raw_or_sanitized(
+    base_dir: Path,
+    relative_path: str,
+) -> Path | None:
+    """Resolve a relative path using raw or sanitized names per segment."""
+    current = base_dir
+    for segment in [part for part in relative_path.split("/") if part]:
+        current = _resolve_child_by_raw_or_sanitized(current, segment)
+        if current is None:
+            return None
+    return current
 
 
 def _read_frontmatter(skill_dir: Path) -> Any:
@@ -922,6 +1064,11 @@ def reconcile_pool_manifest(
     manifest_path = get_pool_skill_manifest_path(working_dir=working_dir)
     if not manifest_path.exists():
         _write_json_atomic(manifest_path, _default_pool_manifest())
+    _rename_skill_dirs_to_utf8_safe(
+        pool_dir,
+        manifest_path,
+        _default_pool_manifest(),
+    )
 
     # Clear cached builtin signatures so reconcile always compares
     # against the current packaged builtins on disk.
@@ -995,10 +1142,14 @@ def reconcile_workspace_manifest(workspace_dir: Path) -> dict[str, Any]:
     workspace_skills_dir = get_workspace_skills_dir(workspace_dir)
     workspace_skills_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = get_workspace_skill_manifest_path(workspace_dir)
-    builtin_sigs = _get_builtin_signatures()
-
     if not manifest_path.exists():
         _write_json_atomic(manifest_path, _default_workspace_manifest())
+    _rename_skill_dirs_to_utf8_safe(
+        workspace_skills_dir,
+        manifest_path,
+        _default_workspace_manifest(),
+    )
+    builtin_sigs = _get_builtin_signatures()
 
     def _update(payload: dict[str, Any]) -> dict[str, Any]:
         payload.setdefault("skills", {})
@@ -1031,6 +1182,10 @@ def reconcile_workspace_manifest(workspace_dir: Path) -> dict[str, Any]:
                 source=source,
                 protected=False,
                 compute_signature=False,
+            )
+            metadata = _merge_existing_metadata(
+                existing.get("metadata"),
+                metadata,
             )
             next_entry = {
                 "enabled": enabled,
@@ -1276,7 +1431,7 @@ def _read_skill_from_dir(skill_dir: Path, source: str) -> SkillInfo | None:
             scripts = _directory_tree(scripts_dir)
 
         return SkillInfo(
-            name=skill_dir.name,
+            name=sanitize_fs_text(skill_dir.name).value,
             description=description,
             version_text=_extract_version(post),
             content=content,
@@ -1926,28 +2081,42 @@ class SkillService:
     ) -> str | None:
         del source
         normalized = file_path.replace("\\", "/")
-        if ".." in normalized or normalized.startswith("/"):
-            return None
-        if not (
-            normalized.startswith("references/")
-            or normalized.startswith("scripts/")
-        ):
+        is_relative = ".." not in normalized and not normalized.startswith("/")
+        is_supported = normalized.startswith(
+            "references/",
+        ) or normalized.startswith(
+            "scripts/",
+        )
+        if not is_relative or not is_supported:
             return None
 
         manifest = self._read_manifest()
-        if skill_name not in manifest.get("skills", {}):
+        manifest_skills = manifest.get("skills", {})
+        resolved_skill_name = skill_name
+        if resolved_skill_name not in manifest_skills:
+            for manifest_name in manifest_skills:
+                sanitized = sanitize_fs_text(manifest_name)
+                if sanitized.value == skill_name:
+                    resolved_skill_name = manifest_name
+                    break
+        if resolved_skill_name not in manifest_skills:
             return None
 
         workspace_base_dir = (
-            get_workspace_skills_dir(self.workspace_dir) / skill_name
+            get_workspace_skills_dir(self.workspace_dir) / resolved_skill_name
         )
         if not workspace_base_dir.exists():
             return None
 
-        base_dir = workspace_base_dir
-
-        full_path = base_dir / normalized
-        if not full_path.exists() or not full_path.is_file():
+        full_path = _resolve_path_by_raw_or_sanitized(
+            workspace_base_dir,
+            normalized,
+        )
+        if (
+            full_path is None
+            or not full_path.exists()
+            or not full_path.is_file()
+        ):
             return None
         return read_text_file_with_encoding_fallback(full_path)
 

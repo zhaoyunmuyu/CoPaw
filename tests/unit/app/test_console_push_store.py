@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 import pytest
 
 SRC_ROOT = Path(__file__).parent.parent.parent.parent / "src"
-_STORE_FILE = SRC_ROOT / "copaw" / "app" / "console_push_store.py"
+_STORE_FILE = SRC_ROOT / "swe" / "app" / "console_push_store.py"
 
 store_spec = importlib.util.spec_from_file_location(
     "tenant_test_console_push_store",
@@ -45,7 +45,7 @@ class TestTenantPushStoreIsolation:
     @pytest.mark.skip(reason="Requires full app dependencies")
     async def test_append_creates_tenant_isolated_message(self):
         """Appended messages include tenant_id for isolation."""
-        from copaw.app.console_push_store import append, _get_tenant_store
+        from swe.app.console_push_store import append, _get_tenant_store
 
         await append("session-1", "Hello", tenant_id="tenant-a")
 
@@ -57,7 +57,7 @@ class TestTenantPushStoreIsolation:
     @pytest.mark.skip(reason="Requires full app dependencies")
     async def test_take_returns_only_tenant_messages(self):
         """take returns only messages for specified tenant."""
-        from copaw.app.console_push_store import append, take
+        from swe.app.console_push_store import append, take
 
         # Add messages for different tenants
         await append("session-1", "Tenant A msg", tenant_id="tenant-a")
@@ -72,7 +72,7 @@ class TestTenantPushStoreIsolation:
     @pytest.mark.skip(reason="Requires full app dependencies")
     async def test_take_does_not_affect_other_tenants(self):
         """Taking messages for one tenant doesn't affect another."""
-        from copaw.app.console_push_store import append, take, _get_tenant_store
+        from swe.app.console_push_store import append, take, _get_tenant_store
 
         # Add messages for both tenants
         await append("session-1", "Tenant A msg", tenant_id="tenant-a")
@@ -89,7 +89,7 @@ class TestTenantPushStoreIsolation:
     @pytest.mark.skip(reason="Requires full app dependencies")
     async def test_get_recent_returns_only_tenant_messages(self):
         """get_recent returns only messages for specified tenant."""
-        from copaw.app.console_push_store import append, get_recent
+        from swe.app.console_push_store import append, get_recent
 
         # Add messages for different tenants
         await append("session-1", "Tenant A msg", tenant_id="tenant-a")
@@ -107,7 +107,7 @@ class TestTenantPushStoreIsolation:
     @pytest.mark.skip(reason="Requires full app dependencies")
     async def test_default_tenant_when_not_specified(self):
         """When tenant_id not specified, uses 'default' tenant."""
-        from copaw.app.console_push_store import append, _get_tenant_store
+        from swe.app.console_push_store import append, _get_tenant_store
 
         await append("session-1", "Default msg")
 
@@ -118,7 +118,7 @@ class TestTenantPushStoreIsolation:
     @pytest.mark.skip(reason="Requires full app dependencies")
     async def test_clear_tenant_removes_only_that_tenant(self):
         """clear_tenant only removes messages for specified tenant."""
-        from copaw.app.console_push_store import append, clear_tenant, _get_tenant_store
+        from swe.app.console_push_store import append, clear_tenant, _get_tenant_store
 
         # Add messages for both tenants
         await append("session-1", "Tenant A msg", tenant_id="tenant-a")
@@ -142,7 +142,7 @@ class TestTenantPushStoreBounded:
     @pytest.mark.skip(reason="Requires full app dependencies")
     async def test_max_messages_per_tenant(self):
         """Max messages limit is enforced per tenant."""
-        from copaw.app.console_push_store import append, _get_tenant_store, _MAX_MESSAGES
+        from swe.app.console_push_store import append, _get_tenant_store, _MAX_MESSAGES
 
         # Add many messages to tenant-a
         for i in range(_MAX_MESSAGES + 10):
@@ -154,7 +154,7 @@ class TestTenantPushStoreBounded:
     @pytest.mark.skip(reason="Requires full app dependencies")
     async def test_message_limits_are_per_tenant(self):
         """Each tenant has its own message limit."""
-        from copaw.app.console_push_store import append, _get_tenant_store, _MAX_MESSAGES
+        from swe.app.console_push_store import append, _get_tenant_store, _MAX_MESSAGES
 
         # Fill tenant-a to limit
         for i in range(_MAX_MESSAGES + 5):

@@ -8,8 +8,8 @@ enabling multi-tenant isolation in model selection and routing.
 from contextvars import ContextVar, Token
 from typing import Optional
 
-from copaw.config.context import TenantContextError
-from copaw.tenant_models.models import TenantModelConfig
+from swe.config.context import TenantContextError
+from swe.tenant_models.models import TenantModelConfig
 
 # Context variable to store the current tenant's model configuration
 _current_model_config: ContextVar[Optional[TenantModelConfig]] = ContextVar(

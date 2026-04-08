@@ -4,7 +4,7 @@ description: "Read and summarize text-based file types only. Prefer read_file fo
 metadata:
   {
     "builtin_skill_version": "1.0",
-    "copaw":
+    "swe":
       {
         "emoji": "📄",
         "requires": {}

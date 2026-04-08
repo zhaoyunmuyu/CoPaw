@@ -11,12 +11,12 @@ from typing import Any, List
 from agentscope.model import ChatModelBase
 import anthropic
 
-from copaw.providers.multimodal_prober import (
+from swe.providers.multimodal_prober import (
     ProbeResult,
     _PROBE_IMAGE_B64,
     _is_media_keyword_error,
 )
-from copaw.providers.provider import ModelInfo, Provider
+from swe.providers.provider import ModelInfo, Provider
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +133,7 @@ class AnthropicProvider(Provider):
             client_kwargs["default_headers"] = {
                 "x-dashscope-agentapp": json.dumps(
                     {
-                        "agentType": "CoPaw",
+                        "agentType": "SWE",
                         "deployType": "UnKnown",
                         "moduleCode": "model",
                         "agentCode": "UnKnown",
@@ -145,7 +145,7 @@ class AnthropicProvider(Provider):
             client_kwargs["default_headers"] = {
                 "X-DashScope-Cdpl": json.dumps(
                     {
-                        "agentType": "CoPaw",
+                        "agentType": "SWE",
                         "deployType": "UnKnown",
                         "moduleCode": "model",
                         "agentCode": "UnKnown",

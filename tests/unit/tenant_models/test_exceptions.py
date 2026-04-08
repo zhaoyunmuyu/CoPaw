@@ -3,7 +3,7 @@
 
 def test_tenant_model_error_base_class():
     """Test TenantModelError base class."""
-    from copaw.tenant_models.exceptions import TenantModelError
+    from swe.tenant_models.exceptions import TenantModelError
 
     error = TenantModelError("Base error message")
     assert isinstance(error, RuntimeError)
@@ -12,7 +12,7 @@ def test_tenant_model_error_base_class():
 
 def test_tenant_model_not_found_error():
     """Test TenantModelNotFoundError with tenant_id attribute."""
-    from copaw.tenant_models.exceptions import TenantModelNotFoundError
+    from swe.tenant_models.exceptions import TenantModelNotFoundError
 
     error = TenantModelNotFoundError("tenant1")
     assert str(error) == "Tenant model config not found for tenant: tenant1"
@@ -21,7 +21,7 @@ def test_tenant_model_not_found_error():
 
 def test_tenant_model_provider_error():
     """Test TenantModelProviderError with provider_id attribute."""
-    from copaw.tenant_models.exceptions import TenantModelProviderError
+    from swe.tenant_models.exceptions import TenantModelProviderError
 
     error = TenantModelProviderError("provider1", "API key missing")
     assert "provider1" in str(error)
@@ -31,7 +31,7 @@ def test_tenant_model_provider_error():
 
 def test_tenant_model_validation_error():
     """Test TenantModelValidationError for config validation failures."""
-    from copaw.tenant_models.exceptions import (
+    from swe.tenant_models.exceptions import (
         TenantModelError,
         TenantModelValidationError,
     )

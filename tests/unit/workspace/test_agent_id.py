@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Tests for agent ID generation and short UUID functionality."""
-from copaw.config.config import generate_short_agent_id
+from swe.config.config import generate_short_agent_id
 
 
 def test_generate_short_agent_id_length():

@@ -44,7 +44,7 @@ export default function WelcomePrompts(props: IWelcomePromptsProps) {
     <div className={prefixCls}>
       {avatar && (
         typeof avatar === 'string'
-          ? <Avatar src={avatar} shape="square" size={64} />
+          ? <Avatar src={avatar} shape="square" style={{ width: "100%", height: 110 }} />
           : avatar
       )}
       {greeting && <div className={`${prefixCls}-greeting`}>{greeting}</div>}

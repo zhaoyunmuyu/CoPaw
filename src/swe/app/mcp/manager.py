@@ -12,7 +12,10 @@ import logging
 import os
 from typing import Any, Dict, List, TYPE_CHECKING
 
+import httpx
 from agentscope.mcp import HttpStatefulClient, StdIOStatefulClient
+from mcp.client.streamable_http import streamable_http_client
+from mcp.client.sse import sse_client
 
 if TYPE_CHECKING:
     from ...config.config import MCPClientConfig, MCPConfig
@@ -74,6 +77,113 @@ class MCPClientManager:
                 for client in self._clients.values()
                 if client is not None
             ]
+
+    async def get_clients_with_headers(
+        self,
+        passthrough_headers: Dict[str, str] | None = None,
+    ) -> List[Any]:
+        """Get MCP clients with optional dynamic headers injection.
+
+        For HTTP transport clients, if passthrough_headers are provided,
+        creates temporary client copies with merged headers. These temporary
+        clients should be closed after the request completes.
+
+        Args:
+            passthrough_headers: Optional headers to merge into HTTP clients.
+                These are typically extracted from x-header-* HTTP request headers.
+
+        Returns:
+            List of MCP client instances (original or temporary copies).
+        """
+        async with self._lock:
+            clients = []
+            for key, client in self._clients.items():
+                if client is None:
+                    continue
+
+                # HTTP clients need header passthrough handling
+                if (
+                    isinstance(client, HttpStatefulClient)
+                    and passthrough_headers
+                ):
+                    temp_client = await self._create_temp_client_with_headers(
+                        client,
+                        passthrough_headers,
+                    )
+                    clients.append(temp_client)
+                else:
+                    # StdIO clients or no passthrough headers - use original
+                    clients.append(client)
+            return clients
+
+    async def _create_temp_client_with_headers(
+        self,
+        base_client: HttpStatefulClient,
+        passthrough_headers: Dict[str, str],
+    ) -> HttpStatefulClient:
+        """Create temporary MCP client with merged headers.
+
+        Creates a new HttpStatefulClient that merges static config headers
+        with request-level passthrough headers. Passthrough headers override
+        static headers for the same key.
+
+        The temporary client is marked with _swe_rebuild_info["_temp_client"]
+        and should be closed after the request completes.
+
+        Args:
+            base_client: The original HTTP MCP client to copy.
+            passthrough_headers: Headers to merge into the new client.
+
+        Returns:
+            New HttpStatefulClient with merged headers.
+        """
+        rebuild_info = getattr(base_client, "_swe_rebuild_info", {})
+
+        # Merge headers: static config headers + passthrough headers
+        # Passthrough headers take precedence (override static)
+        static_headers = rebuild_info.get("headers") or {}
+        merged_headers = {**static_headers, **passthrough_headers}
+
+        # Create httpx client with merged headers
+        http_client = httpx.AsyncClient(headers=merged_headers)
+
+        # Get URL and transport from rebuild info
+        url = rebuild_info.get("url", "")
+        transport = rebuild_info.get("transport", "streamable_http")
+
+        logger.debug(
+            f"Creating temporary MCP client for '{base_client.name}' "
+            f"with merged headers: {list(merged_headers.keys())}"
+        )
+
+        # Use new API: streamable_http_client with http_client parameter
+        client_context = streamable_http_client(
+            url=url,
+            http_client=http_client,
+        )
+
+        # Create HttpStatefulClient with minimal setup
+        new_client = HttpStatefulClient(
+            name=base_client.name,
+            transport=transport,
+            url=url,
+            headers=None,  # Headers are in http_client
+        )
+        # Override the client attribute with our context manager
+        new_client.client = client_context
+
+        # Connect the new client
+        await new_client.connect()
+
+        # Store rebuild info with temp client marker
+        setattr(new_client, "_swe_rebuild_info", {
+            **rebuild_info,
+            "headers": merged_headers,
+            "_temp_client": True,
+            "_http_client": http_client,  # Store for cleanup
+        })
+
+        return new_client
 
     async def replace_client(
         self,
@@ -237,7 +347,7 @@ class MCPClientManager:
                 env=client_config.env,
                 cwd=client_config.cwd or None,
             )
-            setattr(client, "_copaw_rebuild_info", rebuild_info)
+            setattr(client, "_swe_rebuild_info", rebuild_info)
             return client
 
         headers = client_config.headers
@@ -250,5 +360,5 @@ class MCPClientManager:
             url=client_config.url,
             headers=headers or None,
         )
-        setattr(client, "_copaw_rebuild_info", rebuild_info)
+        setattr(client, "_swe_rebuild_info", rebuild_info)
         return client

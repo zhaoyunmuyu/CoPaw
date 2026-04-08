@@ -9,7 +9,7 @@ _WORKTREE_SRC = str(Path(__file__).resolve().parent.parent / "src")
 if _WORKTREE_SRC not in sys.path:
     sys.path.insert(0, _WORKTREE_SRC)
 
-# Evict any already-cached copaw modules so they reload from worktree src.
-_stale = [k for k in sys.modules if k == "copaw" or k.startswith("copaw.")]
+# Evict any already-cached swe modules so they reload from worktree src.
+_stale = [k for k in sys.modules if k == "swe" or k.startswith("swe.")]
 for k in _stale:
     del sys.modules[k]

@@ -76,7 +76,7 @@ export function InnerAdder(props: { style?: React.CSSProperties; narrowMode?: bo
         toggleCollapsed();
       }
     }}>
-      New Chat
+      创建新会话
     </Button>
   </div>
 }
@@ -90,7 +90,7 @@ export function InnerList(props: { style?: React.CSSProperties, narrowMode?: boo
 
   const items = useMemo(() => sessions.map(session => ({
     key: session.id,
-    label: session.name || 'New Chat',
+    label: session.name || '新会话',
   })), [sessions]);
 
 

@@ -13,11 +13,11 @@ from unittest.mock import patch
 
 import pytest
 
-from copaw.agents.model_factory import create_model_and_formatter
-from copaw.config.context import tenant_context
-from copaw.providers.provider_manager import ProviderManager
-from copaw.tenant_models import TenantModelContext
-from copaw.tenant_models.models import (
+from swe.agents.model_factory import create_model_and_formatter
+from swe.config.context import tenant_context
+from swe.providers.provider_manager import ProviderManager
+from swe.tenant_models import TenantModelContext
+from swe.tenant_models.models import (
     ModelSlot,
     RoutingConfig,
     TenantModelConfig,
@@ -43,8 +43,8 @@ class TestRemediation1ModelSelectionFallback:
         This verifies the remediation: instead of falling back to global
         active_model, it now raises a clear error requiring tenant configuration.
         """
-        with patch("copaw.constant.WORKING_DIR", tmp_path):
-            with patch("copaw.constant.SECRET_DIR", tmp_path / ".secret"):
+        with patch("swe.constant.WORKING_DIR", tmp_path):
+            with patch("swe.constant.SECRET_DIR", tmp_path / ".secret"):
                 # Reset ProviderManager singleton
                 ProviderManager._instance = None
 
@@ -74,10 +74,10 @@ class TestRemediation1ModelSelectionFallback:
         tmp_path: Path,
     ):
         """Test: create_model_and_formatter works with proper tenant config."""
-        from copaw.tenant_models import TenantModelManager
+        from swe.tenant_models import TenantModelManager
 
-        with patch("copaw.constant.WORKING_DIR", tmp_path):
-            with patch("copaw.constant.SECRET_DIR", tmp_path / ".secret"):
+        with patch("swe.constant.WORKING_DIR", tmp_path):
+            with patch("swe.constant.SECRET_DIR", tmp_path / ".secret"):
                 ProviderManager._instance = None
 
                 tenant_id = "configured_tenant"
@@ -147,13 +147,13 @@ class TestRemediation2ProviderManagerDeprecation:
         This verifies the remediation: users are warned that this method
         is not suitable for multi-tenant environments.
         """
-        with patch("copaw.constant.WORKING_DIR", tmp_path):
-            with patch("copaw.constant.SECRET_DIR", tmp_path / ".secret"):
+        with patch("swe.constant.WORKING_DIR", tmp_path):
+            with patch("swe.constant.SECRET_DIR", tmp_path / ".secret"):
                 ProviderManager._instance = None
 
                 # Create a minimal active model config
                 pm = ProviderManager.get_instance()
-                from copaw.providers.models import ModelSlotConfig
+                from swe.providers.models import ModelSlotConfig
 
                 pm.save_active_model(
                     ModelSlotConfig(provider_id="openai", model="gpt-4o"),

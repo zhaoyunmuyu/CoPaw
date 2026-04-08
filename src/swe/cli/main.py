@@ -93,48 +93,48 @@ class LazyGroup(click.Group):
     cls=LazyGroup,
     context_settings={"help_option_names": ["-h", "--help"]},
     lazy_subcommands={
-        "app": ("copaw.cli.app_cmd", "app_cmd", ".app_cmd"),
+        "app": ("swe.cli.app_cmd", "app_cmd", ".app_cmd"),
         "channels": (
-            "copaw.cli.channels_cmd",
+            "swe.cli.channels_cmd",
             "channels_group",
             ".channels_cmd",
         ),
         "channel": (
-            "copaw.cli.channels_cmd",
+            "swe.cli.channels_cmd",
             "channels_group",
             ".channels_cmd",
         ),
-        "daemon": ("copaw.cli.daemon_cmd", "daemon_group", ".daemon_cmd"),
-        "chats": ("copaw.cli.chats_cmd", "chats_group", ".chats_cmd"),
-        "chat": ("copaw.cli.chats_cmd", "chats_group", ".chats_cmd"),
-        "clean": ("copaw.cli.clean_cmd", "clean_cmd", ".clean_cmd"),
-        "cron": ("copaw.cli.cron_cmd", "cron_group", ".cron_cmd"),
-        "env": ("copaw.cli.env_cmd", "env_group", ".env_cmd"),
-        "init": ("copaw.cli.init_cmd", "init_cmd", ".init_cmd"),
+        "daemon": ("swe.cli.daemon_cmd", "daemon_group", ".daemon_cmd"),
+        "chats": ("swe.cli.chats_cmd", "chats_group", ".chats_cmd"),
+        "chat": ("swe.cli.chats_cmd", "chats_group", ".chats_cmd"),
+        "clean": ("swe.cli.clean_cmd", "clean_cmd", ".clean_cmd"),
+        "cron": ("swe.cli.cron_cmd", "cron_group", ".cron_cmd"),
+        "env": ("swe.cli.env_cmd", "env_group", ".env_cmd"),
+        "init": ("swe.cli.init_cmd", "init_cmd", ".init_cmd"),
         "models": (
-            "copaw.cli.providers_cmd",
+            "swe.cli.providers_cmd",
             "models_group",
             ".providers_cmd",
         ),
-        "skills": ("copaw.cli.skills_cmd", "skills_group", ".skills_cmd"),
+        "skills": ("swe.cli.skills_cmd", "skills_group", ".skills_cmd"),
         "uninstall": (
-            "copaw.cli.uninstall_cmd",
+            "swe.cli.uninstall_cmd",
             "uninstall_cmd",
             ".uninstall_cmd",
         ),
-        "desktop": ("copaw.cli.desktop_cmd", "desktop_cmd", ".desktop_cmd"),
-        "update": ("copaw.cli.update_cmd", "update_cmd", ".update_cmd"),
+        "desktop": ("swe.cli.desktop_cmd", "desktop_cmd", ".desktop_cmd"),
+        "update": ("swe.cli.update_cmd", "update_cmd", ".update_cmd"),
         "shutdown": (
-            "copaw.cli.shutdown_cmd",
+            "swe.cli.shutdown_cmd",
             "shutdown_cmd",
             ".shutdown_cmd",
         ),
-        "auth": ("copaw.cli.auth_cmd", "auth_group", ".auth_cmd"),
-        "agents": ("copaw.cli.agents_cmd", "agents_group", ".agents_cmd"),
-        "agent": ("copaw.cli.agents_cmd", "agents_group", ".agents_cmd"),
+        "auth": ("swe.cli.auth_cmd", "auth_group", ".auth_cmd"),
+        "agents": ("swe.cli.agents_cmd", "agents_group", ".agents_cmd"),
+        "agent": ("swe.cli.agents_cmd", "agents_group", ".agents_cmd"),
     },
 )
-@click.version_option(version=__version__, prog_name="CoPaw")
+@click.version_option(version=__version__, prog_name="SWE")
 @click.option("--host", default=None, help="API Host")
 @click.option(
     "--port",
@@ -144,7 +144,7 @@ class LazyGroup(click.Group):
 )
 @click.pass_context
 def cli(ctx: click.Context, host: str | None, port: int | None) -> None:
-    """CoPaw CLI."""
+    """SWE CLI."""
     # default from last run if not provided
     last = read_last_api()
     if host is None or port is None:

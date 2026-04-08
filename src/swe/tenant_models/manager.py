@@ -6,9 +6,9 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-from copaw.constant import SECRET_DIR
-from copaw.tenant_models.exceptions import TenantModelNotFoundError
-from copaw.tenant_models.models import TenantModelConfig
+from swe.constant import SECRET_DIR
+from swe.tenant_models.exceptions import TenantModelNotFoundError
+from swe.tenant_models.models import TenantModelConfig
 
 
 class TenantModelManager:
@@ -35,7 +35,7 @@ class TenantModelManager:
 
         Returns:
             Path to the tenant's configuration file.
-            Path format: ~/.copaw.secret/{tenant_id}/tenant_models.json
+            Path format: ~/.swe.secret/{tenant_id}/tenant_models.json
         """
         return SECRET_DIR / tenant_id / "tenant_models.json"
 

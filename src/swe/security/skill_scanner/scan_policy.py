@@ -7,7 +7,7 @@ types, which credentials are test-only, and so on.
 
 Usage
 -----
-    from copaw.security.skill_scanner.scan_policy import ScanPolicy
+    from swe.security.skill_scanner.scan_policy import ScanPolicy
 
     # Load built-in defaults
     policy = ScanPolicy.default()
@@ -284,7 +284,7 @@ class ScanPolicy:
         """Dump the full policy to a YAML file for editing."""
         data = self._to_dict()
         with open(path, "w", encoding="utf-8") as fh:
-            fh.write("# CoPaw Skill Scanner – Scan Policy\n")
+            fh.write("# SWE Skill Scanner – Scan Policy\n")
             fh.write(
                 "# Customise this file to match your"
                 " organisation's security bar.\n",

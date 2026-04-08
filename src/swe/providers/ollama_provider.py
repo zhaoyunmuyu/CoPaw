@@ -9,8 +9,8 @@ from typing import Any
 from agentscope.model import ChatModelBase
 from openai import AsyncOpenAI
 
-from copaw.providers.provider import ModelInfo
-from copaw.providers.openai_provider import OpenAIProvider
+from swe.providers.provider import ModelInfo
+from swe.providers.openai_provider import OpenAIProvider
 
 
 class OllamaProvider(OpenAIProvider):

@@ -7,12 +7,19 @@ import { LockOutlined, UserOutlined } from "@ant-design/icons";
 import { authApi } from "../../api/modules/auth";
 import { setAuthToken } from "../../api/config";
 import { useTheme } from "../../contexts/ThemeContext";
+// ==================== 品牌主题 (Kun He) ====================
+import { useBrandTheme } from "../../contexts/BrandThemeContext";
+// ==================== 品牌主题结束 ====================
 
 export default function LoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { isDark } = useTheme();
+  // ==================== 品牌主题 (Kun He) ====================
+  // 获取动态品牌配置，用于显示正确的 logo 和品牌名
+  const { theme: brandTheme } = useBrandTheme();
+  // ==================== 品牌主题结束 ====================
   const [loading, setLoading] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
   const [hasUsers, setHasUsers] = useState(true);
@@ -95,13 +102,18 @@ export default function LoginPage() {
         }}
       >
         <div style={{ textAlign: "center", marginBottom: 32 }}>
+          {/* ==================== 品牌主题 (Kun He) ==================== */}
+          {/* 使用动态品牌 logo 和品牌名 */}
           <img
             src={`${import.meta.env.BASE_URL}${
-              isDark ? "dark-logo.png" : "logo.png"
+              isDark
+                ? brandTheme.darkLogo.replace(/^\//, "")
+                : brandTheme.logo.replace(/^\//, "")
             }`}
-            alt="CoPaw"
+            alt={brandTheme.brandName}
             style={{ height: 48, marginBottom: 12 }}
           />
+          {/* ==================== 品牌主题结束 ==================== */}
           <h2 style={{ margin: 0, fontWeight: 600, fontSize: 20 }}>
             {isRegister ? t("login.registerTitle") : t("login.title")}
           </h2>

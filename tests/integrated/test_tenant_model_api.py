@@ -13,8 +13,8 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from copaw.tenant_models.manager import TenantModelManager
-from copaw.tenant_models.models import (
+from swe.tenant_models.manager import TenantModelManager
+from swe.tenant_models.models import (
     ModelSlot,
     RoutingConfig,
     TenantModelConfig,
@@ -106,7 +106,7 @@ def test_tenant_model_api_returns_tenant_specific_config(
 ) -> None:
     """Test that the API returns tenant-specific configuration."""
     # Setup tenant configuration
-    with patch("copaw.tenant_models.manager.SECRET_DIR", tmp_path):
+    with patch("swe.tenant_models.manager.SECRET_DIR", tmp_path):
         # Clear cache before test
         TenantModelManager.invalidate_cache()
 
@@ -122,7 +122,7 @@ def test_tenant_model_api_returns_tenant_specific_config(
             [
                 sys.executable,
                 "-m",
-                "copaw",
+                "swe",
                 "app",
                 "--host",
                 host,
@@ -227,7 +227,7 @@ def test_tenant_isolation_different_tenants_return_different_configs(
 ) -> None:
     """Test that different tenants receive different configurations."""
     # Setup tenant configurations
-    with patch("copaw.tenant_models.manager.SECRET_DIR", tmp_path):
+    with patch("swe.tenant_models.manager.SECRET_DIR", tmp_path):
         # Clear cache before test
         TenantModelManager.invalidate_cache()
 
@@ -244,7 +244,7 @@ def test_tenant_isolation_different_tenants_return_different_configs(
             [
                 sys.executable,
                 "-m",
-                "copaw",
+                "swe",
                 "app",
                 "--host",
                 host,

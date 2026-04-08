@@ -8,36 +8,36 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 SRC_ROOT = Path(__file__).parent.parent.parent.parent / "src"
-_HEARTBEAT_FILE = SRC_ROOT / "copaw" / "app" / "crons" / "heartbeat.py"
+_HEARTBEAT_FILE = SRC_ROOT / "swe" / "app" / "crons" / "heartbeat.py"
 
 _ORIGINAL_MODULES = {
     name: sys.modules.get(name)
     for name in [
-        "copaw.app",
-        "copaw.app.crons",
-        "copaw.agents.utils.file_handling",
-        "copaw.config",
-        "copaw.constant",
-        "copaw.app.crons.models",
-        "copaw.app.crons.heartbeat",
+        "swe.app",
+        "swe.app.crons",
+        "swe.agents.utils.file_handling",
+        "swe.config",
+        "swe.constant",
+        "swe.app.crons.models",
+        "swe.app.crons.heartbeat",
     ]
 }
 
-if "copaw.app" not in sys.modules:
-    app_pkg = types.ModuleType("copaw.app")
-    app_pkg.__path__ = [str(SRC_ROOT / "copaw" / "app")]
-    sys.modules["copaw.app"] = app_pkg
+if "swe.app" not in sys.modules:
+    app_pkg = types.ModuleType("swe.app")
+    app_pkg.__path__ = [str(SRC_ROOT / "swe" / "app")]
+    sys.modules["swe.app"] = app_pkg
 
-if "copaw.app.crons" not in sys.modules:
-    crons_pkg = types.ModuleType("copaw.app.crons")
-    crons_pkg.__path__ = [str(SRC_ROOT / "copaw" / "app" / "crons")]
-    sys.modules["copaw.app.crons"] = crons_pkg
+if "swe.app.crons" not in sys.modules:
+    crons_pkg = types.ModuleType("swe.app.crons")
+    crons_pkg.__path__ = [str(SRC_ROOT / "swe" / "app" / "crons")]
+    sys.modules["swe.app.crons"] = crons_pkg
 
-file_handling = types.ModuleType("copaw.agents.utils.file_handling")
+file_handling = types.ModuleType("swe.agents.utils.file_handling")
 file_handling.read_text_file_with_encoding_fallback = lambda path: ""
-sys.modules["copaw.agents.utils.file_handling"] = file_handling
+sys.modules["swe.agents.utils.file_handling"] = file_handling
 
-config_module = types.ModuleType("copaw.config")
+config_module = types.ModuleType("swe.config")
 config_module.get_heartbeat_config = lambda agent_id=None: types.SimpleNamespace(
     active_hours=None,
     target="main",
@@ -47,23 +47,23 @@ config_module.load_config = lambda: types.SimpleNamespace(
     user_timezone="UTC",
     last_dispatch=None,
 )
-sys.modules["copaw.config"] = config_module
+sys.modules["swe.config"] = config_module
 
-constant_module = types.ModuleType("copaw.constant")
+constant_module = types.ModuleType("swe.constant")
 constant_module.HEARTBEAT_FILE = "HEARTBEAT.md"
 constant_module.HEARTBEAT_TARGET_LAST = "last"
-sys.modules["copaw.constant"] = constant_module
+sys.modules["swe.constant"] = constant_module
 
-models_module = types.ModuleType("copaw.app.crons.models")
+models_module = types.ModuleType("swe.app.crons.models")
 models_module._crontab_dow_to_name = lambda value: value
-sys.modules["copaw.app.crons.models"] = models_module
+sys.modules["swe.app.crons.models"] = models_module
 
 heartbeat_spec = importlib.util.spec_from_file_location(
-    "copaw.app.crons.heartbeat",
+    "swe.app.crons.heartbeat",
     _HEARTBEAT_FILE,
 )
 heartbeat_module = importlib.util.module_from_spec(heartbeat_spec)
-sys.modules["copaw.app.crons.heartbeat"] = heartbeat_module
+sys.modules["swe.app.crons.heartbeat"] = heartbeat_module
 assert heartbeat_spec is not None and heartbeat_spec.loader is not None
 heartbeat_spec.loader.exec_module(heartbeat_module)
 

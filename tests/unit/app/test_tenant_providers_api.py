@@ -4,14 +4,14 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
 
-from copaw.app.routers.providers import tenant_providers_router
-from copaw.tenant_models.models import (
+from swe.app.routers.providers import tenant_providers_router
+from swe.tenant_models.models import (
     ModelSlot,
     RoutingConfig,
     TenantModelConfig,
     TenantProviderConfig,
 )
-from copaw.tenant_models.exceptions import TenantModelNotFoundError
+from swe.tenant_models.exceptions import TenantModelNotFoundError
 
 
 @pytest.fixture
@@ -54,12 +54,12 @@ class TestGetTenantProviders:
         """Test successful retrieval of tenant configuration."""
         # Mock get_current_tenant_id to return a tenant ID
         with patch(
-            "copaw.app.routers.providers.get_current_tenant_id",
+            "swe.app.routers.providers.get_current_tenant_id",
             return_value="test-tenant"
         ):
             # Mock TenantModelManager.load to return the sample config
             with patch(
-                "copaw.app.routers.providers.TenantModelManager.load",
+                "swe.app.routers.providers.TenantModelManager.load",
                 return_value=sample_tenant_config
             ):
                 response = client.get("/providers")
@@ -86,7 +86,7 @@ class TestGetTenantProviders:
         """Test error when tenant ID is not set in context."""
         # Mock get_current_tenant_id to return None
         with patch(
-            "copaw.app.routers.providers.get_current_tenant_id",
+            "swe.app.routers.providers.get_current_tenant_id",
             return_value=None
         ):
             response = client.get("/providers")
@@ -98,12 +98,12 @@ class TestGetTenantProviders:
         """Test error when tenant configuration is not found."""
         # Mock get_current_tenant_id to return a tenant ID
         with patch(
-            "copaw.app.routers.providers.get_current_tenant_id",
+            "swe.app.routers.providers.get_current_tenant_id",
             return_value="nonexistent-tenant"
         ):
             # Mock TenantModelManager.load to raise TenantModelNotFoundError
             with patch(
-                "copaw.app.routers.providers.TenantModelManager.load",
+                "swe.app.routers.providers.TenantModelManager.load",
                 side_effect=TenantModelNotFoundError("nonexistent-tenant")
             ):
                 response = client.get("/providers")
@@ -143,11 +143,11 @@ class TestGetTenantProviders:
 
         # Test tenant1
         with patch(
-            "copaw.app.routers.providers.get_current_tenant_id",
+            "swe.app.routers.providers.get_current_tenant_id",
             return_value="tenant1"
         ):
             with patch(
-                "copaw.app.routers.providers.TenantModelManager.load",
+                "swe.app.routers.providers.TenantModelManager.load",
                 return_value=tenant1_config
             ):
                 response1 = client.get("/providers")
@@ -159,11 +159,11 @@ class TestGetTenantProviders:
 
         # Test tenant2
         with patch(
-            "copaw.app.routers.providers.get_current_tenant_id",
+            "swe.app.routers.providers.get_current_tenant_id",
             return_value="tenant2"
         ):
             with patch(
-                "copaw.app.routers.providers.TenantModelManager.load",
+                "swe.app.routers.providers.TenantModelManager.load",
                 return_value=tenant2_config
             ):
                 response2 = client.get("/providers")

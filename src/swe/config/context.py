@@ -246,3 +246,43 @@ def set_current_recent_max_bytes(max_bytes: int | None) -> None:
         max_bytes: Byte limit for recent tool output truncation.
     """
     current_recent_max_bytes.set(max_bytes)
+
+
+# Context variable to store request-level passthrough headers for MCP
+current_passthrough_headers: ContextVar[dict[str, str] | None] = ContextVar(
+    "current_passthrough_headers",
+    default=None,
+)
+
+
+def get_current_passthrough_headers() -> dict[str, str] | None:
+    """Get current passthrough headers from context.
+
+    These headers are extracted from x-header-* HTTP headers and
+    will be merged into MCP client HTTP requests.
+
+    Returns:
+        Dictionary of headers to passthrough, or None if not set.
+    """
+    return current_passthrough_headers.get()
+
+
+def set_current_passthrough_headers(headers: dict[str, str] | None) -> Token:
+    """Set current passthrough headers in context.
+
+    Args:
+        headers: Dictionary of headers to passthrough to MCP servers.
+
+    Returns:
+        Token for resetting the context variable.
+    """
+    return current_passthrough_headers.set(headers)
+
+
+def reset_current_passthrough_headers(token: Token) -> None:
+    """Reset passthrough headers using token.
+
+    Args:
+        token: The token returned by set_current_passthrough_headers.
+    """
+    current_passthrough_headers.reset(token)

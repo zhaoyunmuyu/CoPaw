@@ -36,10 +36,11 @@ from ..constant import (
     TRACING_DB_MAX_CONN,
 )
 from ..__version__ import __version__
-from ..utils.logging import setup_logger, add_copaw_file_handler
+from ..utils.logging import setup_logger, add_swe_file_handler
 from .auth import AuthMiddleware
 from .middleware.tenant_identity import TenantIdentityMiddleware
 from .middleware.tenant_workspace import TenantWorkspaceMiddleware
+from .middleware.header_passthrough import HeaderPassthroughMiddleware
 from .routers import router as api_router, create_agent_scoped_router
 from .routers.agent_scoped import AgentContextMiddleware
 from .routers.voice import voice_router
@@ -178,7 +179,7 @@ async def lifespan(
     app: FastAPI,
 ):  # pylint: disable=too-many-statements,too-many-branches
     startup_start_time = time.time()
-    add_copaw_file_handler(WORKING_DIR / "copaw.log")
+    add_swe_file_handler(WORKING_DIR / "swe.log")
 
     # Auto-register admin from env vars (for automated deployments)
     from .auth import auto_register_from_env
@@ -360,15 +361,19 @@ app.add_middleware(TenantWorkspaceMiddleware)
 # This must set tenant_id before TenantWorkspaceMiddleware needs it
 app.add_middleware(TenantIdentityMiddleware, default_tenant_id=None)
 
+# Add header passthrough middleware for MCP server requests
+# Extracts x-header-* headers and stores in context for MCP clients
+app.add_middleware(HeaderPassthroughMiddleware)
 
-# Console static dir: env, or copaw package data (console), or cwd.
-_CONSOLE_STATIC_ENV = "COPAW_CONSOLE_STATIC_DIR"
+
+# Console static dir: env, or swe package data (console), or cwd.
+_CONSOLE_STATIC_ENV = "SWE_CONSOLE_STATIC_DIR"
 
 
 def _resolve_console_static_dir() -> str:
     if os.environ.get(_CONSOLE_STATIC_ENV):
         return os.environ[_CONSOLE_STATIC_ENV]
-    # Shipped dist lives in copaw package as static data
+    # Shipped dist lives in swe package as static data
     pkg_dir = Path(__file__).resolve().parent.parent
     candidate = pkg_dir / "console"
     if candidate.is_dir() and (candidate / "index.html").exists():
@@ -407,10 +412,10 @@ def read_root():
         return FileResponse(_CONSOLE_INDEX)
     return {
         "message": (
-            "CoPaw Web Console is not available. "
-            "If you installed CoPaw from source code, please run "
-            "`npm ci && npm run build` in CoPaw's `console/` "
-            "directory, and restart CoPaw to enable the "
+            "SWE Web Console is not available. "
+            "If you installed SWE from source code, please run "
+            "`npm ci && npm run build` in SWE's `console/` "
+            "directory, and restart SWE to enable the "
             "web console."
         ),
     }
@@ -418,7 +423,7 @@ def read_root():
 
 @app.get("/api/version")
 def get_version():
-    """Return the current CoPaw version."""
+    """Return the current SWE version."""
     return {"version": __version__}
 
 
@@ -467,16 +472,16 @@ if os.path.isdir(_CONSOLE_STATIC_DIR):
             return FileResponse(f, media_type="image/png")
         raise HTTPException(status_code=404, detail="Not Found")
 
-    @app.get("/copaw-symbol.svg")
+    @app.get("/swe-symbol.svg")
     def _console_icon():
-        f = _console_path / "copaw-symbol.svg"
+        f = _console_path / "swe-symbol.svg"
         if f.is_file():
             return FileResponse(f, media_type="image/svg+xml")
         raise HTTPException(status_code=404, detail="Not Found")
 
-    @app.get("/copaw-dark.png")
+    @app.get("/swe-dark.png")
     def _console_dark_icon():
-        f = _console_path / "copaw-dark.png"
+        f = _console_path / "swe-dark.png"
         if f.is_file():
             return FileResponse(f, media_type="image/png")
         raise HTTPException(status_code=404, detail="Not Found")

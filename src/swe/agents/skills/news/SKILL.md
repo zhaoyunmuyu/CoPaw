@@ -4,7 +4,7 @@ description: "Look up the latest news for the user from specified news sites. Pr
 metadata:
   {
     "builtin_skill_version": "1.0",
-    "copaw":
+    "swe":
       {
         "emoji": "📰",
         "requires": {}

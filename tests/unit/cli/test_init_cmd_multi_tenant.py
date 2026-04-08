@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Unit tests for tenant-aware CLI init command.
 
-Tests that `copaw init --tenant-id <id>` writes config to the correct
+Tests that `swe init --tenant-id <id>` writes config to the correct
 tenant directory structure, and that backward compatibility is preserved.
 """
 import sys
@@ -11,14 +11,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 import pytest
 from click.testing import CliRunner
-from copaw.cli.init_cmd import init_cmd
+from swe.cli.init_cmd import init_cmd
 
 
 def test_init_cmd_writes_to_tenant_directory(tmp_path, monkeypatch):
     """Test that --tenant-id writes config to tenant-specific directory."""
     # Patch WORKING_DIR to use tmp_path
-    monkeypatch.setattr("copaw.cli.init_cmd.WORKING_DIR", tmp_path)
-    monkeypatch.setattr("copaw.constant.WORKING_DIR", tmp_path)
+    monkeypatch.setattr("swe.cli.init_cmd.WORKING_DIR", tmp_path)
+    monkeypatch.setattr("swe.constant.WORKING_DIR", tmp_path)
 
     # Mock ProviderManager to avoid side effects
     class MockProviderManager:
@@ -40,7 +40,7 @@ def test_init_cmd_writes_to_tenant_directory(tmp_path, monkeypatch):
             return None
 
     monkeypatch.setattr(
-        "copaw.cli.init_cmd.ProviderManager",
+        "swe.cli.init_cmd.ProviderManager",
         MockProviderManager,
     )
 
@@ -60,8 +60,8 @@ def test_init_cmd_writes_to_tenant_directory(tmp_path, monkeypatch):
 def test_init_cmd_defaults_tenant_id_to_default(tmp_path, monkeypatch):
     """Test that init without --tenant-id defaults to 'default' tenant."""
     # Patch WORKING_DIR to use tmp_path
-    monkeypatch.setattr("copaw.cli.init_cmd.WORKING_DIR", tmp_path)
-    monkeypatch.setattr("copaw.constant.WORKING_DIR", tmp_path)
+    monkeypatch.setattr("swe.cli.init_cmd.WORKING_DIR", tmp_path)
+    monkeypatch.setattr("swe.constant.WORKING_DIR", tmp_path)
 
     # Mock ProviderManager to avoid side effects
     class MockProviderManager:
@@ -83,7 +83,7 @@ def test_init_cmd_defaults_tenant_id_to_default(tmp_path, monkeypatch):
             return None
 
     monkeypatch.setattr(
-        "copaw.cli.init_cmd.ProviderManager",
+        "swe.cli.init_cmd.ProviderManager",
         MockProviderManager,
     )
 

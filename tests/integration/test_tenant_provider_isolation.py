@@ -21,7 +21,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
-from copaw.providers.provider_manager import ProviderManager
+from swe.providers.provider_manager import ProviderManager
 
 
 class TestTenantIsolation:
@@ -30,8 +30,8 @@ class TestTenantIsolation:
     def test_tenants_have_separate_provider_directories(self, tmp_path):
         """Each tenant has separate provider storage directory."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             manager_a = ProviderManager.get_instance("tenant-a")
             manager_b = ProviderManager.get_instance("tenant-b")
@@ -44,8 +44,8 @@ class TestTenantIsolation:
     def test_tenant_api_keys_are_isolated(self, tmp_path):
         """API keys configured by one tenant are not visible to another."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             manager_a = ProviderManager.get_instance("apikey-a")
             manager_b = ProviderManager.get_instance("apikey-b")
@@ -78,11 +78,11 @@ class TestTenantIsolation:
 
     def test_tenant_active_models_are_isolated(self, tmp_path):
         """Active model selection is isolated per tenant."""
-        from copaw.providers.models import ModelSlotConfig
+        from swe.providers.models import ModelSlotConfig
 
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             manager_a = ProviderManager.get_instance("model-a")
             manager_b = ProviderManager.get_instance("model-b")
@@ -116,14 +116,14 @@ class TestTenantIsolation:
         import asyncio
 
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             manager_a = ProviderManager.get_instance("custom-a")
             manager_b = ProviderManager.get_instance("custom-b")
 
             # Tenant A adds custom provider
-            from copaw.providers.provider import ProviderInfo
+            from swe.providers.provider import ProviderInfo
 
             custom_provider = ProviderInfo(
                 id="custom-provider",
@@ -145,8 +145,8 @@ class TestAutoInitialization:
     def test_new_tenant_inherits_from_default(self, tmp_path):
         """New tenant inherits configuration from default tenant."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             # Setup default tenant with configuration
             default_manager = ProviderManager.get_instance("default")
@@ -159,10 +159,10 @@ class TestAutoInitialization:
             import shutil
 
             default_providers = (
-                tmp_path / ".copaw.secret" / "default" / "providers"
+                tmp_path / ".swe.secret" / "default" / "providers"
             )
             new_tenant_providers = (
-                tmp_path / ".copaw.secret" / "new-tenant" / "providers"
+                tmp_path / ".swe.secret" / "new-tenant" / "providers"
             )
             new_tenant_providers.mkdir(parents=True)
 
@@ -180,12 +180,12 @@ class TestAutoInitialization:
     def test_empty_directory_fallback_when_default_empty(self, tmp_path):
         """New tenant gets empty directory when default has no config."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             # Create empty directory for new tenant
             new_tenant_dir = (
-                tmp_path / ".copaw.secret" / "empty-tenant" / "providers"
+                tmp_path / ".swe.secret" / "empty-tenant" / "providers"
             )
             new_tenant_dir.mkdir(parents=True)
 
@@ -199,12 +199,12 @@ class TestMigrationBehavior:
     def test_system_works_after_migration(self, tmp_path):
         """System works correctly after migrating to tenant-isolated storage."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             # Simulate migrated structure (default tenant has config)
             default_providers = (
-                tmp_path / ".copaw.secret" / "default" / "providers"
+                tmp_path / ".swe.secret" / "default" / "providers"
             )
             default_providers.mkdir(parents=True)
             builtin_dir = default_providers / "builtin"
@@ -234,14 +234,14 @@ class TestMigrationBehavior:
     def test_migrated_tenant_isolation(self, tmp_path):
         """Tenant isolation works after migration."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             # Setup migrated structure for multiple tenants
             for tenant in ["default", "alice", "bob"]:
                 tenant_dir = (
                     tmp_path
-                    / ".copaw.secret"
+                    / ".swe.secret"
                     / tenant
                     / "providers"
                     / "builtin"
@@ -274,8 +274,8 @@ class TestBackwardCompatibility:
     def test_default_tenant_when_no_tenant_specified(self, tmp_path):
         """Default tenant is used when no tenant ID is specified."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             manager = ProviderManager.get_instance()
             assert manager.tenant_id == "default"
@@ -283,8 +283,8 @@ class TestBackwardCompatibility:
     def test_existing_code_works_without_modification(self, tmp_path):
         """Existing code using ProviderManager() still works."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             # Direct instantiation (old way)
             manager = ProviderManager()
@@ -297,8 +297,8 @@ class TestBackwardCompatibility:
     def test_none_tenant_defaults_to_default(self, tmp_path):
         """None tenant ID defaults to 'default' tenant."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             manager = ProviderManager.get_instance(None)
             assert manager.tenant_id == "default"
@@ -310,8 +310,8 @@ class TestConcurrentAccess:
     def test_thread_safe_instance_creation(self, tmp_path):
         """ProviderManager instance creation is thread-safe."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             # Clear any existing instances
             ProviderManager._instances.clear()
@@ -356,8 +356,8 @@ class TestConcurrentAccess:
     def test_cached_instance_retrieval_performance(self, tmp_path):
         """Cached instance retrieval is fast."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             # Pre-create instance
             manager = ProviderManager.get_instance("perf-tenant")
@@ -374,8 +374,8 @@ class TestConcurrentAccess:
     def test_concurrent_provider_access(self, tmp_path):
         """Multiple threads can access different tenant providers concurrently."""
         with patch(
-            "copaw.providers.provider_manager.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.providers.provider_manager.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             # Setup two tenants with different configs
             for tenant, key in [

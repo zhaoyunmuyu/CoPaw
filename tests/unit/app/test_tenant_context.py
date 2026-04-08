@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 import pytest
 
-from copaw.config.context import (
+from swe.config.context import (
     current_tenant_id,
     current_user_id,
     current_workspace_dir,
@@ -31,7 +31,7 @@ from copaw.config.context import (
     tenant_context,
     TenantContextError,
 )
-from copaw.app.tenant_context import (
+from swe.app.tenant_context import (
     bind_tenant_context,
     get_tenant_context,
     require_tenant_context,

@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from copaw.tenant_models.utils import resolve_env_vars
+from swe.tenant_models.utils import resolve_env_vars
 
 
 class TestResolveEnvVars:

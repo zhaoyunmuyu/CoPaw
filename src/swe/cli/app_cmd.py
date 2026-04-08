@@ -50,7 +50,7 @@ from ..utils.logging import setup_logger, SuppressPathAccessLogFilter
     default=None,
     help="[DEPRECATED] Number of worker processes. "
     "This option is deprecated and will be removed in a future version. "
-    "CoPaw always uses 1 worker.",
+    "SWE always uses 1 worker.",
 )
 def app_cmd(
     host: str,
@@ -60,7 +60,7 @@ def app_cmd(
     log_level: str,
     hide_access_paths: tuple[str, ...],
 ) -> None:
-    """Run CoPaw FastAPI app."""
+    """Run SWE FastAPI app."""
     # Handle deprecated --workers parameter
     if workers is not None:
         click.echo(
@@ -69,7 +69,7 @@ def app_cmd(
             err=True,
         )
         click.echo(
-            "   CoPaw always uses 1 worker for stability. "
+            "   SWE always uses 1 worker for stability. "
             "Your specified value will be ignored.",
             err=True,
         )
@@ -85,9 +85,9 @@ def app_cmd(
     # Signal reload mode to browser_control.py for Windows
     # compatibility: use sync Playwright + ThreadPool only when reload=True
     if reload:
-        os.environ["COPAW_RELOAD_MODE"] = "1"
+        os.environ["SWE_RELOAD_MODE"] = "1"
     else:
-        os.environ.pop("COPAW_RELOAD_MODE", None)
+        os.environ.pop("SWE_RELOAD_MODE", None)
 
     setup_logger(log_level)
     if log_level in ("debug", "trace"):
@@ -102,7 +102,7 @@ def app_cmd(
         )
 
     uvicorn.run(
-        "copaw.app._app:app",
+        "swe.app._app:app",
         host=host,
         port=port,
         reload=reload,

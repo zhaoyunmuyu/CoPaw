@@ -1,7 +1,7 @@
-# Build CoPaw Desktop: Windows (conda-pack + NSIS), macOS (conda-pack -> .app)
+# Build SWE Desktop: Windows (conda-pack + NSIS), macOS (conda-pack -> .app)
 # Runs automatically on release publish; also manually via Actions tab.
 
-name: CoPaw Desktop Build
+name: SWE Desktop Build
 
 on:
   release:
@@ -30,7 +30,7 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $content = Get-Content src/copaw/__version__.py -Raw
+          $content = Get-Content src/swe/__version__.py -Raw
           if ($content -match '__version__\s*=\s*"([^"]+)"') {
             $v = $Matches[1]
           } else {
@@ -52,7 +52,7 @@ jobs:
         with:
           auto-update-conda: true
           python-version: "3.10"
-          activate-environment: "copaw-build"
+          activate-environment: "swe-build"
           condarc-file: .github/condarc
           conda-remove-defaults: false
 
@@ -69,7 +69,7 @@ jobs:
 
       - name: Build Windows installer
         shell: pwsh
-        run: conda run -n copaw-build pwsh -File ./scripts/pack/build_win.ps1
+        run: conda run -n swe-build pwsh -File ./scripts/pack/build_win.ps1
 
       - name: List dist (on failure)
         if: failure()
@@ -85,8 +85,8 @@ jobs:
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CoPaw-Desktop-Windows-${{ steps.version.outputs.version }}
-          path: dist/CoPaw-Setup-*.exe
+          name: SWE-Desktop-Windows-${{ steps.version.outputs.version }}
+          path: dist/SWE-Setup-*.exe
 
   build-macos:
     runs-on: macos-14
@@ -98,7 +98,7 @@ jobs:
 
       - name: Get version
         id: version
-        run: echo "version=$(sed -n 's/^__version__[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' src/copaw/__version__.py)" >> $GITHUB_OUTPUT
+        run: echo "version=$(sed -n 's/^__version__[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' src/swe/__version__.py)" >> $GITHUB_OUTPUT
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -112,7 +112,7 @@ jobs:
         with:
           auto-update-conda: true
           python-version: "3.10"
-          activate-environment: "copaw-build"
+          activate-environment: "swe-build"
           condarc-file: .github/condarc
           conda-remove-defaults: false
 
@@ -122,13 +122,13 @@ jobs:
       - name: Build macOS .app
         run: |
           chmod +x scripts/pack/build_macos.sh
-          conda run -n copaw-build bash -c 'CREATE_ZIP=1 ./scripts/pack/build_macos.sh'
+          conda run -n swe-build bash -c 'CREATE_ZIP=1 ./scripts/pack/build_macos.sh'
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CoPaw-Desktop-macOS-${{ steps.version.outputs.version }}
-          path: dist/CoPaw-*.zip
+          name: SWE-Desktop-macOS-${{ steps.version.outputs.version }}
+          path: dist/SWE-*.zip
 
   upload-release:
     needs: [build-windows, build-macos]
@@ -142,15 +142,15 @@ jobs:
 
       - name: Move artifacts to root for upload
         run: |
-          mv CoPaw-Desktop-Windows-*/CoPaw-Setup-*.exe . 2>/dev/null || true
-          mv CoPaw-Desktop-macOS-*/CoPaw-*.zip . 2>/dev/null || true
+          mv SWE-Desktop-Windows-*/SWE-Setup-*.exe . 2>/dev/null || true
+          mv SWE-Desktop-macOS-*/SWE-*.zip . 2>/dev/null || true
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            CoPaw-Setup-*.exe
-            CoPaw-*-macOS.zip
+            SWE-Setup-*.exe
+            SWE-*-macOS.zip
           fail-on-unmatched-files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -171,7 +171,7 @@ jobs:
 
       - name: Get version
         id: version
-        run: echo "version=$(sed -n 's/^__version__[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' src/copaw/__version__.py)" >> $GITHUB_OUTPUT
+        run: echo "version=$(sed -n 's/^__version__[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' src/swe/__version__.py)" >> $GITHUB_OUTPUT
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -192,10 +192,10 @@ jobs:
             -L CH
 
       - name: Process and upload Windows artifacts
-        if: hashFiles('CoPaw-Desktop-Windows-*/*.exe') != ''
+        if: hashFiles('SWE-Desktop-Windows-*/*.exe') != ''
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          WIN_EXE=$(find CoPaw-Desktop-Windows-* -name "CoPaw-Setup-*.exe" | head -1)
+          WIN_EXE=$(find SWE-Desktop-Windows-* -name "SWE-Setup-*.exe" | head -1)
 
           if [ -z "$WIN_EXE" ]; then
             echo "No Windows exe found, skipping"
@@ -214,35 +214,35 @@ jobs:
 
           # Upload file (versioned)
           ossutil cp "$WIN_EXE" \
-            "oss://copaw-download/files/apps/desktop/win/CoPaw-Setup-${VERSION}.exe" \
+            "oss://swe-download/files/apps/desktop/win/SWE-Setup-${VERSION}.exe" \
             --acl public-read \
             --force
 
           # Upload file (latest)
           ossutil cp "$WIN_EXE" \
-            "oss://copaw-download/files/apps/desktop/win/CoPaw-Setup-latest.exe" \
+            "oss://swe-download/files/apps/desktop/win/SWE-Setup-latest.exe" \
             --acl public-read \
             --force
 
           # Upload metadata (versioned)
           ossutil cp win-metadata.json \
-            "oss://copaw-download/metadata/apps/desktop/win/CoPaw-Setup-${VERSION}.exe.json" \
+            "oss://swe-download/metadata/apps/desktop/win/SWE-Setup-${VERSION}.exe.json" \
             --acl public-read \
             --force
 
           # Upload metadata (latest)
           ossutil cp win-metadata.json \
-            "oss://copaw-download/metadata/apps/desktop/win/CoPaw-Setup-latest.exe.json" \
+            "oss://swe-download/metadata/apps/desktop/win/SWE-Setup-latest.exe.json" \
             --acl public-read \
             --force
 
           echo "✓ Windows artifacts uploaded"
 
       - name: Process and upload macOS artifacts
-        if: hashFiles('CoPaw-Desktop-macOS-*/*.zip') != ''
+        if: hashFiles('SWE-Desktop-macOS-*/*.zip') != ''
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          MAC_ZIP=$(find CoPaw-Desktop-macOS-* -name "CoPaw-*.zip" | head -1)
+          MAC_ZIP=$(find SWE-Desktop-macOS-* -name "SWE-*.zip" | head -1)
 
           if [ -z "$MAC_ZIP" ]; then
             echo "No macOS zip found, skipping"
@@ -261,25 +261,25 @@ jobs:
 
           # Upload file (versioned)
           ossutil cp "$MAC_ZIP" \
-            "oss://copaw-download/files/apps/desktop/mac/CoPaw-${VERSION}-macOS.zip" \
+            "oss://swe-download/files/apps/desktop/mac/SWE-${VERSION}-macOS.zip" \
             --acl public-read \
             --force
 
           # Upload file (latest)
           ossutil cp "$MAC_ZIP" \
-            "oss://copaw-download/files/apps/desktop/mac/CoPaw-latest-macOS.zip" \
+            "oss://swe-download/files/apps/desktop/mac/SWE-latest-macOS.zip" \
             --acl public-read \
             --force
 
           # Upload metadata (versioned)
           ossutil cp mac-metadata.json \
-            "oss://copaw-download/metadata/apps/desktop/mac/CoPaw-${VERSION}-macOS.zip.json" \
+            "oss://swe-download/metadata/apps/desktop/mac/SWE-${VERSION}-macOS.zip.json" \
             --acl public-read \
             --force
 
           # Upload metadata (latest)
           ossutil cp mac-metadata.json \
-            "oss://copaw-download/metadata/apps/desktop/mac/CoPaw-latest-macOS.zip.json" \
+            "oss://swe-download/metadata/apps/desktop/mac/SWE-latest-macOS.zip.json" \
             --acl public-read \
             --force
 
@@ -290,7 +290,7 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
 
           # Download existing desktop/index.json if exists
-          ossutil cp "oss://copaw-download/metadata/apps/desktop/index.json" \
+          ossutil cp "oss://swe-download/metadata/apps/desktop/index.json" \
             desktop-index.json 2>/dev/null || cat > desktop-index.json << 'EOF'
           {
             "product": "desktop",
@@ -303,7 +303,7 @@ jobs:
           # Merge Windows metadata if exists
           if [ -f "win-metadata.json" ]; then
             python scripts/pack/generate_oss_metadata.py \
-              --file "$(find CoPaw-Desktop-Windows-* -name 'CoPaw-Setup-*.exe' | head -1)" \
+              --file "$(find SWE-Desktop-Windows-* -name 'SWE-Setup-*.exe' | head -1)" \
               --product desktop \
               --platform win \
               --version "$VERSION" \
@@ -315,7 +315,7 @@ jobs:
           # Merge macOS metadata if exists
           if [ -f "mac-metadata.json" ]; then
             python scripts/pack/generate_oss_metadata.py \
-              --file "$(find CoPaw-Desktop-macOS-* -name 'CoPaw-*.zip' | head -1)" \
+              --file "$(find SWE-Desktop-macOS-* -name 'SWE-*.zip' | head -1)" \
               --product desktop \
               --platform mac \
               --version "$VERSION" \
@@ -326,7 +326,7 @@ jobs:
 
           # Upload updated desktop/index.json
           ossutil cp desktop-index.json \
-            "oss://copaw-download/metadata/apps/desktop/index.json" \
+            "oss://swe-download/metadata/apps/desktop/index.json" \
             --acl public-read \
             --force
 
@@ -335,7 +335,7 @@ jobs:
       - name: Update main index
         run: |
           # Download main index if exists
-          ossutil cp "oss://copaw-download/metadata/index.json" \
+          ossutil cp "oss://swe-download/metadata/index.json" \
             main-index.json 2>/dev/null || cat > main-index.json << 'EOF'
           {
             "version": "1.0",
@@ -369,7 +369,7 @@ jobs:
 
           # Upload main index
           ossutil cp main-index.json \
-            "oss://copaw-download/metadata/index.json" \
+            "oss://swe-download/metadata/index.json" \
             --acl public-read \
             --force
 

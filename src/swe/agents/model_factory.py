@@ -5,7 +5,7 @@ This module provides a unified factory for creating chat model instances
 and their corresponding formatters based on configuration.
 
 Example:
-    >>> from copaw.agents.model_factory import create_model_and_formatter
+    >>> from swe.agents.model_factory import create_model_and_formatter
     >>> model, formatter = create_model_and_formatter()
 """
 
@@ -355,7 +355,7 @@ def _substitute_video_blocks(
             continue
         for i, blk in enumerate(msg.content):
             if isinstance(blk, dict) and blk.get("type") == "video":
-                ph = f"__COPAW_VID_{id(blk)}__"
+                ph = f"__SWE_VID_{id(blk)}__"
                 video_subs[ph] = blk
                 msg.content[i] = {
                     "type": "text",
@@ -808,9 +808,33 @@ def create_model_and_formatter(
     resolved_agent_id = _get_agent_id(agent_id)
     tenant_id = _get_tenant_id()
 
-    # Ensure tenant provider storage and get manager
+    # Determine agent_id (parameter > context > None)
+    if agent_id is None:
+        try:
+            agent_id = get_current_agent_id()
+        except Exception:
+            pass
+
+    # Try to get model from tenant-aware ProviderManager
+    # This is the primary and only supported path for active model resolution
+    model_slot = None
+    retry_config = None
+    rate_limit_config = None
+
+    # Get tenant_id for tenant-aware ProviderManager
+    try:
+        from swe.config.context import get_current_tenant_id
+
+        tenant_id = get_current_tenant_id()
+    except Exception:
+        tenant_id = None
+
+    # Ensure tenant provider storage exists before accessing ProviderManager
     ProviderManager.ensure_tenant_provider_storage(tenant_id)
     manager = ProviderManager.get_instance(tenant_id)
+    active_model = manager.get_active_model()
+    if active_model and active_model.provider_id and active_model.model:
+        from swe.tenant_models.models import ModelSlot
 
     # Get model slot from active model configuration
     model_slot = _get_model_slot(manager)

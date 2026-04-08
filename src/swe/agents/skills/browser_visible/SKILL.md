@@ -4,7 +4,7 @@ description: "当用户希望打开真实可见的浏览器窗口（而非后台
 metadata:
   {
     "builtin_skill_version": "1.0",
-    "copaw":
+    "swe":
       {
         "emoji": "🖥️",
         "requires": {}

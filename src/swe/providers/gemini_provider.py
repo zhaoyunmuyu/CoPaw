@@ -13,13 +13,13 @@ from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 
-from copaw.providers.multimodal_prober import (
+from swe.providers.multimodal_prober import (
     ProbeResult,
     _PROBE_IMAGE_B64,
     _PROBE_VIDEO_URL,
     _is_media_keyword_error,
 )
-from copaw.providers.provider import ModelInfo, Provider
+from swe.providers.provider import ModelInfo, Provider
 
 logger = logging.getLogger(__name__)
 

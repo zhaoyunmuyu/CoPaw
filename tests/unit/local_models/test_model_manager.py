@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from copaw.local_models.download_manager import (
+from swe.local_models.download_manager import (
     DownloadProgressTracker,
     DownloadTaskStatus,
 )
-from copaw.local_models.model_manager import ModelManager, DownloadSource
+from swe.local_models.model_manager import ModelManager, DownloadSource
 
 
 class _FakeProcess:
@@ -117,7 +117,7 @@ def test_download_model_uses_reachable_source(
             captured["thread_started"] = True
 
     monkeypatch.setattr(
-        "copaw.local_models.model_manager.threading.Thread",
+        "swe.local_models.model_manager.threading.Thread",
         _FakeThread,
     )
 
@@ -292,7 +292,7 @@ def test_download_model_uses_explicit_source_without_probe(
             captured["thread_started"] = True
 
     monkeypatch.setattr(
-        "copaw.local_models.model_manager.threading.Thread",
+        "swe.local_models.model_manager.threading.Thread",
         _FakeThread,
     )
 

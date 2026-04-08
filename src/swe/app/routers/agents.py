@@ -673,7 +673,7 @@ def _initialize_agent_workspace(  # pylint: disable=too-many-branches
     skill_names: list[str] | None = None,
     builtin_qa_md_seed: bool = False,
 ) -> None:
-    """Initialize agent workspace (similar to copaw init --defaults).
+    """Initialize agent workspace (similar to swe init --defaults).
 
     Args:
         workspace_dir: Path to agent workspace
@@ -762,4 +762,4 @@ def _initialize_agent_workspace(  # pylint: disable=too-many-branches
     token_usage_file = workspace_dir / "token_usage.json"
     if not token_usage_file.exists():
         with open(token_usage_file, "w", encoding="utf-8") as f:
-            f.write("[]")
+            f.write("{}")

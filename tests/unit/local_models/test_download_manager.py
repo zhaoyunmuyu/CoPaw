@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from copaw.local_models.download_manager import (
+from swe.local_models.download_manager import (
     apply_download_result,
     begin_download_task,
     DownloadProgressTracker,

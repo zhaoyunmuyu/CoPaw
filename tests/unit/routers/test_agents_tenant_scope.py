@@ -13,9 +13,9 @@ from pydantic import BaseModel
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 SRC_ROOT = Path(__file__).parent.parent.parent.parent / "src"
-_AGENT_CONTEXT_FILE = SRC_ROOT / "copaw" / "app" / "agent_context.py"
-_ROUTER_FILE = SRC_ROOT / "copaw" / "app" / "routers" / "agents.py"
-_MANAGER_FILE = SRC_ROOT / "copaw" / "app" / "multi_agent_manager.py"
+_AGENT_CONTEXT_FILE = SRC_ROOT / "swe" / "app" / "agent_context.py"
+_ROUTER_FILE = SRC_ROOT / "swe" / "app" / "routers" / "agents.py"
+_MANAGER_FILE = SRC_ROOT / "swe" / "app" / "multi_agent_manager.py"
 
 
 class FakeWorkspace:
@@ -79,34 +79,34 @@ def _install_test_stubs() -> dict[str, object | None]:
     original_modules = {
         name: sys.modules.get(name)
         for name in [
-            "copaw.config.utils",
-            "copaw.config.context",
-            "copaw.config.config",
-            "copaw.agents.utils.file_handling",
-            "copaw.app.utils",
-            "copaw.agents.memory.agent_md_manager",
-            "copaw.agents.utils",
-            "copaw.app.multi_agent_manager",
-            "copaw.app.workspace",
+            "swe.config.utils",
+            "swe.config.context",
+            "swe.config.config",
+            "swe.agents.utils.file_handling",
+            "swe.app.utils",
+            "swe.agents.memory.agent_md_manager",
+            "swe.agents.utils",
+            "swe.app.multi_agent_manager",
+            "swe.app.workspace",
         ]
     }
-    config_utils = types.ModuleType("copaw.config.utils")
+    config_utils = types.ModuleType("swe.config.utils")
     config_utils.load_config = lambda *args, **kwargs: None
     config_utils.save_config = lambda *args, **kwargs: None
     config_utils.get_tenant_working_dir = lambda tenant_id=None: Path("/tmp") / (tenant_id or "global")
     config_utils.get_tenant_working_dir_strict = lambda tenant_id=None: Path("/tmp") / tenant_id if tenant_id else (_ for _ in ()).throw(RuntimeError("tenant context required"))
     config_utils.get_tenant_config_path = lambda tenant_id=None: Path("/tmp") / (tenant_id or "global") / "config.json"
     config_utils.get_tenant_config_path_strict = lambda tenant_id=None: Path("/tmp") / tenant_id / "config.json" if tenant_id else (_ for _ in ()).throw(RuntimeError("tenant context required"))
-    sys.modules["copaw.config.utils"] = config_utils
+    sys.modules["swe.config.utils"] = config_utils
 
-    context_path = SRC_ROOT / "copaw" / "config" / "context.py"
-    context_spec = importlib.util.spec_from_file_location("copaw.config.context", context_path)
+    context_path = SRC_ROOT / "swe" / "config" / "context.py"
+    context_spec = importlib.util.spec_from_file_location("swe.config.context", context_path)
     context_module = importlib.util.module_from_spec(context_spec)
-    sys.modules["copaw.config.context"] = context_module
+    sys.modules["swe.config.context"] = context_module
     assert context_spec is not None and context_spec.loader is not None
     context_spec.loader.exec_module(context_module)
 
-    config_config = types.ModuleType("copaw.config.config")
+    config_config = types.ModuleType("swe.config.config")
     config_config.AgentProfileRef = AgentProfileRef
     config_config.AgentProfileConfig = AgentProfileConfig
     config_config.ChannelConfig = ChannelConfig
@@ -116,31 +116,31 @@ def _install_test_stubs() -> dict[str, object | None]:
     config_config.generate_short_agent_id = lambda: "stubid"
     config_config.load_agent_config = lambda agent_id: None
     config_config.save_agent_config = lambda agent_id, config: None
-    sys.modules["copaw.config.config"] = config_config
+    sys.modules["swe.config.config"] = config_config
 
-    file_handling = types.ModuleType("copaw.agents.utils.file_handling")
+    file_handling = types.ModuleType("swe.agents.utils.file_handling")
     file_handling.read_text_file_with_encoding_fallback = lambda path: ""
-    sys.modules["copaw.agents.utils.file_handling"] = file_handling
+    sys.modules["swe.agents.utils.file_handling"] = file_handling
 
-    app_utils = types.ModuleType("copaw.app.utils")
+    app_utils = types.ModuleType("swe.app.utils")
     app_utils.schedule_agent_reload = lambda *args, **kwargs: None
-    sys.modules["copaw.app.utils"] = app_utils
+    sys.modules["swe.app.utils"] = app_utils
 
-    memory_manager = types.ModuleType("copaw.agents.memory.agent_md_manager")
+    memory_manager = types.ModuleType("swe.agents.memory.agent_md_manager")
     memory_manager.AgentMdManager = object
-    sys.modules["copaw.agents.memory.agent_md_manager"] = memory_manager
+    sys.modules["swe.agents.memory.agent_md_manager"] = memory_manager
 
-    agents_utils = types.ModuleType("copaw.agents.utils")
+    agents_utils = types.ModuleType("swe.agents.utils")
     agents_utils.copy_builtin_qa_md_files = lambda *args, **kwargs: None
-    sys.modules["copaw.agents.utils"] = agents_utils
+    sys.modules["swe.agents.utils"] = agents_utils
 
-    multi_agent_manager = types.ModuleType("copaw.app.multi_agent_manager")
+    multi_agent_manager = types.ModuleType("swe.app.multi_agent_manager")
     multi_agent_manager.MultiAgentManager = object
-    sys.modules["copaw.app.multi_agent_manager"] = multi_agent_manager
+    sys.modules["swe.app.multi_agent_manager"] = multi_agent_manager
 
-    workspace_module = types.ModuleType("copaw.app.workspace")
+    workspace_module = types.ModuleType("swe.app.workspace")
     workspace_module.Workspace = FakeWorkspace
-    sys.modules["copaw.app.workspace"] = workspace_module
+    sys.modules["swe.app.workspace"] = workspace_module
     return original_modules
 
 
@@ -160,19 +160,19 @@ def _load_module(module_name: str, file_path: Path, package_name: str):
 
 _ORIGINAL_MODULES = _install_test_stubs()
 agent_context = _load_module(
-    "copaw.app.agent_context",
+    "swe.app.agent_context",
     _AGENT_CONTEXT_FILE,
-    "copaw.app",
+    "swe.app",
 )
 agents_router = _load_module(
-    "copaw.app.routers.agents",
+    "swe.app.routers.agents",
     _ROUTER_FILE,
-    "copaw.app.routers",
+    "swe.app.routers",
 )
 multi_agent_manager = _load_module(
-    "copaw.app.multi_agent_manager",
+    "swe.app.multi_agent_manager",
     _MANAGER_FILE,
-    "copaw.app",
+    "swe.app",
 )
 _restore_original_modules(_ORIGINAL_MODULES)
 

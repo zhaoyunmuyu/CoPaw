@@ -37,12 +37,12 @@ def _guard_enabled() -> bool:
 
     Priority: env var > config.json > default (True).
     """
-    env_val = os.environ.get("COPAW_TOOL_GUARD_ENABLED")
+    env_val = os.environ.get("SWE_TOOL_GUARD_ENABLED")
     if env_val is not None:
         return env_val.lower() in _TRUE_STRINGS
 
     try:
-        from copaw.config import load_config
+        from swe.config import load_config
 
         cfg = load_config()
         return cfg.security.tool_guard.enabled
@@ -59,7 +59,7 @@ class ToolGuardEngine:
         Explicit list of guardians.  If *None* the default set
         (rule-based) is used.
     enabled:
-        Override ``COPAW_TOOL_GUARD_ENABLED`` env var.
+        Override ``SWE_TOOL_GUARD_ENABLED`` env var.
     """
 
     def __init__(

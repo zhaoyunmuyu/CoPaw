@@ -74,7 +74,7 @@ def _extract_and_merge_zip(data: bytes, workspace_dir: Path) -> None:
     """Extract zip data and merge into workspace_dir (blocking operation)."""
     tmp_dir = None
     try:
-        tmp_dir = Path(tempfile.mkdtemp(prefix="copaw_upload_"))
+        tmp_dir = Path(tempfile.mkdtemp(prefix="swe_upload_"))
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             zf.extractall(tmp_dir)
 
@@ -145,7 +145,7 @@ async def download_workspace(request: Request):
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     tenant_id = getattr(request.state, "tenant_id", "default")
-    filename = f"copaw_workspace_{tenant_id}_{timestamp}.zip"
+    filename = f"swe_workspace_{tenant_id}_{timestamp}.zip"
 
     return StreamingResponse(
         buf,

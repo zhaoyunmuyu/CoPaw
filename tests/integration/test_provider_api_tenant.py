@@ -12,9 +12,9 @@ from fastapi import FastAPI, Request
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
-from copaw.app.routers.providers import router as providers_router
-from copaw.app.routers.providers import tenant_providers_router
-from copaw.providers.provider import ProviderInfo
+from swe.app.routers.providers import router as providers_router
+from swe.app.routers.providers import tenant_providers_router
+from swe.providers.provider import ProviderInfo
 
 
 @pytest.fixture
@@ -42,7 +42,7 @@ class TestProviderAPIGetProviders:
     def test_get_providers_uses_tenant_from_header(self, client):
         """GET /models uses tenant ID from header."""
         with patch(
-            "copaw.app.routers.providers.ProviderManager",
+            "swe.app.routers.providers.ProviderManager",
         ) as mock_pm_class:
             mock_manager = MagicMock()
             mock_manager.list_provider_info = AsyncMock(
@@ -70,7 +70,7 @@ class TestProviderAPIGetProviders:
     def test_get_providers_uses_default_without_header(self, client):
         """GET /models uses default tenant without header."""
         with patch(
-            "copaw.app.routers.providers.ProviderManager",
+            "swe.app.routers.providers.ProviderManager",
         ) as mock_pm_class:
             mock_manager = MagicMock()
             mock_manager.list_provider_info = AsyncMock(return_value=[])
@@ -90,7 +90,7 @@ class TestProviderAPICreateProvider:
     def test_create_provider_uses_tenant_from_header(self, client):
         """POST /models/custom-providers uses tenant ID from header."""
         with patch(
-            "copaw.app.routers.providers.ProviderManager",
+            "swe.app.routers.providers.ProviderManager",
         ) as mock_pm_class:
             mock_manager = MagicMock()
             mock_manager.add_custom_provider = AsyncMock(
@@ -126,7 +126,7 @@ class TestProviderAPIUpdateProvider:
     def test_update_provider_uses_tenant_from_header(self, client):
         """PUT /models/{id}/config uses tenant ID from header."""
         with patch(
-            "copaw.app.routers.providers.ProviderManager",
+            "swe.app.routers.providers.ProviderManager",
         ) as mock_pm_class:
             mock_manager = MagicMock()
             mock_manager.update_provider.return_value = True
@@ -156,7 +156,7 @@ class TestProviderAPIDeleteProvider:
     def test_delete_provider_uses_tenant_from_header(self, client):
         """DELETE /models/custom-providers/{id} uses tenant ID from header."""
         with patch(
-            "copaw.app.routers.providers.ProviderManager",
+            "swe.app.routers.providers.ProviderManager",
         ) as mock_pm_class:
             mock_manager = MagicMock()
             mock_manager.remove_custom_provider.return_value = True
@@ -179,7 +179,7 @@ class TestProviderAPISetActiveModel:
     def test_set_active_model_uses_tenant_from_header(self, client):
         """PUT /models/active uses tenant ID from header."""
         with patch(
-            "copaw.app.routers.providers.ProviderManager",
+            "swe.app.routers.providers.ProviderManager",
         ) as mock_pm_class:
             mock_manager = MagicMock()
             mock_manager.activate_model = AsyncMock(return_value=None)
@@ -202,7 +202,7 @@ class TestProviderAPISetActiveModel:
     def test_set_active_model_scope_agent_is_compatible(self, client):
         """PUT /models/active with scope=agent is treated as global (backward compat)."""
         with patch(
-            "copaw.app.routers.providers.ProviderManager",
+            "swe.app.routers.providers.ProviderManager",
         ) as mock_pm_class:
             mock_manager = MagicMock()
             mock_manager.activate_model = AsyncMock(return_value=None)
@@ -230,7 +230,7 @@ class TestProviderAPISetActiveModel:
     def test_set_active_model_invalid_scope_rejected(self, client):
         """PUT /models/active with invalid scope fails validation."""
         with patch(
-            "copaw.app.routers.providers.ProviderManager",
+            "swe.app.routers.providers.ProviderManager",
         ) as mock_pm_class:
             mock_manager = MagicMock()
             mock_pm_class.get_instance.return_value = mock_manager
@@ -255,7 +255,7 @@ class TestProviderAPITenantIsolation:
     def test_different_tenants_see_different_providers(self, client):
         """Different tenants see different provider configurations."""
         with patch(
-            "copaw.app.routers.providers.ProviderManager",
+            "swe.app.routers.providers.ProviderManager",
         ) as mock_pm_class:
             # Create separate managers for each tenant
             manager_a = MagicMock()
@@ -310,7 +310,7 @@ class TestProviderAPITenantIsolation:
     def test_provider_config_isolated_by_tenant(self, client):
         """Provider configurations are isolated by tenant."""
         with patch(
-            "copaw.app.routers.providers.ProviderManager",
+            "swe.app.routers.providers.ProviderManager",
         ) as mock_pm_class:
             mock_manager = MagicMock()
             mock_manager.update_provider.return_value = True
@@ -354,7 +354,7 @@ class TestDeprecatedProvidersEndpoint:
     def test_deprecated_providers_endpoint_returns_provider_data(self, client):
         """GET /providers returns provider-backed data with deprecation flag."""
         with patch(
-            "copaw.app.routers.providers.ProviderManager",
+            "swe.app.routers.providers.ProviderManager",
         ) as mock_pm_class:
             mock_manager = MagicMock()
             mock_manager.list_provider_info = AsyncMock(
@@ -367,7 +367,7 @@ class TestDeprecatedProvidersEndpoint:
                     ),
                 ],
             )
-            from copaw.providers.models import ModelSlotConfig
+            from swe.providers.models import ModelSlotConfig
 
             mock_manager.get_active_model.return_value = ModelSlotConfig(
                 provider_id="openai",
@@ -377,7 +377,7 @@ class TestDeprecatedProvidersEndpoint:
 
             # Patch get_current_tenant_id which the endpoint uses
             with patch(
-                "copaw.app.routers.providers.get_current_tenant_id",
+                "swe.app.routers.providers.get_current_tenant_id",
                 return_value="tenant-deprecated",
             ):
                 response = client.get("/providers")
@@ -400,7 +400,7 @@ class TestDeprecatedProvidersEndpoint:
     def test_deprecated_providers_endpoint_requires_tenant(self, client):
         """GET /providers requires tenant ID."""
         with patch(
-            "copaw.app.routers.providers.get_current_tenant_id",
+            "swe.app.routers.providers.get_current_tenant_id",
             return_value=None,
         ):
             response = client.get("/providers")

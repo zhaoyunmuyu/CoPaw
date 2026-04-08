@@ -30,7 +30,7 @@ from .setup_utils import (
 )
 
 # Token counting
-from .copaw_token_counter import get_copaw_token_counter
+from .swe_token_counter import get_swe_token_counter
 
 # Tool message utilities
 from .tool_message_utils import (
@@ -55,7 +55,7 @@ __all__ = [
     "copy_init_config_files",
     "copy_md_files",
     # Token counting
-    "get_copaw_token_counter",
+    "get_swe_token_counter",
     # Tool message utilities
     "_dedup_tool_blocks",
     "_remove_invalid_tool_blocks",

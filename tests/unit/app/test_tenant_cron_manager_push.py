@@ -12,44 +12,44 @@ sys.path.insert(0, str(SRC_ROOT))
 _ORIGINAL_MODULES = {
     name: sys.modules.get(name)
     for name in [
-        "copaw.app.crons.repo.base",
-        "copaw.app.crons.executor",
-        "copaw.app.crons.heartbeat",
-        "copaw.config",
-        "copaw.config.context",
-        "copaw.app.console_push_store",
-        "copaw.app.channels.schema",
-        "copaw.app.crons.models",
-        "copaw.app.crons.manager",
+        "swe.app.crons.repo.base",
+        "swe.app.crons.executor",
+        "swe.app.crons.heartbeat",
+        "swe.config",
+        "swe.config.context",
+        "swe.app.console_push_store",
+        "swe.app.channels.schema",
+        "swe.app.crons.models",
+        "swe.app.crons.manager",
     ]
 }
 
-repo_module = types.ModuleType("copaw.app.crons.repo.base")
+repo_module = types.ModuleType("swe.app.crons.repo.base")
 repo_module.BaseJobRepository = object
-sys.modules["copaw.app.crons.repo.base"] = repo_module
+sys.modules["swe.app.crons.repo.base"] = repo_module
 
-executor_module = types.ModuleType("copaw.app.crons.executor")
+executor_module = types.ModuleType("swe.app.crons.executor")
 executor_module.CronExecutor = lambda runner, channel_manager: object()
-sys.modules["copaw.app.crons.executor"] = executor_module
+sys.modules["swe.app.crons.executor"] = executor_module
 
-heartbeat_module = types.ModuleType("copaw.app.crons.heartbeat")
+heartbeat_module = types.ModuleType("swe.app.crons.heartbeat")
 heartbeat_module.is_cron_expression = lambda every: False
 heartbeat_module.parse_heartbeat_cron = lambda every: ("*", "*", "*", "*", "*")
 heartbeat_module.parse_heartbeat_every = lambda every: 60
 async def _run_heartbeat_once(**kwargs):
     return None
 heartbeat_module.run_heartbeat_once = _run_heartbeat_once
-sys.modules["copaw.app.crons.heartbeat"] = heartbeat_module
+sys.modules["swe.app.crons.heartbeat"] = heartbeat_module
 
-config_module = types.ModuleType("copaw.config")
+config_module = types.ModuleType("swe.config")
 config_module.get_heartbeat_config = lambda agent_id=None: types.SimpleNamespace(
     enabled=False,
     every="60s",
 )
-sys.modules["copaw.config"] = config_module
+sys.modules["swe.config"] = config_module
 
 push_calls = []
-push_module = types.ModuleType("copaw.app.console_push_store")
+push_module = types.ModuleType("swe.app.console_push_store")
 async def _append(session_id, text, *, sticky=False, tenant_id=None):
     push_calls.append(
         {
@@ -60,27 +60,27 @@ async def _append(session_id, text, *, sticky=False, tenant_id=None):
         },
     )
 push_module.append = _append
-sys.modules["copaw.app.console_push_store"] = push_module
+sys.modules["swe.app.console_push_store"] = push_module
 
-channels_schema_module = types.ModuleType("copaw.app.channels.schema")
+channels_schema_module = types.ModuleType("swe.app.channels.schema")
 channels_schema_module.DEFAULT_CHANNEL = "console"
-sys.modules["copaw.app.channels.schema"] = channels_schema_module
+sys.modules["swe.app.channels.schema"] = channels_schema_module
 
 models_spec = importlib.util.spec_from_file_location(
-    "copaw.app.crons.models",
-    SRC_ROOT / "copaw" / "app" / "crons" / "models.py",
+    "swe.app.crons.models",
+    SRC_ROOT / "swe" / "app" / "crons" / "models.py",
 )
 models_module = importlib.util.module_from_spec(models_spec)
-sys.modules["copaw.app.crons.models"] = models_module
+sys.modules["swe.app.crons.models"] = models_module
 assert models_spec is not None and models_spec.loader is not None
 models_spec.loader.exec_module(models_module)
 
 manager_spec = importlib.util.spec_from_file_location(
-    "copaw.app.crons.manager",
-    SRC_ROOT / "copaw" / "app" / "crons" / "manager.py",
+    "swe.app.crons.manager",
+    SRC_ROOT / "swe" / "app" / "crons" / "manager.py",
 )
 manager_module = importlib.util.module_from_spec(manager_spec)
-sys.modules["copaw.app.crons.manager"] = manager_module
+sys.modules["swe.app.crons.manager"] = manager_module
 assert manager_spec is not None and manager_spec.loader is not None
 manager_spec.loader.exec_module(manager_module)
 

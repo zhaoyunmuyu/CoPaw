@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# CoPaw Installer
+# SWE Installer
 # Usage: curl -fsSL <url>/install.sh | bash
 #    or: bash install.sh [--version X.Y.Z] [--from-source]
 #
-# Installs CoPaw into ~/.copaw with a uv-managed Python environment.
+# Installs SWE into ~/.swe with a uv-managed Python environment.
 # Users do NOT need Python pre-installed — uv handles everything.
 set -euo pipefail
 
@@ -18,17 +18,17 @@ else
     BOLD="" GREEN="" YELLOW="" RED="" RESET=""
 fi
 
-info()  { printf "${GREEN}[copaw]${RESET} %s\n" "$*"; }
-warn()  { printf "${YELLOW}[copaw]${RESET} %s\n" "$*"; }
-error() { printf "${RED}[copaw]${RESET} %s\n" "$*" >&2; }
+info()  { printf "${GREEN}[swe]${RESET} %s\n" "$*"; }
+warn()  { printf "${YELLOW}[swe]${RESET} %s\n" "$*"; }
+error() { printf "${RED}[swe]${RESET} %s\n" "$*" >&2; }
 die()   { error "$@"; exit 1; }
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
-COPAW_HOME="${COPAW_HOME:-$HOME/.copaw}"
-COPAW_VENV="$COPAW_HOME/venv"
-COPAW_BIN="$COPAW_HOME/bin"
+SWE_HOME="${SWE_HOME:-$HOME/.swe}"
+SWE_VENV="$SWE_HOME/venv"
+SWE_BIN="$SWE_HOME/bin"
 PYTHON_VERSION="3.12"
-COPAW_REPO="https://github.com/agentscope-ai/CoPaw.git"
+SWE_REPO="https://github.com/agentscope-ai/SWE.git"
 
 # New: Intelligent selection of PyPI source (automatically using Alibaba Cloud mirror for domestic users, and official source for overseas users)
 choose_pypi_mirror() {
@@ -71,7 +71,7 @@ while [[ $# -gt 0 ]]; do
             EXTRAS="$2"; shift 2 ;;
         -h|--help)
             cat <<EOF
-CoPaw Installer
+SWE Installer
 
 Usage: bash install.sh [OPTIONS]
 
@@ -84,7 +84,7 @@ Options:
   -h, --help            Show this help
 
 Environment:
-  COPAW_HOME        Installation directory (default: ~/.copaw)
+  SWE_HOME        Installation directory (default: ~/.swe)
 EOF
             exit 0 ;;
         *)
@@ -99,7 +99,7 @@ case "$OS" in
     *) die "Unsupported OS: $OS. This installer supports Linux and macOS only." ;;
 esac
 
-printf "${GREEN}[copaw]${RESET} Installing CoPaw into ${BOLD}%s${RESET}\n" "$COPAW_HOME"
+printf "${GREEN}[swe]${RESET} Installing SWE into ${BOLD}%s${RESET}\n" "$SWE_HOME"
 
 # ── Step 1: Ensure uv is available ───────────────────────────────────────────
 ensure_uv() {
@@ -134,33 +134,33 @@ ensure_uv() {
 ensure_uv
 
 # ── Step 2: Create / update virtual environment ──────────────────────────────
-if [ -d "$COPAW_VENV" ]; then
+if [ -d "$SWE_VENV" ]; then
     info "Existing environment found, upgrading..."
 else
     info "Creating Python $PYTHON_VERSION environment..."
 fi
 
-uv venv "$COPAW_VENV" --python "$PYTHON_VERSION" --quiet
+uv venv "$SWE_VENV" --python "$PYTHON_VERSION" --quiet
 
 # Verify the venv was created
-[ -x "$COPAW_VENV/bin/python" ] || die "Failed to create virtual environment"
-info "Python environment ready ($("$COPAW_VENV/bin/python" --version))"
+[ -x "$SWE_VENV/bin/python" ] || die "Failed to create virtual environment"
+info "Python environment ready ($("$SWE_VENV/bin/python" --version))"
 
-# ── Step 3: Install CoPaw ────────────────────────────────────────────────────
+# ── Step 3: Install SWE ────────────────────────────────────────────────────
 # Build extras suffix: "" or "[llamacpp,mlx]"
 EXTRAS_SUFFIX=""
 if [ -n "$EXTRAS" ]; then
     EXTRAS_SUFFIX="[$EXTRAS]"
 fi
 
-## Ensure console frontend assets are in src/copaw/console/ for source installs.
+## Ensure console frontend assets are in src/swe/console/ for source installs.
 ## Sets _CONSOLE_COPIED=1 if we populated the directory (so we can clean up).
 _CONSOLE_COPIED=0
 _CONSOLE_AVAILABLE=0
 prepare_console() {
     local repo_dir="$1"
     local console_src="$repo_dir/console/dist"
-    local console_dest="$repo_dir/src/copaw/console"
+    local console_dest="$repo_dir/src/swe/console"
 
     # Already populated
     if [ -f "$console_dest/index.html" ]; then
@@ -209,63 +209,63 @@ prepare_console() {
 cleanup_console() {
     local repo_dir="$1"
     if [ "$_CONSOLE_COPIED" = 1 ]; then
-        rm -rf "$repo_dir/src/copaw/console/"*
+        rm -rf "$repo_dir/src/swe/console/"*
     fi
 }
 
 if [ "$FROM_SOURCE" = true ]; then
     if [ -n "$SOURCE_DIR" ]; then
-        info "Installing CoPaw from local source: $SOURCE_DIR"
+        info "Installing SWE from local source: $SOURCE_DIR"
         prepare_console "$SOURCE_DIR"
         info "Installing package from source..."
-        uv pip install "${SOURCE_DIR}${EXTRAS_SUFFIX}" --python "$COPAW_VENV/bin/python" --prerelease=allow --index-url "$PYPI_MIRROR"
+        uv pip install "${SOURCE_DIR}${EXTRAS_SUFFIX}" --python "$SWE_VENV/bin/python" --prerelease=allow --index-url "$PYPI_MIRROR"
         cleanup_console "$SOURCE_DIR"
     else
-        info "Installing CoPaw from source (GitHub)..."
+        info "Installing SWE from source (GitHub)..."
         CLONE_DIR="$(mktemp -d)"
         trap 'rm -rf "$CLONE_DIR"' EXIT
-        git clone --depth 1 "$COPAW_REPO" "$CLONE_DIR"
+        git clone --depth 1 "$SWE_REPO" "$CLONE_DIR"
         prepare_console "$CLONE_DIR"
         info "Installing package from source..."
-        uv pip install "${CLONE_DIR}${EXTRAS_SUFFIX}" --python "$COPAW_VENV/bin/python" --prerelease=allow --index-url "$PYPI_MIRROR"
+        uv pip install "${CLONE_DIR}${EXTRAS_SUFFIX}" --python "$SWE_VENV/bin/python" --prerelease=allow --index-url "$PYPI_MIRROR"
         # CLONE_DIR is cleaned up by trap; no need for cleanup_console
     fi
 else
-    PACKAGE="copaw"
+    PACKAGE="swe"
     if [ -n "$VERSION" ]; then
-        PACKAGE="copaw==$VERSION"
+        PACKAGE="swe==$VERSION"
     fi
 
     info "Installing ${PACKAGE}${EXTRAS_SUFFIX} from PyPI..."
-    uv pip install "${PACKAGE}${EXTRAS_SUFFIX}" --python "$COPAW_VENV/bin/python" --prerelease=allow --quiet --index-url "$PYPI_MIRROR" --refresh-package copaw
+    uv pip install "${PACKAGE}${EXTRAS_SUFFIX}" --python "$SWE_VENV/bin/python" --prerelease=allow --quiet --index-url "$PYPI_MIRROR" --refresh-package swe
 fi
 
 # Verify the CLI entry point exists
-[ -x "$COPAW_VENV/bin/copaw" ] || die "Installation failed: copaw CLI not found in venv"
-info "CoPaw installed successfully"
+[ -x "$SWE_VENV/bin/swe" ] || die "Installation failed: swe CLI not found in venv"
+info "SWE installed successfully"
 
 # Check console availability (for PyPI installs, check the installed package)
 if [ "$_CONSOLE_AVAILABLE" = 0 ]; then
     # Check if console assets were included in the installed package
-    CONSOLE_CHECK="$("$COPAW_VENV/bin/python" -c "import importlib.resources, copaw; p=importlib.resources.files('copaw')/'console'/'index.html'; print('yes' if p.is_file() else 'no')" 2>/dev/null || echo 'no')"
+    CONSOLE_CHECK="$("$SWE_VENV/bin/python" -c "import importlib.resources, swe; p=importlib.resources.files('swe')/'console'/'index.html'; print('yes' if p.is_file() else 'no')" 2>/dev/null || echo 'no')"
     if [ "$CONSOLE_CHECK" = "yes" ]; then
         _CONSOLE_AVAILABLE=1
     fi
 fi
 
 # ── Step 4: Create wrapper script ────────────────────────────────────────────
-mkdir -p "$COPAW_BIN"
+mkdir -p "$SWE_BIN"
 
-cat > "$COPAW_BIN/copaw" << 'WRAPPER'
+cat > "$SWE_BIN/swe" << 'WRAPPER'
 #!/usr/bin/env bash
-# CoPaw CLI wrapper — delegates to the uv-managed environment.
+# SWE CLI wrapper — delegates to the uv-managed environment.
 set -euo pipefail
 
-COPAW_HOME="${COPAW_HOME:-$HOME/.copaw}"
-REAL_BIN="$COPAW_HOME/venv/bin/copaw"
+SWE_HOME="${SWE_HOME:-$HOME/.swe}"
+REAL_BIN="$SWE_HOME/venv/bin/swe"
 
 if [ ! -x "$REAL_BIN" ]; then
-    echo "Error: CoPaw environment not found at $COPAW_HOME/venv" >&2
+    echo "Error: SWE environment not found at $SWE_HOME/venv" >&2
     echo "Please reinstall: curl -fsSL <install-url> | bash" >&2
     exit 1
 fi
@@ -273,19 +273,19 @@ fi
 exec "$REAL_BIN" "$@"
 WRAPPER
 
-chmod +x "$COPAW_BIN/copaw"
-info "Wrapper created at $COPAW_BIN/copaw"
+chmod +x "$SWE_BIN/swe"
+info "Wrapper created at $SWE_BIN/swe"
 
 # ── Step 5: Update PATH in shell profile ─────────────────────────────────────
-PATH_ENTRY="export PATH=\"\$HOME/.copaw/bin:\$PATH\""
+PATH_ENTRY="export PATH=\"\$HOME/.swe/bin:\$PATH\""
 
 add_to_profile() {
     local profile="$1"
-    if [ -f "$profile" ] && grep -qF '.copaw/bin' "$profile"; then
+    if [ -f "$profile" ] && grep -qF '.swe/bin' "$profile"; then
         return 0  # already present
     fi
     if [ -f "$profile" ] || [ "$2" = "create" ]; then
-        printf '\n# CoPaw\n%s\n' "$PATH_ENTRY" >> "$profile"
+        printf '\n# SWE\n%s\n' "$PATH_ENTRY" >> "$profile"
         info "Updated $profile"
         return 0
     fi
@@ -309,12 +309,12 @@ esac
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
-printf "${GREEN}${BOLD}CoPaw installed successfully!${RESET}\n"
+printf "${GREEN}${BOLD}SWE installed successfully!${RESET}\n"
 echo ""
 
 # Install summary
-printf "  Install location:  ${BOLD}%s${RESET}\n" "$COPAW_HOME"
-printf "  Python:            ${BOLD}%s${RESET}\n" "$("$COPAW_VENV/bin/python" --version 2>&1)"
+printf "  Install location:  ${BOLD}%s${RESET}\n" "$SWE_HOME"
+printf "  Python:            ${BOLD}%s${RESET}\n" "$("$SWE_VENV/bin/python" --version 2>&1)"
 if [ "$_CONSOLE_AVAILABLE" = 1 ]; then
     printf "  Console (web UI):  ${GREEN}available${RESET}\n"
 else
@@ -332,8 +332,8 @@ fi
 
 echo "Then run:"
 echo ""
-printf "  ${BOLD}copaw init${RESET}       # first-time setup\n"
-printf "  ${BOLD}copaw app${RESET}        # start CoPaw\n"
+printf "  ${BOLD}swe init${RESET}       # first-time setup\n"
+printf "  ${BOLD}swe app${RESET}        # start SWE\n"
 echo ""
 printf "To upgrade later, re-run this installer.\n"
-printf "To uninstall, run: ${BOLD}copaw uninstall${RESET}\n"
+printf "To uninstall, run: ${BOLD}swe uninstall${RESET}\n"

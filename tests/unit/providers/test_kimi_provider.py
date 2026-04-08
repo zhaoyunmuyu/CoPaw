@@ -1,15 +1,24 @@
 # -*- coding: utf-8 -*-
-# pylint: disable=redefined-outer-name,unused-argument,protected-access
+# pylint: disable=redefined-outer-name,unused-argument,protected-access,wrong-import-position
 """Tests for the Kimi built-in providers."""
 from __future__ import annotations
 
+import sys
+import types
 from types import SimpleNamespace
 
 import pytest
 
-import copaw.providers.provider_manager as provider_manager_module
-from copaw.providers.openai_provider import OpenAIProvider
-from copaw.providers.provider_manager import (
+fcntl_stub = types.ModuleType("fcntl")
+fcntl_stub.flock = lambda *args, **kwargs: None
+fcntl_stub.LOCK_EX = 1
+fcntl_stub.LOCK_NB = 2
+fcntl_stub.LOCK_UN = 8
+sys.modules.setdefault("fcntl", fcntl_stub)
+
+import swe.providers.provider_manager as provider_manager_module
+from swe.providers.openai_provider import OpenAIProvider
+from swe.providers.provider_manager import (
     KIMI_MODELS,
     PROVIDER_KIMI_CN,
     PROVIDER_KIMI_INTL,
@@ -28,11 +37,13 @@ def test_kimi_provider_configs() -> None:
     assert PROVIDER_KIMI_CN.id == "kimi-cn"
     assert PROVIDER_KIMI_CN.name == "Kimi (China)"
     assert PROVIDER_KIMI_CN.base_url == "https://api.moonshot.cn/v1"
+    assert PROVIDER_KIMI_CN.chat_model == "KimiChatModel"
     assert PROVIDER_KIMI_CN.freeze_url is True
 
     assert PROVIDER_KIMI_INTL.id == "kimi-intl"
     assert PROVIDER_KIMI_INTL.name == "Kimi (International)"
     assert PROVIDER_KIMI_INTL.base_url == "https://api.moonshot.ai/v1"
+    assert PROVIDER_KIMI_INTL.chat_model == "KimiChatModel"
     assert PROVIDER_KIMI_INTL.freeze_url is True
 
 
@@ -50,7 +61,7 @@ def test_kimi_models_list() -> None:
 
 @pytest.fixture
 def isolated_secret_dir(monkeypatch, tmp_path):
-    secret_dir = tmp_path / ".copaw.secret"
+    secret_dir = tmp_path / ".swe.secret"
     monkeypatch.setattr(provider_manager_module, "SECRET_DIR", secret_dir)
     return secret_dir
 

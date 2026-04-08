@@ -164,31 +164,31 @@ def _process_table() -> list[tuple[int, str]]:
     return rows
 
 
-def _matches_copaw_cli_command(command: str, *subcommands: str) -> bool:
-    """Return whether command line looks like a CoPaw CLI invocation."""
+def _matches_swe_cli_command(command: str, *subcommands: str) -> bool:
+    """Return whether command line looks like a SWE CLI invocation."""
     lowered = f" {command.lower()}"
     return any(
         pattern in lowered
         for subcommand in subcommands
         for pattern in (
-            f" -m copaw {subcommand}",
-            f" copaw {subcommand}",
+            f" -m swe {subcommand}",
+            f" swe {subcommand}",
             f"__main__.py {subcommand}",
-            f'copaw.exe" {subcommand}',
-            f"copaw.exe {subcommand}",
+            f'swe.exe" {subcommand}',
+            f"swe.exe {subcommand}",
         )
     )
 
 
-def _is_copaw_service_command(command: str) -> bool:
-    """Return whether the command line looks like a local CoPaw app."""
-    return _matches_copaw_cli_command(command, "app")
+def _is_swe_service_command(command: str) -> bool:
+    """Return whether the command line looks like a local SWE app."""
+    return _matches_swe_cli_command(command, "app")
 
 
-def _is_copaw_wrapper_process(name: str, command: str) -> bool:
-    """Return whether the process looks like a CoPaw CLI wrapper."""
+def _is_swe_wrapper_process(name: str, command: str) -> bool:
+    """Return whether the process looks like a SWE CLI wrapper."""
     lowered_name = name.lower().removesuffix(".exe")
-    return lowered_name == "copaw" or _matches_copaw_cli_command(
+    return lowered_name == "swe" or _matches_swe_cli_command(
         command,
         "app",
         "desktop",
@@ -210,7 +210,7 @@ def _base_url(host: str, port: int) -> str:
 
 
 def _candidate_hosts(host: str | None) -> list[str]:
-    """Return host variants that can reach a local CoPaw service."""
+    """Return host variants that can reach a local SWE service."""
     if not host:
         return []
 

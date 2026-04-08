@@ -20,21 +20,21 @@ class TestMinimalStartup:
 
     def test_provider_manager_not_imported_in_startup(self):
         """ProviderManager should not be imported in _app.py startup path."""
-        import copaw.app._app as app_module
+        import swe.app._app as app_module
 
         # ProviderManager should not be in module namespace
         assert not hasattr(app_module, "ProviderManager")
 
     def test_local_model_manager_not_imported_in_startup(self):
         """LocalModelManager should not be imported in _app.py startup path."""
-        import copaw.app._app as app_module
+        import swe.app._app as app_module
 
         # LocalModelManager should not be in module namespace
         assert not hasattr(app_module, "LocalModelManager")
 
     def test_migration_functions_not_imported_in_startup(self):
         """Migration functions should not be imported in _app.py."""
-        import copaw.app._app as app_module
+        import swe.app._app as app_module
 
         # Migration functions should not be in module namespace
         assert not hasattr(
@@ -47,7 +47,7 @@ class TestMinimalStartup:
     def test_lifespan_only_calls_ensure_default_agent_exists(self):
         """Startup should only ensure default agent exists, not start it."""
         # The function should be imported - it's called inside the lifespan
-        import copaw.app._app as app_module
+        import swe.app._app as app_module
 
         assert hasattr(app_module, "ensure_default_agent_exists")
 
@@ -60,7 +60,7 @@ class TestTenantBootstrapBoundaries:
         tmp_path,
     ):
         """Tenant bootstrap creates directory structure."""
-        from copaw.app.workspace.tenant_pool import TenantWorkspacePool
+        from swe.app.workspace.tenant_pool import TenantWorkspacePool
 
         pool = TenantWorkspacePool(tmp_path / "tenants")
 
@@ -74,11 +74,11 @@ class TestTenantBootstrapBoundaries:
 
     async def test_ensure_bootstrap_does_not_start_workspace(self, tmp_path):
         """Tenant bootstrap does not start workspace runtime."""
-        from copaw.app.workspace.tenant_pool import TenantWorkspacePool
+        from swe.app.workspace.tenant_pool import TenantWorkspacePool
 
         pool = TenantWorkspacePool(tmp_path / "tenants")
 
-        with patch("copaw.app.workspace.tenant_pool.Workspace") as mock_ws:
+        with patch("swe.app.workspace.tenant_pool.Workspace") as mock_ws:
             mock_ws_instance = AsyncMock()
             mock_ws.return_value = mock_ws_instance
 
@@ -93,8 +93,8 @@ class TestTenantBootstrapBoundaries:
         tmp_path,
     ):
         """Tenant bootstrap does not initialize skill pool."""
-        from copaw.app.workspace.tenant_pool import TenantWorkspacePool
-        import copaw.app.workspace.tenant_initializer as init_module
+        from swe.app.workspace.tenant_pool import TenantWorkspacePool
+        import swe.app.workspace.tenant_initializer as init_module
 
         pool = TenantWorkspacePool(tmp_path / "tenants")
 
@@ -107,8 +107,8 @@ class TestTenantBootstrapBoundaries:
 
     async def test_ensure_bootstrap_does_not_create_qa_agent(self, tmp_path):
         """Tenant bootstrap does not create QA agent."""
-        from copaw.app.workspace.tenant_pool import TenantWorkspacePool
-        import copaw.app.workspace.tenant_initializer as init_module
+        from swe.app.workspace.tenant_pool import TenantWorkspacePool
+        import swe.app.workspace.tenant_initializer as init_module
 
         pool = TenantWorkspacePool(tmp_path / "tenants")
 
@@ -121,7 +121,7 @@ class TestTenantBootstrapBoundaries:
 
     async def test_ensure_bootstrap_registers_tenant_entry(self, tmp_path):
         """Tenant bootstrap registers entry in pool."""
-        from copaw.app.workspace.tenant_pool import TenantWorkspacePool
+        from swe.app.workspace.tenant_pool import TenantWorkspacePool
 
         pool = TenantWorkspacePool(tmp_path / "tenants")
 
@@ -134,7 +134,7 @@ class TestTenantBootstrapBoundaries:
 
     async def test_tenants_stay_isolated(self, tmp_path):
         """Different tenants have independent bootstrap state."""
-        from copaw.app.workspace.tenant_pool import TenantWorkspacePool
+        from swe.app.workspace.tenant_pool import TenantWorkspacePool
 
         pool = TenantWorkspacePool(tmp_path / "tenants")
 
@@ -153,14 +153,50 @@ class TestTenantBootstrapBoundaries:
 class TestLazyRuntimeStartup:
     """Tests that runtime starts only on demand."""
 
+    async def test_workspace_start_loads_agent_config_with_tenant_scope(
+        self,
+        tmp_path,
+    ):
+        """Workspace.start uses tenant-aware agent config lookup."""
+        from swe.app.workspace.workspace import Workspace
+
+        workspace_dir = tmp_path / "tenant-a" / "workspaces" / "default"
+        workspace_dir.mkdir(parents=True)
+
+        workspace = Workspace(
+            agent_id="default",
+            workspace_dir=str(workspace_dir),
+            tenant_id="tenant-a",
+        )
+
+        with patch(
+            "swe.app.workspace.workspace.load_agent_config",
+        ) as mock_load_agent:
+            mock_load_agent.return_value = Mock(
+                id="default",
+                name="Tenant Agent",
+                running=Mock(memory_manager_backend="remelight"),
+            )
+            with patch.object(
+                workspace._service_manager,
+                "start_all",
+                new=AsyncMock(),
+            ):
+                await workspace.start()
+
+        mock_load_agent.assert_called_once_with(
+            "default",
+            tenant_id="tenant-a",
+        )
+
     async def test_multi_agent_manager_get_agent_starts_runtime(
         self,
         tmp_path,
     ):
         """MultiAgentManager.get_agent() starts workspace runtime."""
-        from copaw.app.multi_agent_manager import MultiAgentManager
-        from copaw.config.utils import save_config
-        from copaw.config.config import (
+        from swe.app.multi_agent_manager import MultiAgentManager
+        from swe.config.utils import save_config
+        from swe.config.config import (
             Config,
             AgentsConfig,
             AgentProfileRef,
@@ -171,7 +207,7 @@ class TestLazyRuntimeStartup:
         )
 
         # Setup minimal config
-        base_dir = tmp_path / "copaw"
+        base_dir = tmp_path / "swe"
         base_dir.mkdir(parents=True)
 
         config = Config(
@@ -207,13 +243,13 @@ class TestLazyRuntimeStartup:
             json.dump(agent_config, f)
 
         # Mock load_config to use our test config
-        with patch("copaw.app.multi_agent_manager.load_config") as mock_load:
+        with patch("swe.app.multi_agent_manager.load_config") as mock_load:
             mock_load.return_value = config
 
             manager = MultiAgentManager()
 
             with patch(
-                "copaw.app.workspace.workspace.load_agent_config",
+                "swe.app.workspace.workspace.load_agent_config",
             ) as mock_load_agent:
                 mock_load_agent.return_value = Mock(
                     id="default",
@@ -232,7 +268,7 @@ class TestLazyRuntimeStartup:
                     # get_agent should trigger runtime creation
                     # Note: We can't fully test this without mocking Workspace
                     with patch(
-                        "copaw.app.multi_agent_manager.Workspace",
+                        "swe.app.multi_agent_manager.Workspace",
                     ) as mock_ws:
                         mock_ws_instance = AsyncMock()
                         mock_ws.return_value = mock_ws_instance
@@ -245,12 +281,12 @@ class TestLazyRuntimeStartup:
 
     async def test_multi_agent_manager_caches_runtime(self):
         """MultiAgentManager caches workspace runtime."""
-        from copaw.app.multi_agent_manager import MultiAgentManager
+        from swe.app.multi_agent_manager import MultiAgentManager
 
         manager = MultiAgentManager()
 
         # Mock the workspace creation
-        with patch("copaw.app.multi_agent_manager.Workspace") as mock_ws:
+        with patch("swe.app.multi_agent_manager.Workspace") as mock_ws:
             mock_ws_instance = AsyncMock()
             mock_ws.return_value = mock_ws_instance
 
@@ -280,8 +316,8 @@ class TestOnDemandSubsystemInitialization:
 
     async def test_workspace_start_does_not_init_skill_pool(self, tmp_path):
         """Workspace.start() does not initialize skill pool."""
-        from copaw.app.workspace.workspace import Workspace
-        import copaw.app.workspace.workspace as ws_module
+        from swe.app.workspace.workspace import Workspace
+        import swe.app.workspace.workspace as ws_module
 
         # Setup workspace directory
         workspace_dir = tmp_path / "workspace"
@@ -308,7 +344,7 @@ class TestOnDemandSubsystemInitialization:
 
     async def test_provider_manager_initializes_on_demand(self):
         """ProviderManager initializes on first use."""
-        from copaw.providers.provider_manager import ProviderManager
+        from swe.providers.provider_manager import ProviderManager
 
         # Reset any existing instance
         ProviderManager._instance = None
@@ -325,7 +361,7 @@ class TestOnDemandSubsystemInitialization:
 
     async def test_local_model_manager_initializes_on_demand(self):
         """LocalModelManager initializes on first use."""
-        from copaw.local_models.manager import LocalModelManager
+        from swe.local_models.manager import LocalModelManager
 
         # Remove any existing instance
         if hasattr(LocalModelManager, "_instance"):
@@ -348,7 +384,7 @@ class TestStartupLogging:
     def test_startup_logs_minimal_initialization(self):
         """Startup logs indicate minimal initialization."""
         # This is verified by examining the log messages in _app.py
-        from copaw.app._app import lifespan
+        from swe.app._app import lifespan
 
         # The lifespan function should contain logging about deferred initialization
         import inspect
@@ -364,7 +400,7 @@ class TestMiddlewareIntegration:
 
     async def test_middleware_calls_ensure_bootstrap_not_get_or_create(self):
         """Middleware should call ensure_bootstrap, not get_or_create."""
-        from copaw.app.middleware.tenant_workspace import (
+        from swe.app.middleware.tenant_workspace import (
             TenantWorkspaceMiddleware,
         )
 
@@ -393,7 +429,7 @@ class TestMiddlewareIntegration:
 
     async def test_middleware_returns_none_for_workspace(self):
         """Middleware returns None since runtime is not started."""
-        from copaw.app.middleware.tenant_workspace import (
+        from swe.app.middleware.tenant_workspace import (
             TenantWorkspaceMiddleware,
         )
 

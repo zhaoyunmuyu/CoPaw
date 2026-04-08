@@ -16,37 +16,37 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, AsyncMock
 
-_CONTEXT_FILE = Path(__file__).parent.parent.parent.parent / "src" / "copaw" / "config" / "context.py"
-_ORIGINAL_CONTEXT_MODULE = sys.modules.get("copaw.config.context")
+_CONTEXT_FILE = Path(__file__).parent.parent.parent.parent / "src" / "swe" / "config" / "context.py"
+_ORIGINAL_CONTEXT_MODULE = sys.modules.get("swe.config.context")
 _context_spec = importlib.util.spec_from_file_location(
-    "copaw.config.context",
+    "swe.config.context",
     _CONTEXT_FILE,
 )
 context_module = importlib.util.module_from_spec(_context_spec)
-sys.modules["copaw.config.context"] = context_module
+sys.modules["swe.config.context"] = context_module
 assert _context_spec is not None and _context_spec.loader is not None
 _context_spec.loader.exec_module(context_module)
 
-_MIDDLEWARE_FILE = Path(__file__).parent.parent.parent.parent / "src" / "copaw" / "app" / "middleware" / "tenant_identity.py"
+_MIDDLEWARE_FILE = Path(__file__).parent.parent.parent.parent / "src" / "swe" / "app" / "middleware" / "tenant_identity.py"
 _PACKAGE_PATH = str(_MIDDLEWARE_FILE.parent)
-if "copaw.app.middleware" not in sys.modules:
-    middleware_pkg = types.ModuleType("copaw.app.middleware")
+if "swe.app.middleware" not in sys.modules:
+    middleware_pkg = types.ModuleType("swe.app.middleware")
     middleware_pkg.__path__ = [_PACKAGE_PATH]
-    sys.modules["copaw.app.middleware"] = middleware_pkg
+    sys.modules["swe.app.middleware"] = middleware_pkg
 
 _middleware_spec = importlib.util.spec_from_file_location(
-    "copaw.app.middleware.tenant_identity",
+    "swe.app.middleware.tenant_identity",
     _MIDDLEWARE_FILE,
 )
 tenant_identity = importlib.util.module_from_spec(_middleware_spec)
-sys.modules["copaw.app.middleware.tenant_identity"] = tenant_identity
+sys.modules["swe.app.middleware.tenant_identity"] = tenant_identity
 assert _middleware_spec is not None and _middleware_spec.loader is not None
 _middleware_spec.loader.exec_module(tenant_identity)
 
 if _ORIGINAL_CONTEXT_MODULE is None:
-    sys.modules.pop("copaw.config.context", None)
+    sys.modules.pop("swe.config.context", None)
 else:
-    sys.modules["copaw.config.context"] = _ORIGINAL_CONTEXT_MODULE
+    sys.modules["swe.config.context"] = _ORIGINAL_CONTEXT_MODULE
 
 
 def build_test_app():
@@ -97,7 +97,7 @@ class TestTenantIdentityExemptions:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_health_routes_exempt(self):
         """Health check routes are exempt from tenant requirements."""
-        from copaw.app.middleware.tenant_identity import is_tenant_exempt
+        from swe.app.middleware.tenant_identity import is_tenant_exempt
 
         assert is_tenant_exempt("/health") is True
         assert is_tenant_exempt("/healthz") is True
@@ -108,14 +108,14 @@ class TestTenantIdentityExemptions:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_version_route_exempt(self):
         """Version endpoint is exempt from tenant requirements."""
-        from copaw.app.middleware.tenant_identity import is_tenant_exempt
+        from swe.app.middleware.tenant_identity import is_tenant_exempt
 
         assert is_tenant_exempt("/api/version") is True
 
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_docs_routes_exempt(self):
         """Documentation routes are exempt from tenant requirements."""
-        from copaw.app.middleware.tenant_identity import is_tenant_exempt
+        from swe.app.middleware.tenant_identity import is_tenant_exempt
 
         assert is_tenant_exempt("/docs") is True
         assert is_tenant_exempt("/redoc") is True
@@ -124,7 +124,7 @@ class TestTenantIdentityExemptions:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_auth_routes_exempt(self):
         """Auth routes are exempt from tenant requirements."""
-        from copaw.app.middleware.tenant_identity import is_tenant_exempt
+        from swe.app.middleware.tenant_identity import is_tenant_exempt
 
         assert is_tenant_exempt("/api/auth/login") is True
         assert is_tenant_exempt("/api/auth/register") is True
@@ -132,7 +132,7 @@ class TestTenantIdentityExemptions:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_static_assets_exempt(self):
         """Static asset routes are exempt from tenant requirements."""
-        from copaw.app.middleware.tenant_identity import is_tenant_exempt
+        from swe.app.middleware.tenant_identity import is_tenant_exempt
 
         assert is_tenant_exempt("/logo.png") is True
         assert is_tenant_exempt("/dark-logo.png") is True
@@ -142,7 +142,7 @@ class TestTenantIdentityExemptions:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_stateful_routes_not_exempt(self):
         """Stateful API routes are not exempt from tenant requirements."""
-        from copaw.app.middleware.tenant_identity import is_tenant_exempt
+        from swe.app.middleware.tenant_identity import is_tenant_exempt
 
         assert is_tenant_exempt("/api/settings") is False
         assert is_tenant_exempt("/api/agents") is False
@@ -156,7 +156,7 @@ class TestTenantIdValidation:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_valid_tenant_ids(self):
         """Valid tenant IDs pass validation."""
-        from copaw.app.middleware.tenant_identity import TenantIdentityMiddleware
+        from swe.app.middleware.tenant_identity import TenantIdentityMiddleware
 
         middleware = TenantIdentityMiddleware(app=Mock())
 
@@ -171,7 +171,7 @@ class TestTenantIdValidation:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_invalid_tenant_ids_path_traversal(self):
         """Tenant IDs with path traversal are rejected."""
-        from copaw.app.middleware.tenant_identity import TenantIdentityMiddleware
+        from swe.app.middleware.tenant_identity import TenantIdentityMiddleware
 
         middleware = TenantIdentityMiddleware(app=Mock())
 
@@ -182,7 +182,7 @@ class TestTenantIdValidation:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_invalid_tenant_ids_empty_or_too_long(self):
         """Empty or too long tenant IDs are rejected."""
-        from copaw.app.middleware.tenant_identity import TenantIdentityMiddleware
+        from swe.app.middleware.tenant_identity import TenantIdentityMiddleware
 
         middleware = TenantIdentityMiddleware(app=Mock())
 
@@ -192,7 +192,7 @@ class TestTenantIdValidation:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_invalid_tenant_ids_control_chars(self):
         """Tenant IDs with control characters are rejected."""
-        from copaw.app.middleware.tenant_identity import TenantIdentityMiddleware
+        from swe.app.middleware.tenant_identity import TenantIdentityMiddleware
 
         middleware = TenantIdentityMiddleware(app=Mock())
 
@@ -207,7 +207,7 @@ class TestTenantContextHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_get_tenant_id_from_request(self):
         """get_tenant_id_from_request extracts tenant ID from state."""
-        from copaw.app.middleware.tenant_identity import get_tenant_id_from_request
+        from swe.app.middleware.tenant_identity import get_tenant_id_from_request
 
         mock_request = Mock()
         mock_request.state = Mock()
@@ -219,7 +219,7 @@ class TestTenantContextHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_get_tenant_id_returns_none_when_not_set(self):
         """get_tenant_id_from_request returns None when not set."""
-        from copaw.app.middleware.tenant_identity import get_tenant_id_from_request
+        from swe.app.middleware.tenant_identity import get_tenant_id_from_request
 
         mock_request = Mock()
         mock_request.state = Mock()
@@ -231,7 +231,7 @@ class TestTenantContextHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_get_user_id_from_request(self):
         """get_user_id_from_request extracts user ID from state."""
-        from copaw.app.middleware.tenant_identity import get_user_id_from_request
+        from swe.app.middleware.tenant_identity import get_user_id_from_request
 
         mock_request = Mock()
         mock_request.state = Mock()
@@ -243,7 +243,7 @@ class TestTenantContextHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_require_tenant_id_raises_when_missing(self):
         """require_tenant_id raises HTTPException when missing."""
-        from copaw.app.middleware.tenant_identity import require_tenant_id
+        from swe.app.middleware.tenant_identity import require_tenant_id
         from fastapi import HTTPException
 
         mock_request = Mock()
@@ -258,7 +258,7 @@ class TestTenantContextHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_require_tenant_id_returns_value_when_set(self):
         """require_tenant_id returns tenant ID when set."""
-        from copaw.app.middleware.tenant_identity import require_tenant_id
+        from swe.app.middleware.tenant_identity import require_tenant_id
 
         mock_request = Mock()
         mock_request.state = Mock()
@@ -270,7 +270,7 @@ class TestTenantContextHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_require_user_id_raises_when_missing(self):
         """require_user_id raises HTTPException when missing."""
-        from copaw.app.middleware.tenant_identity import require_user_id
+        from swe.app.middleware.tenant_identity import require_user_id
         from fastapi import HTTPException
 
         mock_request = Mock()
@@ -284,7 +284,7 @@ class TestTenantContextHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_require_user_id_returns_value_when_set(self):
         """require_user_id returns user ID when set."""
-        from copaw.app.middleware.tenant_identity import require_user_id
+        from swe.app.middleware.tenant_identity import require_user_id
 
         mock_request = Mock()
         mock_request.state = Mock()
@@ -300,14 +300,14 @@ class TestTenantExemptRoutes:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_exempt_routes_is_frozenset(self):
         """TENANT_EXEMPT_ROUTES is a frozenset for immutability."""
-        from copaw.app.middleware.tenant_identity import TENANT_EXEMPT_ROUTES
+        from swe.app.middleware.tenant_identity import TENANT_EXEMPT_ROUTES
 
         assert isinstance(TENANT_EXEMPT_ROUTES, frozenset)
 
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_common_routes_exempt(self):
         """Common system routes are in exempt set."""
-        from copaw.app.middleware.tenant_identity import TENANT_EXEMPT_ROUTES
+        from swe.app.middleware.tenant_identity import TENANT_EXEMPT_ROUTES
 
         assert "/health" in TENANT_EXEMPT_ROUTES
         assert "/api/version" in TENANT_EXEMPT_ROUTES

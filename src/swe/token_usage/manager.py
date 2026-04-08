@@ -72,6 +72,60 @@ class TokenUsageManager:
         self._path: Path = (workspace_dir / TOKEN_USAGE_FILE).expanduser()
         self._file_lock = asyncio.Lock()
 
+    def _normalize_data(self, raw: object) -> dict[str, dict[str, dict]]:
+        """Normalize persisted token usage payloads into the current shape."""
+        if isinstance(raw, dict):
+            return raw
+
+        if not isinstance(raw, list):
+            logger.warning(
+                "Unexpected token usage payload type in %s: %s",
+                self._path,
+                type(raw).__name__,
+            )
+            return {}
+
+        normalized: dict[str, dict[str, dict]] = {}
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+
+            date_str = item.get("date")
+            model_name = item.get("model_name") or item.get("model")
+            if not isinstance(date_str, str) or not isinstance(
+                model_name,
+                str,
+            ):
+                continue
+
+            provider_id = item.get("provider_id", "")
+            if not isinstance(provider_id, str):
+                provider_id = ""
+
+            composite_key = f"{provider_id}:{model_name}"
+            by_key = normalized.setdefault(date_str, {})
+            entry = by_key.setdefault(
+                composite_key,
+                {
+                    "provider_id": provider_id,
+                    "model_name": model_name,
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "call_count": 0,
+                },
+            )
+            entry["prompt_tokens"] += int(item.get("prompt_tokens", 0) or 0)
+            entry["completion_tokens"] += int(
+                item.get("completion_tokens", 0) or 0
+            )
+            entry["call_count"] += int(item.get("call_count", 0) or 0)
+
+        logger.info(
+            "Normalized legacy token usage payload in %s from list to dict",
+            self._path,
+        )
+        return normalized
+
     async def _load_data(self) -> dict:
         """Load full token usage data from disk."""
         if not self._path.exists():
@@ -83,7 +137,9 @@ class TokenUsageManager:
                 encoding="utf-8",
             ) as f:
                 raw = await f.read()
-            return json.loads(raw) if raw.strip() else {}
+            return self._normalize_data(
+                json.loads(raw) if raw.strip() else {},
+            )
         except (json.JSONDecodeError, OSError) as e:
             logger.warning(
                 "Failed to read token usage file %s: %s",

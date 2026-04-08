@@ -12,43 +12,43 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 SRC_ROOT = Path(__file__).parent.parent.parent.parent / "src"
-_MODELS_FILE = SRC_ROOT / "copaw" / "app" / "crons" / "models.py"
-_EXECUTOR_FILE = SRC_ROOT / "copaw" / "app" / "crons" / "executor.py"
+_MODELS_FILE = SRC_ROOT / "swe" / "app" / "crons" / "models.py"
+_EXECUTOR_FILE = SRC_ROOT / "swe" / "app" / "crons" / "executor.py"
 
 
-if "copaw.app" not in sys.modules:
-    app_pkg = types.ModuleType("copaw.app")
-    app_pkg.__path__ = [str(SRC_ROOT / "copaw" / "app")]
-    sys.modules["copaw.app"] = app_pkg
+if "swe.app" not in sys.modules:
+    app_pkg = types.ModuleType("swe.app")
+    app_pkg.__path__ = [str(SRC_ROOT / "swe" / "app")]
+    sys.modules["swe.app"] = app_pkg
 
-if "copaw.app.crons" not in sys.modules:
-    crons_pkg = types.ModuleType("copaw.app.crons")
-    crons_pkg.__path__ = [str(SRC_ROOT / "copaw" / "app" / "crons")]
-    sys.modules["copaw.app.crons"] = crons_pkg
+if "swe.app.crons" not in sys.modules:
+    crons_pkg = types.ModuleType("swe.app.crons")
+    crons_pkg.__path__ = [str(SRC_ROOT / "swe" / "app" / "crons")]
+    sys.modules["swe.app.crons"] = crons_pkg
 
-channels_schema = types.ModuleType("copaw.app.channels.schema")
+channels_schema = types.ModuleType("swe.app.channels.schema")
 channels_schema.DEFAULT_CHANNEL = "console"
-sys.modules["copaw.app.channels.schema"] = channels_schema
+sys.modules["swe.app.channels.schema"] = channels_schema
 
-context_module = importlib.import_module("copaw.config.context")
-importlib.import_module("copaw.app.tenant_context")
+context_module = importlib.import_module("swe.config.context")
+importlib.import_module("swe.app.tenant_context")
 
 models_spec = importlib.util.spec_from_file_location(
-    "copaw.app.crons.models",
+    "swe.app.crons.models",
     _MODELS_FILE,
 )
 models_module = importlib.util.module_from_spec(models_spec)
-sys.modules["copaw.app.crons.models"] = models_module
+sys.modules["swe.app.crons.models"] = models_module
 assert models_spec is not None and models_spec.loader is not None
 models_spec.loader.exec_module(models_module)
 
 
 executor_spec = importlib.util.spec_from_file_location(
-    "copaw.app.crons.executor",
+    "swe.app.crons.executor",
     _EXECUTOR_FILE,
 )
 executor_module = importlib.util.module_from_spec(executor_spec)
-sys.modules["copaw.app.crons.executor"] = executor_module
+sys.modules["swe.app.crons.executor"] = executor_module
 assert executor_spec is not None and executor_spec.loader is not None
 executor_spec.loader.exec_module(executor_module)
 

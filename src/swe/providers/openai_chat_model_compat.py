@@ -12,7 +12,7 @@ from agentscope.model import OpenAIChatModel
 from agentscope.model._model_response import ChatResponse
 from pydantic import BaseModel
 
-from copaw.local_models.tag_parser import (
+from swe.local_models.tag_parser import (
     parse_tool_calls_from_text,
     text_contains_tool_call_tag,
 )

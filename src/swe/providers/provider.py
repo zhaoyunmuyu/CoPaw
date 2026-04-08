@@ -183,6 +183,13 @@ class Provider(ProviderInfo, ABC):
     def get_chat_model_cls(self) -> Type[ChatModelBase]:
         """Return the chat model class associated with this provider."""
         import agentscope.model
+        from swe.providers.chat_model_registry import (
+            get_local_chat_model_cls,
+        )
+
+        chat_model_cls = get_local_chat_model_cls(self.chat_model)
+        if chat_model_cls is not None:
+            return chat_model_cls
 
         chat_model_cls = getattr(
             agentscope.model,

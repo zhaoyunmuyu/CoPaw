@@ -1,8 +1,10 @@
+// ==================== 组件引入方式变更 (Kun He) ====================
 import {
   AgentScopeRuntimeWebUI,
   IAgentScopeRuntimeWebUIOptions,
   type IAgentScopeRuntimeWebUIRef,
 } from "@/components/agentscope-chat";
+// ==================== 组件引入方式变更结束 ====================
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Modal, Result, Tooltip } from "antd";
 import { useAppMessage } from "../../hooks/useAppMessage";
@@ -20,7 +22,16 @@ import type { ProviderInfo, ModelInfo } from "../../api/types";
 import ModelSelector from "./ModelSelector";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAgentStore } from "../../stores/agentStore";
+// ==================== 组件引入方式变更 (Kun He) ====================
 import { useChatAnywhereInput } from "@/components/agentscope-chat";
+// ==================== 组件引入方式变更结束 ====================
+// ==================== userId 统一整改 (Kun He) ====================
+// 使用统一的 getUserId/getChannel helper
+import { getUserId, getChannel } from "../../utils/identity";
+// ==================== userId 统一整改结束 ====================
+// ==================== 品牌主题 (Kun He) ====================
+import { useBrandTheme } from "../../contexts/BrandThemeContext";
+// ==================== 品牌主题结束 ====================
 import styles from "./index.module.less";
 import { IconButton } from "@agentscope-ai/design";
 import ChatActionGroup from "./components/ChatActionGroup";
@@ -72,8 +83,10 @@ function renderSuggestionLabel(command: string, description: string) {
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_USER_ID = "default";
-const DEFAULT_CHANNEL = "console";
+// ==================== userId 统一整改 (Kun He) ====================
+// DEFAULT_USER_ID 和 DEFAULT_CHANNEL 已移至 constants/identity.ts
+// 通过 getUserId() 和 getChannel() 获取
+// ==================== userId 统一整改结束 ====================
 
 // ---------------------------------------------------------------------------
 // Custom hooks
@@ -263,6 +276,10 @@ export default function ChatPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { isDark } = useTheme();
+  // ==================== 品牌主题 (Kun He) ====================
+  // 获取动态品牌配置，用于 welcome avatar
+  const { theme: brandTheme } = useBrandTheme();
+  // ==================== 品牌主题结束 ====================
   const chatId = useMemo(() => {
     const match = location.pathname.match(/^\/chat\/(.+)$/);
     return match?.[1];
@@ -453,8 +470,11 @@ export default function ChatPage() {
       const requestBody = {
         input: rewrittenInput,
         session_id: window.currentSessionId || session?.session_id || "",
-        user_id: window.currentUserId || session?.user_id || DEFAULT_USER_ID,
-        channel: window.currentChannel || session?.channel || DEFAULT_CHANNEL,
+        // ==================== userId 统一整改 (Kun He) ====================
+        // 使用 getUserId()/getChannel() 获取，优先级：iframe > window > session > default
+        user_id: getUserId(session?.user_id),
+        channel: getChannel(session?.channel),
+        // ==================== userId 统一整改结束 ====================
         stream: true,
         ...biz_params,
       };
@@ -581,9 +601,13 @@ export default function ChatPage() {
       },
       welcome: {
         ...i18nConfig.welcome,
-        nick: "CoPaw",
-        avatar:
-          "https://gw.alicdn.com/imgextra/i2/O1CN01pyXzjQ1EL1PuZMlSd_!!6000000000334-2-tps-288-288.png",
+        nick: brandTheme.brandName,
+        // ==================== 品牌主题 (Kun He) ====================
+        // 使用动态品牌 avatar
+        avatar: brandTheme.avatar
+          ? `${import.meta.env.BASE_URL}${brandTheme.avatar.replace(/^\//, "")}`
+          : undefined,
+        // ==================== 品牌主题结束 ====================
       },
       sender: {
         ...(i18nConfig as any)?.sender,
@@ -647,8 +671,11 @@ export default function ChatPage() {
             body: JSON.stringify({
               reconnect: true,
               session_id: window.currentSessionId || data.session_id,
-              user_id: window.currentUserId || DEFAULT_USER_ID,
-              channel: window.currentChannel || DEFAULT_CHANNEL,
+              // ==================== userId 统一整改 (Kun He) ====================
+              // 使用 getUserId()/getChannel() 获取
+              user_id: getUserId(),
+              channel: getChannel(),
+              // ==================== userId 统一整改结束 ====================
             }),
             signal: data.signal,
           });

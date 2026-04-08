@@ -1,5 +1,5 @@
 {
-  "name": "copaw-console",
+  "name": "swe-console",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -76,5 +76,5 @@
     "typescript-eslint": "^8.30.1",
     "vite": "^6.3.5"
   },
-  "repository": "https://github.com/agentscope-ai/agentscope-runtime.git"
+  "repository": ""
 }

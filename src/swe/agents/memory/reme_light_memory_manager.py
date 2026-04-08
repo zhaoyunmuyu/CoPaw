@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=too-many-branches
 # mypy: ignore-errors
-"""ReMeLight-backed memory manager for CoPaw agents."""
+"""ReMeLight-backed memory manager for SWE agents."""
 import importlib.metadata
 import json
 import logging
@@ -14,17 +14,20 @@ from typing import TYPE_CHECKING
 from agentscope.message import Msg, TextBlock
 from agentscope.tool import Toolkit, ToolResponse
 
-from copaw.agents.memory.base_memory_manager import BaseMemoryManager
-from copaw.agents.model_factory import create_model_and_formatter
-from copaw.agents.tools import read_file, write_file, edit_file
-from copaw.agents.utils import get_copaw_token_counter
-from copaw.config import load_config
-from copaw.config.config import load_agent_config
-from copaw.config.context import (
+# Pre-import heavy dependencies to avoid first-request latency
+from reme.reme_light import ReMeLight
+
+from swe.agents.memory.base_memory_manager import BaseMemoryManager
+from swe.agents.model_factory import create_model_and_formatter
+from swe.agents.tools import read_file, write_file, edit_file
+from swe.agents.utils import get_swe_token_counter
+from swe.config import load_config
+from swe.config.config import load_agent_config
+from swe.config.context import (
     set_current_workspace_dir,
     set_current_recent_max_bytes,
 )
-from copaw.constant import EnvVarLoader
+from swe.constant import EnvVarLoader
 
 if TYPE_CHECKING:
     from reme.memory.file_based.reme_in_memory_memory import ReMeInMemoryMemory
@@ -35,7 +38,7 @@ _EXPECTED_REME_VERSION = "0.3.1.8"
 
 
 class ReMeLightMemoryManager(BaseMemoryManager):
-    """Memory manager that wraps ReMeLight for CoPaw agents via composition.
+    """Memory manager that wraps ReMeLight for SWE agents via composition.
 
     Holds a ``ReMeLight`` instance (``self._reme``) and delegates all
     lifecycle / search / compaction calls to it.
@@ -90,8 +93,6 @@ See: https://docs.trychroma.com/docs/overview/troubleshooting#sqlite
         else:
             memory_backend = backend_env
 
-        from reme.reme_light import ReMeLight
-
         emb_config = self.get_embedding_config()
         vector_enabled = bool(emb_config["base_url"]) and bool(
             emb_config["model_name"],
@@ -117,7 +118,7 @@ See: https://docs.trychroma.com/docs/overview/troubleshooting#sqlite
             default_embedding_model_config=emb_config,
             default_file_store_config={
                 "backend": memory_backend,
-                "store_name": "copaw",
+                "store_name": "swe",
                 "vector_enabled": vector_enabled,
                 "fts_enabled": fts_enabled,
             },
@@ -271,7 +272,7 @@ See: https://docs.trychroma.com/docs/overview/troubleshooting#sqlite
             messages=messages,
             as_llm=self.chat_model,
             as_llm_formatter=self.formatter,
-            as_token_counter=get_copaw_token_counter(agent_config),
+            as_token_counter=get_swe_token_counter(agent_config),
             language=agent_config.language,
             max_input_length=agent_config.running.max_input_length,
             compact_ratio=cc.memory_compact_ratio,
@@ -305,7 +306,7 @@ See: https://docs.trychroma.com/docs/overview/troubleshooting#sqlite
                 )
                 logger.error(
                     "Please upload the log: "
-                    "https://github.com/agentscope-ai/CoPaw/issues",
+                    "https://github.com/agentscope-ai/SWE/issues",
                 )
             except Exception as _e:
                 logger.error(f"Failed to save invalid compact result: {_e}")
@@ -330,7 +331,7 @@ See: https://docs.trychroma.com/docs/overview/troubleshooting#sqlite
             messages=messages,
             as_llm=self.chat_model,
             as_llm_formatter=self.formatter,
-            as_token_counter=get_copaw_token_counter(agent_config),
+            as_token_counter=get_swe_token_counter(agent_config),
             toolkit=self.summary_toolkit,
             language=agent_config.language,
             max_input_length=agent_config.running.max_input_length,
@@ -369,5 +370,5 @@ See: https://docs.trychroma.com/docs/overview/troubleshooting#sqlite
             return None
         agent_config = load_agent_config(self.agent_id)
         return self._reme.get_in_memory_memory(
-            as_token_counter=get_copaw_token_counter(agent_config),
+            as_token_counter=get_swe_token_counter(agent_config),
         )

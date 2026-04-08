@@ -53,7 +53,7 @@ def _load_config_tool_guard():
     Returns ``None`` when config cannot be loaded.
     """
     try:
-        from copaw.config import load_config
+        from swe.config import load_config
 
         return load_config().security.tool_guard
     except Exception:
@@ -67,7 +67,7 @@ def resolve_guarded_tools(
 
     Priority:
     1) constructor-provided ``user_defined``
-    2) ``COPAW_TOOL_GUARD_TOOLS`` env var
+    2) ``SWE_TOOL_GUARD_TOOLS`` env var
     3) ``config.json`` -> ``security.tool_guard.guarded_tools``
     4) built-in high-risk default set
 
@@ -79,7 +79,7 @@ def resolve_guarded_tools(
     if user_defined is not None:
         return _parse_guarded_tokens(user_defined)
 
-    raw = os.environ.get("COPAW_TOOL_GUARD_TOOLS")
+    raw = os.environ.get("SWE_TOOL_GUARD_TOOLS")
     if raw is not None:
         normalized = raw.strip().lower()
         if normalized in {"*", "all"}:
@@ -102,7 +102,7 @@ def resolve_denied_tools(
 
     Priority:
     1) constructor-provided ``user_defined``
-    2) ``COPAW_TOOL_GUARD_DENIED_TOOLS`` env var (comma-separated)
+    2) ``SWE_TOOL_GUARD_DENIED_TOOLS`` env var (comma-separated)
     3) ``config.json`` -> ``security.tool_guard.denied_tools``
     4) built-in default (empty)
 
@@ -114,7 +114,7 @@ def resolve_denied_tools(
     if user_defined is not None:
         return set(user_defined)
 
-    raw = os.environ.get("COPAW_TOOL_GUARD_DENIED_TOOLS")
+    raw = os.environ.get("SWE_TOOL_GUARD_DENIED_TOOLS")
     if raw is not None:
         return {t.strip() for t in raw.split(",") if t.strip()}
 

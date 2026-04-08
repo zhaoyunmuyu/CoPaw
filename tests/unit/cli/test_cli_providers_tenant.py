@@ -10,7 +10,7 @@ from click.testing import CliRunner
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
-from copaw.cli.providers_cmd import models_group
+from swe.cli.providers_cmd import models_group
 
 
 class TestCLITenantIdOption:
@@ -22,10 +22,10 @@ class TestCLITenantIdOption:
 
         # Test with list command - should not error on unknown option
         with patch(
-            "copaw.cli.providers_cmd._all_provider_objects",
+            "swe.cli.providers_cmd._all_provider_objects",
             return_value=[],
         ):
-            with patch("copaw.cli.providers_cmd.ProviderManager") as mock_pm:
+            with patch("swe.cli.providers_cmd.ProviderManager") as mock_pm:
                 mock_manager = MagicMock()
                 mock_manager.get_active_model.return_value = None
                 mock_pm.get_instance.return_value = mock_manager
@@ -43,10 +43,10 @@ class TestCLITenantIdOption:
         runner = CliRunner()
 
         with patch(
-            "copaw.cli.providers_cmd._all_provider_objects",
+            "swe.cli.providers_cmd._all_provider_objects",
             return_value=[],
         ):
-            with patch("copaw.cli.providers_cmd.ProviderManager") as mock_pm:
+            with patch("swe.cli.providers_cmd.ProviderManager") as mock_pm:
                 mock_manager = MagicMock()
                 mock_manager.get_active_model.return_value = None
                 mock_pm.get_instance.return_value = mock_manager
@@ -66,13 +66,13 @@ class TestCLITenantProviderManager:
         """list command uses tenant-specific ProviderManager."""
         runner = CliRunner()
 
-        with patch("copaw.cli.providers_cmd.ProviderManager") as mock_pm_class:
+        with patch("swe.cli.providers_cmd.ProviderManager") as mock_pm_class:
             mock_manager = MagicMock()
             mock_manager.get_active_model.return_value = None
             mock_pm_class.get_instance.return_value = mock_manager
 
             with patch(
-                "copaw.cli.providers_cmd._all_provider_objects",
+                "swe.cli.providers_cmd._all_provider_objects",
                 return_value=[],
             ):
                 result = runner.invoke(
@@ -87,13 +87,13 @@ class TestCLITenantProviderManager:
         """list command uses default tenant when no --tenant-id."""
         runner = CliRunner()
 
-        with patch("copaw.cli.providers_cmd.ProviderManager") as mock_pm_class:
+        with patch("swe.cli.providers_cmd.ProviderManager") as mock_pm_class:
             mock_manager = MagicMock()
             mock_manager.get_active_model.return_value = None
             mock_pm_class.get_instance.return_value = mock_manager
 
             with patch(
-                "copaw.cli.providers_cmd._all_provider_objects",
+                "swe.cli.providers_cmd._all_provider_objects",
                 return_value=[],
             ):
                 result = runner.invoke(models_group, ["list"])
@@ -105,7 +105,7 @@ class TestCLITenantProviderManager:
         """add-provider command uses tenant-specific ProviderManager."""
         runner = CliRunner()
 
-        with patch("copaw.cli.providers_cmd.ProviderManager") as mock_pm_class:
+        with patch("swe.cli.providers_cmd.ProviderManager") as mock_pm_class:
             mock_manager = MagicMock()
             mock_manager.add_custom_provider = AsyncMock(
                 return_value=MagicMock(id="test-provider"),
@@ -133,7 +133,7 @@ class TestCLITenantProviderManager:
         """remove-provider command uses tenant-specific ProviderManager."""
         runner = CliRunner()
 
-        with patch("copaw.cli.providers_cmd.ProviderManager") as mock_pm_class:
+        with patch("swe.cli.providers_cmd.ProviderManager") as mock_pm_class:
             mock_manager = MagicMock()
             mock_manager.builtin_providers = {"openai", "anthropic"}
             mock_manager.remove_custom_provider.return_value = True
@@ -157,7 +157,7 @@ class TestCLITenantProviderManager:
         """add-model command uses tenant-specific ProviderManager."""
         runner = CliRunner()
 
-        with patch("copaw.cli.providers_cmd.ProviderManager") as mock_pm_class:
+        with patch("swe.cli.providers_cmd.ProviderManager") as mock_pm_class:
             mock_manager = MagicMock()
             mock_provider = MagicMock()
             mock_provider.add_model = AsyncMock(return_value=(True, ""))
@@ -185,7 +185,7 @@ class TestCLITenantProviderManager:
         """remove-model command uses tenant-specific ProviderManager."""
         runner = CliRunner()
 
-        with patch("copaw.cli.providers_cmd.ProviderManager") as mock_pm_class:
+        with patch("swe.cli.providers_cmd.ProviderManager") as mock_pm_class:
             mock_manager = MagicMock()
             mock_provider = MagicMock()
             mock_provider.delete_model = AsyncMock(return_value=(True, ""))
@@ -215,7 +215,7 @@ class TestCLITenantIsolation:
         """Different tenants get different ProviderManager instances."""
         runner = CliRunner()
 
-        with patch("copaw.cli.providers_cmd.ProviderManager") as mock_pm_class:
+        with patch("swe.cli.providers_cmd.ProviderManager") as mock_pm_class:
             mock_manager_a = MagicMock()
             mock_manager_a.get_active_model.return_value = None
             mock_manager_b = MagicMock()
@@ -230,7 +230,7 @@ class TestCLITenantIsolation:
             mock_pm_class.get_instance.side_effect = get_instance
 
             with patch(
-                "copaw.cli.providers_cmd._all_provider_objects",
+                "swe.cli.providers_cmd._all_provider_objects",
                 return_value=[],
             ):
                 # Call for tenant-a
@@ -261,13 +261,13 @@ class TestCLIBackwardCompatibility:
         """Commands work without --tenant-id for backward compatibility."""
         runner = CliRunner()
 
-        with patch("copaw.cli.providers_cmd.ProviderManager") as mock_pm_class:
+        with patch("swe.cli.providers_cmd.ProviderManager") as mock_pm_class:
             mock_manager = MagicMock()
             mock_manager.get_active_model.return_value = None
             mock_pm_class.get_instance.return_value = mock_manager
 
             with patch(
-                "copaw.cli.providers_cmd._all_provider_objects",
+                "swe.cli.providers_cmd._all_provider_objects",
                 return_value=[],
             ):
                 result = runner.invoke(models_group, ["list"])

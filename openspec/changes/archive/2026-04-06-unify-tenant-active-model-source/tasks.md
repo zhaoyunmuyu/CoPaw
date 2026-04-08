@@ -1,14 +1,14 @@
 ## 1. Runtime active model source unification
 
-- [x] 1.1 Audit and update `src/copaw/providers/provider_manager.py` so tenant-aware active model reads and writes are the single supported path
-- [x] 1.2 Refactor `src/copaw/agents/model_factory.py` to resolve active model from tenant-aware `ProviderManager` instead of `TenantModelContext` / `tenant_models.json`
-- [x] 1.3 Refactor `src/copaw/agents/prompt.py` so active model info and multimodal capability checks use provider-backed active model state
-- [x] 1.4 Refactor `src/copaw/agents/react_agent.py` logging to use the provider-backed active model source
+- [x] 1.1 Audit and update `src/swe/providers/provider_manager.py` so tenant-aware active model reads and writes are the single supported path
+- [x] 1.2 Refactor `src/swe/agents/model_factory.py` to resolve active model from tenant-aware `ProviderManager` instead of `TenantModelContext` / `tenant_models.json`
+- [x] 1.3 Refactor `src/swe/agents/prompt.py` so active model info and multimodal capability checks use provider-backed active model state
+- [x] 1.4 Refactor `src/swe/agents/react_agent.py` logging to use the provider-backed active model source
 
 ## 2. Request context and API consolidation
 
 - [x] 2.1 Remove or replace `TenantWorkspaceMiddleware` runtime loading of full `TenantModelConfig`
-- [x] 2.2 Update `src/copaw/app/routers/providers.py` so `/models/active` is the canonical tenant active-model API backed by `ProviderManager`
+- [x] 2.2 Update `src/swe/app/routers/providers.py` so `/models/active` is the canonical tenant active-model API backed by `ProviderManager`
 - [x] 2.3 Decide the fate of `GET /providers` and either deprecate it or reimplement it as a provider-backed compatibility view without `tenant_models.json`
 - [x] 2.4 Add short-term backend compatibility for legacy `scope=agent` requests while preserving tenant-level active-model semantics
 
@@ -16,7 +16,7 @@
 
 - [x] 3.1 Implement one-time recovery/migration from legacy `tenant_models.json` when `providers/active_model.json` is missing
 - [x] 3.2 Remove active model write paths that persist or depend on `tenant_models.json`
-- [x] 3.3 Reduce `src/copaw/tenant_models/` runtime responsibility so it is no longer on the main active-model path
+- [x] 3.3 Reduce `src/swe/tenant_models/` runtime responsibility so it is no longer on the main active-model path
 
 ## 4. Frontend alignment
 

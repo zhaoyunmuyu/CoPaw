@@ -13,17 +13,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 import pytest
 
-config_stub = types.ModuleType("copaw.config.config")
+config_stub = types.ModuleType("swe.config.config")
 config_stub.Config = object
 config_stub.HeartbeatConfig = object
 config_stub.LastApiConfig = object
 config_stub.LastDispatchConfig = object
 config_stub.load_agent_config = lambda *args, **kwargs: None
 config_stub.save_agent_config = lambda *args, **kwargs: None
-sys.modules["copaw.config.config"] = config_stub
+sys.modules["swe.config.config"] = config_stub
 
-context_module = importlib.import_module("copaw.config.context")
-utils_module = importlib.import_module("copaw.config.utils")
+context_module = importlib.import_module("swe.config.context")
+utils_module = importlib.import_module("swe.config.utils")
 
 TenantContextError = context_module.TenantContextError
 get_tenant_working_dir_strict = utils_module.get_tenant_working_dir_strict
@@ -37,8 +37,8 @@ class TestTenantPathHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_get_tenant_working_dir_with_tenant_id(self):
         """get_tenant_working_dir returns tenant subdirectory."""
-        from copaw.config.utils import get_tenant_working_dir
-        from copaw.constant import WORKING_DIR
+        from swe.config.utils import get_tenant_working_dir
+        from swe.constant import WORKING_DIR
 
         path = get_tenant_working_dir("tenant-1")
         assert path == WORKING_DIR / "tenant-1"
@@ -46,8 +46,8 @@ class TestTenantPathHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_get_tenant_working_dir_without_tenant_id(self):
         """get_tenant_working_dir uses context when no tenant_id provided."""
-        from copaw.config.utils import get_tenant_working_dir
-        from copaw.constant import WORKING_DIR
+        from swe.config.utils import get_tenant_working_dir
+        from swe.constant import WORKING_DIR
 
         # When no tenant in context, returns global WORKING_DIR
         path = get_tenant_working_dir()
@@ -56,8 +56,8 @@ class TestTenantPathHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_get_tenant_config_path(self):
         """get_tenant_config_path returns tenant config.json path."""
-        from copaw.config.utils import get_tenant_config_path
-        from copaw.constant import WORKING_DIR
+        from swe.config.utils import get_tenant_config_path
+        from swe.constant import WORKING_DIR
 
         path = get_tenant_config_path("tenant-1")
         assert path == WORKING_DIR / "tenant-1" / "config.json"
@@ -65,8 +65,8 @@ class TestTenantPathHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_get_tenant_jobs_path(self):
         """get_tenant_jobs_path returns tenant jobs.json path."""
-        from copaw.config.utils import get_tenant_jobs_path
-        from copaw.constant import WORKING_DIR, JOBS_FILE
+        from swe.config.utils import get_tenant_jobs_path
+        from swe.constant import WORKING_DIR, JOBS_FILE
 
         path = get_tenant_jobs_path("tenant-1")
         assert path == WORKING_DIR / "tenant-1" / JOBS_FILE
@@ -74,8 +74,8 @@ class TestTenantPathHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_get_tenant_chats_path(self):
         """get_tenant_chats_path returns tenant chats.json path."""
-        from copaw.config.utils import get_tenant_chats_path
-        from copaw.constant import WORKING_DIR, CHATS_FILE
+        from swe.config.utils import get_tenant_chats_path
+        from swe.constant import WORKING_DIR, CHATS_FILE
 
         path = get_tenant_chats_path("tenant-1")
         assert path == WORKING_DIR / "tenant-1" / CHATS_FILE
@@ -83,8 +83,8 @@ class TestTenantPathHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_get_tenant_memory_dir(self):
         """get_tenant_memory_dir returns tenant memory directory."""
-        from copaw.config.utils import get_tenant_memory_dir
-        from copaw.constant import WORKING_DIR
+        from swe.config.utils import get_tenant_memory_dir
+        from swe.constant import WORKING_DIR
 
         path = get_tenant_memory_dir("tenant-1")
         assert path == WORKING_DIR / "tenant-1" / "memory"
@@ -92,8 +92,8 @@ class TestTenantPathHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_get_tenant_media_dir(self):
         """get_tenant_media_dir returns tenant media directory."""
-        from copaw.config.utils import get_tenant_media_dir
-        from copaw.constant import WORKING_DIR
+        from swe.config.utils import get_tenant_media_dir
+        from swe.constant import WORKING_DIR
 
         path = get_tenant_media_dir("tenant-1")
         assert path == WORKING_DIR / "tenant-1" / "media"
@@ -101,8 +101,8 @@ class TestTenantPathHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_get_tenant_secrets_dir(self):
         """get_tenant_secrets_dir returns tenant secrets directory."""
-        from copaw.config.utils import get_tenant_secrets_dir
-        from copaw.constant import WORKING_DIR
+        from swe.config.utils import get_tenant_secrets_dir
+        from swe.constant import WORKING_DIR
 
         path = get_tenant_secrets_dir("tenant-1")
         assert path == WORKING_DIR / "tenant-1" / ".secret"
@@ -110,8 +110,8 @@ class TestTenantPathHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_get_tenant_heartbeat_path(self):
         """get_tenant_heartbeat_path returns tenant HEARTBEAT.md path."""
-        from copaw.config.utils import get_tenant_heartbeat_path
-        from copaw.constant import WORKING_DIR, HEARTBEAT_FILE
+        from swe.config.utils import get_tenant_heartbeat_path
+        from swe.constant import WORKING_DIR, HEARTBEAT_FILE
 
         path = get_tenant_heartbeat_path("tenant-1")
         assert path == WORKING_DIR / "tenant-1" / HEARTBEAT_FILE
@@ -135,8 +135,8 @@ class TestTenantPathStrictHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_get_tenant_working_dir_strict_with_tenant_id(self):
         """get_tenant_working_dir_strict works with explicit tenant_id."""
-        from copaw.config.utils import get_tenant_working_dir_strict
-        from copaw.constant import WORKING_DIR
+        from swe.config.utils import get_tenant_working_dir_strict
+        from swe.constant import WORKING_DIR
 
         path = get_tenant_working_dir_strict("tenant-1")
         assert path == WORKING_DIR / "tenant-1"
@@ -144,8 +144,8 @@ class TestTenantPathStrictHelpers:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_get_tenant_config_path_strict_raises_without_context(self):
         """get_tenant_config_path_strict raises when no tenant context."""
-        from copaw.config.utils import get_tenant_config_path_strict
-        from copaw.config.context import TenantContextError
+        from swe.config.utils import get_tenant_config_path_strict
+        from swe.config.context import TenantContextError
 
         with pytest.raises(TenantContextError):
             get_tenant_config_path_strict()
@@ -157,8 +157,8 @@ class TestTenantPathBackwardCompatibility:
     @pytest.mark.skip(reason="Requires full app dependencies")
     def test_global_helpers_still_work(self):
         """Global path helpers still work for system-level paths."""
-        from copaw.config.utils import get_config_path, get_jobs_path
-        from copaw.constant import WORKING_DIR, CONFIG_FILE, JOBS_FILE
+        from swe.config.utils import get_config_path, get_jobs_path
+        from swe.constant import WORKING_DIR, CONFIG_FILE, JOBS_FILE
 
         # Global helpers return paths under WORKING_DIR
         assert get_config_path() == WORKING_DIR / CONFIG_FILE

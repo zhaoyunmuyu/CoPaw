@@ -1,11 +1,11 @@
 ## Context
 
-CoPaw uses `contextvars` for request-scoped user isolation. The key components are:
+SWE uses `contextvars` for request-scoped user isolation. The key components are:
 
-- `src/copaw/constant.py`: Contains `contextvars` for `request_user_id`, `request_workspace`, and directory getters
+- `src/swe/constant.py`: Contains `contextvars` for `request_user_id`, `request_workspace`, and directory getters
 - `AgentRunner.query_handler()`: Sets up request context per query with `set_request_user_id(user_id)`
 - Channel layer: Each message carries `sender_id` which becomes `request.user_id`
-- Data directories: Each user has isolated directories under `~/.copaw/<user_id>/`
+- Data directories: Each user has isolated directories under `~/.swe/<user_id>/`
 
 Current implementation relies on Python's `contextvars` for async-safe request isolation, but lacks comprehensive testing to verify complete isolation.
 
@@ -30,7 +30,7 @@ Current implementation relies on Python's `contextvars` for async-safe request i
 - **Alternatives considered**: Threading-based tests (rejected - doesn't match async architecture)
 
 ### Create isolated test fixtures that mock user directories
-- **Rationale**: Avoid polluting real `~/.copaw/` during tests
+- **Rationale**: Avoid polluting real `~/.swe/` during tests
 - **Alternatives considered**: Using temporary directories with monkeypatch
 
 ### Test both happy path and attack scenarios

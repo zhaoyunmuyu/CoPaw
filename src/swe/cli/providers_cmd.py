@@ -20,7 +20,7 @@ def _get_local_model_manager():
         click.echo(
             click.style(
                 "Local model dependencies not installed. "
-                "Install with: pip install 'copaw[local]'",
+                "Install with: pip install 'swe[local]'",
                 fg="red",
             ),
         )
@@ -370,7 +370,7 @@ def configure_llm_slot_interactive(
     if not eligible:
         if use_defaults:
             click.echo(
-                "No LLM provider configured. Run 'copaw models config' "
+                "No LLM provider configured. Run 'swe models config' "
                 "to configure later.",
             )
             return
@@ -430,7 +430,7 @@ def configure_llm_slot_interactive(
     if not model and use_defaults:
         click.echo(
             f"No default model for {defn.name}. "
-            "Run 'copaw models config' to set one.",
+            "Run 'swe models config' to set one.",
         )
         return
     try:
@@ -543,7 +543,7 @@ def list_cmd(ctx: click.Context) -> None:
                     click.echo(f"    - {m.name}")
             else:
                 click.echo("  No models downloaded.")
-                click.echo("  Use 'copaw models download' to add models.")
+                click.echo("  Use 'swe models download' to add models.")
         else:
             click.echo(f"  {'base_url':16s}: {cur_url or '(not set)'}")
             click.echo(
@@ -648,8 +648,8 @@ def add_provider_cmd(
     if base_url:
         click.echo(f"  base_url: {base_url}")
     click.echo(
-        "  Run 'copaw models add-model' to add models, "
-        "then 'copaw models config-key' to set the API key.",
+        "  Run 'swe models add-model' to add models, "
+        "then 'swe models config-key' to set the API key.",
     )
 
 
@@ -798,8 +798,8 @@ def download_cmd(
 
     \b
     Examples:
-      copaw models download TheBloke/Mistral-7B-Instruct-v0.2-GGUF
-      copaw models download Qwen/Qwen2-0.5B-Instruct-GGUF --source modelscope
+      swe models download TheBloke/Mistral-7B-Instruct-v0.2-GGUF
+      swe models download Qwen/Qwen2-0.5B-Instruct-GGUF --source modelscope
     """
     local_model_manager = _get_local_model_manager()
 
@@ -845,7 +845,7 @@ def download_cmd(
     click.echo(f"  Name: {repo_id}")
     click.echo(
         "\nTo use this model, run:\n"
-        "  copaw models set-llm  (select 'copaw-local' provider)",
+        "  swe models set-llm  (select 'swe-local' provider)",
     )
 
 
@@ -858,7 +858,7 @@ def list_local_cmd() -> None:
 
     if not models:
         click.echo("No local models downloaded.")
-        click.echo("Use 'copaw models download <repo_id>' to download one.")
+        click.echo("Use 'swe models download <repo_id>' to download one.")
         return
 
     click.echo(f"\n=== Local Models ({len(models)}) ===")

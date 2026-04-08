@@ -2,7 +2,7 @@
 # pylint: disable=redefined-outer-name,unused-argument
 """Comprehensive tests for multi-tenant isolation verification.
 
-This test suite verifies that CoPaw's multi-tenant implementation correctly
+This test suite verifies that SWE's multi-tenant implementation correctly
 isolates user data between concurrent tenants using contextvars-based
 request isolation.
 
@@ -25,7 +25,7 @@ import pytest
 import pytest_asyncio
 
 # Import the context functions to test
-from copaw.config.context import (
+from swe.config.context import (
     current_tenant_id,
     current_user_id,
     current_workspace_dir,
@@ -39,7 +39,7 @@ from copaw.config.context import (
     tenant_context,
     TenantContextError,
 )
-from copaw.constant import WORKING_DIR
+from swe.constant import WORKING_DIR
 
 
 # =============================================================================
@@ -48,18 +48,18 @@ from copaw.constant import WORKING_DIR
 
 
 @pytest.fixture
-def temp_copaw_dir(tmp_path: Path) -> Path:
-    """Create a temporary directory structure mimicking ~/.copaw/.
+def temp_swe_dir(tmp_path: Path) -> Path:
+    """Create a temporary directory structure mimicking ~/.swe/.
 
     Returns:
         Path to the temporary root directory.
     """
-    copaw_root = tmp_path / ".copaw"
-    copaw_root.mkdir(parents=True)
+    swe_root = tmp_path / ".swe"
+    swe_root.mkdir(parents=True)
 
     # Create user-specific directories
     for user_id in ["alice", "bob", "charlie"]:
-        user_dir = copaw_root / user_id
+        user_dir = swe_root / user_id
         user_dir.mkdir(parents=True)
 
         # Create subdirectories
@@ -106,7 +106,7 @@ def temp_copaw_dir(tmp_path: Path) -> Path:
         ) as f:
             json.dump(skill, f)
 
-    return copaw_root
+    return swe_root
 
 
 @pytest_asyncio.fixture
@@ -133,17 +133,17 @@ async def isolated_context() -> AsyncGenerator[None, None]:
 
 
 @pytest.fixture
-def mock_working_dir(temp_copaw_dir: Path) -> Generator[Path, None, None]:
+def mock_working_dir(temp_swe_dir: Path) -> Generator[Path, None, None]:
     """Mock the WORKING_DIR constant to use temporary directory.
 
     Args:
-        temp_copaw_dir: The temporary copaw directory fixture.
+        temp_swe_dir: The temporary swe directory fixture.
 
     Yields:
         Path to the temporary working directory.
     """
-    with patch("copaw.constant.WORKING_DIR", temp_copaw_dir):
-        yield temp_copaw_dir
+    with patch("swe.constant.WORKING_DIR", temp_swe_dir):
+        yield temp_swe_dir
 
 
 # =============================================================================
@@ -373,7 +373,7 @@ class TestDirectoryIsolation:
             result = get_request_working_dir()
             assert result is not None
             assert result.name == "alice"
-            assert str(result).endswith("/.copaw/alice")
+            assert str(result).endswith("/.swe/alice")
 
     async def test_get_request_secret_dir_for_alice(
         self,
@@ -460,12 +460,12 @@ class TestDataLeakagePrevention:
 
     async def test_alice_cannot_read_bobs_config(
         self,
-        temp_copaw_dir: Path,
+        temp_swe_dir: Path,
     ) -> None:
         """Test 4.1: Tenant alice cannot read tenant bob's config.json."""
-        bob_config_path = temp_copaw_dir / "bob" / "config.json"
+        bob_config_path = temp_swe_dir / "bob" / "config.json"
 
-        with patch("copaw.constant.WORKING_DIR", temp_copaw_dir):
+        with patch("swe.constant.WORKING_DIR", temp_swe_dir):
             with tenant_context(user_id="alice"):
                 # Alice tries to access bob's config through path manipulation
                 # This should fail because alice's working dir is different
@@ -492,10 +492,10 @@ class TestDataLeakagePrevention:
 
     async def test_alice_cannot_read_bobs_memory(
         self,
-        temp_copaw_dir: Path,
+        temp_swe_dir: Path,
     ) -> None:
         """Test 4.2: Tenant alice cannot read tenant bob's memory files."""
-        with patch("copaw.constant.WORKING_DIR", temp_copaw_dir):
+        with patch("swe.constant.WORKING_DIR", temp_swe_dir):
             with tenant_context(user_id="alice"):
                 alice_memory_dir = get_memory_dir()
                 assert alice_memory_dir is not None
@@ -507,13 +507,13 @@ class TestDataLeakagePrevention:
 
     async def test_alice_cannot_read_bobs_sessions(
         self,
-        temp_copaw_dir: Path,
+        temp_swe_dir: Path,
     ) -> None:
         """Test 4.3: Tenant alice cannot read tenant bob's session files."""
         # Note: Session access depends on the session implementation
         # Here we verify directory isolation
 
-        with patch("copaw.constant.WORKING_DIR", temp_copaw_dir):
+        with patch("swe.constant.WORKING_DIR", temp_swe_dir):
             with tenant_context(user_id="alice"):
                 # Alice's working dir should be isolated
                 working_dir = get_request_working_dir()
@@ -529,10 +529,10 @@ class TestDataLeakagePrevention:
 
     async def test_alice_cannot_read_bobs_skills(
         self,
-        temp_copaw_dir: Path,
+        temp_swe_dir: Path,
     ) -> None:
         """Test 4.4: Tenant alice cannot read tenant bob's active skills."""
-        with patch("copaw.constant.WORKING_DIR", temp_copaw_dir):
+        with patch("swe.constant.WORKING_DIR", temp_swe_dir):
             with tenant_context(user_id="alice"):
                 skills_dir = get_active_skills_dir()
                 assert skills_dir is not None
@@ -542,7 +542,7 @@ class TestDataLeakagePrevention:
 
     async def test_concurrent_file_operations_no_leakage(
         self,
-        temp_copaw_dir: Path,
+        temp_swe_dir: Path,
     ) -> None:
         """Test 4.5: Concurrent file operations from multiple tenants don't leak data."""
 
@@ -550,7 +550,7 @@ class TestDataLeakagePrevention:
             """Write user-specific data and read it back."""
             with patch(
                 "tests.test_tenant_isolation.WORKING_DIR",
-                temp_copaw_dir,
+                temp_swe_dir,
             ):
                 working_dir = get_request_working_dir()
                 if working_dir is None:

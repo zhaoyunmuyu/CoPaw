@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""CoPaw Agent - Main agent implementation.
+"""SWE Agent - Main agent implementation.
 
-This module provides the main CoPawAgent class built on ReActAgent,
+This module provides the main SWEAgent class built on ReActAgent,
 with integrated tools, skills, and memory management.
 """
 
@@ -52,6 +52,7 @@ from .tools import (
     create_memory_search_tool,
 )
 from .utils import process_file_and_media_blocks_in_message
+from ..utils.fs_text import sanitize_text_for_json
 from ..constant import (
     WORKING_DIR,
 )
@@ -66,8 +67,8 @@ logger = logging.getLogger(__name__)
 NamesakeStrategy = Literal["override", "skip", "raise", "rename"]
 
 
-class CoPawAgent(ToolGuardMixin, ReActAgent):
-    """CoPaw Agent with integrated tools, skills, and memory management.
+class SWEAgent(ToolGuardMixin, ReActAgent):
+    """SWE Agent with integrated tools, skills, and memory management.
 
     This agent extends ReActAgent with:
     - Built-in tools (shell, file operations, browser, etc.)
@@ -80,7 +81,7 @@ class CoPawAgent(ToolGuardMixin, ReActAgent):
     MRO note
     ~~~~~~~~
     ``ToolGuardMixin`` overrides ``_acting`` and ``_reasoning`` via
-    Python's MRO: CoPawAgent → ToolGuardMixin → ReActAgent.  If you
+    Python's MRO: SWEAgent → ToolGuardMixin → ReActAgent.  If you
     add a ``_acting`` or ``_reasoning`` override in this class, you
     **must** call ``super()._acting(...)`` / ``super()._reasoning(...)``
     so the guard interception remains active.
@@ -98,7 +99,7 @@ class CoPawAgent(ToolGuardMixin, ReActAgent):
         workspace_dir: Path | None = None,
         task_tracker: Any | None = None,
     ):
-        """Initialize CoPawAgent.
+        """Initialize SWEAgent.
 
         Args:
             agent_config: Agent profile configuration containing all settings
@@ -144,8 +145,8 @@ class CoPawAgent(ToolGuardMixin, ReActAgent):
 
         # Get model info from ProviderManager (single source of truth)
         try:
-            from copaw.config.context import get_current_tenant_id
-            from copaw.providers.provider_manager import ProviderManager
+            from swe.config.context import get_current_tenant_id
+            from swe.providers.provider_manager import ProviderManager
 
             tenant_id = get_current_tenant_id()
             manager = ProviderManager.get_instance(tenant_id)
@@ -347,6 +348,18 @@ class CoPawAgent(ToolGuardMixin, ReActAgent):
                         skill_name,
                         e,
                     )
+
+        self._sanitize_registered_skill_dirs(toolkit)
+
+    @staticmethod
+    def _sanitize_registered_skill_dirs(toolkit: Toolkit) -> None:
+        """Sanitize skill dir paths for prompt/runtime display only."""
+        for skill in getattr(toolkit, "skills", {}).values():
+            skill_dir = skill.get("dir")
+            if not isinstance(skill_dir, str):
+                continue
+            sanitized = sanitize_text_for_json(skill_dir)
+            skill["dir"] = sanitized.value
 
     def _build_sys_prompt(self) -> str:
         """Build system prompt from working dir files and env context.
@@ -620,7 +633,7 @@ class CoPawAgent(ToolGuardMixin, ReActAgent):
     @staticmethod
     def _rebuild_mcp_client(client: Any) -> Any | None:
         """Rebuild a fresh MCP client instance from stored config metadata."""
-        rebuild_info = getattr(client, "_copaw_rebuild_info", None)
+        rebuild_info = getattr(client, "_swe_rebuild_info", None)
         if not isinstance(rebuild_info, dict):
             return None
 
@@ -636,7 +649,7 @@ class CoPawAgent(ToolGuardMixin, ReActAgent):
                     env=rebuild_info.get("env", {}),
                     cwd=rebuild_info.get("cwd"),
                 )
-                setattr(rebuilt_client, "_copaw_rebuild_info", rebuild_info)
+                setattr(rebuilt_client, "_swe_rebuild_info", rebuild_info)
                 return rebuilt_client
 
             raw_headers = rebuild_info.get("headers") or {}
@@ -651,7 +664,7 @@ class CoPawAgent(ToolGuardMixin, ReActAgent):
                 url=rebuild_info.get("url"),
                 headers=headers,
             )
-            setattr(rebuilt_client, "_copaw_rebuild_info", rebuild_info)
+            setattr(rebuilt_client, "_swe_rebuild_info", rebuild_info)
             return rebuilt_client
         except Exception:  # pylint: disable=broad-except
             return None
@@ -846,7 +859,7 @@ class CoPawAgent(ToolGuardMixin, ReActAgent):
         round of calls has ended.
         """
         if isinstance(msg.content, str):
-            msg.content += CoPawAgent._ROUND_END_NOTICE
+            msg.content += SWEAgent._ROUND_END_NOTICE
             return msg
 
         filtered = [
@@ -864,7 +877,7 @@ class CoPawAgent(ToolGuardMixin, ReActAgent):
                 n_removed,
             )
 
-        filtered.append({"type": "text", "text": CoPawAgent._ROUND_END_NOTICE})
+        filtered.append({"type": "text", "text": SWEAgent._ROUND_END_NOTICE})
         msg.content = filtered
         return msg
 
@@ -995,7 +1008,7 @@ class CoPawAgent(ToolGuardMixin, ReActAgent):
             return msg
 
         # Normal message processing
-        logger.info("CoPawAgent.reply: max_iters=%s", self.max_iters)
+        logger.info("SWEAgent.reply: max_iters=%s", self.max_iters)
 
         if hasattr(self.memory, "_long_term_memory"):
             running = self._agent_config.running
@@ -1019,7 +1032,7 @@ class CoPawAgent(ToolGuardMixin, ReActAgent):
                         for block in (result.content or [])
                         if isinstance(block, dict) and block.get("text")
                     )
-                except BaseException as e:
+                except Exception as e:
                     logger.warning(
                         "force_memory_search failed or timed out,"
                         f" skipping e={e}",

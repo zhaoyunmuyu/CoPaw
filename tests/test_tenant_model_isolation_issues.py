@@ -17,15 +17,15 @@ from unittest.mock import patch
 import pytest
 import pytest_asyncio
 
-from copaw.config.context import tenant_context
-from copaw.providers.models import ModelSlotConfig
-from copaw.providers.provider_manager import ProviderManager
-from copaw.tenant_models import (
+from swe.config.context import tenant_context
+from swe.providers.models import ModelSlotConfig
+from swe.providers.provider_manager import ProviderManager
+from swe.tenant_models import (
     TenantModelConfig,
     TenantModelContext,
     TenantModelManager,
 )
-from copaw.tenant_models.models import (
+from swe.tenant_models.models import (
     ModelSlot,
     RoutingConfig,
     TenantProviderConfig,
@@ -38,18 +38,18 @@ from copaw.tenant_models.models import (
 
 
 @pytest.fixture
-def temp_copaw_root(tmp_path: Path) -> Path:
-    """Create a temporary directory structure mimicking ~/.copaw/."""
-    copaw_root = tmp_path / ".copaw"
-    copaw_root.mkdir(parents=True)
+def temp_swe_root(tmp_path: Path) -> Path:
+    """Create a temporary directory structure mimicking ~/.swe/."""
+    swe_root = tmp_path / ".swe"
+    swe_root.mkdir(parents=True)
 
     # Create .secret directory
-    secret_dir = copaw_root / ".secret"
+    secret_dir = swe_root / ".secret"
     secret_dir.mkdir(parents=True)
 
     # Create tenant directories
     for tenant_id in ["tenant_a", "tenant_b"]:
-        tenant_dir = copaw_root / tenant_id
+        tenant_dir = swe_root / tenant_id
         tenant_dir.mkdir(parents=True)
         (tenant_dir / "sessions").mkdir()
         (tenant_dir / "memory").mkdir()
@@ -58,13 +58,13 @@ def temp_copaw_root(tmp_path: Path) -> Path:
         tenant_secret = secret_dir / tenant_id
         tenant_secret.mkdir(parents=True)
 
-    return copaw_root
+    return swe_root
 
 
 @pytest.fixture
-def mock_provider_manager_storage(temp_copaw_root: Path) -> Path:
+def mock_provider_manager_storage(temp_swe_root: Path) -> Path:
     """Create mock ProviderManager storage structure."""
-    secret_dir = temp_copaw_root / ".secret"
+    secret_dir = temp_swe_root / ".secret"
     providers_dir = secret_dir / "providers"
     providers_dir.mkdir(parents=True)
 
@@ -95,7 +95,7 @@ class TestModelSelectionFallbackIssue:
 
     async def test_fallback_to_global_when_tenant_config_missing(
         self,
-        temp_copaw_root: Path,
+        temp_swe_root: Path,
         mock_provider_manager_storage: Path,
         reset_singleton,
     ):
@@ -104,10 +104,10 @@ class TestModelSelectionFallbackIssue:
         Expected behavior BEFORE fix: Falls back to global active_model
         Expected behavior AFTER fix: Raises error requiring tenant configuration
         """
-        with patch("copaw.constant.WORKING_DIR", temp_copaw_root):
+        with patch("swe.constant.WORKING_DIR", temp_swe_root):
             with patch(
-                "copaw.constant.SECRET_DIR",
-                temp_copaw_root / ".secret",
+                "swe.constant.SECRET_DIR",
+                temp_swe_root / ".secret",
             ):
                 # Reset singleton before creating new instance
                 ProviderManager._instance = None
@@ -157,15 +157,15 @@ class TestModelSelectionFallbackIssue:
 
     async def test_tenant_config_isolation_when_configured(
         self,
-        temp_copaw_root: Path,
+        temp_swe_root: Path,
         mock_provider_manager_storage: Path,
         reset_singleton,
     ):
         """Test: When tenant HAS model config, it should be isolated."""
-        with patch("copaw.constant.WORKING_DIR", temp_copaw_root):
+        with patch("swe.constant.WORKING_DIR", temp_swe_root):
             with patch(
-                "copaw.constant.SECRET_DIR",
-                temp_copaw_root / ".secret",
+                "swe.constant.SECRET_DIR",
+                temp_swe_root / ".secret",
             ):
                 tenant_id = "tenant_a"
 
@@ -235,30 +235,30 @@ class TestProviderManagerGlobalStorageIssue:
 
     async def test_provider_manager_uses_global_path(
         self,
-        temp_copaw_root: Path,
+        temp_swe_root: Path,
         mock_provider_manager_storage: Path,
         reset_singleton,
     ):
         """Test: ProviderManager stores data in global path, not tenant-specific.
 
         This verifies that ProviderManager.root_path is global:
-        ~/.copaw/.secret/providers/
+        ~/.swe/.secret/providers/
         Instead of tenant-specific:
-        ~/.copaw/.secret/{tenant_id}/providers/
+        ~/.swe/.secret/{tenant_id}/providers/
         """
-        with patch("copaw.constant.SECRET_DIR", temp_copaw_root / ".secret"):
+        with patch("swe.constant.SECRET_DIR", temp_swe_root / ".secret"):
             # Reset singleton before creating new instance
             ProviderManager._instance = None
 
             pm = ProviderManager.get_instance()
 
             # Verify global path
-            expected_global = temp_copaw_root / ".secret" / "providers"
+            expected_global = temp_swe_root / ".secret" / "providers"
             actual_path = pm.root_path
 
             # Verify the path is NOT tenant-specific
             tenant_specific = (
-                temp_copaw_root / ".secret" / "tenant_a" / "providers"
+                temp_swe_root / ".secret" / "tenant_a" / "providers"
             )
 
             # The issue is that ProviderManager uses global path
@@ -284,12 +284,12 @@ class TestProviderManagerGlobalStorageIssue:
 
     async def test_active_model_storage_location(
         self,
-        temp_copaw_root: Path,
+        temp_swe_root: Path,
         mock_provider_manager_storage: Path,
         reset_singleton,
     ):
         """Test: active_model.json is stored globally, not per-tenant."""
-        with patch("copaw.constant.SECRET_DIR", temp_copaw_root / ".secret"):
+        with patch("swe.constant.SECRET_DIR", temp_swe_root / ".secret"):
             pm = ProviderManager.get_instance()
 
             # active_model path is global
@@ -298,7 +298,7 @@ class TestProviderManagerGlobalStorageIssue:
 
             # Verify not per-tenant
             tenant_active_model = (
-                temp_copaw_root
+                temp_swe_root
                 / ".secret"
                 / "tenant_a"
                 / "providers"
@@ -327,7 +327,7 @@ class TestActiveModelRaceConditionIssue:
 
     async def test_concurrent_active_model_modification(
         self,
-        temp_copaw_root: Path,
+        temp_swe_root: Path,
         mock_provider_manager_storage: Path,
         reset_singleton,
     ):
@@ -336,7 +336,7 @@ class TestActiveModelRaceConditionIssue:
         This test demonstrates that multiple tenants accessing the same
         global active_model.json file could cause race conditions.
         """
-        with patch("copaw.constant.SECRET_DIR", temp_copaw_root / ".secret"):
+        with patch("swe.constant.SECRET_DIR", temp_swe_root / ".secret"):
             pm = ProviderManager.get_instance()
 
             modification_count = 10
@@ -392,7 +392,7 @@ class TestIssueSummary:
 
     async def test_all_issues_verified(
         self,
-        temp_copaw_root: Path,
+        temp_swe_root: Path,
         mock_provider_manager_storage: Path,
         reset_singleton,
     ):
@@ -401,15 +401,15 @@ class TestIssueSummary:
         print("MULTI-TENANT MODEL ISOLATION ISSUES - VERIFICATION SUMMARY")
         print("=" * 70)
 
-        with patch("copaw.constant.WORKING_DIR", temp_copaw_root):
+        with patch("swe.constant.WORKING_DIR", temp_swe_root):
             with patch(
-                "copaw.constant.SECRET_DIR",
-                temp_copaw_root / ".secret",
+                "swe.constant.SECRET_DIR",
+                temp_swe_root / ".secret",
             ):
                 pm = ProviderManager.get_instance()
 
                 print("\n[ISSUE 1] Model Selection Fallback Path:")
-                print("  - Location: src/copaw/agents/model_factory.py:767")
+                print("  - Location: src/swe/agents/model_factory.py:767")
                 print(
                     "  - Problem: When TenantModelContext is None, falls back to",
                 )
@@ -421,8 +421,8 @@ class TestIssueSummary:
                 print(
                     "  - Problem: Uses global path instead of tenant-specific",
                 )
-                print("  - Current: ~/.copaw/.secret/providers/")
-                print("  - Should be: ~/.copaw/.secret/{tenant_id}/providers/")
+                print("  - Current: ~/.swe/.secret/providers/")
+                print("  - Should be: ~/.swe/.secret/{tenant_id}/providers/")
 
                 print("\n[ISSUE 3] Active Model Race Condition:")
                 print(f"  - Location: {pm.root_path}/active_model.json")

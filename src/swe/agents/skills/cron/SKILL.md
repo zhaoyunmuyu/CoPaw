@@ -1,7 +1,7 @@
 ---
 name: cron
-description: Use this skill only for scheduled or recurring tasks. Manage cron jobs with copaw cron list/create/get/state/pause/resume/delete/run. Always pass --agent-id explicitly. | 仅在需要未来定时执行或周期执行时使用本 skill。用 copaw cron list/create/get/state/pause/resume/delete/run 管理任务；必须显式传 --agent-id
-metadata: { "builtin_skill_version": "1.1", "copaw": { "emoji": "⏰" } }
+description: Use this skill only for scheduled or recurring tasks. Manage cron jobs with swe cron list/create/get/state/pause/resume/delete/run. Always pass --agent-id explicitly. | 仅在需要未来定时执行或周期执行时使用本 skill。用 swe cron list/create/get/state/pause/resume/delete/run 管理任务；必须显式传 --agent-id
+metadata: { "builtin_skill_version": "1.1", "swe": { "emoji": "⏰" } }
 ---
 
 # Cron（定时任务管理）
@@ -35,7 +35,7 @@ metadata: { "builtin_skill_version": "1.1", "copaw": { "emoji": "⏰" } }
 
 ### 必须显式指定 `--agent-id`
 
-所有 `copaw cron` 命令都**必须**传：
+所有 `swe cron` 命令都**必须**传：
 
 ```bash
 --agent-id <your_agent_id>
@@ -50,26 +50,26 @@ metadata: { "builtin_skill_version": "1.1", "copaw": { "emoji": "⏰" } }
 
 ```bash
 # 列出任务
-copaw cron list --agent-id <agent_id>
+swe cron list --agent-id <agent_id>
 
 # 查看任务详情
-copaw cron get <job_id> --agent-id <agent_id>
+swe cron get <job_id> --agent-id <agent_id>
 
 # 查看任务状态
-copaw cron state <job_id> --agent-id <agent_id>
+swe cron state <job_id> --agent-id <agent_id>
 
 # 创建任务
-copaw cron create --agent-id <agent_id> ...
+swe cron create --agent-id <agent_id> ...
 
 # 删除任务
-copaw cron delete <job_id> --agent-id <agent_id>
+swe cron delete <job_id> --agent-id <agent_id>
 
 # 暂停 / 恢复任务
-copaw cron pause <job_id> --agent-id <agent_id>
-copaw cron resume <job_id> --agent-id <agent_id>
+swe cron pause <job_id> --agent-id <agent_id>
+swe cron resume <job_id> --agent-id <agent_id>
 
 # 立即执行一次已有任务
-copaw cron run <job_id> --agent-id <agent_id>
+swe cron run <job_id> --agent-id <agent_id>
 ```
 
 ---
@@ -95,7 +95,7 @@ copaw cron run <job_id> --agent-id <agent_id>
 ### 创建示例
 
 ```bash
-copaw cron create \
+swe cron create \
   --agent-id <agent_id> \
   --type text \
   --name "每日早安" \
@@ -107,7 +107,7 @@ copaw cron create \
 ```
 
 ```bash
-copaw cron create \
+swe cron create \
   --agent-id <agent_id> \
   --type agent \
   --name "检查待办" \
@@ -121,7 +121,7 @@ copaw cron create \
 ### 从 JSON 创建
 
 ```bash
-copaw cron create --agent-id <agent_id> -f job_spec.json
+swe cron create --agent-id <agent_id> -f job_spec.json
 ```
 
 ---
@@ -133,7 +133,7 @@ copaw cron create --agent-id <agent_id> -f job_spec.json
 2. 确认执行时间/周期
 3. 确认 channel、target-user、target-session
 4. 显式带上 --agent-id
-5. copaw cron create 创建任务
+5. swe cron create 创建任务
 6. 后续用 list / state / pause / resume / delete 管理
 ```
 
@@ -170,7 +170,7 @@ copaw cron create --agent-id <agent_id> -f job_spec.json
 暂停、恢复、删除前，先用：
 
 ```bash
-copaw cron list --agent-id <agent_id>
+swe cron list --agent-id <agent_id>
 ```
 
 找到正确的 `job_id`。
@@ -180,8 +180,8 @@ copaw cron list --agent-id <agent_id>
 ## 使用建议
 
 - 缺少参数时，先问用户再创建
-- 修改/暂停/删除前，先 `copaw cron list --agent-id <agent_id>`
-- 排查问题时，用 `copaw cron state <job_id> --agent-id <agent_id>`
+- 修改/暂停/删除前，先 `swe cron list --agent-id <agent_id>`
+- 排查问题时，用 `swe cron state <job_id> --agent-id <agent_id>`
 - 给用户展示命令时，提供完整、可直接复制的版本
 
 ---
@@ -189,13 +189,13 @@ copaw cron list --agent-id <agent_id>
 ## 帮助信息
 
 ```bash
-copaw cron -h
-copaw cron list -h
-copaw cron create -h
-copaw cron get -h
-copaw cron state -h
-copaw cron pause -h
-copaw cron resume -h
-copaw cron delete -h
-copaw cron run -h
+swe cron -h
+swe cron list -h
+swe cron create -h
+swe cron get -h
+swe cron state -h
+swe cron pause -h
+swe cron resume -h
+swe cron delete -h
+swe cron run -h
 ```

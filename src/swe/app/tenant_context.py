@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
-from copaw.config.context import (
+from swe.config.context import (
     TenantContextError,
 )
 
@@ -43,7 +43,7 @@ def bind_tenant_context(
         ):
             result = execute_job(job)
     """
-    from copaw.config.context import (
+    from swe.config.context import (
         set_current_tenant_id,
         set_current_user_id,
         set_current_workspace_dir,
@@ -81,7 +81,7 @@ def get_tenant_context() -> dict:
         Dictionary containing 'tenant_id', 'user_id', and 'workspace_dir'
         (or None for each if not set).
     """
-    from copaw.config.context import (
+    from swe.config.context import (
         get_current_tenant_id,
         get_current_user_id,
         get_current_workspace_dir,
@@ -103,7 +103,7 @@ def require_tenant_context() -> tuple[str, Path]:
     Raises:
         TenantContextError: If tenant_id or workspace_dir is not set.
     """
-    from copaw.config.context import (
+    from swe.config.context import (
         get_current_tenant_id_strict,
         get_current_workspace_dir_strict,
     )
@@ -123,7 +123,7 @@ def require_full_context() -> tuple[str, str, Path]:
         TenantContextError: If any of tenant_id, user_id, or workspace_dir
             is not set.
     """
-    from copaw.config.context import (
+    from swe.config.context import (
         get_current_tenant_id_strict,
         get_current_user_id_strict,
         get_current_workspace_dir_strict,

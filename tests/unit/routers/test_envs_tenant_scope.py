@@ -14,27 +14,27 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 ROUTERS_DIR = (
-    Path(__file__).resolve().parents[3] / "src" / "copaw" / "app" / "routers"
+    Path(__file__).resolve().parents[3] / "src" / "swe" / "app" / "routers"
 )
-if "copaw.app.routers" not in sys.modules:
-    routers_pkg = types.ModuleType("copaw.app.routers")
+if "swe.app.routers" not in sys.modules:
+    routers_pkg = types.ModuleType("swe.app.routers")
     routers_pkg.__path__ = [str(ROUTERS_DIR)]
-    sys.modules["copaw.app.routers"] = routers_pkg
-if "copaw.config" not in sys.modules:
-    config_pkg = types.ModuleType("copaw.config")
+    sys.modules["swe.app.routers"] = routers_pkg
+if "swe.config" not in sys.modules:
+    config_pkg = types.ModuleType("swe.config")
     config_pkg.__path__ = []
-    sys.modules["copaw.config"] = config_pkg
-if "copaw.config.utils" not in sys.modules:
-    config_utils_module = types.ModuleType("copaw.config.utils")
+    sys.modules["swe.config"] = config_pkg
+if "swe.config.utils" not in sys.modules:
+    config_utils_module = types.ModuleType("swe.config.utils")
 
     def get_tenant_secrets_dir(tenant_id=None):
         raise RuntimeError("test should patch get_tenant_secrets_dir")
 
     config_utils_module.get_tenant_secrets_dir = get_tenant_secrets_dir
-    sys.modules["copaw.config.utils"] = config_utils_module
+    sys.modules["swe.config.utils"] = config_utils_module
 
-from copaw.app.routers.envs import router
-from copaw.envs.store import delete_env_var, load_envs, save_envs
+from swe.app.routers.envs import router
+from swe.envs.store import delete_env_var, load_envs, save_envs
 
 app = FastAPI()
 
@@ -57,7 +57,7 @@ def _use_tmp_env_paths(tmp_path: Path):
         return tmp_path / (tenant_id or "default") / ".secret"
 
     with patch(
-        "copaw.app.routers.envs.get_tenant_secrets_dir",
+        "swe.app.routers.envs.get_tenant_secrets_dir",
         mock_get_tenant_secrets_dir,
     ):
         yield tmp_path

@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
-from copaw.agents.model_factory import (
+from swe.agents.model_factory import (
     _get_formatter_for_chat_model,
     _create_file_block_support_formatter,
 )
@@ -58,11 +58,11 @@ class TestCreateModelAndFormatterTenantIntegration:
 
     def test_raises_when_no_active_model(self):
         """Factory raises when ProviderManager has no active model."""
-        from copaw.agents.model_factory import create_model_and_formatter
+        from swe.agents.model_factory import create_model_and_formatter
 
         # Patch ProviderManager to return no active model
         with patch(
-            "copaw.agents.model_factory.ProviderManager"
+            "swe.agents.model_factory.ProviderManager"
         ) as mock_pm_class:
             mock_manager = MagicMock()
             mock_manager.get_active_model.return_value = None
@@ -77,14 +77,14 @@ class TestCreateModelAndFormatterTenantIntegration:
 
     def test_uses_provider_manager_as_primary_source(self):
         """Factory uses ProviderManager.get_active_model() as primary source."""
-        from copaw.agents.model_factory import create_model_and_formatter
+        from swe.agents.model_factory import create_model_and_formatter
 
         # Patch ProviderManager with active model
         with patch(
-            "copaw.agents.model_factory.ProviderManager"
+            "swe.agents.model_factory.ProviderManager"
         ) as mock_pm_class:
             mock_manager = MagicMock()
-            from copaw.providers.models import ModelSlotConfig
+            from swe.providers.models import ModelSlotConfig
 
             mock_manager.get_active_model.return_value = ModelSlotConfig(
                 provider_id="openai",
@@ -102,12 +102,12 @@ class TestCreateModelAndFormatterTenantIntegration:
 
             # Patch formatter creation and wrappers
             with patch(
-                "copaw.agents.model_factory._create_formatter_instance"
+                "swe.agents.model_factory._create_formatter_instance"
             ):
                 with patch(
-                    "copaw.agents.model_factory.TokenRecordingModelWrapper",
+                    "swe.agents.model_factory.TokenRecordingModelWrapper",
                 ):
-                    with patch("copaw.agents.model_factory.RetryChatModel"):
+                    with patch("swe.agents.model_factory.RetryChatModel"):
                         model, _ = create_model_and_formatter()
 
             # Verify ProviderManager.get_active_model was called (not TenantModelContext)
@@ -116,14 +116,14 @@ class TestCreateModelAndFormatterTenantIntegration:
 
     def test_tenant_provider_manager_isolation(self):
         """Different tenants get different ProviderManager instances."""
-        from copaw.agents.model_factory import create_model_and_formatter
+        from swe.agents.model_factory import create_model_and_formatter
 
         # Patch ProviderManager to track tenant IDs
         with patch(
-            "copaw.agents.model_factory.ProviderManager",
+            "swe.agents.model_factory.ProviderManager",
         ) as mock_pm_class:
             mock_manager = MagicMock()
-            from copaw.providers.models import ModelSlotConfig
+            from swe.providers.models import ModelSlotConfig
 
             mock_manager.get_active_model.return_value = ModelSlotConfig(
                 provider_id="openai",
@@ -140,17 +140,17 @@ class TestCreateModelAndFormatterTenantIntegration:
 
             # Patch formatter creation
             with patch(
-                "copaw.agents.model_factory._create_formatter_instance",
+                "swe.agents.model_factory._create_formatter_instance",
             ):
                 with patch(
-                    "copaw.agents.model_factory.TokenRecordingModelWrapper",
+                    "swe.agents.model_factory.TokenRecordingModelWrapper",
                 ):
                     with patch(
-                        "copaw.agents.model_factory.RetryChatModel",
+                        "swe.agents.model_factory.RetryChatModel",
                     ):
                         # First call with tenant-a
                         with patch(
-                            "copaw.config.context.get_current_tenant_id",
+                            "swe.config.context.get_current_tenant_id",
                             return_value="tenant-a",
                         ):
                             try:
@@ -170,11 +170,11 @@ class TestBackwardCompatibility:
 
     def test_raises_when_provider_manager_has_no_active_model(self):
         """Factory raises when ProviderManager has no active model."""
-        from copaw.agents.model_factory import create_model_and_formatter
+        from swe.agents.model_factory import create_model_and_formatter
 
         # Patch ProviderManager to return no active model
         with patch(
-            "copaw.agents.model_factory.ProviderManager"
+            "swe.agents.model_factory.ProviderManager"
         ) as mock_pm_class:
             mock_manager = MagicMock()
             mock_manager.get_active_model.return_value = None
@@ -188,14 +188,14 @@ class TestBackwardCompatibility:
 
     def test_agent_id_parameter_uses_retry_config(self):
         """agent_id loads retry config from agent config."""
-        from copaw.agents.model_factory import create_model_and_formatter
+        from swe.agents.model_factory import create_model_and_formatter
 
         with patch(
-            "copaw.app.agent_context.get_current_agent_id",
+            "swe.app.agent_context.get_current_agent_id",
         ) as mock_get_agent:
             mock_get_agent.return_value = "context-agent"
 
-            with patch("copaw.config.config.load_agent_config") as mock_load:
+            with patch("swe.config.config.load_agent_config") as mock_load:
                 mock_config = MagicMock()
                 mock_config.running.llm_retry_enabled = True
                 mock_config.running.llm_max_retries = 3
@@ -210,7 +210,7 @@ class TestBackwardCompatibility:
 
                 # Also need to mock ProviderManager since it's the primary source
                 with patch(
-                    "copaw.agents.model_factory.ProviderManager",
+                    "swe.agents.model_factory.ProviderManager",
                 ) as mock_pm_class:
                     mock_manager = MagicMock()
                     mock_manager.get_active_model.return_value = None
@@ -232,7 +232,7 @@ class TestRetryConfigPropagation:
 
     def test_retry_config_from_agent_config(self):
         """Retry configuration is extracted from agent config."""
-        from copaw.providers.retry_chat_model import RetryConfig
+        from swe.providers.retry_chat_model import RetryConfig
 
         # Create a RetryConfig to verify structure
         retry_config = RetryConfig(

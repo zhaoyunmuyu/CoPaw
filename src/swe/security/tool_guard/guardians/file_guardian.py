@@ -54,7 +54,7 @@ def _normalize_path(raw_path: str) -> str:
 def _is_file_guard_enabled() -> bool:
     """Check ``security.file_guard.enabled`` from config."""
     try:
-        from copaw.config import load_config
+        from swe.config import load_config
 
         return bool(load_config().security.file_guard.enabled)
     except Exception:
@@ -69,7 +69,7 @@ def _load_sensitive_files_from_config() -> list[str]:
     default.
     """
     try:
-        from copaw.config import load_config
+        from swe.config import load_config
 
         configured = list(
             load_config().security.file_guard.sensitive_files or [],

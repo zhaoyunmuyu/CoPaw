@@ -8,7 +8,7 @@ from click.testing import CliRunner
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
-from copaw.cli.cron_cmd import cron_group
+from swe.cli.cron_cmd import cron_group
 
 
 class _Response:
@@ -24,7 +24,7 @@ class _Response:
 def test_cron_create_passes_tenant_header():
     runner = CliRunner()
 
-    with patch("copaw.cli.cron_cmd.client") as mock_client:
+    with patch("swe.cli.cron_cmd.client") as mock_client:
         mock_http = MagicMock()
         mock_http.__enter__.return_value = mock_http
         mock_http.post.return_value = _Response()

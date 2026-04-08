@@ -6,7 +6,7 @@ import time
 from .utils.logging import setup_logger
 
 # Fallback before we can safely read canonical constant definitions.
-LOG_LEVEL_ENV = "COPAW_LOG_LEVEL"
+LOG_LEVEL_ENV = "SWE_LOG_LEVEL"
 
 _bootstrap_err: Exception | None = None
 try:
@@ -16,7 +16,7 @@ try:
 
     load_envs_into_environ()
 
-    # Load environment-specific defaults (dev/prd) based on COPAW_ENV.
+    # Load environment-specific defaults (dev/prd) based on SWE_ENV.
     from .config.envs import load_env_defaults
 
     load_env_defaults()
@@ -28,7 +28,7 @@ _t0 = time.perf_counter()
 setup_logger(os.environ.get(LOG_LEVEL_ENV, "info"))
 if _bootstrap_err is not None:
     logging.getLogger(__name__).warning(
-        "copaw: failed to load persisted envs on init: %s",
+        "swe: failed to load persisted envs on init: %s",
         _bootstrap_err,
     )
 logging.getLogger(__name__).debug(

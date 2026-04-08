@@ -10,11 +10,11 @@ from typing import TYPE_CHECKING, Any
 
 from agentscope.agent import ReActAgent
 from agentscope.message import Msg, TextBlock
-from copaw.constant import MEMORY_COMPACT_KEEP_RECENT
+from swe.constant import MEMORY_COMPACT_KEEP_RECENT
 
 from ..utils import (
     check_valid_messages,
-    get_copaw_token_counter,
+    get_swe_token_counter,
 )
 from ...config.config import load_agent_config
 
@@ -85,7 +85,7 @@ class MemoryCompactionHook:
             # Get hot-reloaded agent config
             agent_config = load_agent_config(self.memory_manager.agent_id)
             running_config = agent_config.running
-            token_counter = get_copaw_token_counter(agent_config)
+            token_counter = get_swe_token_counter(agent_config)
 
             memory = agent.memory
 

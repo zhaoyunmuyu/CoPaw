@@ -13,7 +13,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response, JSONResponse
 from starlette.types import ASGIApp
 
-from copaw.config.context import (
+from swe.config.context import (
     set_current_tenant_id,
     set_current_user_id,
     reset_current_tenant_id,
@@ -46,8 +46,8 @@ TENANT_EXEMPT_ROUTES = frozenset([
     "/assets",
     "/logo.png",
     "/dark-logo.png",
-    "/copaw-symbol.svg",
-    "/copaw-dark.png",
+    "/swe-symbol.svg",
+    "/swe-dark.png",
     # Console SPA routes (static files)
     "/console",
     "/console/",

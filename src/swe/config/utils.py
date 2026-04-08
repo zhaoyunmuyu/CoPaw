@@ -38,14 +38,14 @@ logger = logging.getLogger(__name__)
 
 
 def _normalize_working_dir_bound_paths(data: object) -> object:
-    """Normalize legacy ~/.copaw-bound paths to current WORKING_DIR.
+    """Normalize legacy ~/.swe-bound paths to current WORKING_DIR.
 
-    This keeps COPAW_WORKING_DIR effective even if user config files contain
-    older hard-coded paths like "~/.copaw/media" or
-    "/Users/x/.copaw/workspaces/...".
+    This keeps SWE_WORKING_DIR effective even if user config files contain
+    older hard-coded paths like "~/.swe/media" or
+    "/Users/x/.swe/workspaces/...".
     Only rewrites known working-dir-bound keys.
     """
-    legacy_root_tilde = "~/.copaw"
+    legacy_root_tilde = "~/.swe"
     legacy_root_abs = str(Path(legacy_root_tilde).expanduser().resolve())
     new_root_abs = str(WORKING_DIR)
 
@@ -341,12 +341,12 @@ def get_system_default_browser() -> Tuple[Optional[str], Optional[str]]:
 
 def get_available_channels() -> Tuple[str, ...]:
     """Return channel keys enabled for this run (built-in + entry point
-    copaw.channels), filtered by COPAW_ENABLED_CHANNELS or
-    COPAW_DISABLED_CHANNELS when set.
+    swe.channels), filtered by SWE_ENABLED_CHANNELS or
+    SWE_DISABLED_CHANNELS when set.
 
-    * COPAW_ENABLED_CHANNELS — whitelist (only these channels are active).
-    * COPAW_DISABLED_CHANNELS — blacklist (all channels *except* these).
-    * If both are set, COPAW_ENABLED_CHANNELS takes precedence.
+    * SWE_ENABLED_CHANNELS — whitelist (only these channels are active).
+    * SWE_DISABLED_CHANNELS — blacklist (all channels *except* these).
+    * If both are set, SWE_ENABLED_CHANNELS takes precedence.
     * If neither is set, all discovered channels are returned.
     """
     from ..app.channels.registry import get_channel_registry
@@ -354,12 +354,12 @@ def get_available_channels() -> Tuple[str, ...]:
     registry = get_channel_registry()
     all_keys = tuple(registry.keys())
 
-    raw_enabled = os.environ.get("COPAW_ENABLED_CHANNELS", "").strip()
+    raw_enabled = os.environ.get("SWE_ENABLED_CHANNELS", "").strip()
     if raw_enabled:
         enabled = {ch.strip() for ch in raw_enabled.split(",") if ch.strip()}
         return tuple(k for k in all_keys if k in enabled) or all_keys
 
-    raw_disabled = os.environ.get("COPAW_DISABLED_CHANNELS", "").strip()
+    raw_disabled = os.environ.get("SWE_DISABLED_CHANNELS", "").strip()
     if raw_disabled:
         disabled = {ch.strip() for ch in raw_disabled.split(",") if ch.strip()}
         return tuple(k for k in all_keys if k not in disabled) or all_keys
@@ -369,7 +369,7 @@ def get_available_channels() -> Tuple[str, ...]:
 
 def is_running_in_container() -> bool:
     """Return True if running inside a container (Docker/Kubernetes).
-    Prefer env COPAW_RUNNING_IN_CONTAINER (1/true/yes) at call time so
+    Prefer env SWE_RUNNING_IN_CONTAINER (1/true/yes) at call time so
     supervisord child gets correct value; else check /.dockerenv and cgroup.
     """
     if RUNNING_IN_CONTAINER:
@@ -797,3 +797,27 @@ def get_tenant_config_path_strict(tenant_id: str | None = None) -> Path:
         TenantContextError: If tenant_id is None and no tenant in context.
     """
     return get_tenant_working_dir_strict(tenant_id) / "config.json"
+
+
+def list_all_tenant_ids() -> list[str]:
+    """Scan and return all existing tenant IDs.
+
+    Scans the WORKING_DIR directory and returns all directory names
+    that contain a valid config.json file (indicating a bootstrapped tenant).
+
+    Returns:
+        Sorted list of tenant IDs.
+    """
+    tenant_ids = []
+    if not WORKING_DIR.exists():
+        return tenant_ids
+
+    for entry in WORKING_DIR.iterdir():
+        # Skip hidden directories and JSON files
+        if entry.name.startswith(".") or entry.name.endswith(".json"):
+            continue
+        # A valid tenant has a config.json in its directory
+        if entry.is_dir() and (entry / "config.json").exists():
+            tenant_ids.append(entry.name)
+
+    return sorted(tenant_ids)

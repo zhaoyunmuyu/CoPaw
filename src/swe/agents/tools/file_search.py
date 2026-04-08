@@ -15,9 +15,13 @@ from typing import Optional
 from agentscope.message import TextBlock
 from agentscope.tool import ToolResponse
 
-from ...constant import WORKING_DIR
+from ...security.tenant_path_boundary import (
+    resolve_tenant_path,
+    validate_path_within_tenant,
+    TenantPathBoundaryError,
+    make_permission_denied_response,
+)
 from ...config.context import get_current_workspace_dir
-from .file_io import _resolve_file_path
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -135,15 +139,34 @@ def _resolve_search_root(
     path: Optional[str],
     require_dir: bool = False,
 ) -> "Path | ToolResponse":
-    """Resolve and validate a search root path.
+    """Resolve and validate a search root path using tenant boundary.
 
     Returns a ``Path`` on success or a ``ToolResponse`` error.
     """
-    search_root = (
-        Path(_resolve_file_path(path))
-        if path
-        else (get_current_workspace_dir() or WORKING_DIR)
-    )
+    # Use current workspace dir as default if no path provided
+    if path is None:
+        try:
+            workspace_dir = get_current_workspace_dir()
+            if workspace_dir is not None:
+                search_root = workspace_dir
+            else:
+                from ...security.tenant_path_boundary import get_current_tenant_root
+                search_root = get_current_tenant_root()
+        except TenantPathBoundaryError:
+            return _make_response(
+                "Error: Tenant context is not available. "
+                "Cannot determine search root.",
+            )
+    else:
+        # Use current workspace dir as base for relative paths
+        base_dir = get_current_workspace_dir()
+        try:
+            search_root = resolve_tenant_path(path, base_dir=base_dir)
+        except TenantPathBoundaryError:
+            return _make_response(
+                "Error: Search path is outside the allowed workspace.",
+            )
+
     try:
         exists = search_root.exists()
     except OSError as e:
@@ -454,8 +477,14 @@ def _walk_and_glob(
             try:
                 parts = entry.relative_to(search_root).parts
             except ValueError:
-                parts = ()
+                # Entry is not within search_root - skip (possible symlink escape)
+                continue
             if any(p in _SKIP_DIRS for p in parts):
+                continue
+            # Additional safety: ensure entry is actually within search_root
+            try:
+                entry.relative_to(search_root.resolve())
+            except ValueError:
                 continue
             display_path = _relative_display(entry, search_root)
             suffix = "/" if entry.is_dir() else ""
@@ -484,13 +513,13 @@ async def grep_search(
     include_pattern: Optional[str] = None,
 ) -> ToolResponse:
     """Search file contents by pattern, recursively. Relative paths resolve
-    from WORKING_DIR. Output format: ``path:line_number: content``.
+    from the current tenant workspace. Output format: ``path:line_number: content``.
 
     Args:
         pattern (`str`):
             Search string (or regex when *is_regex* is True).
         path (`str`, optional):
-            File or directory to search in.  Defaults to WORKING_DIR.
+            File or directory to search in.  Defaults to tenant workspace.
         is_regex (`bool`, optional):
             Treat *pattern* as a regular expression.  Defaults to False.
         case_sensitive (`bool`, optional):
@@ -581,16 +610,22 @@ async def glob_search(
     path: Optional[str] = None,
 ) -> ToolResponse:
     """Find files matching a glob pattern (e.g. ``"*.py"``, ``"**/*.json"``).
-    Relative paths resolve from WORKING_DIR.
+    Relative paths resolve from the current tenant workspace.
 
     Args:
         pattern (`str`):
             Glob pattern to match.
         path (`str`, optional):
-            Root directory to search from.  Defaults to WORKING_DIR.
+            Root directory to search from.  Defaults to tenant workspace.
     """
     if not pattern:
         return _make_response("Error: No glob `pattern` provided.")
+
+    # Reject patterns that attempt path traversal
+    if ".." in pattern:
+        return _make_response(
+            "Error: Glob pattern cannot contain '..' (path traversal)."
+        )
 
     root_or_err = _resolve_search_root(path, require_dir=True)
     if isinstance(root_or_err, ToolResponse):

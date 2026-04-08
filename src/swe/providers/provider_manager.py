@@ -4,6 +4,8 @@ It provides a unified interface to manage providers, such as listing available
 providers, adding/removing custom providers, and fetching provider details."""
 
 import asyncio
+import json
+import logging
 import os
 import shutil
 import threading
@@ -21,28 +23,70 @@ except ImportError:  # pragma: no cover (Unix)
 from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List
-import logging
-import json
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None
+
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover
+    msvcrt = None
 
 from pydantic import BaseModel
 
 from agentscope.model import ChatModelBase
 
-from copaw.providers.provider import (
+from swe.providers.provider import (
     ModelInfo,
     Provider,
     ProviderInfo,
 )
-from copaw.providers.models import ModelSlotConfig
-from copaw.providers.openai_provider import OpenAIProvider
-from copaw.providers.anthropic_provider import AnthropicProvider
+from swe.providers.models import ModelSlotConfig
+from swe.providers.openai_provider import OpenAIProvider
+from swe.providers.anthropic_provider import AnthropicProvider
 
-# from copaw.providers.gemini_provider import GeminiProvider
-from copaw.providers.ollama_provider import OllamaProvider
-from copaw.constant import SECRET_DIR
+# from swe.providers.gemini_provider import GeminiProvider
+from swe.providers.ollama_provider import OllamaProvider
+from swe.constant import SECRET_DIR
 
 
 logger = logging.getLogger(__name__)
+
+if fcntl is None and msvcrt is None:  # pragma: no cover
+    raise ImportError(
+        "No file locking module available (need fcntl or msvcrt)",
+    )
+
+
+def _try_lock_file(file_obj) -> None:
+    """Acquire a non-blocking exclusive lock for the lock file."""
+    if fcntl is not None:
+        fcntl.flock(file_obj.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return
+
+    if msvcrt is None:  # pragma: no cover
+        raise RuntimeError("No supported file locking backend available")
+
+    file_obj.seek(0)
+    file_obj.write("0")
+    file_obj.flush()
+    file_obj.seek(0)
+    msvcrt.locking(file_obj.fileno(), msvcrt.LK_NBLCK, 1)
+
+
+def _unlock_file(file_obj) -> None:
+    """Release the lock acquired by _try_lock_file."""
+    if fcntl is not None:
+        fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
+        return
+
+    if msvcrt is None:  # pragma: no cover
+        raise RuntimeError("No supported file locking backend available")
+
+    file_obj.seek(0)
+    msvcrt.locking(file_obj.fileno(), msvcrt.LK_UNLCK, 1)
 
 
 # -------------------------------------------------------
@@ -464,9 +508,9 @@ PROVIDER_ALIYUN_CODINGPLAN = OpenAIProvider(
     freeze_url=True,
 )
 
-PROVIDER_COPAW = OpenAIProvider(
-    id="copaw-local",
-    name="CoPaw Local",
+PROVIDER_SWE_LOCAL = OpenAIProvider(
+    id="swe-local",
+    name="SWE Local",
     is_local=True,
     require_api_key=False,
 )
@@ -513,6 +557,7 @@ PROVIDER_KIMI_CN = OpenAIProvider(
     base_url="https://api.moonshot.cn/v1",
     api_key_prefix="",
     models=KIMI_MODELS,
+    chat_model="KimiChatModel",
     freeze_url=True,
 )
 
@@ -522,6 +567,7 @@ PROVIDER_KIMI_INTL = OpenAIProvider(
     base_url="https://api.moonshot.ai/v1",
     api_key_prefix="",
     models=KIMI_MODELS,
+    chat_model="KimiChatModel",
     freeze_url=True,
 )
 
@@ -850,7 +896,7 @@ class ProviderManager:
 
     def _init_builtins(self):
         # Deep copy builtin providers to ensure per-tenant isolation
-        self._add_builtin(deepcopy(PROVIDER_COPAW))
+        self._add_builtin(deepcopy(PROVIDER_SWE_LOCAL))
         self._add_builtin(deepcopy(PROVIDER_MODELSCOPE))
         self._add_builtin(deepcopy(PROVIDER_DASHSCOPE))
         self._add_builtin(deepcopy(PROVIDER_ALIYUN_CODINGPLAN))
@@ -915,7 +961,7 @@ class ProviderManager:
         """Schedule background restore of the active local model server."""
         task = asyncio.create_task(
             self._resume_local_model(local_manager),
-            name="copaw-local-model-resume",
+            name="swe-local-model-resume",
         )
         task.add_done_callback(self._on_local_model_resume_done)
 
@@ -1251,7 +1297,7 @@ class ProviderManager:
             ModelSlotConfig if recovery succeeded, None otherwise.
         """
         try:
-            from copaw.tenant_models.manager import TenantModelManager
+            from swe.tenant_models.manager import TenantModelManager
 
             # Check if legacy config exists for this tenant
             legacy_path = TenantModelManager.get_config_path(self.tenant_id)
@@ -1411,7 +1457,7 @@ class ProviderManager:
 
     async def _resume_local_model(self, local_manager) -> None:
         """Resume the active local model server from the previous run."""
-        local_models = self.get_provider("copaw-local").extra_models
+        local_models = self.get_provider("swe-local").extra_models
         model_id = local_models[0].id if local_models else None
         if model_id is None:
             return
@@ -1443,7 +1489,7 @@ class ProviderManager:
             return
 
         self.update_provider(
-            "copaw-local",
+            "swe-local",
             {
                 "base_url": f"http://127.0.0.1:{port}/v1",
                 "extra_models": [ModelInfo(id=model_id, name=model_id)],

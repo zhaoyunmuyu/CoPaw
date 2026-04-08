@@ -18,7 +18,7 @@ from typing import Any, Optional
 
 import httpx
 
-from copaw.constant import DEFAULT_LOCAL_PROVIDER_DIR
+from swe.constant import DEFAULT_LOCAL_PROVIDER_DIR
 
 from .download_manager import (
     apply_download_result,
@@ -77,7 +77,7 @@ class _ThreadedServerProcess:
 
 class LlamaCppBackend:
     """
-    CoPaw local model backend for managing llama.cpp server installation
+    SWE local model backend for managing llama.cpp server installation
     and setup.
     """
 
@@ -435,7 +435,7 @@ class LlamaCppBackend:
                     chunk_size,
                     timeout,
                 ),
-                name="copaw-llamacpp-download",
+                name="swe-llamacpp-download",
                 daemon=True,
             )
             self._download_thread.start()
@@ -490,7 +490,7 @@ class LlamaCppBackend:
         file_name = url.rsplit("/", 1)[-1]
         dest_dir.mkdir(parents=True, exist_ok=True)
         temp_file_fd, temp_file_name = tempfile.mkstemp(
-            prefix="copaw-download-",
+            prefix="swe-download-",
             suffix=f"-{file_name}",
             dir=str(dest_dir),
         )

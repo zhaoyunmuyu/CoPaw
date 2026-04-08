@@ -14,13 +14,13 @@ import pytest
 from fastapi import HTTPException, Request
 from starlette.responses import Response
 
-from copaw.tenant_models.models import (
+from swe.tenant_models.models import (
     TenantModelConfig,
     TenantProviderConfig,
     RoutingConfig,
     ModelSlot,
 )
-from copaw.tenant_models.context import TenantModelContext
+from swe.tenant_models.context import TenantModelContext
 
 
 class TestTenantWorkspaceMiddlewareOrdering:
@@ -177,7 +177,7 @@ class TestTenantModelConfigLoading:
         sample_model_config,
     ):
         """Model configuration is loaded and bound to context during request."""
-        from copaw.app.middleware.tenant_workspace import (
+        from swe.app.middleware.tenant_workspace import (
             TenantWorkspaceMiddleware,
         )
 
@@ -192,7 +192,7 @@ class TestTenantModelConfigLoading:
 
         # Mock TenantModelManager.load
         with patch(
-            "copaw.app.middleware.tenant_workspace.TenantModelManager.load",
+            "swe.app.middleware.tenant_workspace.TenantModelManager.load",
         ) as mock_load:
             mock_load.return_value = sample_model_config
 
@@ -251,7 +251,7 @@ class TestTenantModelConfigLoading:
         sample_model_config,
     ):
         """Model configuration is reset from context after request completes."""
-        from copaw.app.middleware.tenant_workspace import (
+        from swe.app.middleware.tenant_workspace import (
             TenantWorkspaceMiddleware,
         )
 
@@ -267,7 +267,7 @@ class TestTenantModelConfigLoading:
         reset_called = []
 
         with patch(
-            "copaw.app.middleware.tenant_workspace.TenantModelManager.load",
+            "swe.app.middleware.tenant_workspace.TenantModelManager.load",
         ) as mock_load:
             mock_load.return_value = sample_model_config
 
@@ -305,7 +305,7 @@ class TestTenantModelConfigLoading:
         sample_model_config,
     ):
         """Model configuration is reset even if request raises exception."""
-        from copaw.app.middleware.tenant_workspace import (
+        from swe.app.middleware.tenant_workspace import (
             TenantWorkspaceMiddleware,
         )
 
@@ -321,7 +321,7 @@ class TestTenantModelConfigLoading:
         reset_called = []
 
         with patch(
-            "copaw.app.middleware.tenant_workspace.TenantModelManager.load",
+            "swe.app.middleware.tenant_workspace.TenantModelManager.load",
         ) as mock_load:
             mock_load.return_value = sample_model_config
 
@@ -352,7 +352,7 @@ class TestTenantModelConfigLoading:
     @pytest.mark.asyncio
     async def test_model_config_load_failure_continues(self, mock_request):
         """Request continues if model config fails to load (with warning log)."""
-        from copaw.app.middleware.tenant_workspace import (
+        from swe.app.middleware.tenant_workspace import (
             TenantWorkspaceMiddleware,
         )
 
@@ -366,7 +366,7 @@ class TestTenantModelConfigLoading:
         mock_request.app.state.tenant_workspace_pool = mock_pool
 
         with patch(
-            "copaw.app.middleware.tenant_workspace.TenantModelManager.load",
+            "swe.app.middleware.tenant_workspace.TenantModelManager.load",
         ) as mock_load:
             # Simulate config load failure (OSError for file read error)
             mock_load.side_effect = OSError("Config file not readable")
@@ -389,7 +389,7 @@ class TestTenantModelConfigLoading:
     @pytest.mark.asyncio
     async def test_no_model_config_without_tenant(self, mock_request):
         """No model config is loaded when tenant_id is not set."""
-        from copaw.app.middleware.tenant_workspace import (
+        from swe.app.middleware.tenant_workspace import (
             TenantWorkspaceMiddleware,
         )
 
@@ -397,7 +397,7 @@ class TestTenantModelConfigLoading:
         delattr(mock_request.state, "tenant_id")
 
         with patch(
-            "copaw.app.middleware.tenant_workspace.TenantModelManager.load",
+            "swe.app.middleware.tenant_workspace.TenantModelManager.load",
         ) as mock_load:
             middleware = TenantWorkspaceMiddleware(
                 app=MagicMock(),
@@ -436,14 +436,14 @@ class TestTenantProviderConfigInitialization:
         tmp_path,
     ):
         """Provider config is initialized from default tenant when missing."""
-        from copaw.app.middleware.tenant_workspace import (
+        from swe.app.middleware.tenant_workspace import (
             TenantWorkspaceMiddleware,
         )
-        from copaw.constant import SECRET_DIR
+        from swe.constant import SECRET_DIR
 
         # Setup: Create default tenant with config
         default_providers = (
-            tmp_path / ".copaw.secret" / "default" / "providers"
+            tmp_path / ".swe.secret" / "default" / "providers"
         )
         default_providers.mkdir(parents=True)
         (default_providers / "builtin").mkdir()
@@ -464,14 +464,14 @@ class TestTenantProviderConfigInitialization:
 
         # Temporarily override SECRET_DIR
         with patch(
-            "copaw.app.middleware.tenant_workspace.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.app.middleware.tenant_workspace.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             middleware = TenantWorkspaceMiddleware(app=MagicMock())
 
             # Verify new tenant doesn't have config yet
             new_tenant_dir = (
-                tmp_path / ".copaw.secret" / "new-tenant" / "providers"
+                tmp_path / ".swe.secret" / "new-tenant" / "providers"
             )
             assert not new_tenant_dir.exists()
 
@@ -485,7 +485,7 @@ class TestTenantProviderConfigInitialization:
             )
 
             with patch(
-                "copaw.app.middleware.tenant_workspace.TenantModelManager.load",
+                "swe.app.middleware.tenant_workspace.TenantModelManager.load",
             ) as mock_load:
                 mock_load.side_effect = Exception("No config")
 
@@ -509,20 +509,20 @@ class TestTenantProviderConfigInitialization:
         tmp_path,
     ):
         """Empty provider structure created when default has no config."""
-        from copaw.app.middleware.tenant_workspace import (
+        from swe.app.middleware.tenant_workspace import (
             TenantWorkspaceMiddleware,
         )
 
         # Temporarily override SECRET_DIR (no default config exists)
         with patch(
-            "copaw.app.middleware.tenant_workspace.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.app.middleware.tenant_workspace.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             middleware = TenantWorkspaceMiddleware(app=MagicMock())
 
             # Verify new tenant doesn't have config yet
             new_tenant_dir = (
-                tmp_path / ".copaw.secret" / "new-tenant" / "providers"
+                tmp_path / ".swe.secret" / "new-tenant" / "providers"
             )
             assert not new_tenant_dir.exists()
 
@@ -536,7 +536,7 @@ class TestTenantProviderConfigInitialization:
             )
 
             with patch(
-                "copaw.app.middleware.tenant_workspace.TenantModelManager.load",
+                "swe.app.middleware.tenant_workspace.TenantModelManager.load",
             ) as mock_load:
                 mock_load.side_effect = Exception("No config")
 
@@ -561,13 +561,13 @@ class TestTenantProviderConfigInitialization:
         tmp_path,
     ):
         """Provider config initialization is idempotent - doesn't overwrite existing."""
-        from copaw.app.middleware.tenant_workspace import (
+        from swe.app.middleware.tenant_workspace import (
             TenantWorkspaceMiddleware,
         )
 
         # Create existing config for tenant
         tenant_providers = (
-            tmp_path / ".copaw.secret" / "new-tenant" / "providers"
+            tmp_path / ".swe.secret" / "new-tenant" / "providers"
         )
         tenant_providers.mkdir(parents=True)
         import json
@@ -578,8 +578,8 @@ class TestTenantProviderConfigInitialization:
         )
 
         with patch(
-            "copaw.app.middleware.tenant_workspace.SECRET_DIR",
-            tmp_path / ".copaw.secret",
+            "swe.app.middleware.tenant_workspace.SECRET_DIR",
+            tmp_path / ".swe.secret",
         ):
             middleware = TenantWorkspaceMiddleware(app=MagicMock())
 
@@ -593,7 +593,7 @@ class TestTenantProviderConfigInitialization:
             )
 
             with patch(
-                "copaw.app.middleware.tenant_workspace.TenantModelManager.load",
+                "swe.app.middleware.tenant_workspace.TenantModelManager.load",
             ) as mock_load:
                 mock_load.side_effect = Exception("No config")
 
@@ -609,7 +609,7 @@ class TestTenantProviderConfigInitialization:
 
     def test_is_workspace_exempt_for_health_routes(self):
         """Health routes are exempt from workspace requirements."""
-        from copaw.app.middleware.tenant_workspace import (
+        from swe.app.middleware.tenant_workspace import (
             TenantWorkspaceMiddleware,
         )
 
@@ -621,7 +621,7 @@ class TestTenantProviderConfigInitialization:
 
     def test_is_workspace_exempt_for_api_routes(self):
         """API routes are not exempt from workspace requirements."""
-        from copaw.app.middleware.tenant_workspace import (
+        from swe.app.middleware.tenant_workspace import (
             TenantWorkspaceMiddleware,
         )
 

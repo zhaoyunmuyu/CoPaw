@@ -7,14 +7,14 @@ TBD - created by archiving change tenant-isolated-provider-config. Update Purpos
 The system SHALL store provider configurations in tenant-isolated directories, with each tenant having a separate `providers/` directory under their tenant secret directory.
 
 #### Scenario: Default tenant uses global-like path
-- **GIVEN** the system is configured with `SECRET_DIR = ~/.copaw.secret`
+- **GIVEN** the system is configured with `SECRET_DIR = ~/.swe.secret`
 - **WHEN** the default tenant accesses provider configuration
-- **THEN** the system SHALL use path `~/.copaw.secret/default/providers/`
+- **THEN** the system SHALL use path `~/.swe.secret/default/providers/`
 
 #### Scenario: Named tenant has isolated storage
 - **GIVEN** a tenant with ID "tenant-a" exists
 - **WHEN** the tenant accesses provider configuration
-- **THEN** the system SHALL use path `~/.copaw.secret/tenant-a/providers/`
+- **THEN** the system SHALL use path `~/.swe.secret/tenant-a/providers/`
 - **AND** the path SHALL be inaccessible to other tenants
 
 ### Requirement: Tenant-specific API key isolation
@@ -23,7 +23,7 @@ The system SHALL ensure that API keys configured by one tenant are not accessibl
 #### Scenario: Tenant A configures API key
 - **GIVEN** tenant "tenant-a" configures an API key for provider "openai"
 - **WHEN** the configuration is saved
-- **THEN** the API key SHALL be stored in `~/.copaw.secret/tenant-a/providers/builtin/openai.json`
+- **THEN** the API key SHALL be stored in `~/.swe.secret/tenant-a/providers/builtin/openai.json`
 - **AND** tenant "tenant-b" SHALL NOT be able to read this API key
 
 #### Scenario: Different tenants have different API keys for same provider
@@ -39,7 +39,7 @@ The system SHALL maintain separate active model selections for each tenant.
 #### Scenario: Tenant A changes active model
 - **GIVEN** tenant "tenant-a" has active model "gpt-4o"
 - **WHEN** tenant-a changes active model to "claude-opus"
-- **THEN** the active model SHALL be stored in `~/.copaw.secret/tenant-a/providers/active_model.json`
+- **THEN** the active model SHALL be stored in `~/.swe.secret/tenant-a/providers/active_model.json`
 - **AND** tenant "tenant-b" SHALL continue to use its previously configured active model
 
 ### Requirement: Automatic tenant configuration initialization
@@ -49,14 +49,14 @@ The system SHALL automatically initialize provider configuration for new tenants
 - **GIVEN** a new tenant "new-tenant" makes its first request
 - **AND** the default tenant has existing provider configuration
 - **WHEN** the system processes the request
-- **THEN** the system SHALL copy all provider configuration from `~/.copaw.secret/default/providers/` to `~/.copaw.secret/new-tenant/providers/`
+- **THEN** the system SHALL copy all provider configuration from `~/.swe.secret/default/providers/` to `~/.swe.secret/new-tenant/providers/`
 - **AND** the new tenant SHALL be able to use providers immediately
 
 #### Scenario: New tenant when default has no configuration
 - **GIVEN** a new tenant "new-tenant" makes its first request
 - **AND** the default tenant has no provider configuration
 - **WHEN** the system processes the request
-- **THEN** the system SHALL create empty directory structure at `~/.copaw.secret/new-tenant/providers/`
+- **THEN** the system SHALL create empty directory structure at `~/.swe.secret/new-tenant/providers/`
 - **AND** the tenant SHALL receive appropriate "no provider configured" error
 
 ### Requirement: ProviderManager tenant-aware instance management
@@ -94,10 +94,10 @@ The system SHALL bind tenant-specific provider configuration in the request cont
 The system SHALL provide a migration mechanism to move existing global provider configuration to tenant-isolated storage.
 
 #### Scenario: Migrate existing global configuration
-- **GIVEN** existing global provider configuration at `~/.copaw.secret/providers/`
+- **GIVEN** existing global provider configuration at `~/.swe.secret/providers/`
 - **WHEN** the migration script runs
-- **THEN** the system SHALL copy all configuration to `~/.copaw.secret/default/providers/`
-- **AND** the system SHALL create a backup at `~/.copaw.secret/providers.backup.{timestamp}/`
+- **THEN** the system SHALL copy all configuration to `~/.swe.secret/default/providers/`
+- **AND** the system SHALL create a backup at `~/.swe.secret/providers.backup.{timestamp}/`
 - **AND** the system SHALL remove the old global directory after successful migration
 
 #### Scenario: Idempotent migration

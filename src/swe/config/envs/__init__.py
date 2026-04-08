@@ -2,7 +2,7 @@
 """Environment default configuration loader.
 
 Loads environment-specific defaults from JSON files (dev.json, prd.json)
-based on COPAW_ENV environment variable.
+based on SWE_ENV environment variable.
 
 Priority (highest to lowest):
 1. User's envs.json (persisted secrets)
@@ -25,7 +25,7 @@ DEFAULT_ENV = "prd"
 
 
 def _get_package_dir() -> Path:
-    """Get the copaw package directory."""
+    """Get the swe package directory."""
     return Path(__file__).resolve().parent.parent.parent
 
 
@@ -40,7 +40,7 @@ def _load_env_json(env: str) -> dict[str, str]:
     """
     if env not in VALID_ENVS:
         logger.warning(
-            "Invalid COPAW_ENV '%s', falling back to '%s'",
+            "Invalid SWE_ENV '%s', falling back to '%s'",
             env,
             DEFAULT_ENV,
         )
@@ -86,13 +86,13 @@ def load_env_defaults(env: str | None = None) -> dict[str, str]:
 
     Args:
         env: Environment name ('dev' or 'prd'). If None, reads from
-             COPAW_ENV environment variable, defaulting to 'prd'.
+             SWE_ENV environment variable, defaulting to 'prd'.
 
     Returns:
         Dictionary of variables that were set (newly added to os.environ)
     """
     if env is None:
-        env = os.environ.get("COPAW_ENV", DEFAULT_ENV)
+        env = os.environ.get("SWE_ENV", DEFAULT_ENV)
 
     defaults = _load_env_json(env)
     if not defaults:
@@ -117,4 +117,4 @@ def load_env_defaults(env: str | None = None) -> dict[str, str]:
 
 def get_current_env() -> str:
     """Get the current environment name."""
-    return os.environ.get("COPAW_ENV", DEFAULT_ENV)
+    return os.environ.get("SWE_ENV", DEFAULT_ENV)

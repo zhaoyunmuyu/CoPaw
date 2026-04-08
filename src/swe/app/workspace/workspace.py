@@ -28,6 +28,7 @@ from ..mcp import MCPClientManager
 from ..crons.manager import CronManager
 from ..crons.repo.json_repo import JsonJobRepository
 from ...config.config import load_agent_config
+from ...agents.memory import ReMeLightMemoryManager
 
 if TYPE_CHECKING:
     from ..channels.base import BaseChannel
@@ -37,8 +38,6 @@ logger = logging.getLogger(__name__)
 
 def _resolve_memory_class(backend: str) -> type:
     """Return the memory manager class for the given backend name."""
-    from ...agents.memory import ReMeLightMemoryManager
-
     if backend == "remelight":
         return ReMeLightMemoryManager
     raise ValueError(f"Unsupported memory manager backend: '{backend}'")
@@ -132,7 +131,10 @@ class Workspace:
     def config(self):
         """Get agent configuration."""
         if self._config is None:
-            self._config = load_agent_config(self.agent_id)
+            self._config = load_agent_config(
+                self.agent_id,
+                tenant_id=self.tenant_id,
+            )
         return self._config
 
     def set_manager(self, manager) -> None:
@@ -336,7 +338,10 @@ class Workspace:
 
         try:
             # 1. Load agent configuration
-            self._config = load_agent_config(self.agent_id)
+            self._config = load_agent_config(
+                self.agent_id,
+                tenant_id=self.tenant_id,
+            )
             logger.debug(f"Loaded config for agent: {self.agent_id}")
 
             # 2. Start all services via ServiceManager

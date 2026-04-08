@@ -2,11 +2,13 @@ import React, { useCallback, useMemo, useState } from "react";
 import { Drawer } from "antd";
 import { IconButton } from "@agentscope-ai/design";
 import { SparkOperateRightLine } from "@agentscope-ai/icons";
+// ==================== 组件引入方式变更 (Kun He) ====================
 import {
   useChatAnywhereSessionsState,
   useChatAnywhereSessions,
   type IAgentScopeRuntimeWebUISession,
 } from '@/components/agentscope-chat';
+// ==================== 组件引入方式变更结束 ====================
 import { useTranslation } from "react-i18next";
 import { chatApi } from "../../../../api/modules/chat";
 import sessionApi from "../../sessionApi";
@@ -222,7 +224,7 @@ const ChatSessionDrawer: React.FC<ChatSessionDrawerProps> = (props) => {
             return (
               <ChatSessionItem
                 key={session.id}
-                name={session.name || "New Chat"}
+                name={session.name || "新会话"}
                 time={formatCreatedAt(ext.createdAt ?? null)}
                 channelKey={channelKey || undefined}
                 channelLabel={channelLabel}
@@ -233,7 +235,7 @@ const ChatSessionDrawer: React.FC<ChatSessionDrawerProps> = (props) => {
                 }
                 onClick={() => handleSessionClick(session.id!)}
                 onEdit={() =>
-                  handleEditStart(session.id!, session.name || "New Chat")
+                  handleEditStart(session.id!, session.name || "新会话")
                 }
                 onDelete={() => handleDelete(session.id!)}
                 onEditChange={handleEditChange}

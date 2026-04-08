@@ -1,10 +1,10 @@
 ## ADDED Requirements
 
 ### Requirement: Runtime active model resolution uses provider-backed tenant state
-The system SHALL resolve the current tenant's active model from `~/.copaw.secret/{tenant}/providers/active_model.json` through tenant-aware `ProviderManager` APIs, and SHALL NOT require `tenant_models.json` on the runtime path.
+The system SHALL resolve the current tenant's active model from `~/.swe.secret/{tenant}/providers/active_model.json` through tenant-aware `ProviderManager` APIs, and SHALL NOT require `tenant_models.json` on the runtime path.
 
 #### Scenario: Runtime resolves active model for tenant
-- **GIVEN** tenant `tenant-a` has `~/.copaw.secret/tenant-a/providers/active_model.json`
+- **GIVEN** tenant `tenant-a` has `~/.swe.secret/tenant-a/providers/active_model.json`
 - **WHEN** runtime code resolves the active model for chat execution
 - **THEN** the system SHALL use `ProviderManager.get_instance("tenant-a")` to read the active model
 - **AND** the resolved provider and model SHALL match the contents of that tenant's `active_model.json`
@@ -16,12 +16,12 @@ The system SHALL resolve the current tenant's active model from `~/.copaw.secret
 - **AND** the system SHALL NOT prefer `tenant_models.json`
 
 ### Requirement: Active model writes are single-source and tenant-scoped
-The system SHALL persist tenant active model changes only to `~/.copaw.secret/{tenant}/providers/active_model.json` and SHALL NOT perform long-term dual writes to `tenant_models.json`.
+The system SHALL persist tenant active model changes only to `~/.swe.secret/{tenant}/providers/active_model.json` and SHALL NOT perform long-term dual writes to `tenant_models.json`.
 
 #### Scenario: Console changes active model
 - **GIVEN** tenant `tenant-a` selects a new provider/model in the console
 - **WHEN** the backend handles the active model update
-- **THEN** the system SHALL write the selection to `~/.copaw.secret/tenant-a/providers/active_model.json`
+- **THEN** the system SHALL write the selection to `~/.swe.secret/tenant-a/providers/active_model.json`
 - **AND** the system SHALL NOT require writing `tenant_models.json` for the change to take effect
 
 ### Requirement: Legacy tenant configuration can be recovered during migration
@@ -32,7 +32,7 @@ The system SHALL provide a temporary migration-compatible read path for tenants 
 - **AND** tenant `tenant-a` does not yet have `providers/active_model.json`
 - **WHEN** the system first resolves the tenant's active model
 - **THEN** the system SHALL extract the legacy active slot from `tenant_models.json`
-- **AND** the system SHALL persist the recovered provider/model to `~/.copaw.secret/tenant-a/providers/active_model.json`
+- **AND** the system SHALL persist the recovered provider/model to `~/.swe.secret/tenant-a/providers/active_model.json`
 
 #### Scenario: No long-term fallback after recovery
 - **GIVEN** the tenant's `providers/active_model.json` has been created from legacy state
@@ -46,7 +46,7 @@ The system SHALL use `/models` as the primary API contract for reading and setti
 #### Scenario: Read active model from /models/active
 - **GIVEN** tenant `tenant-a` has an active model configured
 - **WHEN** a client calls `GET /models/active`
-- **THEN** the response SHALL reflect the active model stored in `~/.copaw.secret/tenant-a/providers/active_model.json`
+- **THEN** the response SHALL reflect the active model stored in `~/.swe.secret/tenant-a/providers/active_model.json`
 
 #### Scenario: Legacy /providers endpoint does not require tenant_models.json
 - **GIVEN** the `/providers` endpoint remains available

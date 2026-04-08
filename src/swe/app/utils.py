@@ -28,7 +28,7 @@ def schedule_agent_reload(request: "Request", agent_id: str) -> None:
         agent_id: Agent ID to reload
 
     Example:
-        >>> from copaw.app.utils import schedule_agent_reload
+        >>> from swe.app.utils import schedule_agent_reload
         >>> save_agent_config(workspace.agent_id, agent_config)
         >>> schedule_agent_reload(request, workspace.agent_id)
     """

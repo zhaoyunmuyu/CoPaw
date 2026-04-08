@@ -14,9 +14,9 @@ _ORIGINAL_MODULES = {
     name: sys.modules.get(name)
     for name in [
         "agentscope_runtime.engine.schemas.agent_schemas",
-        "copaw.app.channels.renderer",
-        "copaw.app.channels.schema",
-        "copaw.app.channels.base",
+        "swe.app.channels.renderer",
+        "swe.app.channels.schema",
+        "swe.app.channels.base",
     ]
 }
 
@@ -51,27 +51,27 @@ schema_module.RefusalContent = _DummyContent
 schema_module.MessageType = type("MessageType", (), {})
 sys.modules["agentscope_runtime.engine.schemas.agent_schemas"] = schema_module
 
-renderer_module = types.ModuleType("copaw.app.channels.renderer")
+renderer_module = types.ModuleType("swe.app.channels.renderer")
 renderer_module.MessageRenderer = lambda style: object()
 renderer_module.RenderStyle = lambda **kwargs: kwargs
-sys.modules["copaw.app.channels.renderer"] = renderer_module
+sys.modules["swe.app.channels.renderer"] = renderer_module
 
-schema2_module = types.ModuleType("copaw.app.channels.schema")
+schema2_module = types.ModuleType("swe.app.channels.schema")
 schema2_module.ChannelType = str
 schema2_module.DEFAULT_CHANNEL = "console"
-sys.modules["copaw.app.channels.schema"] = schema2_module
+sys.modules["swe.app.channels.schema"] = schema2_module
 
-config_utils_module = importlib.import_module("copaw.config.utils")
+config_utils_module = importlib.import_module("swe.config.utils")
 config_utils_module.load_config = lambda: types.SimpleNamespace(
     tools=types.SimpleNamespace(builtin_tools={}),
 )
 
 base_spec = importlib.util.spec_from_file_location(
-    "copaw.app.channels.base",
-    SRC_ROOT / "copaw" / "app" / "channels" / "base.py",
+    "swe.app.channels.base",
+    SRC_ROOT / "swe" / "app" / "channels" / "base.py",
 )
 base_module = importlib.util.module_from_spec(base_spec)
-sys.modules["copaw.app.channels.base"] = base_module
+sys.modules["swe.app.channels.base"] = base_module
 assert base_spec is not None and base_spec.loader is not None
 base_spec.loader.exec_module(base_module)
 
@@ -81,7 +81,7 @@ for _name, _module in _ORIGINAL_MODULES.items():
     else:
         sys.modules[_name] = _module
 
-from copaw.config.context import get_current_tenant_id, get_current_workspace_dir
+from swe.config.context import get_current_tenant_id, get_current_workspace_dir
 
 BaseChannel = base_module.BaseChannel
 

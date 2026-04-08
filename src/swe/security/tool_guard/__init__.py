@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Pre-tool-call guard framework for CoPaw.
+Pre-tool-call guard framework for SWE.
 
 Scans tool execution parameters **before** the agent invokes a tool,
 looking for dangerous patterns such as command injection, data
@@ -24,7 +24,7 @@ orchestrator.
 
 Quick start::
 
-    from copaw.security.tool_guard import ToolGuardEngine
+    from swe.security.tool_guard import ToolGuardEngine
 
     engine = ToolGuardEngine()
     result = engine.guard("execute_shell_command", {"command": "rm -rf /"})

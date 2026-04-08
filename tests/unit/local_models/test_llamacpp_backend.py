@@ -14,8 +14,8 @@ from typing import Any, cast
 import httpx
 import pytest
 
-import copaw.local_models.llamacpp as downloader_module
-from copaw.local_models.llamacpp import LlamaCppBackend
+import swe.local_models.llamacpp as downloader_module
+from swe.local_models.llamacpp import LlamaCppBackend
 
 
 class _FakeServerProcess:

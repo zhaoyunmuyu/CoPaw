@@ -1,10 +1,10 @@
 ## Why
 
-当前 `ProviderManager` 将提供商配置（API 密钥、base URL、活跃模型选择等）存储在全局共享目录 `~/.copaw.secret/providers/` 中，所有租户共享同一套配置。这违反了多租户隔离原则，导致租户 A 可以访问租户 B 的 API 密钥和模型配置。需要将 `ProviderManager` 改造为按租户隔离存储，每个租户拥有独立的配置目录。
+当前 `ProviderManager` 将提供商配置（API 密钥、base URL、活跃模型选择等）存储在全局共享目录 `~/.swe.secret/providers/` 中，所有租户共享同一套配置。这违反了多租户隔离原则，导致租户 A 可以访问租户 B 的 API 密钥和模型配置。需要将 `ProviderManager` 改造为按租户隔离存储，每个租户拥有独立的配置目录。
 
 ## What Changes
 
-- **BREAKING**: 修改 `ProviderManager` 存储路径，从全局 `~/.copaw.secret/providers/` 改为租户隔离的 `~/.copaw.secret/{tenant_id}/providers/`
+- **BREAKING**: 修改 `ProviderManager` 存储路径，从全局 `~/.swe.secret/providers/` 改为租户隔离的 `~/.swe.secret/{tenant_id}/providers/`
 - **BREAKING**: `ProviderManager` 不再作为全局单例直接使用，需要通过租户上下文获取租户特定的实例
 - 新增 `TenantProviderManager` 包装类，根据当前租户 ID 动态路由到正确的配置目录
 - 修改 `TenantWorkspaceMiddleware`，在请求上下文中绑定租户特定的 `ProviderManager`
@@ -23,16 +23,16 @@
 ## Impact
 
 - **代码文件**:
-  - `src/copaw/providers/provider_manager.py`: 修改存储路径逻辑，支持租户隔离
-  - `src/copaw/app/middleware/tenant_workspace.py`: 在请求上下文中加载租户 provider 配置
-  - `src/copaw/agents/model_factory.py`: 从租户上下文获取 provider 配置
-  - `src/copaw/cli/providers_cmd.py`: 支持按租户管理 provider
-  - `src/copaw/app/routers/providers.py`: API 端点需要租户上下文
+  - `src/swe/providers/provider_manager.py`: 修改存储路径逻辑，支持租户隔离
+  - `src/swe/app/middleware/tenant_workspace.py`: 在请求上下文中加载租户 provider 配置
+  - `src/swe/agents/model_factory.py`: 从租户上下文获取 provider 配置
+  - `src/swe/cli/providers_cmd.py`: 支持按租户管理 provider
+  - `src/swe/app/routers/providers.py`: API 端点需要租户上下文
 
-- **数据迁移**: 现有的 `~/.copaw.secret/providers/` 需要迁移到 `~/.copaw.secret/default/providers/`
+- **数据迁移**: 现有的 `~/.swe.secret/providers/` 需要迁移到 `~/.swe.secret/default/providers/`
 
 - **API 变更**: Provider 管理 API 需要 `X-Tenant-Id` header，返回租户特定的配置
 
-- **CLI 变更**: `copaw models` 命令需要支持 `--tenant-id` 参数
+- **CLI 变更**: `swe models` 命令需要支持 `--tenant-id` 参数
 
 - **向后兼容**: 单租户部署使用 "default" 租户，现有配置自动迁移

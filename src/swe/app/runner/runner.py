@@ -7,12 +7,12 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, AsyncGenerator
 
 from agentscope.message import Msg, TextBlock
 from agentscope.pipeline import stream_printing_messages
 from agentscope_runtime.engine.runner import Runner
-from agentscope_runtime.engine.schemas.agent_schemas import AgentRequest
+from agentscope_runtime.engine.schemas.agent_schemas import AgentRequest, Event
 from agentscope_runtime.engine.schemas.exception import AgentException
 from dotenv import load_dotenv
 
@@ -23,9 +23,10 @@ from .command_dispatch import (
 )
 from .query_error_dump import write_query_error_dump
 from .session import SafeJSONSession
+from .stream_boundary import normalize_reasoning_boundary_stream
 from .utils import build_env_context
 from ..channels.schema import DEFAULT_CHANNEL
-from ...agents.react_agent import CoPawAgent
+from ...agents.react_agent import SWEAgent
 from ...security.tool_guard.models import TOOL_GUARD_DENIED_MARK
 from ...config.config import load_agent_config
 from ...constant import (
@@ -38,6 +39,7 @@ from ...tracing import (
     get_trace_manager,
 )
 from ...tracing.models import TraceStatus
+from ...config.context import get_current_passthrough_headers
 
 if TYPE_CHECKING:
     from ...agents.memory import BaseMemoryManager
@@ -316,14 +318,18 @@ class AgentRunner(Runner):
             )
 
             # Get MCP clients from manager (hot-reloadable)
+            # If passthrough headers exist, create temporary clients with merged headers
             mcp_clients = []
             if self._mcp_manager is not None:
-                mcp_clients = await self._mcp_manager.get_clients()
+                passthrough_headers = get_current_passthrough_headers()
+                mcp_clients = await self._mcp_manager.get_clients_with_headers(
+                    passthrough_headers=passthrough_headers,
+                )
 
             # Load agent-specific configuration
             agent_config = load_agent_config(self.agent_id)
 
-            agent = CoPawAgent(
+            agent = SWEAgent(
                 agent_config=agent_config,
                 env_context=env_context,
                 mcp_clients=mcp_clients,
@@ -482,6 +488,21 @@ class AgentRunner(Runner):
             if self._chat_manager is not None and chat is not None:
                 await self._chat_manager.update_chat(chat)
 
+            # Close temporary MCP clients created with passthrough headers
+            for client in mcp_clients:
+                rebuild_info = getattr(client, "_swe_rebuild_info", {})
+                if rebuild_info.get("_temp_client"):
+                    try:
+                        await client.close()
+                        # Also close the httpx client if stored
+                        http_client = rebuild_info.get("_http_client")
+                        if http_client is not None:
+                            await http_client.aclose()
+                    except Exception as e:
+                        logger.warning(
+                            f"Error closing temporary MCP client: {e}",
+                        )
+
     async def _cleanup_denied_session_memory(
         self,
         session_id: str,
@@ -591,6 +612,17 @@ class AgentRunner(Runner):
                 session_id,
                 exc_info=True,
             )
+
+    async def stream_query(
+        self,
+        request,
+        **kwargs,
+    ) -> AsyncGenerator[Event, None]:
+        """Wrap base streaming to normalize reasoning end boundaries."""
+        async for event in normalize_reasoning_boundary_stream(
+            super().stream_query(request, **kwargs),
+        ):
+            yield event
 
     async def init_handler(self, *args, **kwargs):
         """

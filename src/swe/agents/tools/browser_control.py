@@ -50,7 +50,7 @@ def _resolve_output_path(path: str) -> str:
 # to avoid NotImplementedError with asyncio.create_subprocess_exec.
 # On other platforms or without reload, use async Playwright for better performance.
 _USE_SYNC_PLAYWRIGHT = (
-    sys.platform == "win32" and os.environ.get("COPAW_RELOAD_MODE") == "1"
+    sys.platform == "win32" and os.environ.get("SWE_RELOAD_MODE") == "1"
 )
 
 if _USE_SYNC_PLAYWRIGHT:
@@ -261,7 +261,7 @@ def _ensure_playwright_async():
         return async_playwright
     except ImportError as exc:
         raise ImportError(
-            "Playwright not installed. Use the same Python that runs CoPaw (e.g. "
+            "Playwright not installed. Use the same Python that runs SWE (e.g. "
             "activate your venv or use 'uv run'): "
             f"'{sys.executable}' -m pip install playwright && "
             f"'{sys.executable}' -m playwright install",
@@ -276,7 +276,7 @@ def _ensure_playwright_sync():
         return sync_playwright
     except ImportError as exc:
         raise ImportError(
-            "Playwright not installed. Use the same Python that runs CoPaw (e.g. "
+            "Playwright not installed. Use the same Python that runs SWE (e.g. "
             "activate your venv or use 'uv run'): "
             f"'{sys.executable}' -m pip install playwright && "
             f"'{sys.executable}' -m playwright install",
@@ -288,7 +288,7 @@ def _sync_browser_launch(state: dict, cdp_port: int = 0):
     sync_playwright = _ensure_playwright_sync()
     pw = sync_playwright().start()  # Start without context manager
     use_default = not is_running_in_container() and os.environ.get(
-        "COPAW_BROWSER_USE_DEFAULT",
+        "SWE_BROWSER_USE_DEFAULT",
         "1",
     ).strip().lower() in ("1", "true", "yes")
     default_kind, default_path = (
@@ -532,7 +532,7 @@ async def _ensure_browser(
             pw = await async_playwright().start()
             # Prefer OS default browser when available (e.g. user's default Chrome/Safari).
             use_default = not is_running_in_container() and os.environ.get(
-                "COPAW_BROWSER_USE_DEFAULT",
+                "SWE_BROWSER_USE_DEFAULT",
                 "1",
             ).strip().lower() in ("1", "true", "yes")
             default_kind, default_path = (
@@ -712,7 +712,7 @@ async def _action_start(
             async_playwright = _ensure_playwright_async()
             pw = await async_playwright().start()
             use_default = not is_running_in_container() and os.environ.get(
-                "COPAW_BROWSER_USE_DEFAULT",
+                "SWE_BROWSER_USE_DEFAULT",
                 "1",
             ).strip().lower() in ("1", "true", "yes")
             default_kind, default_path = (

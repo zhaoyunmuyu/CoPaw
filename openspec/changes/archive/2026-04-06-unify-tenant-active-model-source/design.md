@@ -3,7 +3,7 @@
 仓库已经完成 provider 配置目录的租户隔离，`ProviderManager` 也已经成为控制台 `/models` API 的主存储层；但 active model 的读取与运行时使用仍未完全收口。当前存在两条并行链路：
 
 1. 运行时链路通过 `TenantModelManager` / `TenantModelContext` 读取 `tenant_models.json`，再由 `TenantModelConfig.get_active_slot()` 决定当前模型。
-2. 控制台与 `/models` API 通过 tenant-aware `ProviderManager` 读写 `~/.copaw.secret/{tenant}/providers/active_model.json`。
+2. 控制台与 `/models` API 通过 tenant-aware `ProviderManager` 读写 `~/.swe.secret/{tenant}/providers/active_model.json`。
 
 这意味着“当前租户到底在用哪个模型”并没有唯一事实来源，带来三个直接问题：
 - 聊天运行时可能读到旧的 `tenant_models.json`，而不是控制台刚设置的新 active model
@@ -15,7 +15,7 @@
 ## Goals / Non-Goals
 
 **Goals:**
-- 统一租户 active model 的唯一事实来源为 `~/.copaw.secret/{tenant}/providers/active_model.json`
+- 统一租户 active model 的唯一事实来源为 `~/.swe.secret/{tenant}/providers/active_model.json`
 - 让运行时模型解析、prompt 能力判断、agent 日志和 `/models/active` API 都从同一来源读取 active model
 - 去除请求生命周期与运行时主路径对 `tenant_models.json` 的依赖
 - 修复前端 Chat 模型切换仍发送 `scope=agent` 的历史遗留问题

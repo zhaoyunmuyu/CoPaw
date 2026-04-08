@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Tool-guard mixin for CoPawAgent.
+"""Tool-guard mixin for SWEAgent.
 
 Provides ``_acting`` and ``_reasoning`` overrides that intercept
 sensitive tool calls before execution, implementing the deny /
@@ -57,8 +57,8 @@ class ToolGuardMixin:
 
     def _init_tool_guard(self) -> None:
         """Lazy-init tool-guard components (called once)."""
-        from copaw.security.tool_guard.engine import get_guard_engine
-        from copaw.app.approvals import get_approval_service
+        from swe.security.tool_guard.engine import get_guard_engine
+        from swe.app.approvals import get_approval_service
 
         self._tool_guard_engine = get_guard_engine()
         self._tool_guard_approval_service = get_approval_service()
@@ -427,7 +427,7 @@ class ToolGuardMixin:
             only_always_run=not guarded,
         )
         if guard_result is not None and guard_result.findings:
-            from copaw.security.tool_guard.utils import log_findings
+            from swe.security.tool_guard.utils import log_findings
 
             log_findings(tool_name, guard_result)
             if self._should_require_approval():
@@ -522,7 +522,7 @@ class ToolGuardMixin:
     ) -> dict | None:
         """Auto-deny a tool call without offering approval."""
         from agentscope.message import ToolResultBlock
-        from copaw.security.tool_guard.approval import (
+        from swe.security.tool_guard.approval import (
             format_findings_summary,
         )
 
@@ -572,7 +572,7 @@ class ToolGuardMixin:
     ) -> dict | None:
         """Deny the tool call and record a pending approval."""
         from agentscope.message import ToolResultBlock
-        from copaw.security.tool_guard.approval import (
+        from swe.security.tool_guard.approval import (
             format_findings_summary,
         )
 

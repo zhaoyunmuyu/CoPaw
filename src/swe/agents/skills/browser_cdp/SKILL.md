@@ -4,7 +4,7 @@ description: "当用户明确希望连接到已运行的 Chrome 浏览器（conn
 metadata:
   {
     "builtin_skill_version": "1.0",
-    "copaw":
+    "swe":
       {
         "emoji": "🔌",
         "requires": {}

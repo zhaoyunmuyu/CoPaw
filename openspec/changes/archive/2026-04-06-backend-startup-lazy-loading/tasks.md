@@ -1,20 +1,20 @@
 ## 1. Startup path slimming
 
-- [x] 1.1 Remove telemetry, legacy workspace migration, legacy skills migration, QA agent setup, eager agent startup, provider/local model eager init, and default-agent prewarm from `src/copaw/app/_app.py` lifespan startup.
+- [x] 1.1 Remove telemetry, legacy workspace migration, legacy skills migration, QA agent setup, eager agent startup, provider/local model eager init, and default-agent prewarm from `src/swe/app/_app.py` lifespan startup.
 - [x] 1.2 Keep startup limited to minimal app assembly, `ensure_default_agent_exists()`, manager container creation, and shutdown cleanup for actually-started runtimes.
 - [x] 1.3 Add or adjust startup logging so readiness and deferred initialization boundaries are observable.
 
 ## 2. Tenant bootstrap separation
 
-- [x] 2.1 Split `src/copaw/app/workspace/tenant_initializer.py` into minimal bootstrap behavior versus extended/maintenance-only initialization.
+- [x] 2.1 Split `src/swe/app/workspace/tenant_initializer.py` into minimal bootstrap behavior versus extended/maintenance-only initialization.
 - [x] 2.2 Update tenant request paths and middleware to call only minimal bootstrap and provider-config directory setup.
 - [x] 2.3 Ensure tenant bootstrap no longer starts default workspace runtime, initializes skills, creates QA agent, or starts local models.
 
 ## 3. Runtime ownership refactor
 
-- [x] 3.1 Refactor `src/copaw/app/workspace/tenant_pool.py` so it tracks tenant bootstrap/registry state instead of creating and starting workspaces.
-- [x] 3.2 Keep `src/copaw/app/multi_agent_manager.py` as the single `(tenant_id, agent_id)` runtime startup entrypoint with proper cache and concurrency protection.
-- [x] 3.3 Slim `src/copaw/app/workspace/workspace.py` startup so it only loads agent config and agent-local runtime services.
+- [x] 3.1 Refactor `src/swe/app/workspace/tenant_pool.py` so it tracks tenant bootstrap/registry state instead of creating and starting workspaces.
+- [x] 3.2 Keep `src/swe/app/multi_agent_manager.py` as the single `(tenant_id, agent_id)` runtime startup entrypoint with proper cache and concurrency protection.
+- [x] 3.3 Slim `src/swe/app/workspace/workspace.py` startup so it only loads agent config and agent-local runtime services.
 
 ## 4. On-demand subsystem initialization
 

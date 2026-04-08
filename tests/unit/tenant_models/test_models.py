@@ -9,7 +9,7 @@ class TestTenantProviderConfig:
 
     def test_create_minimal_provider_config(self):
         """Test creating a minimal provider configuration."""
-        from copaw.tenant_models.models import TenantProviderConfig
+        from swe.tenant_models.models import TenantProviderConfig
 
         config = TenantProviderConfig(
             id="openai-main",
@@ -27,7 +27,7 @@ class TestTenantProviderConfig:
 
     def test_create_full_provider_config(self):
         """Test creating a provider with all fields."""
-        from copaw.tenant_models.models import TenantProviderConfig
+        from swe.tenant_models.models import TenantProviderConfig
 
         config = TenantProviderConfig(
             id="anthropic-main",
@@ -49,7 +49,7 @@ class TestTenantProviderConfig:
 
     def test_provider_type_must_be_valid(self):
         """Test that provider type must be one of the allowed values."""
-        from copaw.tenant_models.models import TenantProviderConfig
+        from swe.tenant_models.models import TenantProviderConfig
 
         with pytest.raises(ValidationError) as exc_info:
             TenantProviderConfig(
@@ -62,7 +62,7 @@ class TestTenantProviderConfig:
 
     def test_provider_models_can_be_empty(self):
         """Test that models list can be empty."""
-        from copaw.tenant_models.models import TenantProviderConfig
+        from swe.tenant_models.models import TenantProviderConfig
 
         # Empty models list should be allowed
         config = TenantProviderConfig(
@@ -78,7 +78,7 @@ class TestModelSlot:
 
     def test_create_model_slot(self):
         """Test creating a model slot."""
-        from copaw.tenant_models.models import ModelSlot
+        from swe.tenant_models.models import ModelSlot
 
         slot = ModelSlot(
             provider_id="openai-main",
@@ -94,7 +94,7 @@ class TestRoutingConfig:
 
     def test_create_routing_config(self):
         """Test creating a routing configuration."""
-        from copaw.tenant_models.models import ModelSlot, RoutingConfig
+        from swe.tenant_models.models import ModelSlot, RoutingConfig
 
         routing = RoutingConfig(
             mode="local_first",
@@ -110,7 +110,7 @@ class TestRoutingConfig:
 
     def test_routing_mode_must_be_valid(self):
         """Test that routing mode must be one of the allowed values."""
-        from copaw.tenant_models.models import RoutingConfig
+        from swe.tenant_models.models import RoutingConfig
 
         with pytest.raises(ValidationError) as exc_info:
             RoutingConfig(
@@ -126,7 +126,7 @@ class TestTenantModelConfig:
 
     def test_create_tenant_model_config(self):
         """Test creating a complete tenant model configuration."""
-        from copaw.tenant_models.models import (
+        from swe.tenant_models.models import (
             ModelSlot,
             RoutingConfig,
             TenantModelConfig,
@@ -162,7 +162,7 @@ class TestTenantModelConfig:
 
     def test_get_active_slot(self):
         """Test getting the active slot from routing configuration."""
-        from copaw.tenant_models.models import (
+        from swe.tenant_models.models import (
             ModelSlot,
             RoutingConfig,
             TenantModelConfig,
@@ -197,7 +197,7 @@ class TestTenantModelConfig:
 
     def test_get_other_slot(self):
         """Test getting the other (fallback) slot from routing configuration."""
-        from copaw.tenant_models.models import (
+        from swe.tenant_models.models import (
             ModelSlot,
             RoutingConfig,
             TenantModelConfig,
@@ -232,7 +232,7 @@ class TestTenantModelConfig:
 
     def test_custom_version(self):
         """Test creating a config with a custom version."""
-        from copaw.tenant_models.models import (
+        from swe.tenant_models.models import (
             RoutingConfig,
             TenantModelConfig,
             TenantProviderConfig,
@@ -257,7 +257,7 @@ class TestTenantModelConfig:
 
     def test_serialization(self):
         """Test that config can be serialized to dict/JSON."""
-        from copaw.tenant_models.models import (
+        from swe.tenant_models.models import (
             ModelSlot,
             RoutingConfig,
             TenantModelConfig,
@@ -294,7 +294,7 @@ class TestTenantModelConfig:
 
     def test_deserialization(self):
         """Test that config can be deserialized from dict."""
-        from copaw.tenant_models.models import TenantModelConfig
+        from swe.tenant_models.models import TenantModelConfig
 
         config_dict = {
             "version": "1.0",

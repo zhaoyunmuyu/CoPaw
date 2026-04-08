@@ -1,6 +1,6 @@
 ## Context
 
-当前 `ProviderManager` 是一个全局单例，在应用启动时初始化，使用固定路径 `~/.copaw.secret/providers/` 存储所有 provider 配置。这在多租户架构中造成了严重问题：
+当前 `ProviderManager` 是一个全局单例，在应用启动时初始化，使用固定路径 `~/.swe.secret/providers/` 存储所有 provider 配置。这在多租户架构中造成了严重问题：
 
 1. **存储路径问题**: `ProviderManager.__init__()` 中 `self.root_path = SECRET_DIR / "providers"` 是全局共享的
 2. **API 密钥泄露风险**: 所有租户共享同一个目录，理论上可以互相访问配置

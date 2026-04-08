@@ -5,6 +5,7 @@ Tests lazy creation, cache hits, concurrent creation safety, and stop-all cleanu
 """
 # pylint: disable=wrong-import-position,protected-access,unused-import
 import asyncio
+import json
 import sys
 from pathlib import Path
 
@@ -12,19 +13,25 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 import pytest  # noqa: E402,F401
 
-from copaw.app.workspace.tenant_pool import (  # noqa: E402
+from swe.app.workspace.tenant_pool import (  # noqa: E402
     TenantWorkspacePool,
     TenantWorkspaceEntry,
 )
+from swe.config.config import (  # noqa: E402
+    Config,
+    AgentsConfig,
+    AgentProfileRef,
+)
+from swe.config.utils import save_config  # noqa: E402
 
 
 @pytest.fixture(name="mock_working_dir")
 def _mock_working_dir(tmp_path, monkeypatch):
     """Mock WORKING_DIR to use tmp_path for isolation."""
-    from copaw import constant
+    from swe import constant
 
-    monkeypatch.setattr(constant, "WORKING_DIR", tmp_path / "copaw")
-    return tmp_path / "copaw"
+    monkeypatch.setattr(constant, "WORKING_DIR", tmp_path / "swe")
+    return tmp_path / "swe"
 
 
 class TestTenantWorkspacePoolBasics:
@@ -330,6 +337,254 @@ class TestTenantWorkspaceConcurrency:
 
         assert len(set(id(ws) for ws in workspaces)) == 5
         assert len(pool) == 5
+
+
+class TestTenantBootstrapConcurrency:
+    """Tests for concurrent first-access bootstrap with skill seeding."""
+
+    def test_concurrent_ensure_bootstrap_seeds_once(self, tmp_path):
+        """Concurrent ensure_bootstrap seeds skills once per tenant."""
+        from swe.agents.skills_manager import (
+            get_skill_pool_dir,
+            get_pool_skill_manifest_path,
+            _write_json_atomic,
+        )
+
+        # Setup default tenant with skills
+        default_pool = get_skill_pool_dir(working_dir=tmp_path / "default")
+        default_pool.mkdir(parents=True, exist_ok=True)
+
+        skill_dir = default_pool / "concurrent-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: concurrent-skill\ndescription: Concurrent\n---\n",
+            encoding="utf-8",
+        )
+
+        manifest_path = get_pool_skill_manifest_path(
+            working_dir=tmp_path / "default",
+        )
+        _write_json_atomic(
+            manifest_path,
+            {"skills": {"concurrent-skill": {"name": "concurrent-skill"}}},
+        )
+
+        pool = TenantWorkspacePool(tmp_path)
+
+        async def run_test():
+            async def bootstrap_tenant():
+                await pool.ensure_bootstrap("concurrent-tenant")
+                return True
+
+            # Concurrent bootstraps for same tenant
+            results = await asyncio.gather(*[bootstrap_tenant() for _ in range(10)])
+            return results
+
+        results = asyncio.run(run_test())
+
+        # All should succeed
+        assert all(results)
+
+        # Tenant should be in pool
+        assert "concurrent-tenant" in pool
+
+        # Verify skills were seeded (only once)
+        from swe.agents.skills_manager import get_skill_pool_dir
+
+        tenant_pool = get_skill_pool_dir(
+            working_dir=tmp_path / "concurrent-tenant"
+        )
+        assert (tenant_pool / "concurrent-skill" / "SKILL.md").exists()
+
+    def test_concurrent_ensure_bootstrap_different_tenants(self, tmp_path):
+        """Concurrent ensure_bootstrap for different tenants works correctly."""
+        from swe.agents.skills_manager import (
+            get_skill_pool_dir,
+            get_pool_skill_manifest_path,
+            _write_json_atomic,
+        )
+
+        # Setup default tenant with skills
+        default_pool = get_skill_pool_dir(working_dir=tmp_path / "default")
+        default_pool.mkdir(parents=True, exist_ok=True)
+
+        for i in range(3):
+            skill_dir = default_pool / f"shared-skill-{i}"
+            skill_dir.mkdir()
+            (skill_dir / "SKILL.md").write_text(
+                f"---\nname: shared-skill-{i}\ndescription: Shared\n---\n",
+                encoding="utf-8",
+            )
+
+        manifest_path = get_pool_skill_manifest_path(
+            working_dir=tmp_path / "default",
+        )
+        _write_json_atomic(
+            manifest_path,
+            {
+                "skills": {
+                    "shared-skill-0": {"name": "shared-skill-0"},
+                    "shared-skill-1": {"name": "shared-skill-1"},
+                    "shared-skill-2": {"name": "shared-skill-2"},
+                }
+            },
+        )
+
+        pool = TenantWorkspacePool(tmp_path)
+
+        async def run_test():
+            async def bootstrap_tenant(tenant_id):
+                await pool.ensure_bootstrap(tenant_id)
+                return tenant_id
+
+            # Concurrent bootstraps for different tenants
+            tenant_ids = [f"tenant-{i}" for i in range(5)]
+            results = await asyncio.gather(
+                *[bootstrap_tenant(tid) for tid in tenant_ids]
+            )
+            return results
+
+        results = asyncio.run(run_test())
+
+        # All tenants should be bootstrapped
+        assert len(results) == 5
+        assert len(pool) == 5
+
+        # Each tenant should have the skills seeded
+        for tenant_id in results:
+            tenant_pool = get_skill_pool_dir(working_dir=tmp_path / tenant_id)
+            assert (tenant_pool / "shared-skill-0" / "SKILL.md").exists()
+
+    def test_ensure_bootstrap_repairs_cached_tenant_scaffold(self, tmp_path):
+        """ensure_bootstrap self-heals missing files for cached tenants."""
+        default_tenant = tmp_path / "default"
+        default_workspace = default_tenant / "workspaces" / "default"
+        default_workspace.mkdir(parents=True)
+
+        save_config(
+            Config(
+                agents=AgentsConfig(
+                    active_agent="default",
+                    profiles={
+                        "default": AgentProfileRef(
+                            id="default",
+                            workspace_dir=str(default_workspace),
+                        ),
+                    },
+                    language="zh",
+                ),
+            ),
+            default_tenant / "config.json",
+        )
+
+        (default_workspace / "AGENTS.md").write_text(
+            "# agents\n",
+            encoding="utf-8",
+        )
+        (default_workspace / "BOOTSTRAP.md").write_text(
+            "# bootstrap\n",
+            encoding="utf-8",
+        )
+        (default_workspace / "HEARTBEAT.md").write_text(
+            "# heartbeat\n",
+            encoding="utf-8",
+        )
+        (default_workspace / "MEMORY.md").write_text(
+            "# memory\n",
+            encoding="utf-8",
+        )
+        (default_workspace / "PROFILE.md").write_text(
+            "# profile\n",
+            encoding="utf-8",
+        )
+        (default_workspace / "SOUL.md").write_text(
+            "# soul\n",
+            encoding="utf-8",
+        )
+
+        pool = TenantWorkspacePool(tmp_path)
+
+        async def run_test():
+            await pool.ensure_bootstrap("tenant-heal")
+
+            workspace = tmp_path / "tenant-heal" / "workspaces" / "default"
+            (tmp_path / "tenant-heal" / "config.json").unlink()
+            (workspace / "AGENTS.md").unlink()
+            (workspace / "agent.json").unlink()
+            (workspace / "token_usage.json").unlink()
+
+            await pool.ensure_bootstrap("tenant-heal")
+
+            return workspace
+
+        workspace = asyncio.run(run_test())
+
+        assert (tmp_path / "tenant-heal" / "config.json").exists()
+        assert (workspace / "AGENTS.md").exists()
+        assert (workspace / "agent.json").exists()
+        assert (workspace / "token_usage.json").exists()
+
+        token_usage = json.loads(
+            (workspace / "token_usage.json").read_text(encoding="utf-8"),
+        )
+        assert token_usage == {}
+
+    def test_ensure_bootstrap_does_not_recreate_deleted_bootstrap_md(
+        self,
+        tmp_path,
+    ):
+        """Deleting BOOTSTRAP.md should not trigger cached-tenant self-heal."""
+        default_tenant = tmp_path / "default"
+        default_workspace = default_tenant / "workspaces" / "default"
+        default_workspace.mkdir(parents=True)
+
+        save_config(
+            Config(
+                agents=AgentsConfig(
+                    active_agent="default",
+                    profiles={
+                        "default": AgentProfileRef(
+                            id="default",
+                            workspace_dir=str(default_workspace),
+                        ),
+                    },
+                ),
+            ),
+            default_tenant / "config.json",
+        )
+
+        for filename in (
+            "AGENTS.md",
+            "BOOTSTRAP.md",
+            "HEARTBEAT.md",
+            "MEMORY.md",
+            "PROFILE.md",
+            "SOUL.md",
+        ):
+            (default_workspace / filename).write_text(
+                "# template\n",
+                encoding="utf-8",
+            )
+
+        pool = TenantWorkspacePool(tmp_path)
+
+        async def run_test():
+            await pool.ensure_bootstrap("tenant-keep")
+            bootstrap_path = (
+                tmp_path
+                / "tenant-keep"
+                / "workspaces"
+                / "default"
+                / "BOOTSTRAP.md"
+            )
+            bootstrap_path.unlink()
+
+            await pool.ensure_bootstrap("tenant-keep")
+            return bootstrap_path
+
+        bootstrap_path = asyncio.run(run_test())
+
+        assert not bootstrap_path.exists()
 
 
 class TestTenantWorkspaceDirectoryLayout:

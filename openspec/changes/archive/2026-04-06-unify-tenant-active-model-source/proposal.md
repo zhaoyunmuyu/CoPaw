@@ -1,10 +1,10 @@
 ## Why
 
-当前仓库已经将 provider 配置主体迁移到租户隔离的 `~/.copaw.secret/{tenant}/providers/` 目录，但 active model 的运行时读取链路仍然同时依赖 `tenant_models.json` 和 `providers/active_model.json` 两套来源。这导致运行时选模、控制台切模、以及旧 `/providers` 接口之间存在语义分裂和状态漂移风险，需要将 active model 的唯一来源统一到 tenant-scoped `providers/active_model.json`。
+当前仓库已经将 provider 配置主体迁移到租户隔离的 `~/.swe.secret/{tenant}/providers/` 目录，但 active model 的运行时读取链路仍然同时依赖 `tenant_models.json` 和 `providers/active_model.json` 两套来源。这导致运行时选模、控制台切模、以及旧 `/providers` 接口之间存在语义分裂和状态漂移风险，需要将 active model 的唯一来源统一到 tenant-scoped `providers/active_model.json`。
 
 ## What Changes
 
-- **BREAKING**: 停止将 `tenant_models.json` 作为租户 active model 的运行时来源，active model 统一从 `~/.copaw.secret/{tenant}/providers/active_model.json` 读取
+- **BREAKING**: 停止将 `tenant_models.json` 作为租户 active model 的运行时来源，active model 统一从 `~/.swe.secret/{tenant}/providers/active_model.json` 读取
 - 修改运行时模型解析链路，使 `model_factory`、prompt 相关能力、以及 agent 日志统一通过 tenant-aware `ProviderManager` 解析当前 active model
 - 修改请求生命周期中的租户模型加载逻辑，去除或替换 `TenantModelManager` / `TenantModelContext` 对完整 `TenantModelConfig` 的依赖
 - 调整 provider 相关 API，保留 `/models` 作为主接口，弱化、重写或淘汰依赖 `tenant_models.json` 的 `/providers` 旧接口
@@ -23,12 +23,12 @@
 ## Impact
 
 - **代码文件**:
-  - `src/copaw/providers/provider_manager.py`: 作为租户 active model 的唯一入口与存储层
-  - `src/copaw/agents/model_factory.py`: 移除 `tenant_models.json` 主路径读取
-  - `src/copaw/agents/prompt.py`: active model 信息来源统一
-  - `src/copaw/agents/react_agent.py`: active model 日志来源统一
-  - `src/copaw/app/middleware/tenant_workspace.py`: 去除旧 tenant model config 注入
-  - `src/copaw/app/routers/providers.py`: 清理 `/providers` 旧逻辑并统一 `/models/active` 语义
+  - `src/swe/providers/provider_manager.py`: 作为租户 active model 的唯一入口与存储层
+  - `src/swe/agents/model_factory.py`: 移除 `tenant_models.json` 主路径读取
+  - `src/swe/agents/prompt.py`: active model 信息来源统一
+  - `src/swe/agents/react_agent.py`: active model 日志来源统一
+  - `src/swe/app/middleware/tenant_workspace.py`: 去除旧 tenant model config 注入
+  - `src/swe/app/routers/providers.py`: 清理 `/providers` 旧逻辑并统一 `/models/active` 语义
   - `console/src/pages/Chat/ModelSelector/index.tsx`: 修复 `scope=agent`
   - `console/src/api/modules/provider.ts`: 对齐 active model scope 语义
 

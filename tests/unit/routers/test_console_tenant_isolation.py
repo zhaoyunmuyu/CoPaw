@@ -11,10 +11,10 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 SRC_ROOT = Path(__file__).parent.parent.parent.parent / "src"
-_CONSOLE_FILE = SRC_ROOT / "copaw" / "app" / "routers" / "console.py"
+_CONSOLE_FILE = SRC_ROOT / "swe" / "app" / "routers" / "console.py"
 
 
-console_push_store = types.ModuleType("copaw.app.console_push_store")
+console_push_store = types.ModuleType("swe.app.console_push_store")
 
 
 async def _noop_get_recent(*args, **kwargs):
@@ -27,11 +27,11 @@ async def _noop_take(*args, **kwargs):
 
 console_push_store.get_recent = _noop_get_recent
 console_push_store.take = _noop_take
-sys.modules["copaw.app.console_push_store"] = console_push_store
+sys.modules["swe.app.console_push_store"] = console_push_store
 
-agent_context = types.ModuleType("copaw.app.agent_context")
+agent_context = types.ModuleType("swe.app.agent_context")
 agent_context.get_agent_for_request = lambda request: None
-sys.modules["copaw.app.agent_context"] = agent_context
+sys.modules["swe.app.agent_context"] = agent_context
 
 agentscope_runtime = types.ModuleType("agentscope_runtime")
 engine = types.ModuleType("agentscope_runtime.engine")
@@ -44,11 +44,11 @@ sys.modules["agentscope_runtime.engine.schemas"] = schemas
 sys.modules["agentscope_runtime.engine.schemas.agent_schemas"] = agent_schemas
 
 spec = importlib.util.spec_from_file_location(
-    "copaw.app.routers.console",
+    "swe.app.routers.console",
     _CONSOLE_FILE,
 )
 console_router = importlib.util.module_from_spec(spec)
-sys.modules["copaw.app.routers.console"] = console_router
+sys.modules["swe.app.routers.console"] = console_router
 assert spec is not None and spec.loader is not None
 spec.loader.exec_module(console_router)
 

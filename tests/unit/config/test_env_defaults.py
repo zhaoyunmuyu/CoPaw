@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-from copaw.config.envs import (
+from swe.config.envs import (
     DEFAULT_ENV,
     VALID_ENVS,
     get_current_env,
@@ -18,15 +18,15 @@ from copaw.config.envs import (
 def clean_env(monkeypatch):
     """Remove test-related env vars before each test."""
     test_vars = [
-        "COPAW_ENV",
-        "COPAW_LOG_LEVEL",
-        "COPAW_OPENAPI_DOCS",
-        "COPAW_CORS_ORIGINS",
-        "COPAW_LLM_MAX_CONCURRENT",
-        "COPAW_LLM_MAX_QPM",
-        "COPAW_AUTH_ENABLED",
-        "COPAW_ENABLED_CHANNELS",
-        "COPAW_DISABLED_CHANNELS",
+        "SWE_ENV",
+        "SWE_LOG_LEVEL",
+        "SWE_OPENAPI_DOCS",
+        "SWE_CORS_ORIGINS",
+        "SWE_LLM_MAX_CONCURRENT",
+        "SWE_LLM_MAX_QPM",
+        "SWE_AUTH_ENABLED",
+        "SWE_ENABLED_CHANNELS",
+        "SWE_DISABLED_CHANNELS",
     ]
     for var in test_vars:
         monkeypatch.delenv(var, raising=False)
@@ -45,61 +45,61 @@ class TestEnvDefaultsLoader:
         assert DEFAULT_ENV == "prd"
 
     def test_get_current_env_defaults_to_prd(self, monkeypatch):
-        """get_current_env should return prd when COPAW_ENV not set."""
-        monkeypatch.delenv("COPAW_ENV", raising=False)
+        """get_current_env should return prd when SWE_ENV not set."""
+        monkeypatch.delenv("SWE_ENV", raising=False)
         assert get_current_env() == "prd"
 
-    def test_get_current_env_respects_copaw_env(self, monkeypatch):
-        """get_current_env should return value of COPAW_ENV."""
-        monkeypatch.setenv("COPAW_ENV", "dev")
+    def test_get_current_env_respects_swe_env(self, monkeypatch):
+        """get_current_env should return value of SWE_ENV."""
+        monkeypatch.setenv("SWE_ENV", "dev")
         assert get_current_env() == "dev"
 
     def test_load_dev_defaults(self, monkeypatch):
         """load_env_defaults should load dev.json values."""
         result = load_env_defaults("dev")
 
-        assert "COPAW_LOG_LEVEL" in result
-        assert os.environ.get("COPAW_LOG_LEVEL") == "debug"
-        assert os.environ.get("COPAW_OPENAPI_DOCS") == "true"
-        assert os.environ.get("COPAW_AUTH_ENABLED") == "false"
+        assert "SWE_LOG_LEVEL" in result
+        assert os.environ.get("SWE_LOG_LEVEL") == "debug"
+        assert os.environ.get("SWE_OPENAPI_DOCS") == "true"
+        assert os.environ.get("SWE_AUTH_ENABLED") == "false"
 
     def test_load_prd_defaults(self, monkeypatch):
         """load_env_defaults should load prd.json values."""
         result = load_env_defaults("prd")
 
-        assert "COPAW_LOG_LEVEL" in result
-        assert os.environ.get("COPAW_LOG_LEVEL") == "info"
-        assert os.environ.get("COPAW_OPENAPI_DOCS") == "false"
+        assert "SWE_LOG_LEVEL" in result
+        assert os.environ.get("SWE_LOG_LEVEL") == "info"
+        assert os.environ.get("SWE_OPENAPI_DOCS") == "false"
 
     def test_does_not_override_existing_env(self, monkeypatch):
         """load_env_defaults should not override existing env vars."""
-        monkeypatch.setenv("COPAW_LOG_LEVEL", "warning")
+        monkeypatch.setenv("SWE_LOG_LEVEL", "warning")
 
         result = load_env_defaults("dev")
 
-        # Should not have set COPAW_LOG_LEVEL since it already existed
-        assert "COPAW_LOG_LEVEL" not in result
-        assert os.environ.get("COPAW_LOG_LEVEL") == "warning"
+        # Should not have set SWE_LOG_LEVEL since it already existed
+        assert "SWE_LOG_LEVEL" not in result
+        assert os.environ.get("SWE_LOG_LEVEL") == "warning"
 
     def test_invalid_env_falls_back_to_prd(self, monkeypatch):
         """load_env_defaults should fall back to prd for invalid env."""
         result = load_env_defaults("invalid")
 
         # Should still load prd defaults after warning
-        assert os.environ.get("COPAW_LOG_LEVEL") == "info"
-        assert os.environ.get("COPAW_OPENAPI_DOCS") == "false"
+        assert os.environ.get("SWE_LOG_LEVEL") == "info"
+        assert os.environ.get("SWE_OPENAPI_DOCS") == "false"
 
     def test_returns_empty_dict_when_all_vars_exist(self, monkeypatch):
         """load_env_defaults should return empty dict when all vars exist."""
         # Set all dev vars
-        monkeypatch.setenv("COPAW_LOG_LEVEL", "test")
-        monkeypatch.setenv("COPAW_OPENAPI_DOCS", "test")
-        monkeypatch.setenv("COPAW_CORS_ORIGINS", "test")
-        monkeypatch.setenv("COPAW_LLM_MAX_CONCURRENT", "test")
-        monkeypatch.setenv("COPAW_LLM_MAX_QPM", "test")
-        monkeypatch.setenv("COPAW_AUTH_ENABLED", "test")
-        monkeypatch.setenv("COPAW_ENABLED_CHANNELS", "test")
-        monkeypatch.setenv("COPAW_DISABLED_CHANNELS", "test")
+        monkeypatch.setenv("SWE_LOG_LEVEL", "test")
+        monkeypatch.setenv("SWE_OPENAPI_DOCS", "test")
+        monkeypatch.setenv("SWE_CORS_ORIGINS", "test")
+        monkeypatch.setenv("SWE_LLM_MAX_CONCURRENT", "test")
+        monkeypatch.setenv("SWE_LLM_MAX_QPM", "test")
+        monkeypatch.setenv("SWE_AUTH_ENABLED", "test")
+        monkeypatch.setenv("SWE_ENABLED_CHANNELS", "test")
+        monkeypatch.setenv("SWE_DISABLED_CHANNELS", "test")
 
         result = load_env_defaults("dev")
 
