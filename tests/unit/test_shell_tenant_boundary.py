@@ -166,6 +166,48 @@ class TestExtractPathTokens:
         assert "/etc/hosts" in file_paths
         assert has_code_exec is False
 
+    def test_wc_with_dash_c_not_code_exec(self):
+        """wc -c file.txt should NOT be treated as code execution."""
+        cmd = "wc -c file.txt"
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
+        assert has_code_exec is False
+
+    def test_grep_with_dash_c_not_code_exec(self):
+        """grep -c pattern file should NOT be treated as code execution."""
+        cmd = "grep -c hello file.txt"
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
+        assert has_code_exec is False
+
+    def test_echo_with_dash_e_not_code_exec(self):
+        """echo -e 'a\\nb' should NOT be treated as code execution."""
+        cmd = 'echo -e "a\\nb"'
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
+        assert has_code_exec is False
+
+    def test_bash_with_combined_lce_flag_detected(self):
+        """bash -lc 'cmd' should be detected as code execution."""
+        cmd = 'bash -lc "cat /etc/hosts"'
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
+        assert has_code_exec is True
+
+    def test_sh_with_combined_ec_flag_detected(self):
+        """sh -ec 'cmd' should be detected as code execution."""
+        cmd = 'sh -ec "cat /etc/hosts"'
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
+        assert has_code_exec is True
+
+    def test_python_with_combined_flag_detected(self):
+        """python -Bc 'code' should be detected as code execution."""
+        cmd = 'python -Bc "print(1)"'
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
+        assert has_code_exec is True
+
+    def test_python3_with_standalone_c_flag_detected(self):
+        """python3 -c 'code' should be detected as code execution."""
+        cmd = 'python3 -c "open(\'/etc/passwd\')"'
+        file_paths, has_code_exec = _extract_path_tokens(cmd)
+        assert has_code_exec is True
+
 
 # =============================================================================
 # Tests for _validate_shell_paths
@@ -255,6 +297,38 @@ class TestValidateShellPaths:
             result = _validate_shell_paths("tar -xf /etc/hosts", base_dir=tenant_dir)
             assert result is not None
             assert "outside the allowed workspace" in result
+
+    def test_wc_with_dash_c_allowed(self, mock_working_dir: Path):
+        """wc -c file.txt should be allowed (not code execution)."""
+        tenant_dir = mock_working_dir / "test_tenant"
+        (tenant_dir / "test.txt").write_text("hello")
+        with tenant_context(tenant_id="test_tenant"):
+            result = _validate_shell_paths("wc -c test.txt", base_dir=tenant_dir)
+            assert result is None
+
+    def test_grep_with_dash_c_allowed(self, mock_working_dir: Path):
+        """grep -c pattern file should be allowed (not code execution)."""
+        tenant_dir = mock_working_dir / "test_tenant"
+        (tenant_dir / "test.txt").write_text("hello")
+        with tenant_context(tenant_id="test_tenant"):
+            result = _validate_shell_paths("grep -c hello test.txt", base_dir=tenant_dir)
+            assert result is None
+
+    def test_bash_with_combined_flag_rejected(self, mock_working_dir: Path):
+        """bash -lc 'cmd' should be rejected as code execution."""
+        tenant_dir = mock_working_dir / "test_tenant"
+        with tenant_context(tenant_id="test_tenant"):
+            result = _validate_shell_paths('bash -lc "cat /etc/hosts"', base_dir=tenant_dir)
+            assert result is not None
+            assert "code execution flags" in result
+
+    def test_sh_with_combined_ec_flag_rejected(self, mock_working_dir: Path):
+        """sh -ec 'cmd' should be rejected as code execution."""
+        tenant_dir = mock_working_dir / "test_tenant"
+        with tenant_context(tenant_id="test_tenant"):
+            result = _validate_shell_paths('sh -ec "cat /etc/hosts"', base_dir=tenant_dir)
+            assert result is not None
+            assert "code execution flags" in result
 
 
 # =============================================================================

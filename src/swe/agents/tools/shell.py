@@ -31,12 +31,21 @@ _STRING_ARG_COMMANDS = frozenset({
     "printf", "/usr/bin/printf",
 })
 
-# Known code-execution flags that take code/script as arguments
-# Commands with these flags are rejected entirely
-_CODE_EXEC_FLAGS = frozenset({
-    "-c", "-e", "--eval", "-eval",
-    "-exec", "--exec",
-    "-command", "--command",
+# Interpreter commands that have dangerous -c/-e code execution flags
+# Only for these commands do we reject -c/-e flags
+_INTERPRETER_COMMANDS = frozenset({
+    "python", "python3", "python2",
+    "/usr/bin/python", "/usr/bin/python3", "/usr/bin/python2",
+    "/usr/local/bin/python", "/usr/local/bin/python3",
+    "node", "/usr/bin/node", "/usr/local/bin/node",
+    "nodejs", "/usr/bin/nodejs",
+    "ruby", "/usr/bin/ruby", "/usr/local/bin/ruby",
+    "perl", "/usr/bin/perl", "/usr/local/bin/perl",
+    "bash", "/bin/bash", "/usr/bin/bash",
+    "sh", "/bin/sh", "/usr/bin/sh",
+    "zsh", "/bin/zsh", "/usr/bin/zsh",
+    "ksh", "/bin/ksh", "/usr/bin/ksh",
+    "dash", "/bin/dash", "/usr/bin/dash",
 })
 
 
@@ -52,6 +61,33 @@ def _is_path_like(token: str) -> bool:
     return token.startswith(('/', './', '../', '~'))
 
 
+def _has_code_exec_flag(token: str) -> bool:
+    """Check if a token contains code execution flags (-c or -e).
+
+    Handles both standalone flags (-c, -e) and combined flags (-lc, -ec, -ce).
+    Only checks the flag part, not whether the command is an interpreter.
+
+    Args:
+        token: The token to check (e.g., "-c", "-lc", "--eval").
+
+    Returns:
+        True if the token contains -c or -e as code execution flags.
+    """
+    # Long-form flags that are always code execution
+    if token in ('--eval', '--exec', '--command'):
+        return True
+
+    # Short-form flags: -c, -e, or combined like -lc, -ec, -ce
+    if token.startswith('-') and len(token) > 1:
+        # Check if 'c' or 'e' appears in the combined flag
+        # But exclude special cases like --option (already handled above)
+        flag_body = token[1:]  # Remove leading -
+        if 'c' in flag_body or 'e' in flag_body:
+            return True
+
+    return False
+
+
 
 def _extract_path_tokens(command: str) -> tuple[list[str], bool]:
     """Extract path tokens from shell command.
@@ -59,7 +95,7 @@ def _extract_path_tokens(command: str) -> tuple[list[str], bool]:
     Implements a "path-first" validation strategy:
     - Any token that looks like a path (/..., ./..., ../..., ~...) is validated
     - Only exempt: echo/printf commands (their non-flag args are treated as strings)
-    - Commands with -c/-e flags are flagged for rejection
+    - Interpreter commands with -c/-e flags are flagged for rejection
 
     Args:
         command: The shell command string.
@@ -67,7 +103,7 @@ def _extract_path_tokens(command: str) -> tuple[list[str], bool]:
     Returns:
         Tuple of (file_paths, has_code_exec) where:
         - file_paths: List of explicit file path tokens found
-        - has_code_exec: True if command contains code execution flags (-c, -e)
+        - has_code_exec: True if interpreter command contains code execution flags
     """
     file_paths = []
     has_code_exec = False
@@ -82,16 +118,17 @@ def _extract_path_tokens(command: str) -> tuple[list[str], bool]:
     if not tokens:
         return file_paths, has_code_exec
 
-    # Check if this is an exempt command (echo, printf)
+    # Check command type
     cmd_name = tokens[0]
     is_exempt_cmd = cmd_name in _STRING_ARG_COMMANDS
+    is_interpreter = cmd_name in _INTERPRETER_COMMANDS
 
     i = 0
     while i < len(tokens):
         token = tokens[i]
 
-        # Check for code execution flags - these cause immediate rejection
-        if token in _CODE_EXEC_FLAGS:
+        # Check for code execution flags - but ONLY for interpreter commands
+        if is_interpreter and _has_code_exec_flag(token):
             has_code_exec = True
             i += 1
             continue
