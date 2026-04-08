@@ -797,3 +797,27 @@ def get_tenant_config_path_strict(tenant_id: str | None = None) -> Path:
         TenantContextError: If tenant_id is None and no tenant in context.
     """
     return get_tenant_working_dir_strict(tenant_id) / "config.json"
+
+
+def list_all_tenant_ids() -> list[str]:
+    """Scan and return all existing tenant IDs.
+
+    Scans the WORKING_DIR directory and returns all directory names
+    that contain a valid config.json file (indicating a bootstrapped tenant).
+
+    Returns:
+        Sorted list of tenant IDs.
+    """
+    tenant_ids = []
+    if not WORKING_DIR.exists():
+        return tenant_ids
+
+    for entry in WORKING_DIR.iterdir():
+        # Skip hidden directories and JSON files
+        if entry.name.startswith(".") or entry.name.endswith(".json"):
+            continue
+        # A valid tenant has a config.json in its directory
+        if entry.is_dir() and (entry / "config.json").exists():
+            tenant_ids.append(entry.name)
+
+    return sorted(tenant_ids)
