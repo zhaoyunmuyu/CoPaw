@@ -91,6 +91,7 @@ class CronManager:
             # Set callbacks
             self._coordination.set_reload_callback(self._on_reload_signal)
             self._coordination.set_lease_lost_callback(self._on_lease_lost)
+            self._coordination.set_become_leader_callback(self._on_become_leader)
 
         self._active_jobs: set[str] = set()  # Track which jobs are scheduled
 
@@ -171,6 +172,8 @@ class CronManager:
                     "CronManager activated as follower: agent=%s",
                     self._agent_id,
                 )
+                # Start candidate loop for automatic failover
+                await self._coordination.start_candidate_loop()
                 return False
             logger.info(
                 "CronManager activated as leader: agent=%s instance=%s",
@@ -346,6 +349,26 @@ class CronManager:
             # No event loop running - this shouldn't happen in normal operation
             logger.warning(
                 "Cannot schedule deactivate: no event loop (agent=%s)",
+                self._agent_id,
+            )
+
+    def _on_become_leader(self) -> None:
+        """Callback invoked when this instance becomes leader via candidate loop.
+
+        This starts the scheduler to begin cron execution.
+        """
+        logger.info(
+            "Become leader callback invoked, starting scheduler: agent=%s",
+            self._agent_id,
+        )
+        # Schedule start in the event loop
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._do_start())
+        except RuntimeError:
+            # No event loop running - this shouldn't happen in normal operation
+            logger.warning(
+                "Cannot schedule start: no event loop (agent=%s)",
                 self._agent_id,
             )
 

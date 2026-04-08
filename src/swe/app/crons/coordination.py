@@ -498,10 +498,14 @@ class CronCoordination:
         self._instance_id = str(uuid.uuid4())
 
         self._redis: Optional[Any] = None
+        self._pubsub_client: Optional[Any] = None
         self._lease: Optional[AgentLease] = None
         self._reload_subscriber: Optional[ReloadSubscriber] = None
         self._on_reload: Optional[Callable[[], None]] = None
         self._on_lease_lost: Optional[Callable[[], None]] = None
+        self._on_become_leader: Optional[Callable[[], None]] = None
+        self._candidate_task: Optional[asyncio.Task] = None
+        self._stop_candidate = asyncio.Event()
 
     @property
     def instance_id(self) -> str:
@@ -532,6 +536,8 @@ class CronCoordination:
             if self._config.cluster_mode:
                 # Connect to Redis Cluster
                 self._redis = await self._connect_cluster()
+                # Create separate pub/sub client for cluster mode
+                self._pubsub_client = await self._create_pubsub_client()
             else:
                 # Connect to standalone Redis
                 if redis_lib is None:
@@ -540,6 +546,8 @@ class CronCoordination:
                     self._config.redis_url,
                     decode_responses=False,
                 )
+                # In standalone mode, use the same client for pub/sub
+                self._pubsub_client = self._redis
 
             # Test connection
             if self._redis is not None:
@@ -555,7 +563,103 @@ class CronCoordination:
         except Exception as e:
             logger.warning("Failed to connect to Redis: %s", e)
             self._redis = None
+            self._pubsub_client = None
             return False
+
+    def _build_cluster_startup_nodes(self) -> list:
+        """Build list of ClusterNode objects from configuration.
+
+        Returns:
+            List of ClusterNode objects for RedisCluster startup.
+        """
+        if not ClusterNode:
+            raise RedisNotAvailableError("ClusterNode not available")
+
+        nodes = []
+
+        # First try cluster_nodes from config
+        if self._config.cluster_nodes:
+            for node in self._config.cluster_nodes:
+                if isinstance(node, dict):
+                    nodes.append(
+                        ClusterNode(
+                            host=node["host"],
+                            port=node.get("port", 6379),
+                        )
+                    )
+                elif isinstance(node, ClusterNode):
+                    nodes.append(node)
+
+        # Then try cluster_startup_nodes
+        if not nodes and self._config.cluster_startup_nodes:
+            for node in self._config.cluster_startup_nodes:
+                if isinstance(node, dict):
+                    nodes.append(
+                        ClusterNode(
+                            host=node["host"],
+                            port=node.get("port", 6379),
+                        )
+                    )
+                elif isinstance(node, ClusterNode):
+                    nodes.append(node)
+
+        # Finally, parse from redis_url
+        if not nodes:
+            url = self._config.redis_url
+            # Remove redis:// or rediss:// prefix
+            if "://" in url:
+                url = url.split("://", 1)[1]
+            # Remove auth part if present (user:pass@host)
+            if "@" in url:
+                url = url.split("@", 1)[1]
+            # Parse host:port pairs
+            for host_port in url.split(","):
+                if ":" in host_port:
+                    host, port_str = host_port.rsplit(":", 1)
+                    try:
+                        port = int(port_str)
+                    except ValueError:
+                        port = 6379
+                    nodes.append(ClusterNode(host=host, port=port))
+                else:
+                    nodes.append(ClusterNode(host=host_port, port=6379))
+
+        return nodes
+
+    def _parse_redis_url(self) -> dict:
+        """Parse redis_url to extract connection parameters.
+
+        Returns:
+            Dict with host, port, username, password, ssl, db.
+        """
+        import urllib.parse
+
+        url = self._config.redis_url
+        parsed = urllib.parse.urlparse(url)
+
+        result = {
+            "host": parsed.hostname or "localhost",
+            "port": parsed.port or 6379,
+            "username": None,
+            "password": None,
+            "ssl": parsed.scheme == "rediss",
+            "db": 0,
+        }
+
+        # Extract auth
+        if parsed.username:
+            result["username"] = parsed.username
+        if parsed.password:
+            result["password"] = parsed.password
+
+        # Extract db from path
+        if parsed.path and parsed.path.strip("/"):
+            try:
+                result["db"] = int(parsed.path.strip("/"))
+            except ValueError:
+                pass
+
+        return result
 
     async def _connect_cluster(self) -> Any:
         """Connect to Redis Cluster.
@@ -568,48 +672,84 @@ class CronCoordination:
         # Import cluster-specific classes
         from redis.asyncio.cluster import RedisCluster
 
-        # Build startup nodes
-        startup_nodes = self._config.cluster_startup_nodes
-        if not startup_nodes and self._config.cluster_nodes:
-            # Convert cluster_nodes to startup_nodes format
-            startup_nodes = []
-            for node in self._config.cluster_nodes:
-                if isinstance(node, dict):
-                    startup_nodes.append(
-                        {"host": node["host"], "port": node["port"]}
-                    )
-                elif ClusterNode:
-                    startup_nodes.append(node)
+        # Build startup nodes as ClusterNode objects
+        startup_nodes = self._build_cluster_startup_nodes()
 
         if not startup_nodes:
-            # Parse from redis_url if no nodes specified
-            # Expected format: redis://host1:port1,host2:port2,host3:port3
-            url = self._config.redis_url
-            if url.startswith("redis://"):
-                url = url[8:]
-            nodes = []
-            for host_port in url.split(","):
-                if ":" in host_port:
-                    host, port_str = host_port.rsplit(":", 1)
-                    nodes.append({"host": host, "port": int(port_str)})
-                else:
-                    nodes.append({"host": host_port, "port": 6379})
-            startup_nodes = nodes
+            raise RedisNotAvailableError(
+                "No cluster nodes configured. "
+                "Please set cluster_nodes or provide nodes in redis_url."
+            )
+
+        # Parse URL for auth and SSL settings
+        url_params = self._parse_redis_url()
 
         logger.debug(
-            "Connecting to Redis Cluster with nodes: %s", startup_nodes
+            "Connecting to Redis Cluster with %d nodes", len(startup_nodes)
         )
 
         cluster = RedisCluster(
             startup_nodes=startup_nodes,
             max_connections=self._config.cluster_max_connections,
             decode_responses=False,
+            require_full_coverage=not self._config.cluster_skip_full_coverage_check,
+            password=url_params["password"],
+            username=url_params["username"],
+            ssl=url_params["ssl"],
         )
         return cluster
 
+    async def _create_pubsub_client(self) -> Any:
+        """Create a standalone Redis client for pub/sub operations.
+
+        In cluster mode, RedisCluster doesn't support pubsub(), so we need
+        a standalone client connected to a specific node for pub/sub.
+
+        Returns:
+            Standalone Redis client for pub/sub.
+        """
+        if not redis_lib:
+            raise RedisNotAvailableError("Redis library not available")
+
+        if self._config.cluster_mode:
+            # In cluster mode, connect to the first startup node for pub/sub
+            startup_nodes = self._build_cluster_startup_nodes()
+            if not startup_nodes:
+                raise RedisNotAvailableError("No cluster nodes for pub/sub client")
+
+            # Parse URL for auth
+            url_params = self._parse_redis_url()
+
+            # Create standalone client to first node
+            first_node = startup_nodes[0]
+            client = redis_lib.Redis(
+                host=first_node.host,
+                port=first_node.port,
+                password=url_params["password"],
+                username=url_params["username"],
+                ssl=url_params["ssl"],
+                decode_responses=False,
+            )
+            return client
+        else:
+            # In standalone mode, use the same connection
+            if self._redis is None:
+                raise RedisNotAvailableError("Redis not connected")
+            return self._redis
+
     async def disconnect(self) -> None:
         """Disconnect from Redis."""
+        # Stop candidate loop
+        await self.stop_candidate_loop()
+
         await self.deactivate()
+
+        if self._pubsub_client is not None and self._pubsub_client is not self._redis:
+            try:
+                await self._pubsub_client.close()
+            except Exception as e:  # pylint: disable=broad-except
+                logger.warning("Error closing pubsub client: %s", e)
+            self._pubsub_client = None
 
         if self._redis is not None:
             try:
@@ -649,20 +789,25 @@ class CronCoordination:
         acquired = await self._lease.acquire()
 
         # Start reload subscriber regardless of leader/follower status
-        if self._on_reload is not None:
-            self._reload_subscriber = ReloadSubscriber(
-                redis_client=self._redis,
-                tenant_id=self._tenant_id,
-                agent_id=self._agent_id,
-                config=self._config,
-                on_reload=self._on_reload,
-            )
-            await self._reload_subscriber.start()
+        if self._on_reload is not None and self._pubsub_client is not None:
+            # Only create if not already started
+            if self._reload_subscriber is None:
+                self._reload_subscriber = ReloadSubscriber(
+                    redis_client=self._pubsub_client,
+                    tenant_id=self._tenant_id,
+                    agent_id=self._agent_id,
+                    config=self._config,
+                    on_reload=self._on_reload,
+                )
+                await self._reload_subscriber.start()
 
         return acquired
 
     async def deactivate(self) -> None:
         """Deactivate this instance, releasing leadership if held."""
+        # Stop candidate loop first (we don't want to immediately re-acquire)
+        await self.stop_candidate_loop()
+
         if self._reload_subscriber is not None:
             await self._reload_subscriber.stop()
             self._reload_subscriber = None
@@ -692,6 +837,117 @@ class CronCoordination:
     def set_lease_lost_callback(self, callback: Callable[[], None]) -> None:
         """Set the callback to invoke when the lease is lost."""
         self._on_lease_lost = callback
+
+    def set_become_leader_callback(self, callback: Callable[[], None]) -> None:
+        """Set the callback to invoke when this instance becomes leader."""
+        self._on_become_leader = callback
+
+    async def start_candidate_loop(self) -> None:
+        """Start the candidate loop for automatic failover.
+
+        This loop periodically retries to acquire leadership when not leader.
+        Should be called after connect() but before or after activate().
+        """
+        if self._candidate_task is not None:
+            return
+
+        self._stop_candidate.clear()
+        self._candidate_task = asyncio.create_task(
+            self._candidate_loop(),
+            name=f"candidate-{self._tenant_id or 'default'}-{self._agent_id}",
+        )
+        logger.debug(
+            "Started candidate loop: tenant=%s agent=%s",
+            self._tenant_id,
+            self._agent_id,
+        )
+
+    async def stop_candidate_loop(self) -> None:
+        """Stop the candidate loop."""
+        if self._candidate_task is None:
+            return
+
+        self._stop_candidate.set()
+        try:
+            await asyncio.wait_for(self._candidate_task, timeout=5.0)
+        except asyncio.TimeoutError:
+            self._candidate_task.cancel()
+            try:
+                await self._candidate_task
+            except asyncio.CancelledError:
+                pass
+        self._candidate_task = None
+        logger.debug(
+            "Stopped candidate loop: tenant=%s agent=%s",
+            self._tenant_id,
+            self._agent_id,
+        )
+
+    async def _candidate_loop(self) -> None:
+        """Background task that periodically retries to acquire leadership."""
+        # Wait a bit before first attempt to avoid thundering herd on startup
+        try:
+            await asyncio.wait_for(
+                self._stop_candidate.wait(),
+                timeout=self._config.lease_renew_interval_seconds,
+            )
+            return  # Stop requested
+        except asyncio.TimeoutError:
+            pass
+
+        while not self._stop_candidate.is_set():
+            try:
+                # If already leader, just wait
+                if self.is_leader:
+                    await asyncio.wait_for(
+                        self._stop_candidate.wait(),
+                        timeout=self._config.lease_renew_interval_seconds,
+                    )
+                    return
+
+                # Try to activate (acquire leadership)
+                logger.debug(
+                    "Candidate loop attempting to become leader: "
+                    "tenant=%s agent=%s",
+                    self._tenant_id,
+                    self._agent_id,
+                )
+                became_leader = await self.activate()
+
+                if became_leader:
+                    logger.info(
+                        "Candidate loop became leader: tenant=%s agent=%s",
+                        self._tenant_id,
+                        self._agent_id,
+                    )
+                    # Notify via callback
+                    if self._on_become_leader is not None:
+                        try:
+                            self._on_become_leader()
+                        except Exception:  # pylint: disable=broad-except
+                            logger.exception("Become leader callback failed")
+                    return
+
+                # Not leader, wait before retry
+                await asyncio.wait_for(
+                    self._stop_candidate.wait(),
+                    timeout=self._config.lease_renew_interval_seconds,
+                )
+                return  # Stop requested
+
+            except asyncio.TimeoutError:
+                continue  # Retry
+            except Exception:  # pylint: disable=broad-except
+                logger.exception("Candidate loop error")
+                # Wait before retry
+                try:
+                    await asyncio.wait_for(
+                        self._stop_candidate.wait(),
+                        timeout=self._config.lease_renew_interval_seconds,
+                    )
+                    return  # Stop requested
+                except asyncio.TimeoutError:
+                    continue
 
     def create_execution_lock(
         self, job_id: str, timeout_seconds: int

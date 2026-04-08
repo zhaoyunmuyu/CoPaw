@@ -437,3 +437,104 @@ class TestCronManagerState:
         assert state.last_run_at is None
 
         await manager.deactivate()
+
+
+@pytest.mark.skipif(not REDIS_AVAILABLE, reason="Redis not available")
+class TestCronManagerFailover:
+    """Tests for automatic failover between managers."""
+
+    async def test_follower_takes_over_after_leader_loses_lease(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+        coordination_config,
+    ):
+        """Test that follower automatically takes over when leader loses lease."""
+        # Use shorter intervals for faster test
+        config = CoordinationConfig(
+            enabled=True,
+            redis_url="redis://localhost:6379/15",
+            lease_ttl_seconds=3,
+            lease_renew_interval_seconds=1,
+        )
+
+        # Create two managers
+        repo1 = JsonJobRepository(temp_jobs_file)
+        repo2 = JsonJobRepository(temp_jobs_file)
+
+        leader = CronManager(
+            repo=repo1,
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=config,
+        )
+        follower = CronManager(
+            repo=repo2,
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=config,
+        )
+
+        try:
+            # Leader activates and becomes leader
+            is_leader = await leader.activate()
+            if not is_leader:
+                pytest.skip("Could not acquire leadership for test")
+
+            assert leader.is_leader
+            assert leader.is_started
+
+            # Follower activates as follower
+            is_follower_leader = await follower.activate()
+            assert not is_follower_leader
+            assert not follower.is_leader
+            assert not follower.is_started
+
+            # Create a job while leader
+            job = CronJobSpec(
+                id="test-job",
+                name="Test Job",
+                enabled=True,
+                tenant_id="test-tenant",
+                schedule=ScheduleSpec(
+                    type="cron",
+                    cron="0 0 * * *",
+                    timezone="UTC",
+                ),
+                task_type="text",
+                text="Test",
+                dispatch=DispatchSpec(
+                    type="channel",
+                    channel="console",
+                    target=DispatchTarget(
+                        user_id="user1", session_id="session1"
+                    ),
+                ),
+            )
+            await leader.create_or_replace_job(job)
+
+            # Leader deactivates (simulates lease loss or shutdown)
+            await leader.deactivate()
+
+            # Wait for follower's candidate loop to detect and take over
+            # Wait longer than lease TTL + candidate loop interval
+            await asyncio.sleep(config.lease_ttl_seconds + 2)
+
+            # Follower should now be leader
+            assert follower.is_leader
+            assert follower.is_started
+
+        except RuntimeError as e:
+            if "Redis coordination is enabled but Redis is not available" in str(e):
+                pytest.skip("Redis not available")
+            raise
+        finally:
+            await leader.deactivate()
+            await follower.deactivate()
+            await leader.disconnect_coordination()
+            await follower.disconnect_coordination()

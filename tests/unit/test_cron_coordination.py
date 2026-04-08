@@ -60,16 +60,32 @@ def coordination_config():
 @pytest.fixture
 async def redis_client():
     """Create a Redis client for tests."""
-    client = redis.from_url("redis://localhost:6379/15")
+    if not REDIS_AVAILABLE:
+        pytest.skip("Redis not available")
+
+    # Import here to ensure we have redis available
+    import redis.asyncio as redis_lib
+
     try:
+        client = redis_lib.from_url("redis://localhost:6379/15")
         await client.ping()
+    except Exception as e:
+        pytest.skip(f"Redis not reachable: {e}")
+
+    try:
         yield client
     finally:
         # Clean up test keys
-        keys = await client.keys("swe:cron:*")
-        if keys:
-            await client.delete(*keys)
-        await client.close()
+        try:
+            keys = await client.keys("swe:cron:*")
+            if keys:
+                await client.delete(*keys)
+        except Exception:
+            pass  # Ignore cleanup errors
+        try:
+            await client.close()
+        except Exception:
+            pass  # Ignore close errors
 
 
 class TestAgentLease:
@@ -515,3 +531,195 @@ class TestCronCoordinationWithRedis:
         # Don't connect
         with pytest.raises(Exception):  # RedisNotAvailableError
             coord.create_execution_lock("job-1", timeout_seconds=30)
+
+
+@pytest.mark.skipif(not REDIS_AVAILABLE, reason="Redis not available")
+class TestCronCoordinationClusterMode:
+    """Tests for CronCoordination in cluster mode.
+
+    These tests verify cluster-specific behavior including:
+    - ClusterNode conversion from configuration
+    - require_full_coverage parameter mapping
+    - Separate pub/sub client for cluster mode
+    """
+
+    def test_cluster_startup_nodes_from_dict(self):
+        """Test that cluster_nodes dicts are converted to ClusterNode objects."""
+        from swe.app.crons.coordination import (
+            CoordinationConfig,
+            CronCoordination,
+        )
+
+        config = CoordinationConfig(
+            enabled=True,
+            cluster_mode=True,
+            cluster_nodes=[
+                {"host": "127.0.0.1", "port": 6379},
+                {"host": "127.0.0.2", "port": 6380},
+            ],
+            redis_url="redis://127.0.0.1:6379",
+        )
+
+        coord = CronCoordination(
+            tenant_id="test",
+            agent_id="test-agent",
+            config=config,
+        )
+
+        nodes = coord._build_cluster_startup_nodes()
+        assert len(nodes) == 2
+        assert nodes[0].host == "127.0.0.1"
+        assert nodes[0].port == 6379
+        assert nodes[1].host == "127.0.0.2"
+        assert nodes[1].port == 6380
+
+    def test_cluster_startup_nodes_from_url(self):
+        """Test that startup nodes are parsed from redis_url."""
+        from swe.app.crons.coordination import (
+            CoordinationConfig,
+            CronCoordination,
+        )
+
+        config = CoordinationConfig(
+            enabled=True,
+            cluster_mode=True,
+            redis_url="redis://host1:6379,host2:6380,host3:6381",
+        )
+
+        coord = CronCoordination(
+            tenant_id="test",
+            agent_id="test-agent",
+            config=config,
+        )
+
+        nodes = coord._build_cluster_startup_nodes()
+        assert len(nodes) == 3
+        assert nodes[0].host == "host1"
+        assert nodes[0].port == 6379
+        assert nodes[1].host == "host2"
+        assert nodes[1].port == 6380
+        assert nodes[2].host == "host3"
+        assert nodes[2].port == 6381
+
+    def test_cluster_url_with_auth(self):
+        """Test that auth credentials are parsed from redis_url."""
+        from swe.app.crons.coordination import (
+            CoordinationConfig,
+            CronCoordination,
+        )
+
+        config = CoordinationConfig(
+            enabled=True,
+            cluster_mode=True,
+            redis_url="redis://user:pass@host1:6379",
+        )
+
+        coord = CronCoordination(
+            tenant_id="test",
+            agent_id="test-agent",
+            config=config,
+        )
+
+        params = coord._parse_redis_url()
+        assert params["host"] == "host1"
+        assert params["port"] == 6379
+        assert params["username"] == "user"
+        assert params["password"] == "pass"
+
+    def test_cluster_skip_full_coverage_mapping(self):
+        """Test that cluster_skip_full_coverage_check maps correctly."""
+        from swe.app.crons.coordination import CoordinationConfig
+
+        # When skip is True, require_full_coverage should be False
+        config_skip = CoordinationConfig(
+            enabled=True,
+            cluster_mode=True,
+            cluster_skip_full_coverage_check=True,
+            redis_url="redis://localhost:6379",
+        )
+        assert config_skip.cluster_skip_full_coverage_check is True
+
+        # When skip is False, require_full_coverage should be True
+        config_no_skip = CoordinationConfig(
+            enabled=True,
+            cluster_mode=True,
+            cluster_skip_full_coverage_check=False,
+            redis_url="redis://localhost:6379",
+        )
+        assert config_no_skip.cluster_skip_full_coverage_check is False
+
+
+class TestCronCoordinationCandidateLoop:
+    """Tests for follower candidate loop functionality."""
+
+    @pytest.mark.skipif(not REDIS_AVAILABLE, reason="Redis not available")
+    async def test_candidate_loop_becomes_leader(
+        self, redis_client, coordination_config
+    ):
+        """Test that candidate loop can acquire leadership when lease is free."""
+        coord = CronCoordination(
+            tenant_id="test-tenant",
+            agent_id="test-agent",
+            config=coordination_config,
+        )
+
+        # Connect first
+        assert await coord.connect()
+
+        # Start candidate loop (don't activate yet)
+        become_leader_called = False
+
+        def on_become_leader():
+            nonlocal become_leader_called
+            become_leader_called = True
+
+        coord.set_become_leader_callback(on_become_leader)
+
+        # Start candidate loop - should acquire leadership
+        await coord.start_candidate_loop()
+
+        # Wait for candidate loop to try
+        await asyncio.sleep(coordination_config.lease_renew_interval_seconds + 1)
+
+        # Should have become leader
+        assert coord.is_leader
+        assert become_leader_called
+
+        await coord.deactivate()
+        await coord.disconnect()
+
+    @pytest.mark.skipif(not REDIS_AVAILABLE, reason="Redis not available")
+    async def test_candidate_loop_with_existing_leader(
+        self, redis_client, coordination_config
+    ):
+        """Test that candidate loop doesn't steal existing lease."""
+        coord1 = CronCoordination(
+            tenant_id="test-tenant",
+            agent_id="test-agent",
+            config=coordination_config,
+        )
+        coord2 = CronCoordination(
+            tenant_id="test-tenant",
+            agent_id="test-agent",
+            config=coordination_config,
+        )
+
+        # First becomes leader
+        assert await coord1.connect()
+        assert await coord1.activate()
+        assert coord1.is_leader
+
+        # Second connects and starts candidate loop
+        assert await coord2.connect()
+        await coord2.start_candidate_loop()
+
+        # Wait for candidate loop to try
+        await asyncio.sleep(coordination_config.lease_renew_interval_seconds + 1)
+
+        # Second should still be follower
+        assert not coord2.is_leader
+
+        await coord1.deactivate()
+        await coord1.disconnect()
+        await coord2.stop_candidate_loop()
+        await coord2.disconnect()

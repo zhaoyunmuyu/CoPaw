@@ -98,3 +98,4 @@ Write Python tests with `pytest` and name files `test_*.py`. Keep tests close to
 ## Commit & Pull Request Guidelines
 
 Use Conventional Commits: `feat(scope): summary`, `fix(scope): summary`, `docs(scope): summary`. Recent history follows this closely, for example `feat(lock): ...` and `fix(lock): ...`. PR titles should use the same format. Include a clear description, linked issue, security notes when relevant, testing steps, and local verification output for `pre-commit run --all-files` and `pytest`. Update docs in `website/public/docs/` when behavior changes, and include screenshots for visible Console or website UI changes.
+

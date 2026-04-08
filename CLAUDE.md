@@ -256,3 +256,4 @@ venv/bin/python -m pytest tests/unit/tenant_models/ -v
 Pre-commit runs: AST check, YAML/XML/TOML/JSON check, Black (79 char line), Flake8, Pylint, mypy (with relaxed settings), Prettier (TypeScript only).
 
 Skills and `scripts/pack/` are excluded from most hooks.
+
