@@ -504,6 +504,7 @@ PROVIDER_KIMI_CN = OpenAIProvider(
     base_url="https://api.moonshot.cn/v1",
     api_key_prefix="",
     models=KIMI_MODELS,
+    chat_model="KimiChatModel",
     freeze_url=True,
 )
 
@@ -513,6 +514,7 @@ PROVIDER_KIMI_INTL = OpenAIProvider(
     base_url="https://api.moonshot.ai/v1",
     api_key_prefix="",
     models=KIMI_MODELS,
+    chat_model="KimiChatModel",
     freeze_url=True,
 )
 

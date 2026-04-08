@@ -52,6 +52,7 @@ from .tools import (
     create_memory_search_tool,
 )
 from .utils import process_file_and_media_blocks_in_message
+from ..utils.fs_text import sanitize_text_for_json
 from ..constant import (
     WORKING_DIR,
 )
@@ -347,6 +348,18 @@ class SWEAgent(ToolGuardMixin, ReActAgent):
                         skill_name,
                         e,
                     )
+
+        self._sanitize_registered_skill_dirs(toolkit)
+
+    @staticmethod
+    def _sanitize_registered_skill_dirs(toolkit: Toolkit) -> None:
+        """Sanitize skill dir paths for prompt/runtime display only."""
+        for skill in getattr(toolkit, "skills", {}).values():
+            skill_dir = skill.get("dir")
+            if not isinstance(skill_dir, str):
+                continue
+            sanitized = sanitize_text_for_json(skill_dir)
+            skill["dir"] = sanitized.value
 
     def _build_sys_prompt(self) -> str:
         """Build system prompt from working dir files and env context.
@@ -1019,7 +1032,7 @@ class SWEAgent(ToolGuardMixin, ReActAgent):
                         for block in (result.content or [])
                         if isinstance(block, dict) and block.get("text")
                     )
-                except BaseException as e:
+                except Exception as e:
                     logger.warning(
                         "force_memory_search failed or timed out,"
                         f" skipping e={e}",

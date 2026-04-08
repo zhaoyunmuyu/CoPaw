@@ -1,11 +1,20 @@
 # -*- coding: utf-8 -*-
-# pylint: disable=redefined-outer-name,unused-argument,protected-access
+# pylint: disable=redefined-outer-name,unused-argument,protected-access,wrong-import-position,reimported
 from __future__ import annotations
 
 import json
+import sys
+import types
 from types import SimpleNamespace
 
 import pytest
+
+fcntl_stub = types.ModuleType("fcntl")
+fcntl_stub.flock = lambda *args, **kwargs: None
+fcntl_stub.LOCK_EX = 1
+fcntl_stub.LOCK_NB = 2
+fcntl_stub.LOCK_UN = 8
+sys.modules.setdefault("fcntl", fcntl_stub)
 
 import swe.providers.provider_manager as provider_manager_module
 from swe.providers.anthropic_provider import AnthropicProvider
@@ -475,6 +484,20 @@ def test_init_from_storage_migrates_with_different_provider(
     )
 
 
+def test_openai_provider_can_resolve_kimi_chat_model_cls() -> None:
+    provider = OpenAIProvider(
+        id="openai",
+        name="OpenAI",
+        base_url="https://api.openai.com/v1",
+        api_key="sk-test",
+        chat_model="KimiChatModel",
+    )
+
+    from swe.providers.kimi_chat_model import KimiChatModel
+
+    assert provider.get_chat_model_cls() == KimiChatModel
+
+
 # =============================================================================
 # Tenant Isolation Tests
 # =============================================================================
@@ -653,7 +676,8 @@ class TestLegacyTenantModelsRecovery:
         legacy_path = TenantModelManager.get_config_path(tenant_id)
         legacy_path.parent.mkdir(parents=True, exist_ok=True)
         legacy_path.write_text(
-            json.dumps(legacy_config, indent=2), encoding="utf-8"
+            json.dumps(legacy_config, indent=2),
+            encoding="utf-8",
         )
 
         # Create provider config for this tenant
@@ -735,7 +759,8 @@ class TestLegacyTenantModelsRecovery:
         legacy_path = TenantModelManager.get_config_path(tenant_id)
         legacy_path.parent.mkdir(parents=True, exist_ok=True)
         legacy_path.write_text(
-            json.dumps(legacy_config, indent=2), encoding="utf-8"
+            json.dumps(legacy_config, indent=2),
+            encoding="utf-8",
         )
 
         # Initialize ProviderManager
@@ -768,7 +793,7 @@ class TestLegacyTenantModelsRecovery:
             },
         }
         default_legacy_path = TenantModelManager.get_config_path(
-            default_tenant_id
+            default_tenant_id,
         )
         default_legacy_path.parent.mkdir(parents=True, exist_ok=True)
         default_legacy_path.write_text(

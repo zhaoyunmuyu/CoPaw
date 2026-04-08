@@ -116,11 +116,15 @@ export function CustomProviderModal({
             options={[
               {
                 value: "OpenAIChatModel",
-                label: t("models.protocolOpenAI"),
+                label: "OpenAIChatModel",
+              },
+              {
+                value: "KimiChatModel",
+                label: "KimiChatModel",
               },
               {
                 value: "AnthropicChatModel",
-                label: t("models.protocolAnthropic"),
+                label: "AnthropicChatModel",
               },
             ]}
           />

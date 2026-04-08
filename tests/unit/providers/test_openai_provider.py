@@ -212,12 +212,12 @@ async def test_update_config_skips_none_values() -> None:  # noqa: E501
     assert info.generate_kwargs == {"temperature": 0.1}
 
 
-async def test_update_config_does_not_update_chat_model() -> None:
+async def test_update_config_updates_openai_compatible_chat_model() -> None:
     provider = _make_provider()
 
     provider.update_config(
         {
-            "chat_model": "AnotherChatModel",
+            "chat_model": "KimiChatModel",
             "name": "OpenAI Updated",
         },
     )
@@ -225,9 +225,32 @@ async def test_update_config_does_not_update_chat_model() -> None:
     info = await provider.get_info(mock_secret=False)
 
     assert provider.name == "OpenAI Updated"
-    assert provider.chat_model == "OpenAIChatModel"
+    assert provider.chat_model == "KimiChatModel"
     assert info.name == "OpenAI Updated"
-    assert info.chat_model == "OpenAIChatModel"
+    assert info.chat_model == "KimiChatModel"
+
+
+def test_get_chat_model_instance_uses_kimi_chat_model(
+    monkeypatch,
+) -> None:
+    provider = _make_provider()
+    provider.chat_model = "KimiChatModel"
+
+    created: list[dict] = []
+
+    class FakeKimiChatModel:
+        def __init__(self, **kwargs):
+            created.append(kwargs)
+
+    monkeypatch.setattr(
+        "copaw.providers.kimi_chat_model.KimiChatModel",
+        FakeKimiChatModel,
+    )
+
+    provider.get_chat_model_instance("kimi-k2-thinking")
+
+    assert created
+    assert created[0]["model_name"] == "kimi-k2-thinking"
 
 
 async def test_update_config_updates_chat_model_for_custom_provider() -> None:

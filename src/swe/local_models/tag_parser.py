@@ -196,7 +196,17 @@ def _parse_single_tool_call(raw_text: str) -> ParsedToolCall | None:
 
 def text_contains_think_tag(text: str) -> bool:
     """Fast substring check for a ``<think>`` tag."""
-    return THINK_START in text
+    return THINK_START in text or THINK_END in text
+
+
+def strip_think_tags(text: str) -> str:
+    """Remove literal think tags from text without altering other content."""
+    return text.replace(THINK_START, "").replace(THINK_END, "")
+
+
+def normalize_thinking_prefix(text: str) -> str:
+    """Normalize Kimi-style thinking text by removing literal think tags."""
+    return strip_think_tags(text).strip()
 
 
 def extract_thinking_from_text(text: str) -> TextWithThinking:
@@ -212,6 +222,19 @@ def extract_thinking_from_text(text: str) -> TextWithThinking:
     if match:
         thinking = match.group(1).strip()
         remaining = (text[: match.start()] + text[match.end() :]).strip()
+        return TextWithThinking(
+            thinking=thinking,
+            remaining_text=remaining,
+        )
+
+    # Kimi may emit only a closing tag, where content before it should be
+    # treated as reasoning and the suffix after it as assistant text.
+    closing_idx = text.find(THINK_END)
+    if closing_idx != -1:
+        thinking = normalize_thinking_prefix(text[:closing_idx])
+        remaining = strip_think_tags(
+            text[closing_idx + len(THINK_END) :],
+        ).strip()
         return TextWithThinking(
             thinking=thinking,
             remaining_text=remaining,
