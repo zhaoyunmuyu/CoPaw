@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from .provider import ModelInfo, Provider, ProviderInfo
+from .provider_manager import ProviderManager, ActiveModelsInfo
 
 __all__ = [
     "ActiveModelsInfo",

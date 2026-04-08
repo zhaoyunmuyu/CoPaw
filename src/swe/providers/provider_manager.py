@@ -4,7 +4,8 @@ It provides a unified interface to manage providers, such as listing available
 providers, adding/removing custom providers, and fetching provider details."""
 
 import asyncio
-import fcntl
+import json
+import logging
 import os
 import shutil
 import threading
@@ -12,8 +13,16 @@ import time
 from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List
-import logging
-import json
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None
+
+try:
+    import msvcrt
+except ImportError:  # pragma: no cover
+    msvcrt = None
 
 from pydantic import BaseModel
 
@@ -34,6 +43,40 @@ from swe.constant import SECRET_DIR
 
 
 logger = logging.getLogger(__name__)
+
+if fcntl is None and msvcrt is None:  # pragma: no cover
+    raise ImportError(
+        "No file locking module available (need fcntl or msvcrt)",
+    )
+
+
+def _try_lock_file(file_obj) -> None:
+    """Acquire a non-blocking exclusive lock for the lock file."""
+    if fcntl is not None:
+        fcntl.flock(file_obj.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return
+
+    if msvcrt is None:  # pragma: no cover
+        raise RuntimeError("No supported file locking backend available")
+
+    file_obj.seek(0)
+    file_obj.write("0")
+    file_obj.flush()
+    file_obj.seek(0)
+    msvcrt.locking(file_obj.fileno(), msvcrt.LK_NBLCK, 1)
+
+
+def _unlock_file(file_obj) -> None:
+    """Release the lock acquired by _try_lock_file."""
+    if fcntl is not None:
+        fcntl.flock(file_obj.fileno(), fcntl.LOCK_UN)
+        return
+
+    if msvcrt is None:  # pragma: no cover
+        raise RuntimeError("No supported file locking backend available")
+
+    file_obj.seek(0)
+    msvcrt.locking(file_obj.fileno(), msvcrt.LK_UNLCK, 1)
 
 
 # -------------------------------------------------------
@@ -660,7 +703,7 @@ class ProviderManager:
                 # Only lock holder may proceed with initialization
                 while True:
                     try:
-                        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        _try_lock_file(f)
                         break  # Acquired lock, proceed with initialization
                     except (IOError, OSError) as exc:
                         if time.monotonic() > deadline:
@@ -722,7 +765,7 @@ class ProviderManager:
                     (tenant_providers_dir / "custom").mkdir(exist_ok=True)
 
                 # Release lock
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                _unlock_file(f)
 
         except Exception as e:
             logger.error(
