@@ -7,6 +7,7 @@ import asyncio
 import locale
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -18,7 +19,7 @@ from agentscope.message import TextBlock
 from agentscope.tool import ToolResponse
 
 from ...security.tenant_path_boundary import (
-    is_path_within_tenant,
+    is_path_within_tenant_with_base,
     get_current_tenant_root,
     TenantPathBoundaryError,
 )
@@ -26,19 +27,20 @@ from ...security.tenant_path_boundary import (
 
 # Regex patterns for extracting path-like tokens from shell commands
 # Matches:
-# - Paths starting with /, ./, ../, or ~
+# - Paths starting with /, ./, ../, or ~ (with optional quotes)
 # - Paths following common file-related flags (-f, --file, -i, --input, etc.)
 _PATH_TOKEN_PATTERNS = [
     # Paths after flags like -f, --file, -i, --input, -o, --output, etc.
+    # Handles both quoted and unquoted paths
     re.compile(
-        r"(?:\s|^)(?:-[a-zA-Z]|--[a-zA-Z-]+)\s+([/~.][^\s;|&<>\"'`]+)"
+        r'(?:\s|^)(?:-[a-zA-Z]|--[a-zA-Z-]+)\s+(?:"([^"]+)"|\'([^\']+)\'|([/~.][^\s;|&<>"\'\'`]+))'
     ),
-    # Standalone absolute paths
-    re.compile(r"(?:\s|^)(/[a-zA-Z0-9_./~-]+)"),
-    # Standalone relative paths starting with ./ or ../
-    re.compile(r"(?:\s|^)(\./[^\s;|&<>\"'`]*|\.\./[^\s;|&<>\"'`]*|\.\.)"),
-    # Paths starting with ~
-    re.compile(r"(?:\s|^)(~[^\s;|&<>\"'`]*|~)"),
+    # Standalone absolute paths (with optional quotes)
+    re.compile(r'(?:\s|^)["\']?(/[a-zA-Z0-9_./~\-]+)["\']?'),
+    # Standalone relative paths starting with ./ or ../ (with optional quotes)
+    re.compile(r'(?:\s|^)["\']?(\.\/[^\s;|&<>"\'\']*|\.\.\/[^\s;|&<>"\'\']*|\.\.)["\']?'),
+    # Paths starting with ~ (with optional quotes)
+    re.compile(r'(?:\s|^)["\']?(~[^\s;|&<>"\'\']*|~)["\']?'),
 ]
 
 
@@ -57,18 +59,26 @@ def _extract_path_tokens(command: str) -> list[str]:
     paths = []
     for pattern in _PATH_TOKEN_PATTERNS:
         for match in pattern.finditer(command):
-            path = match.group(1)
-            # Filter out obvious non-paths
-            if path and len(path) > 0 and not path.startswith("-"):
-                paths.append(path)
+            # Handle both quoted (groups 1, 2) and unquoted (group 3+) captures
+            if match.lastindex:
+                for i in range(1, match.lastindex + 1):
+                    path = match.group(i)
+                    if path and len(path) > 0 and not path.startswith("-"):
+                        paths.append(path)
+            else:
+                path = match.group(0)
+                if path and len(path) > 0 and not path.startswith("-"):
+                    paths.append(path)
+    return paths
     return paths
 
 
-def _validate_shell_paths(command: str) -> Optional[str]:
+def _validate_shell_paths(command: str, base_dir: Path) -> Optional[str]:
     """Validate that all explicit path tokens in the command are within tenant boundary.
 
     Args:
         command: The shell command to validate.
+        base_dir: The base directory for resolving relative paths (typically the cwd).
 
     Returns:
         Error message if any path escapes the tenant boundary, None otherwise.
@@ -80,8 +90,8 @@ def _validate_shell_paths(command: str) -> Optional[str]:
         if not token or token in (".", ".."):
             continue
 
-        # Check if the path is within tenant boundary
-        if not is_path_within_tenant(token):
+        # Check if the path is within tenant boundary, using base_dir for relative paths
+        if not is_path_within_tenant_with_base(token, base_dir=base_dir):
             return (
                 f"Error: Shell command contains path outside the allowed workspace: "
                 f"'{token}'"
@@ -354,8 +364,8 @@ async def execute_shell_command(
             ],
         )
 
-    # Validate explicit path tokens in the command
-    path_error = _validate_shell_paths(cmd)
+    # Validate explicit path tokens in the command, using working_dir as base for relative paths
+    path_error = _validate_shell_paths(cmd, base_dir=working_dir)
     if path_error:
         return ToolResponse(
             content=[

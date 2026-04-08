@@ -126,37 +126,57 @@ class TestValidateShellPaths:
 
     def test_no_paths_returns_none(self, mock_working_dir: Path):
         """Should return None when no paths in command."""
+        tenant_dir = mock_working_dir / "test_tenant"
         with tenant_context(tenant_id="test_tenant"):
-            result = _validate_shell_paths("echo hello world")
+            result = _validate_shell_paths("echo hello world", base_dir=tenant_dir)
             assert result is None
 
     def test_tenant_local_paths_allowed(self, mock_working_dir: Path):
         """Should allow paths within tenant workspace."""
+        tenant_dir = mock_working_dir / "test_tenant"
         with tenant_context(tenant_id="test_tenant"):
-            result = _validate_shell_paths("cat file.txt")
+            result = _validate_shell_paths("cat file.txt", base_dir=tenant_dir)
             assert result is None
 
     def test_absolute_path_outside_tenant_denied(self, mock_working_dir: Path):
         """Should reject absolute paths outside tenant."""
+        tenant_dir = mock_working_dir / "test_tenant"
         with tenant_context(tenant_id="test_tenant"):
             other_path = mock_working_dir / "other_tenant/secret.txt"
-            result = _validate_shell_paths(f"cat {other_path}")
+            result = _validate_shell_paths(f"cat {other_path}", base_dir=tenant_dir)
             assert result is not None
             assert "outside the allowed workspace" in result
 
     def test_relative_traversal_denied(self, mock_working_dir: Path):
         """Should reject relative paths that traverse outside tenant."""
+        tenant_dir = mock_working_dir / "test_tenant"
         with tenant_context(tenant_id="test_tenant"):
-            result = _validate_shell_paths("cat ../other_tenant/secret.txt")
+            result = _validate_shell_paths(
+                "cat ../other_tenant/secret.txt", base_dir=tenant_dir
+            )
             assert result is not None
             assert "outside the allowed workspace" in result
 
     def test_tilde_path_denied(self, mock_working_dir: Path):
         """Should reject paths starting with tilde (expands to home)."""
+        tenant_dir = mock_working_dir / "test_tenant"
         with tenant_context(tenant_id="test_tenant"):
-            result = _validate_shell_paths("cat ~/.bashrc")
+            result = _validate_shell_paths("cat ~/.bashrc", base_dir=tenant_dir)
             assert result is not None
             assert "outside the allowed workspace" in result
+
+    def test_relative_path_against_cwd_within_tenant_allowed(
+        self, mock_working_dir: Path
+    ):
+        """Should allow relative paths that resolve within tenant when using cwd."""
+        tenant_dir = mock_working_dir / "test_tenant"
+        subdir = tenant_dir / "subdir" / "nested"
+        subdir.mkdir(parents=True, exist_ok=True)
+
+        with tenant_context(tenant_id="test_tenant"):
+            # ../ from subdir/nested should resolve to subdir, which is within tenant
+            result = _validate_shell_paths("cat ../file.txt", base_dir=subdir)
+            assert result is None
 
 
 # =============================================================================

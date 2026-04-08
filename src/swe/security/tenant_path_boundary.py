@@ -205,6 +205,24 @@ def is_path_within_tenant(path: Path | str) -> bool:
         True if the path is within the tenant workspace, False otherwise.
         Returns False if tenant context is not available.
     """
+    return is_path_within_tenant_with_base(path, base_dir=None)
+
+
+def is_path_within_tenant_with_base(
+    path: Path | str,
+    base_dir: Optional[Path] = None,
+) -> bool:
+    """Check if a path is within the current tenant's workspace.
+
+    Args:
+        path: The path to check (string or Path object).
+        base_dir: The base directory for resolving relative paths.
+                  If None, uses the tenant root.
+
+    Returns:
+        True if the path is within the tenant workspace, False otherwise.
+        Returns False if tenant context is not available.
+    """
     import os
 
     try:
@@ -212,15 +230,25 @@ def is_path_within_tenant(path: Path | str) -> bool:
     except TenantContextMissingError:
         return False
 
+    # Use tenant root as base if not specified
+    if base_dir is None:
+        base_dir = tenant_root
+    else:
+        # Validate that base_dir is within tenant root
+        try:
+            base_dir.resolve().relative_to(tenant_root.resolve())
+        except ValueError:
+            return False
+
     path_str = str(path)
 
     # Expand user home directory (tilde)
     expanded = os.path.expanduser(path_str)
     path_obj = Path(expanded)
 
-    # If still relative after tilde expansion, resolve against tenant root
+    # If still relative after tilde expansion, resolve against base_dir
     if not path_obj.is_absolute():
-        path_obj = tenant_root / path_obj
+        path_obj = base_dir / path_obj
 
     try:
         resolved = path_obj.resolve()

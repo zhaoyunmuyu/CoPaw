@@ -21,6 +21,7 @@ from ...security.tenant_path_boundary import (
     TenantPathBoundaryError,
     make_permission_denied_response,
 )
+from ...config.context import get_current_workspace_dir
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -142,20 +143,25 @@ def _resolve_search_root(
 
     Returns a ``Path`` on success or a ``ToolResponse`` error.
     """
-    # Use tenant root as default if no path provided
+    # Use current workspace dir as default if no path provided
     if path is None:
         try:
-            from ...security.tenant_path_boundary import get_current_tenant_root
-            search_root = get_current_tenant_root()
+            workspace_dir = get_current_workspace_dir()
+            if workspace_dir is not None:
+                search_root = workspace_dir
+            else:
+                from ...security.tenant_path_boundary import get_current_tenant_root
+                search_root = get_current_tenant_root()
         except TenantPathBoundaryError:
             return _make_response(
                 "Error: Tenant context is not available. "
                 "Cannot determine search root.",
             )
     else:
-        # Validate path against tenant boundary
+        # Use current workspace dir as base for relative paths
+        base_dir = get_current_workspace_dir()
         try:
-            search_root = resolve_tenant_path(path)
+            search_root = resolve_tenant_path(path, base_dir=base_dir)
         except TenantPathBoundaryError:
             return _make_response(
                 "Error: Search path is outside the allowed workspace.",

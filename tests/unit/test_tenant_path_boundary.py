@@ -325,6 +325,80 @@ class TestIsPathWithinTenant:
 
 
 # =============================================================================
+# Tests for is_path_within_tenant_with_base
+# =============================================================================
+
+
+class TestIsPathWithinTenantWithBase:
+    """Tests for is_path_within_tenant_with_base function."""
+
+    def test_returns_true_for_path_within_tenant_using_base(
+        self, mock_working_dir: Path
+    ):
+        """Should return True for paths within tenant when using base_dir."""
+        from swe.security.tenant_path_boundary import is_path_within_tenant_with_base
+
+        tenant_id = "test_tenant"
+        tenant_dir = mock_working_dir / tenant_id
+        subdir = tenant_dir / "subdir"
+
+        with tenant_context(tenant_id=tenant_id):
+            # Relative path from subdir should resolve to within tenant
+            assert (
+                is_path_within_tenant_with_base("file.txt", base_dir=subdir) is True
+            )
+            assert (
+                is_path_within_tenant_with_base("../file.txt", base_dir=subdir)
+                is True
+            )
+
+    def test_returns_false_for_path_escaping_tenant_via_base(
+        self, mock_working_dir: Path
+    ):
+        """Should return False for paths that escape tenant via base_dir."""
+        from swe.security.tenant_path_boundary import is_path_within_tenant_with_base
+
+        tenant_id = "test_tenant"
+        tenant_dir = mock_working_dir / tenant_id
+        subdir = tenant_dir / "subdir"
+
+        with tenant_context(tenant_id=tenant_id):
+            # ../../ should escape tenant from subdir
+            assert (
+                is_path_within_tenant_with_base("../../other_tenant", base_dir=subdir)
+                is False
+            )
+
+    def test_returns_false_when_base_dir_outside_tenant(self, mock_working_dir: Path):
+        """Should return False when base_dir itself is outside tenant."""
+        from swe.security.tenant_path_boundary import is_path_within_tenant_with_base
+
+        tenant_id = "test_tenant"
+        other_dir = mock_working_dir / "other_tenant"
+
+        with tenant_context(tenant_id=tenant_id):
+            # base_dir outside tenant should be rejected
+            assert (
+                is_path_within_tenant_with_base("file.txt", base_dir=other_dir)
+                is False
+            )
+
+    def test_uses_tenant_root_when_base_dir_none(self, mock_working_dir: Path):
+        """Should use tenant root as base when base_dir is None."""
+        from swe.security.tenant_path_boundary import is_path_within_tenant_with_base
+
+        tenant_id = "test_tenant"
+
+        with tenant_context(tenant_id=tenant_id):
+            # Should work like is_path_within_tenant when base_dir is None
+            assert is_path_within_tenant_with_base("file.txt", base_dir=None) is True
+            assert (
+                is_path_within_tenant_with_base("../other_tenant", base_dir=None)
+                is False
+            )
+
+
+# =============================================================================
 # Tests for make_permission_denied_response
 # =============================================================================
 

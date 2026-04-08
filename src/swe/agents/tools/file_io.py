@@ -20,13 +20,15 @@ from ...security.tenant_path_boundary import (
     TenantPathBoundaryError,
     make_permission_denied_response,
 )
+from ...config.context import get_current_workspace_dir
 
 
 def _resolve_file_path(file_path: str) -> str:
     """Resolve file path using tenant path boundary.
 
-    All paths are resolved against the current tenant's workspace root
-    and validated to ensure they stay within WORKING_DIR/<tenant_id>.
+    All paths are resolved against the current agent's workspace directory
+    (if set) or the current tenant's workspace root, and validated to ensure
+    they stay within WORKING_DIR/<tenant_id>.
 
     Args:
         file_path: The input file path (absolute or relative).
@@ -38,7 +40,9 @@ def _resolve_file_path(file_path: str) -> str:
         TenantPathBoundaryError: If the path escapes the tenant workspace
                                  or tenant context is missing.
     """
-    resolved = resolve_tenant_path(file_path, allow_nonexistent=True)
+    # Use current workspace dir as base if available, otherwise tenant root
+    base_dir = get_current_workspace_dir()
+    resolved = resolve_tenant_path(file_path, base_dir=base_dir, allow_nonexistent=True)
     return str(resolved)
 
 
