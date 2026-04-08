@@ -81,39 +81,61 @@ class TestExtractPathTokens:
     def test_extracts_absolute_paths(self):
         """Should extract absolute paths from commands."""
         cmd = "cat /etc/passwd && ls /var/log"
-        tokens = _extract_path_tokens(cmd)
-        assert "/etc/passwd" in tokens
-        assert "/var/log" in tokens
+        file_paths, _ = _extract_path_tokens(cmd)
+        assert "/etc/passwd" in file_paths
+        assert "/var/log" in file_paths
 
     def test_extracts_relative_paths(self):
         """Should extract relative paths from commands."""
         cmd = "cat ./file.txt && ls ../parent"
-        tokens = _extract_path_tokens(cmd)
-        assert "./file.txt" in tokens
-        assert "../parent" in tokens
+        file_paths, _ = _extract_path_tokens(cmd)
+        assert "./file.txt" in file_paths
+        assert "../parent" in file_paths
 
     def test_extracts_paths_after_flags(self):
-        """Should extract paths following common flags."""
+        """Should extract paths following file-related flags."""
         cmd = "cat -f /path/to/file --input ./input.txt -o /output.txt"
-        tokens = _extract_path_tokens(cmd)
-        assert "/path/to/file" in tokens
-        assert "./input.txt" in tokens
-        assert "/output.txt" in tokens
+        file_paths, _ = _extract_path_tokens(cmd)
+        assert "/path/to/file" in file_paths
+        assert "./input.txt" in file_paths
+        assert "/output.txt" in file_paths
 
     def test_extracts_tilde_paths(self):
         """Should extract paths starting with tilde."""
         cmd = "cat ~/.bashrc && cp ~/file.txt /dest"
-        tokens = _extract_path_tokens(cmd)
-        assert "~/.bashrc" in tokens
-        assert "~/file.txt" in tokens
+        file_paths, _ = _extract_path_tokens(cmd)
+        assert "~/.bashrc" in file_paths
+        assert "~/file.txt" in file_paths
 
     def test_no_false_positives(self):
         """Should not extract non-path tokens."""
         cmd = "echo hello world 123"
-        tokens = _extract_path_tokens(cmd)
-        assert "hello" not in tokens
-        assert "world" not in tokens
-        assert "123" not in tokens
+        file_paths, _ = _extract_path_tokens(cmd)
+        assert "hello" not in file_paths
+        assert "world" not in file_paths
+        assert "123" not in file_paths
+
+    def test_string_arguments_not_treated_as_paths(self):
+        """String arguments to non-file flags should not be treated as paths."""
+        cmd = 'echo -n "/etc/hosts"'
+        file_paths, _ = _extract_path_tokens(cmd)
+        # /etc/hosts is argument to -n flag (not a file path flag), should not be extracted
+        assert "/etc/hosts" not in file_paths
+
+    def test_code_exec_flags_extract_paths_from_code(self):
+        """Paths inside code strings should be extracted."""
+        cmd = 'python -c "print(open(\'/etc/passwd\').read())"'
+        file_paths, code_strings = _extract_path_tokens(cmd)
+        # The code string should be captured
+        assert len(code_strings) == 1
+        # And /etc/passwd should be extracted from within the code
+        assert "/etc/passwd" in file_paths
+
+    def test_printf_string_not_treated_as_path(self):
+        """printf format strings should not be treated as paths."""
+        cmd = 'printf -- "/etc/hosts\\n"'
+        file_paths, _ = _extract_path_tokens(cmd)
+        assert "/etc/hosts" not in file_paths
 
 
 # =============================================================================

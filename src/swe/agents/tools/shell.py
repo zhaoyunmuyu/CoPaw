@@ -25,56 +25,123 @@ from ...security.tenant_path_boundary import (
 )
 
 
-# Regex patterns for extracting path-like tokens from shell commands
-# Matches:
-# - Paths starting with /, ./, ../, or ~ (with optional quotes)
-# - Paths following common file-related flags (-f, --file, -i, --input, etc.)
-_PATH_TOKEN_PATTERNS = [
-    # Paths after flags like -f, --file, -i, --input, -o, --output, etc.
-    # Handles both quoted and unquoted paths
-    re.compile(
-        r'(?:\s|^)(?:-[a-zA-Z]|--[a-zA-Z-]+)\s+(?:"([^"]+)"|\'([^\']+)\'|([/~.][^\s;|&<>"\'\'`]+))'
-    ),
-    # Standalone absolute paths (with optional quotes)
-    re.compile(r'(?:\s|^)["\']?(/[a-zA-Z0-9_./~\-]+)["\']?'),
-    # Standalone relative paths starting with ./ or ../ (with optional quotes)
-    re.compile(r'(?:\s|^)["\']?(\.\/[^\s;|&<>"\'\']*|\.\.\/[^\s;|&<>"\'\']*|\.\.)["\']?'),
-    # Paths starting with ~ (with optional quotes)
-    re.compile(r'(?:\s|^)["\']?(~[^\s;|&<>"\'\']*|~)["\']?'),
-]
+# Known file-related flags that take file paths as arguments
+_FILE_PATH_FLAGS = frozenset({
+    # Common file flags
+    "-f", "--file", "-i", "--input", "-o", "--output",
+    "-d", "--directory", "-p", "--path",
+    "--config", "--conf", "--data", "--log",
+    # Input/Output
+    "-in", "-out", "--in", "--out",
+    "--output-file", "--input-file",
+    # Source/Dest
+    "-s", "--source", "--src", "--dest", "--destination",
+    # Certificate/Key files
+    "--cert", "--key", "--ca-cert",
+    # Database
+    "--db", "--database", "--db-file",
+})
+
+# Known code-execution flags that take code/script as arguments
+_CODE_EXEC_FLAGS = frozenset({
+    "-c", "-e", "--eval", "-eval",
+    "-exec", "--exec",
+    "-command", "--command",
+})
+
+# Regex to extract paths from within code strings (for -c, -e flags)
+# Matches paths like /etc/passwd, /var/log, etc.
+_PATH_IN_CODE_PATTERN = re.compile(
+    r'["\'\']([a-zA-Z0-9_./~\-]*(?:/|\\)[a-zA-Z0-9_./~\-]*)["\'\']|'
+    r'\(([\'"]?)(/[^\'"\s)]+)\2\)'
+)
 
 
-def _extract_path_tokens(command: str) -> list[str]:
-    """Extract potential path tokens from a shell command.
+def _extract_paths_from_code(code: str) -> list[str]:
+    """Extract potential file paths from code/script content.
 
-    This is a best-effort parsing that extracts explicit path references
-    from common patterns. It does not claim to fully parse shell syntax.
+    Args:
+        code: The code/script string to analyze.
+
+    Returns:
+        List of potential file paths found in the code.
+    """
+    paths = []
+    # Look for patterns like open('/path'), file="/path", '/path/to/file'
+    # Simple heuristic: look for quoted absolute paths
+    for match in re.finditer(r'["\'](/[a-zA-Z0-9_./~\-]+)["\']', code):
+        path = match.group(1)
+        if path and len(path) > 1:
+            paths.append(path)
+    return paths
+
+
+def _extract_path_tokens(command: str) -> tuple[list[str], list[str]]:
+    """Extract path tokens from shell command, distinguishing file args from code args.
 
     Args:
         command: The shell command string.
 
     Returns:
-        List of potential path tokens found in the command.
+        Tuple of (file_paths, code_strings) where:
+        - file_paths: List of explicit file path tokens
+        - code_strings: List of code/script strings (from -c, -e flags)
     """
-    paths = []
-    for pattern in _PATH_TOKEN_PATTERNS:
-        for match in pattern.finditer(command):
-            # Handle both quoted (groups 1, 2) and unquoted (group 3+) captures
-            if match.lastindex:
-                for i in range(1, match.lastindex + 1):
-                    path = match.group(i)
-                    if path and len(path) > 0 and not path.startswith("-"):
-                        paths.append(path)
+    file_paths = []
+    code_strings = []
+
+    # Split command into tokens for better parsing
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        # If shlex fails, fall back to simple parsing
+        tokens = command.split()
+
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+
+        # Check for file path flags
+        if token in _FILE_PATH_FLAGS:
+            if i + 1 < len(tokens):
+                next_token = tokens[i + 1]
+                # Check if it looks like a path
+                if next_token.startswith(('/', './', '../', '~')):
+                    file_paths.append(next_token)
+                i += 1
+
+        # Check for code execution flags
+        elif token in _CODE_EXEC_FLAGS:
+            if i + 1 < len(tokens):
+                code = tokens[i + 1]
+                code_strings.append(code)
+                # Also extract paths from the code
+                paths_in_code = _extract_paths_from_code(code)
+                file_paths.extend(paths_in_code)
+                i += 1
+
+        # Check for standalone paths (not after flags)
+        elif token.startswith(('/', './', '../', '~')):
+            # Skip if it's just a flag value that looks like a path
+            # (e.g., echo -n "/etc/hosts" - the /etc/hosts is not a standalone path)
+            # Check if previous token is a simple flag (not in our known lists)
+            if i > 0:
+                prev = tokens[i - 1]
+                if prev.startswith('-') and prev not in _FILE_PATH_FLAGS:
+                    # This is likely an argument to a non-file flag, skip
+                    pass
+                else:
+                    file_paths.append(token)
             else:
-                path = match.group(0)
-                if path and len(path) > 0 and not path.startswith("-"):
-                    paths.append(path)
-    return paths
-    return paths
+                file_paths.append(token)
+
+        i += 1
+
+    return file_paths, code_strings
 
 
 def _validate_shell_paths(command: str, base_dir: Path) -> Optional[str]:
-    """Validate that all explicit path tokens in the command are within tenant boundary.
+    """Validate that all explicit file paths in the command are within tenant boundary.
 
     Args:
         command: The shell command to validate.
@@ -83,9 +150,9 @@ def _validate_shell_paths(command: str, base_dir: Path) -> Optional[str]:
     Returns:
         Error message if any path escapes the tenant boundary, None otherwise.
     """
-    path_tokens = _extract_path_tokens(command)
+    file_paths, _ = _extract_path_tokens(command)
 
-    for token in path_tokens:
+    for token in file_paths:
         # Skip checking if it's clearly not a path
         if not token or token in (".", ".."):
             continue
