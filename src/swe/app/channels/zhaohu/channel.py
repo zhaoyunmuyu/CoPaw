@@ -70,11 +70,11 @@ def _clean_payload(obj: Any) -> Any:
     """Remove None and empty-string values from nested payloads."""
     if isinstance(obj, dict):
         out = {}
-    for key, value in obj.items():
-        cleaned = _clean_payload(value)
-        if cleaned is None or cleaned == "" or cleaned == [] or cleaned == {}:
-            continue
-        out[key] = cleaned
+        for key, value in obj.items():
+            cleaned = _clean_payload(value)
+            if cleaned is None or cleaned == "" or cleaned == [] or cleaned == {}:
+                continue
+            out[key] = cleaned
         return out
     if isinstance(obj, list):
         out = []

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Avatar } from 'antd';
+import { Avatar, Tooltip } from 'antd';
 import { useProviderContext } from '@/components/agentscope-chat';
 import { SparkRightArrowLine } from '@agentscope-ai/icons';
 import Style from './style';
@@ -75,14 +75,20 @@ function Prompt(props: {
 
   return (
     <div className={`${prefixCls}-prompt`} onClick={() => props.onClick?.(props.prompt.value)}>
-      <img
+      {/* =========== 移除图标展示Start =========== */}
+      {/* <img
         className={`${prefixCls}-prompt-icon`}
         src="https://img.alicdn.com/imgextra/i3/O1CN01822qqr1PVyaK7MYtn_!!6000000001847-2-tps-40-40.png"
         alt=""
-      />
-      <span className={`${prefixCls}-prompt-label`}>
-        {props.prompt.label}
-      </span>
+      /> */}
+      {/* =========== 移除图标展示End =========== */}
+      <Tooltip
+        title={props.prompt.label?.length > 28 ? props.prompt.label : ''}
+        mouseEnterDelay={0.3}>
+        <span className={`${prefixCls}-prompt-label`}>
+          {props.prompt.label}
+        </span>
+      </Tooltip>
       <SparkRightArrowLine />
     </div>
   );

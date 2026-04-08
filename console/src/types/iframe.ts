@@ -132,4 +132,16 @@ export interface IframeContext {
   parentOrigin: string | null;
   /** 接收消息的时间戳 */
   receivedAt: number | null;
+  /** 系统标识 */
+  sysId: string | null;
+  /** 认证令牌 */
+  token: string | null;
+  /** 业务板块 */
+  bbk: string | null;
+  /** 组织编码 */
+  orgCode: string | null;
+  /** 组织层级 */
+  orgLvl: string | null;
+  /** 职位 ID */
+  positionId: string | null;
 }

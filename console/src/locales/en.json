@@ -698,7 +698,7 @@
     "providerNameLabel": "Display Name",
     "providerNamePlaceholder": "e.g. OpenAI, Google Gemini",
     "defaultBaseUrlLabel": "Default Base URL",
-    "defaultBaseUrlPlaceholder": "e.g. https://api.example.com",
+    "defaultBaseUrlPlaceholder": "e.g. http://api.example.com",
     "apiKeyPrefixLabel": "API Key Prefix (optional)",
     "apiKeyPrefixPlaceholder": "e.g. sk-",
     "providerCreated": "Provider \"{{name}}\" created",

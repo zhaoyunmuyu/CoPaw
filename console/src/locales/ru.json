@@ -641,7 +641,7 @@
     "providerNameLabel": "Отображаемое имя",
     "providerNamePlaceholder": "например: OpenAI, Google Gemini",
     "defaultBaseUrlLabel": "Базовый URL по умолчанию",
-    "defaultBaseUrlPlaceholder": "например: https://api.example.com",
+    "defaultBaseUrlPlaceholder": "например: http://api.example.com",
     "apiKeyPrefixLabel": "Префикс API-ключа (необязательно)",
     "apiKeyPrefixPlaceholder": "например: sk-",
     "providerCreated": "Провайдер «{{name}}» создан",

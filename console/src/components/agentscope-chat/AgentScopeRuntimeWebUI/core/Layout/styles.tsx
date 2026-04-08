@@ -39,8 +39,8 @@ export default createGlobalStyle`
     display: flex;
     align-items: center;
     padding: 0 20px;
-    // backdrop-filter: blur(10px);
-    background:#fff;
+    backdrop-filter: blur(8px);
+    // background:#fff;
   }
 }
 

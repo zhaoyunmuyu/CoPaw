@@ -670,7 +670,7 @@
     "providerNameLabel": "显示名称",
     "providerNamePlaceholder": "例如 OpenAI, Google Gemini",
     "defaultBaseUrlLabel": "默认 Base URL",
-    "defaultBaseUrlPlaceholder": "例如 https://api.example.com",
+    "defaultBaseUrlPlaceholder": "例如 http://api.example.com",
     "apiKeyPrefixLabel": "API Key 前缀（可选）",
     "apiKeyPrefixPlaceholder": "例如 sk-",
     "providerCreated": "提供商 \"{{name}}\" 已创建",

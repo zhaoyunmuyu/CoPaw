@@ -636,7 +636,7 @@
     "providerNameLabel": "表示名",
     "providerNamePlaceholder": "例: OpenAI, Google Gemini",
     "defaultBaseUrlLabel": "デフォルトベースURL",
-    "defaultBaseUrlPlaceholder": "例: https://api.example.com",
+    "defaultBaseUrlPlaceholder": "例: http://api.example.com",
     "apiKeyPrefixLabel": "APIキープレフィックス（任意）",
     "apiKeyPrefixPlaceholder": "例: sk-",
     "providerCreated": "プロバイダー \"{{name}}\" を作成しました",

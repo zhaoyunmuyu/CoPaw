@@ -3,41 +3,30 @@
  * iframe postMessage 通信核心逻辑
  * Author: Kun He
  * Date: 2026-04-07
- *
- * 相关文件：
- * - types/iframe.ts: 类型定义
- * - stores/iframeStore.ts: 状态存储
- * - api/authHeaders.ts: headers 构建
- * - layouts/MainLayout/index.tsx: Sidebar 显示控制
  * ============================================================
  */
 import type {
   IframeUserDataMessage,
   IframeIncomingMessage,
   IframeOutgoingMessage,
+  AuthHeaderItem,
 } from "../types/iframe";
 import { useIframeStore, getIframeContext } from "../stores/iframeStore";
-// ==================== 客户信息查询 (Kun He) ====================
 import {
-  mockFetchCustomerInfo,
-  mockFetchUserInit,
+  fetchCustomerInfo,
+  fetchUserInit,
   isUserInitialized,
   setUserInitialized,
 } from "../api/modules/customerInfo";
-// ==================== 客户信息查询结束 ====================
 
 /**
  * 允许的来源白名单
  */
 const ALLOWED_ORIGINS: string[] = [
   // 开发环境
-  // "http://localhost:3000",
-  // "http://localhost:8080",
   // "http://localhost:5173",
-  // "http://127.0.0.1:3000",
-  // "http://127.0.0.1:8080",
   // "http://127.0.0.1:5173",
-  // // 生产环境 - 从环境变量读取
+  // 生产环境 - 从环境变量读取
   // ...(typeof import.meta !== "undefined" &&
   // import.meta.env?.VITE_ALLOWED_PARENT_ORIGINS
   //   ? import.meta.env.VITE_ALLOWED_PARENT_ORIGINS.split(",").filter(Boolean)
@@ -51,9 +40,8 @@ let isListenerRegistered = false;
 let cleanupFn: (() => void) | null = null;
 
 /**
- * 将值转换为布尔值
- * 用于处理父窗口可能传递的字符串 "true"/"false"
- * @param value - 值（可能是 boolean 或字符串 "true"/"false")
+ * 将值转换为布尔值，用于处理父窗口可能传递的字符串 "true"/"false"
+ * @param value - 值
  * @returns 布尔值
  */
 function toBoolean(value: boolean | string | undefined): boolean {
@@ -105,31 +93,97 @@ function validateMessage(data: unknown): data is IframeIncomingMessage {
 }
 
 /**
- * 处理 USER_DATA 消息
- * 父窗口发送的用户数据消息处理逻辑
- *
- * 处理步骤：
- * 1. 构建 authHeaders，将 sapId 作为 X-User-Id
- * 2. 存储上下文参数到 iframeStore
- * 3. 检查 URL 参数 origin === "Y"，如果是则调用客户信息查询接口
- * 4. 标记初始化完成
- * 5. 发送确认响应给父窗口
- *
- * @param message - 用户数据消息
- * @param origin - 来源 origin
+ * 构建认证 headers
+ * 将 sapId 作为 X-User-Id，并合并父窗口传递的 auth 数组
  */
-async function handleUserDataMessage(message: IframeUserDataMessage, origin: string): Promise<void> {
-  const store = useIframeStore.getState();
-
-  // 构建认证 headers，将 sapId 作为 X-User-Id
-  // 父窗口传递的 auth 数组也会合并到 authHeaders
+function buildAuthHeaders(message: IframeUserDataMessage): AuthHeaderItem[] {
   const authHeaders = message.auth ?? [];
   if (message.sapId) {
     authHeaders.push({ headerName: "X-User-Id", headerValue: message.sapId });
   }
+  return authHeaders;
+}
 
-  // 存储上下文参数：
-  // - sapId 存储为 userId
+/**
+ * 调用客户信息查询接口并更新 store
+ * 当 URL 参数 origin === "Y" 时触发
+ */
+async function fetchAndApplyCustomerInfo(
+  userId: string,
+  store: ReturnType<typeof useIframeStore.getState>,
+): Promise<void> {
+  try {
+    const targetUserData = {
+      inputParams: {
+        userId,
+        sysId: "",
+        bbk: "",
+        orgCode: "",
+        orgLvl: "",
+        positionId: "",
+      },
+    };
+    const response = await fetchCustomerInfo(targetUserData);
+
+    if (response?.returnCode === "SUC0000") {
+      const result = response.body.output.result;
+      if (result.userChange) {
+        store.setContext({
+          userId: result.userId ?? null,
+          sysId: result.sysId ?? null,
+          token: result.token ?? null,
+          bbk: result.bbk ?? null,
+          orgCode: result.orgCode ?? null,
+          orgLvl: result.orgLvl ?? null,
+          positionId: result.positionId ?? null,
+        });
+      }
+    } else {
+      console.warn("[IframeMessage] Customer info fetch failed:", response?.errorMsg);
+    }
+  } catch (error) {
+    console.error("[IframeMessage] Customer info fetch error:", error);
+  }
+}
+
+/**
+ * 调用用户初始化接口并保存到 localStorage
+ * 检查用户是否已初始化，未初始化则调用接口
+ */
+async function initializeUserIfNeeded(
+  userId: string,
+  store: ReturnType<typeof useIframeStore.getState>,
+): Promise<void> {
+  if (isUserInitialized(userId)) {
+    return;
+  }
+
+  try {
+    const initResponse = await fetchUserInit({
+      userId,
+      bbk: store.bbk ?? "",
+      orgCode: store.orgCode ?? "",
+      positionId: store.positionId ?? "",
+    });
+
+    if (initResponse?.success) {
+      setUserInitialized(userId);
+    } else {
+      console.warn("[IframeMessage] User init failed:", initResponse?.message);
+    }
+  } catch (error) {
+    console.error("[IframeMessage] User init error:", error);
+  }
+}
+
+/**
+ * 处理 USER_DATA 消息
+ * 父窗口发送的用户数据消息处理逻辑
+ */
+async function handleUserDataMessage(message: IframeUserDataMessage, origin: string): Promise<void> {
+  const store = useIframeStore.getState();
+  const authHeaders = buildAuthHeaders(message);
+
   store.setContext({
     userId: message.sapId ?? null,
     clawName: message.clawName ?? null,
@@ -141,100 +195,20 @@ async function handleUserDataMessage(message: IframeUserDataMessage, origin: str
     parentOrigin: origin,
   });
 
-  // 检查 URL 参数 origin === "Y"，如果是则调用客户信息查询接口
   const urlParams = new URLSearchParams(window.location.search);
   const originParam = urlParams.get("origin");
 
   if (originParam === "Y" && message.sapId) {
-    console.info("[IframeMessage] Origin=Y, fetching customer info...");
-
-    try {
-      // 调用 mock 接口（开发测试用）
-      // TODO: 上线前替换为真实接口 fetchCustomerInfo
-      const response = await mockFetchCustomerInfo(
-        {
-          userId: message.sapId,
-          space: message.space,
-          source: message.source,
-        },
-        false, // 设置为 true 可模拟用户变更场景
-      );
-
-      // 检查返回码
-      if (response?.returnCode === "SUC0000") {
-        console.info("[IframeMessage] Customer info fetched successfully");
-
-        // 如果用户信息变更，则覆盖 store 中的数据
-        if (response.userChange && response.data) {
-          console.info("[IframeMessage] User data changed, updating store:", response.data);
-
-          // 构建新的 authHeaders
-          const newAuthHeaders = response.data.auth ?? [];
-          if (response.data.userId) {
-            newAuthHeaders.push({
-              headerName: "X-User-Id",
-              headerValue: response.data.userId,
-            });
-          }
-
-          // 更新 store
-          store.setContext({
-            userId: response.data.userId ?? null,
-            clawName: response.data.clawName ?? null,
-            space: response.data.space ?? null,
-            source: response.data.source ?? null,
-            hideMenu: response.data.hideMenu ?? false,
-            isSuperManager: response.data.isSuperManager ?? false,
-            authHeaders: newAuthHeaders,
-          });
-        }
-      } else {
-        console.warn("[IframeMessage] Customer info fetch failed:", response?.returnMsg);
-      }
-    } catch (error) {
-      console.error("[IframeMessage] Customer info fetch error:", error);
-    }
-
-    // 在调用完客户信息接口后，检查是否需要调用初始化接口
-    // 获取最新的 userId（可能被客户信息接口更新过）
+    await fetchAndApplyCustomerInfo(message.sapId, store);
     const currentUserId = store.userId;
     if (currentUserId) {
-      // 检查 localStorage 中是否存在 `swe-${userId}` 这个 key
-      if (!isUserInitialized(currentUserId)) {
-        console.info("[IframeMessage] User not initialized, calling init API...");
-
-        try {
-          // 调用初始化接口
-          // TODO: 上线前替换为真实接口 fetchUserInit
-          const initResponse = await mockFetchUserInit({
-            userId: currentUserId,
-            space: store.space,
-            source: store.source,
-          });
-
-          // 如果返回 success 为 true，则设置到 localStorage
-          if (initResponse?.success) {
-            console.info("[IframeMessage] User init successful, saving to localStorage");
-            setUserInitialized(currentUserId, initResponse.data);
-          } else {
-            console.warn("[IframeMessage] User init failed:", initResponse?.message);
-          }
-        } catch (error) {
-          console.error("[IframeMessage] User init error:", error);
-        }
-      } else {
-        console.info("[IframeMessage] User already initialized, skipping init API");
-      }
+      await initializeUserIfNeeded(currentUserId, store);
     }
   }
 
-  // 标记初始化完成
   store.markInitialized();
-
-  // 发送确认响应
   sendMessageToParent({ type: "READY_RESPONSE", initialized: true });
 
-  // 日志输出：记录接收到的参数，便于调试
   console.info("[IframeMessage] Initialized with context from parent:", {
     origin,
     userId: message.sapId,
@@ -321,9 +295,7 @@ export function sendMessageToParent(message: IframeOutgoingMessage): void {
 
 /**
  * 初始化 iframe 消息监听器
- *
  * 应在 main.tsx 中尽早调用，确保不遗漏任何消息
- * 自动检测是否在 iframe 中运行，非 iframe 环境不注册监听器
  *
  * 初始化流程：
  * 1. 检查是否已在 iframe 中运行（非 iframe 环境跳过）

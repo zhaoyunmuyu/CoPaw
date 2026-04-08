@@ -8,46 +8,32 @@
  * 用于查询真实客户信息，在内嵌模式下调用
  * 当 iframe 内嵌且 URL 参数 origin === "Y" 时触发
  *
- * 相关文件：
- * - utils/iframeMessage.ts: 调用入口
- * - stores/iframeStore.ts: 用户数据存储
  * ============================================================
  */
 
-import type { AuthHeaderItem } from "../../types/iframe";
-
-// ==================== 客户信息查询接口 ====================
-
-/**
- * 客户信息查询请求参数
- */
 export interface CustomerInfoRequest {
-  /** 用户 ID（sapId） */
-  userId: string;
-  /** 空间标识 */
-  space?: string | null;
-  /** 来源标识 */
-  source?: string | null;
+  inputParams: {
+    userId: string,
+    sysId: string,
+    bbk: string,
+    orgCode: string,
+    orgLvl: string,
+    positionId: string,
+  }
 }
 
 /**
  * 客户信息数据
  */
 export interface CustomerInfoData {
-  /** 用户 ID */
+  userChange: boolean;
+  sysId: string;
+  token: string;
+  bbk: string;
+  orgCode: string;
+  orgLvl: string;
   userId: string;
-  /** 用户名称 */
-  clawName?: string;
-  /** 空间标识 */
-  space?: string;
-  /** 来源标识 */
-  source?: string;
-  /** 是否隐藏菜单 */
-  hideMenu?: boolean;
-  /** 是否为超级管理员 */
-  isSuperManager?: boolean;
-  /** 自定义 headers */
-  auth?: AuthHeaderItem[];
+  positionId: string;
 }
 
 /**
@@ -56,26 +42,22 @@ export interface CustomerInfoData {
 export interface CustomerInfoResponse {
   /** 返回码，SUC0000 表示成功 */
   returnCode: string;
-  /** 返回消息 */
-  returnMsg?: string;
-  /** 用户信息是否变更 */
-  userChange: boolean;
-  /** 用户信息数据（当 userChange 为 true 时使用此数据覆盖） */
-  data?: CustomerInfoData;
+  errorMsg?: string;
+  body: {
+    output: {
+      result: CustomerInfoData
+    }
+  }
 }
-
-// ==================== 用户初始化接口 (Kun He) ====================
 
 /**
  * 用户初始化请求参数
  */
 export interface UserInitRequest {
-  /** 用户 ID */
   userId: string;
-  /** 空间标识 */
-  space?: string | null;
-  /** 来源标识 */
-  source?: string | null;
+  bbk: string;
+  orgCode: string;
+  positionId: string;
 }
 
 /**
@@ -97,20 +79,16 @@ export interface UserInitResponse {
  */
 export function isUserInitialized(userId: string): boolean {
   const key = `swe-${userId}`;
-  return localStorage.getItem(key) !== null;
+  return localStorage.getItem(key) === "exist";
 }
 
 /**
  * 设置用户已初始化标记
  * @param userId - 用户 ID
- * @param data - 初始化数据
  */
-export function setUserInitialized(
-  userId: string,
-  data?: Record<string, unknown>,
-): void {
+export function setUserInitialized(userId: string): void {
   const key = `swe-${userId}`;
-  localStorage.setItem(key, JSON.stringify(data ?? { initialized: true }));
+  localStorage.setItem(key, "exist");
 }
 
 /**
@@ -157,13 +135,18 @@ export async function fetchCustomerInfo(
   request: CustomerInfoRequest,
 ): Promise<CustomerInfoResponse | null> {
   try {
+    const baseUrl = window.__env__.baseUrl || ""
+    const isDev = baseUrl === 'yourapi'
+    const env = isDev ? 'dev' : 'prd'
+    // TODO: 替换为真实的 API Key
+    const apiKey = isDev ? 'xxxx' : 'your-api-key'
     // TODO: 替换为真实的 API 地址
-    const apiUrl = "/api/customer/info";
-
+    const apiUrl = `${baseUrl}/openapi/${env}/yourapi`
     const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "api-key": apiKey
       },
       body: JSON.stringify(request),
     });
@@ -181,72 +164,11 @@ export async function fetchCustomerInfo(
   }
 }
 
-/**
- * ============================================================
- * Mock API - 模拟接口（开发测试用）
- * ============================================================
- *
- * 使用方式：
- * 1. 开发时使用 mockCustomerInfo 替代 fetchCustomerInfo
- * 2. 可以修改 delay 和 mockResponse 来模拟不同场景
- */
 
 /** Mock 延迟时间（毫秒） */
 const MOCK_DELAY = 500;
 
-/** Mock 响应数据 - 无变更 */
-const MOCK_RESPONSE_NO_CHANGE: CustomerInfoResponse = {
-  returnCode: "SUC0000",
-  userChange: false,
-};
 
-/** Mock 响应数据 - 有变更 */
-const MOCK_RESPONSE_WITH_CHANGE: CustomerInfoResponse = {
-  returnCode: "SUC0000",
-  userChange: true,
-  data: {
-    userId: "new-user-id",
-    clawName: "新用户名",
-    space: "new-space",
-    source: "new-source",
-    hideMenu: false,
-    isSuperManager: true,
-  },
-};
-
-/**
- * Mock 客户信息查询 API
- *
- * @param request - 请求参数
- * @param shouldChange - 是否模拟用户变更（默认 false）
- * @returns 客户信息响应
- */
-export async function mockFetchCustomerInfo(
-  request: CustomerInfoRequest,
-  shouldChange = false,
-): Promise<CustomerInfoResponse> {
-  // 模拟网络延迟
-  await new Promise((resolve) => setTimeout(resolve, MOCK_DELAY));
-
-  console.info("[CustomerInfo] Mock API called with:", request);
-
-  // 根据参数返回不同的 mock 数据
-  if (shouldChange) {
-    console.info("[CustomerInfo] Mock response: user changed");
-    return {
-      ...MOCK_RESPONSE_WITH_CHANGE,
-      data: {
-        ...MOCK_RESPONSE_WITH_CHANGE.data,
-        userId: request.userId, // 保持原 userId 或使用新值
-      },
-    };
-  }
-
-  console.info("[CustomerInfo] Mock response: no change");
-  return MOCK_RESPONSE_NO_CHANGE;
-}
-
-// ==================== Mock 用户初始化接口 (Kun He) ====================
 
 /**
  * Mock 用户初始化 API
@@ -272,8 +194,6 @@ export async function mockFetchUserInit(
     },
   };
 }
-
-// ==================== 用户列表接口 (Kun He) ====================
 
 /**
  * 用户信息
