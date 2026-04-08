@@ -46,8 +46,10 @@ export function getDefaultConfig(t: TFunction) {
     },
     welcome: {
       ...defaultConfig.welcome,
-      greeting: t("chat.greeting"),
-      description: t("chat.description"),
+      // greeting: t("chat.greeting"),
+      // description: t("chat.description"),
+      greeting: t("chat.description"),
+      description: "",
       prompts: [
         { value: t("chat.prompt1") },
         { value: "3月12日至3月19日上证指数累计下跌达3.07%，帮我找到可能受影响的客户，并提供沟通建议" }, 

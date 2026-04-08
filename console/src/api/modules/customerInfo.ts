@@ -272,3 +272,88 @@ export async function mockFetchUserInit(
     },
   };
 }
+
+// ==================== 用户列表接口 (Kun He) ====================
+
+/**
+ * 用户信息
+ */
+export interface UserInfo {
+  /** 用户 ID */
+  userId: string;
+  /** 用户名称 */
+  clawName?: string;
+  /** 空间标识 */
+  space?: string;
+}
+
+/**
+ * 用户列表响应
+ */
+export interface UserListResponse {
+  /** 是否成功 */
+  success: boolean;
+  /** 返回消息 */
+  message?: string;
+  /** 用户列表 */
+  data?: UserInfo[];
+}
+
+/**
+ * 获取用户列表 API
+ *
+ * @returns 用户列表响应
+ */
+export async function fetchUserList(): Promise<UserListResponse | null> {
+  try {
+    // TODO: 替换为真实的 API 地址
+    const apiUrl = "/api/user/list";
+
+    const response = await fetch(apiUrl, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      console.error("[UserList] API request failed:", response.status);
+      return null;
+    }
+
+    const result: UserListResponse = await response.json();
+    return result;
+  } catch (error) {
+    console.error("[UserList] API request error:", error);
+    return null;
+  }
+}
+
+/**
+ * Mock 用户列表数据
+ */
+const MOCK_USER_LIST: UserInfo[] = [
+  { userId: "80000001", clawName: "张三", space: "default" },
+  { userId: "80000002", clawName: "李四", space: "default" },
+  { userId: "80000003", clawName: "王五", space: "default" },
+  { userId: "80000004", clawName: "赵六", space: "default" },
+  { userId: "80000005", clawName: "钱七", space: "default" },
+];
+
+/**
+ * Mock 获取用户列表 API
+ *
+ * @returns 用户列表响应
+ */
+export async function mockFetchUserList(): Promise<UserListResponse> {
+  // 模拟网络延迟
+  await new Promise((resolve) => setTimeout(resolve, MOCK_DELAY));
+
+  console.info("[UserList] Mock API called");
+
+  return {
+    success: true,
+    message: "User list fetched successfully",
+    data: MOCK_USER_LIST,
+  };
+}

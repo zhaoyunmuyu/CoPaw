@@ -1,173 +1,76 @@
-import { Layout, Space, Tooltip } from "antd";
+import { Layout, Space, Select } from "antd";
 import LanguageSwitcher from "../components/LanguageSwitcher/index";
 import ThemeToggleButton from "../components/ThemeToggleButton";
-import { useTranslation } from "react-i18next";
-import { Button } from "@agentscope-ai/design";
 import styles from "./index.module.less";
-// ==================== 版本相关 (Kun He) - 已注释 ====================
-// import api from "../api";
-// ==================== 版本相关结束 ====================
-import {
-  GITHUB_URL,
-  getDocsUrl,
-  getFaqUrl,
-  getReleaseNotesUrl,
-  // ==================== 版本相关 (Kun He) - 已注释 ====================
-  // PYPI_URL,
-  // ONE_HOUR_MS,
-  // UPDATE_MD,
-  // isStableVersion,
-  // compareVersions,
-  // ==================== 版本相关结束 ====================
-} from "./constants";
 import { useTheme } from "../contexts/ThemeContext";
 // ==================== 品牌主题 (Kun He) ====================
 import { useBrandTheme } from "../contexts/BrandThemeContext";
 // ==================== 品牌主题结束 ====================
-// ==================== 版本相关 (Kun He) - 已注释 ====================
-// import { useState, useEffect } from "react";
-// ==================== 版本相关结束 ====================
-// ==================== 版本相关 (Kun He) - 已注释 ====================
-// import ReactMarkdown from "react-markdown";
-// import remarkGfm from "remark-gfm";
-// import { CopyOutlined, CheckOutlined, TagOutlined } from "@ant-design/icons";
-// ==================== 版本相关结束 ====================
+// ==================== 超管用户切换 (Kun He) ====================
+import { useState, useEffect } from "react";
+import { useIframeStore } from "../stores/iframeStore";
+import {
+  mockFetchUserList,
+  type UserInfo,
+} from "../api/modules/customerInfo";
+// ==================== 超管用户切换结束 ====================
 
 const { Header: AntHeader } = Layout;
 
-// ==================== 版本相关 (Kun He) - 已注释 ====================
-// // ── Code block with copy button ───────────────────────────────────────────
-// function UpdateCodeBlock({ code }: { code: string }) {
-//   const [copied, setCopied] = useState(false);
-//   const handleCopy = () => {
-//     navigator.clipboard.writeText(code).then(() => {
-//       setCopied(true);
-//       setTimeout(() => setCopied(false), 2000);
-//     });
-//   };
-//   return (
-//     <div className={styles.codeBlock}>
-//       <code className={styles.codeBlockInner}>{code}</code>
-//       <button
-//         className={`${styles.copyBtn} ${
-//           copied ? styles.copyBtnCopied : styles.copyBtnDefault
-//         }`}
-//         onClick={handleCopy}
-//         title="Copy"
-//       >
-//         {copied ? <CheckOutlined /> : <CopyOutlined />}
-//       </button>
-//     </div>
-//   );
-// }
-// ==================== 版本相关结束 ====================
-
 export default function Header() {
-  const { t, i18n } = useTranslation();
   const { isDark } = useTheme();
   // ==================== 品牌主题 (Kun He) ====================
   // 获取动态品牌配置，用于显示正确的 logo
   const { theme: brandTheme } = useBrandTheme();
   // ==================== 品牌主题结束 ====================
 
-  // ==================== 版本相关 (Kun He) - 已注释 ====================
-  // const [version, setVersion] = useState<string>("");
-  // const [latestVersion, setLatestVersion] = useState<string>("");
-  // const [updateModalOpen, setUpdateModalOpen] = useState(false);
-  // const [updateMarkdown, setUpdateMarkdown] = useState<string>("");
+  // ==================== 超管用户切换 (Kun He) ====================
+  // 获取 isSuperManager 和 userId
+  const isSuperManager = useIframeStore((state) => state.isSuperManager);
+  const userId = useIframeStore((state) => state.userId);
+  const setContext = useIframeStore((state) => state.setContext);
 
-  // useEffect(() => {
-  //   api
-  //     .getVersion()
-  //     .then((res) => setVersion(res?.version ?? ""))
-  //     .catch(() => {});
-  // }, []);
+  // 用户列表状态
+  const [userList, setUserList] = useState<UserInfo[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  // useEffect(() => {
-  //   fetch(PYPI_URL)
-  //     .then((res) => res.json())
-  //     .then((data) => {
-  //       const releases = data?.releases ?? {};
+  // 加载用户列表
+  useEffect(() => {
+    if (isSuperManager) {
+      setLoading(true);
+      mockFetchUserList()
+        .then((res) => {
+          if (res?.success && res.data) {
+            setUserList(res.data);
+          }
+        })
+        .catch((err) => {
+          console.error("[Header] Failed to fetch user list:", err);
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    }
+  }, [isSuperManager]);
 
-  //       const versionsWithTime = Object.entries(releases)
-  //         .filter(([v]) => isStableVersion(v))
-  //         .map(([v, files]) => {
-  //           const fileList = files as Array<{ upload_time_iso_8601?: string }>;
-  //           const latestUpload = fileList
-  //             .map((f) => f.upload_time_iso_8601)
-  //             .filter(Boolean)
-  //             .sort()
-  //             .pop();
-  //           return { version: v, uploadTime: latestUpload || "" };
-  //         });
+  // 处理用户切换
+  const handleUserChange = (newUserId: string) => {
+    const selectedUser = userList.find((u) => u.userId === newUserId);
+    if (selectedUser) {
+      console.info("[Header] Switching to user:", selectedUser);
 
-  //       versionsWithTime.sort((a, b) => {
-  //         const timeDiff =
-  //           new Date(b.uploadTime).getTime() - new Date(a.uploadTime).getTime();
-  //         return timeDiff !== 0
-  //           ? timeDiff
-  //           : compareVersions(b.version, a.version);
-  //       });
+      // 更新 store 中的用户信息
+      setContext({
+        userId: selectedUser.userId,
+        clawName: selectedUser.clawName ?? null,
+        space: selectedUser.space ?? null,
+      });
 
-  //       const versions = versionsWithTime.map((v) => v.version);
-  //       const latest = versions[0] ?? data?.info?.version ?? "";
-
-  //       const releaseTime = versionsWithTime.find((v) => v.version === latest)
-  //         ?.uploadTime;
-  //       const isOldEnough =
-  //         !!releaseTime &&
-  //         new Date(releaseTime) <= new Date(Date.now() - ONE_HOUR_MS);
-
-  //       if (isOldEnough) {
-  //         setLatestVersion(latest);
-  //       } else {
-  //         setLatestVersion("");
-  //       }
-  //     })
-  //     .catch(() => {});
-  // }, []);
-
-  // const hasUpdate =
-  //   !!version && !!latestVersion && compareVersions(latestVersion, version) > 0;
-
-  // const handleOpenUpdateModal = () => {
-  //   setUpdateMarkdown("");
-  //   setUpdateModalOpen(true);
-  //   const lang = i18n.language?.startsWith("zh")
-  //     ? "zh"
-  //     : i18n.language?.startsWith("ru")
-  //     ? "ru"
-  //     : "en";
-  //   const faqLang = lang === "zh" ? "zh" : "en";
-  //   const url = `https://copaw.agentscope.io/docs/faq.${faqLang}.md`;
-  //   fetch(url, { cache: "no-cache" })
-  //     .then((res) => (res.ok ? res.text() : Promise.reject()))
-  //     .then((text) => {
-  //       const zhPattern = /###\s*CoPaw如何更新[\s\S]*?(?=\n###|$)/;
-  //       const enPattern = /###\s*How to update CoPaw[\s\S]*?(?=\n###|$)/;
-  //       const match = text.match(faqLang === "zh" ? zhPattern : enPattern);
-  //       setUpdateMarkdown(
-  //         match && lang !== "ru"
-  //           ? match[0].trim()
-  //           : UPDATE_MD[lang] ?? UPDATE_MD.en,
-  //       );
-  //     })
-  //     .catch(() => {
-  //       setUpdateMarkdown(UPDATE_MD[lang] ?? UPDATE_MD.en);
-  //     });
-  // };
-  // ==================== 版本相关结束 ====================
-
-  const handleNavClick = (url: string) => {
-    if (url) {
-      const pywebview = (window as any).pywebview;
-      if (pywebview?.api) {
-        pywebview.api.open_external_link(url);
-      } else {
-        window.open(url, "_blank");
-      }
+      // 刷新页面以重新加载对话信息
+      window.location.reload();
     }
   };
+  // ==================== 超管用户切换结束 ====================
 
   return (
     <>
@@ -185,133 +88,28 @@ export default function Header() {
             className={styles.logoImg}
           />
           {/* ==================== 品牌主题结束 ==================== */}
-          {/* ==================== 版本相关 (Kun He) - 已注释 ====================
-          <div className={styles.logoDivider} />
-          {version && (
-            <Badge
-              dot={!!hasUpdate}
-              color="rgba(255, 157, 77, 1)"
-              offset={[4, 28]}
-            >
-              <span
-                className={`${styles.versionBadge} ${
-                  hasUpdate
-                    ? styles.versionBadgeClickable
-                    : styles.versionBadgeDefault
-                }`}
-                onClick={() => hasUpdate && handleOpenUpdateModal()}
-              >
-                v{version}
-              </span>
-            </Badge>
+          {/* ==================== 超管用户切换 (Kun He) ==================== */}
+          {/* 当 isSuperManager 为 true 时，显示用户选择下拉框 */}
+          {isSuperManager && (
+            <Select
+              value={userId}
+              onChange={handleUserChange}
+              loading={loading}
+              style={{ minWidth: 150, marginLeft: 16 }}
+              placeholder="选择用户"
+              options={userList.map((user) => ({
+                label: `${user.clawName || user.userId}`,
+                value: user.userId,
+              }))}
+            />
           )}
-          ==================== 版本相关结束 ==================== */}
+          {/* ==================== 超管用户切换结束 ==================== */}
         </div>
         <Space size="middle">
-          {/* ==================== 版本相关 (Kun He) - 已注释 ====================
-          <Tooltip title={t("header.changelog")}>
-            <Button
-              type="text"
-              onClick={() => handleNavClick(getReleaseNotesUrl(i18n.language))}
-            >
-              {t("header.changelog")}
-            </Button>
-          </Tooltip>
-          <Tooltip title={t("header.docs")}>
-            <Button
-              type="text"
-              onClick={() => handleNavClick(getDocsUrl(i18n.language))}
-            >
-              {t("header.docs")}
-            </Button>
-          </Tooltip>
-          <Tooltip title={t("header.faq")}>
-            <Button
-              type="text"
-              onClick={() => handleNavClick(getFaqUrl(i18n.language))}
-            >
-              {t("header.faq")}
-            </Button>
-          </Tooltip>
-          <Tooltip title={t("header.github")}>
-            <Button type="text" onClick={() => handleNavClick(GITHUB_URL)}>
-              {t("header.github")}
-            </Button>
-          </Tooltip>
-          <div className={styles.headerDivider} /> 
-          ==================== 版本相关结束 ==================== */}
           <LanguageSwitcher />
           <ThemeToggleButton />
         </Space>
       </AntHeader>
-
-      {/* ==================== 版本相关 (Kun He) - 已注释 ====================
-      <Modal
-        title={null}
-        open={updateModalOpen}
-        onCancel={() => setUpdateModalOpen(false)}
-        footer={[
-          <Button key="close" onClick={() => setUpdateModalOpen(false)}>
-            {t("common.close")}
-          </Button>,
-          <Button
-            key="releases"
-            type="primary"
-            className={styles.updateViewReleasesBtn}
-            onClick={() => handleNavClick(getReleaseNotesUrl(i18n.language))}
-          >
-            {t("sidebar.updateModal.viewReleases")}
-          </Button>,
-        ]}
-        width={960}
-        className={styles.updateModal}
-      >
-        <div className={styles.updateModalBanner}>
-          <div className={styles.updateModalBannerLeft}>
-            <span className={styles.updateModalVersionTag}>
-              <TagOutlined />
-              Version {latestVersion || version}
-            </span>
-            <div className={styles.updateModalBannerTitle}>
-              {t("sidebar.updateModal.title", {
-                version: latestVersion || version,
-              })}
-            </div>
-          </div>
-        </div>
-
-        <div className={styles.updateModalBody}>
-          {updateMarkdown ? (
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                code({ node, className, children, ...props }: any) {
-                  const match = /language-(\w+)/.exec(className || "");
-                  const isBlock =
-                    node?.position?.start?.line !== node?.position?.end?.line ||
-                    match;
-                  return isBlock ? (
-                    <UpdateCodeBlock
-                      code={String(children).replace(/\n$/, "")}
-                    />
-                  ) : (
-                    <code className={styles.codeInline} {...props}>
-                      {children}
-                    </code>
-                  );
-                },
-              }}
-            >
-              {updateMarkdown}
-            </ReactMarkdown>
-          ) : (
-            <div className={styles.updateModalSpinWrapper}>
-              <Spin />
-            </div>
-          )}
-        </div>
-      </Modal>
-      ==================== 版本相关结束 ==================== */}
     </>
   );
 }

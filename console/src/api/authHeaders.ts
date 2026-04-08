@@ -59,7 +59,7 @@ export function buildAuthHeaders(): Record<string, string> {
         item.headerValue !== undefined &&
         item.headerName !== "X-User-Id"
       ) {
-        headers[item.headerName] = item.headerValue;
+        headers["x-header-" + item.headerName] = item.headerValue;
       }
     }
   }
