@@ -762,4 +762,4 @@ def _initialize_agent_workspace(  # pylint: disable=too-many-branches
     token_usage_file = workspace_dir / "token_usage.json"
     if not token_usage_file.exists():
         with open(token_usage_file, "w", encoding="utf-8") as f:
-            f.write("[]")
+            f.write("{}")

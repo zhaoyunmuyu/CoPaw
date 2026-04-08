@@ -1098,11 +1098,33 @@ ChannelConfigUnion = Union[
 # Agent configuration utility functions
 
 
-def load_agent_config(agent_id: str) -> AgentProfileConfig:
+def _resolve_agent_root_config_path(
+    config_path: Path | None = None,
+    tenant_id: str | None = None,
+) -> Path | None:
+    """Resolve the root config path for agent load/save helpers."""
+    if config_path is not None:
+        return Path(config_path).expanduser()
+    if tenant_id is None:
+        return None
+
+    from .utils import get_tenant_config_path
+
+    return get_tenant_config_path(tenant_id)
+
+
+def load_agent_config(
+    agent_id: str,
+    config_path: Path | None = None,
+    *,
+    tenant_id: str | None = None,
+) -> AgentProfileConfig:
     """Load agent's complete configuration from workspace/agent.json.
 
     Args:
         agent_id: Agent ID to load
+        config_path: Optional root config.json path to resolve agent refs from
+        tenant_id: Optional tenant ID to resolve tenant-scoped root config
 
     Returns:
         AgentProfileConfig: Complete agent configuration
@@ -1112,7 +1134,11 @@ def load_agent_config(agent_id: str) -> AgentProfileConfig:
     """
     from .utils import load_config
 
-    config = load_config()
+    resolved_config_path = _resolve_agent_root_config_path(
+        config_path=config_path,
+        tenant_id=tenant_id,
+    )
+    config = load_config(resolved_config_path)
 
     if agent_id not in config.agents.profiles:
         raise ValueError(f"Agent '{agent_id}' not found in config")
@@ -1166,7 +1192,12 @@ def load_agent_config(agent_id: str) -> AgentProfileConfig:
             ),
         )
         # Save for future use
-        save_agent_config(agent_id, fallback_config)
+        save_agent_config(
+            agent_id,
+            fallback_config,
+            config_path=resolved_config_path,
+            tenant_id=tenant_id,
+        )
         return fallback_config
 
     with open(agent_config_path, "r", encoding="utf-8") as f:
@@ -1188,19 +1219,28 @@ def load_agent_config(agent_id: str) -> AgentProfileConfig:
 def save_agent_config(
     agent_id: str,
     agent_config: AgentProfileConfig,
+    config_path: Path | None = None,
+    *,
+    tenant_id: str | None = None,
 ) -> None:
     """Save agent configuration to workspace/agent.json.
 
     Args:
         agent_id: Agent ID
         agent_config: Complete agent configuration to save
+        config_path: Optional root config.json path to resolve agent refs from
+        tenant_id: Optional tenant ID to resolve tenant-scoped root config
 
     Raises:
         ValueError: If agent ID not found in root config
     """
     from .utils import load_config
 
-    config = load_config()
+    resolved_config_path = _resolve_agent_root_config_path(
+        config_path=config_path,
+        tenant_id=tenant_id,
+    )
+    config = load_config(resolved_config_path)
 
     if agent_id not in config.agents.profiles:
         raise ValueError(f"Agent '{agent_id}' not found in config")
