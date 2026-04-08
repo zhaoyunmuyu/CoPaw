@@ -1235,13 +1235,20 @@ def list_workspaces(tenant_id: str | None = None) -> list[dict[str, str]]:
         from ..config.utils import load_config, get_tenant_config_path
         from ..config.config import load_agent_config
 
-        config = load_config(get_tenant_config_path(tenant_id))
+        config_path = get_tenant_config_path(tenant_id)
+        config = load_config(config_path)
         # Only return agents that are still in the configuration
         # This ensures deleted agents are not included
         for agent_id, profile in sorted(config.agents.profiles.items()):
             agent_name = agent_id
             try:
-                agent_name = load_agent_config(agent_id).name or agent_id
+                agent_name = (
+                    load_agent_config(
+                        agent_id,
+                        config_path=config_path,
+                    ).name
+                    or agent_id
+                )
             except Exception:
                 pass
             workspaces.append(

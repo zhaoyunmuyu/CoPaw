@@ -667,9 +667,31 @@ def _ensure_default_heartbeat_md(workspace_dir: Path, language: str) -> None:
         f.write(content.strip())
 
 
+def _resolve_workspace_language(
+    agent_config: AgentProfileConfig,
+    *,
+    working_dir: Path | None = None,
+) -> str:
+    """Resolve scaffold language from agent config, then tenant config."""
+    language = getattr(agent_config, "language", None)
+    if language:
+        return language
+
+    if working_dir is not None:
+        try:
+            config = load_config(Path(working_dir).expanduser() / "config.json")
+            tenant_language = getattr(config.agents, "language", None)
+            if tenant_language:
+                return tenant_language
+        except Exception:  # noqa: E722
+            pass
+
+    return "zh"
+
+
 def _initialize_agent_workspace(  # pylint: disable=too-many-branches
     workspace_dir: Path,
-    agent_config: AgentProfileConfig,  # pylint: disable=unused-argument
+    agent_config: AgentProfileConfig,
     *,
     skill_names: list[str] | None = None,
     builtin_qa_md_seed: bool = False,
@@ -688,8 +710,6 @@ def _initialize_agent_workspace(  # pylint: disable=too-many-branches
             HEARTBEAT from the normal language pack, and **omit** BOOTSTRAP.md
             so bootstrap mode never triggers.
     """
-    from ...config import load_config as load_global_config
-
     workspace_dir = Path(workspace_dir).expanduser()
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
@@ -698,9 +718,10 @@ def _initialize_agent_workspace(  # pylint: disable=too-many-branches
     (workspace_dir / "memory").mkdir(exist_ok=True)
     (workspace_dir / "skills").mkdir(exist_ok=True)
 
-    # Get language from global config
-    config = load_global_config()
-    language = config.agents.language or "zh"
+    language = _resolve_workspace_language(
+        agent_config,
+        working_dir=working_dir,
+    )
 
     package_agents_root = Path(__file__).parent.parent.parent / "agents"
     md_files_dir = package_agents_root / "md_files" / language

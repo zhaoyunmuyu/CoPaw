@@ -16,6 +16,7 @@ from swe.agents.skills_manager import (
     get_skill_pool_dir,
     get_workspace_skills_dir,
     import_builtin_skills,
+    list_workspaces,
     list_builtin_import_candidates,
     reconcile_pool_manifest,
     update_single_builtin,
@@ -269,13 +270,6 @@ def test_initialize_agent_workspace_seeds_from_tenant_pool(
     )
 
     monkeypatch.setattr(
-        swe_config,
-        "load_config",
-        lambda: SimpleNamespace(
-            agents=SimpleNamespace(language="en"),
-        ),
-    )
-    monkeypatch.setattr(
         agents_router,
         "_ensure_default_heartbeat_md",
         lambda *args, **kwargs: None,
@@ -283,7 +277,7 @@ def test_initialize_agent_workspace_seeds_from_tenant_pool(
 
     agents_router._initialize_agent_workspace(
         workspace_dir,
-        object(),
+        SimpleNamespace(language="en"),
         skill_names=["guidance"],
         working_dir=tenant_dir,
     )
@@ -293,3 +287,72 @@ def test_initialize_agent_workspace_seeds_from_tenant_pool(
     ).read_text(encoding="utf-8")
     assert "tenant-a pool guidance" in skill_text
     assert "tenant-b pool guidance" not in skill_text
+
+
+def test_initialize_agent_workspace_prefers_agent_language(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    workspace_dir = tmp_path / "tenant-a" / "workspaces" / "agent-ru"
+
+    monkeypatch.setattr(
+        swe_config,
+        "load_config",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("should not read global config"),
+        ),
+    )
+
+    agents_router._initialize_agent_workspace(
+        workspace_dir,
+        SimpleNamespace(language="ru"),
+    )
+
+    assert "Встроенный" not in (
+        workspace_dir / "AGENTS.md"
+    ).read_text(encoding="utf-8")
+    assert "Шаблон рабочей области" in (
+        workspace_dir / "AGENTS.md"
+    ).read_text(encoding="utf-8")
+
+
+def test_list_workspaces_reads_agent_names_from_tenant_config(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    tenant_config_path = tmp_path / "tenant-a" / "config.json"
+    workspace_dir = tmp_path / "tenant-a" / "workspaces" / "shared"
+    observed: dict[str, Path | None] = {}
+
+    monkeypatch.setattr(
+        "swe.config.utils.get_tenant_config_path",
+        lambda tenant_id=None: tenant_config_path,
+    )
+    monkeypatch.setattr(
+        "swe.config.utils.load_config",
+        lambda path: SimpleNamespace(
+            agents=SimpleNamespace(
+                profiles={
+                    "shared": SimpleNamespace(workspace_dir=str(workspace_dir)),
+                },
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        "swe.config.config.load_agent_config",
+        lambda agent_id, config_path=None, tenant_id=None: (
+            observed.update({"config_path": config_path})
+            or SimpleNamespace(name="Tenant Shared")
+        ),
+    )
+
+    result = list_workspaces(tenant_id="tenant-a")
+
+    assert observed["config_path"] == tenant_config_path
+    assert result == [
+        {
+            "agent_id": "shared",
+            "agent_name": "Tenant Shared",
+            "workspace_dir": str(workspace_dir),
+        },
+    ]
