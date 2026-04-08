@@ -16,7 +16,7 @@ class S3BackupClient:
     """S3 client wrapper for backup operations.
 
     Storage path structure: {prefix}/{instance_id}/{YYYY-MM-DD}/{HH}/{tenant_id}.zip
-    Example: copaw/instance-01/2026-03-25/14/12345678.zip
+    Example: swe_backup/instance-01/2026-03-25/14/12345678.zip
     """
 
     def __init__(self, config: BackupEnvironmentConfig):

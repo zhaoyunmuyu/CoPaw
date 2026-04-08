@@ -8,7 +8,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from copaw.constant import WORKING_DIR
+from swe.constant import WORKING_DIR
 
 
 class InstanceConfig(BaseModel):

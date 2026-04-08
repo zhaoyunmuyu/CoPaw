@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 
-from copaw.config.utils import list_all_tenant_ids
+from swe.config.utils import list_all_tenant_ids
 from .config import BackupConfig, load_backup_config
 from .models import BackupTask, BackupTaskStatus, BackupTaskType
 from .task_store import TaskStore

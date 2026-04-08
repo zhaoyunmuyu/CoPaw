@@ -18,8 +18,8 @@ class BackupEnvironmentConfig(BaseModel):
     aws_access_key_id: str
     aws_secret_access_key: str
     s3_bucket: str
-    s3_prefix: str = "copaw"
-    s3_region: str = "cn-north-1"
+    s3_prefix: str = "swe_backup"
+    s3_region: str = "sz"
     endpoint_url: str = ""  # 可选，用于阿里云 ECS 等自定义 S3 端点
 
 
@@ -49,8 +49,8 @@ class BackupConfig(BaseModel):
     timeout: BackupTimeoutConfig = Field(default_factory=BackupTimeoutConfig)
 
     def get_active_config(self) -> BackupEnvironmentConfig | None:
-        """Get active environment config based on COPAW_ENV."""
-        env = os.environ.get("COPAW_ENV", "prd")
+        """Get active environment config based on SWE_ENV."""
+        env = os.environ.get("SWE_ENV", "prd")
         return self.environments.get(env)
 
 
@@ -73,47 +73,47 @@ def load_backup_config_from_env(
     """Load backup configuration from environment variables.
 
     Environment variables (per environment):
-        COPAW_BACKUP_AWS_ACCESS_KEY_ID
-        COPAW_BACKUP_AWS_SECRET_ACCESS_KEY
-        COPAW_BACKUP_S3_BUCKET
-        COPAW_BACKUP_S3_PREFIX (optional, default: "copaw")
-        COPAW_BACKUP_S3_REGION (optional, default: "cn-north-1")
-        COPAW_BACKUP_ENDPOINT_URL (optional)
+        SWE_BACKUP_AWS_ACCESS_KEY_ID
+        SWE_BACKUP_AWS_SECRET_ACCESS_KEY
+        SWE_BACKUP_S3_BUCKET
+        SWE_BACKUP_S3_PREFIX (optional, default: "swe")
+        SWE_BACKUP_S3_REGION (optional, default: "cn-north-1")
+        SWE_BACKUP_ENDPOINT_URL (optional)
 
     For multiple environments, use prefix:
-        {ENV}_COPAW_BACKUP_AWS_ACCESS_KEY_ID (e.g., DEV_COPAW_BACKUP_AWS_ACCESS_KEY_ID)
+        {ENV}_SWE_BACKUP_AWS_ACCESS_KEY_ID (e.g., DEV_SWE_BACKUP_AWS_ACCESS_KEY_ID)
 
     Args:
-        env: Environment name ('dev' or 'prd'). If None, uses COPAW_ENV.
+        env: Environment name ('dev' or 'prd'). If None, uses SWE_ENV.
 
     Returns:
         BackupConfig if required environment variables are set, None otherwise.
     """
     if env is None:
-        env = os.environ.get("COPAW_ENV", "prd")
+        env = os.environ.get("SWE_ENV", "prd")
 
     # Try environment-specific variables first, then fallback to generic
     env_prefix = f"{env.upper()}_"
 
     def get_var(key: str, default: str = "") -> str:
         """Get variable with environment prefix fallback."""
-        # Try env-specific first (e.g., DEV_COPAW_BACKUP_S3_BUCKET)
+        # Try env-specific first (e.g., DEV_SWE_BACKUP_S3_BUCKET)
         env_specific = _get_env_var(f"{env_prefix}{key}")
         if env_specific:
             return env_specific
-        # Fallback to generic (e.g., COPAW_BACKUP_S3_BUCKET)
+        # Fallback to generic (e.g., SWE_BACKUP_S3_BUCKET)
         return _get_env_var(key, default)
 
     # Check required variables
-    aws_access_key_id = get_var("COPAW_BACKUP_AWS_ACCESS_KEY_ID")
-    aws_secret_access_key = get_var("COPAW_BACKUP_AWS_SECRET_ACCESS_KEY")
-    s3_bucket = get_var("COPAW_BACKUP_S3_BUCKET")
+    aws_access_key_id = get_var("SWE_BACKUP_AWS_ACCESS_KEY_ID")
+    aws_secret_access_key = get_var("SWE_BACKUP_AWS_SECRET_ACCESS_KEY")
+    s3_bucket = get_var("SWE_BACKUP_S3_BUCKET")
 
     if not all([aws_access_key_id, aws_secret_access_key, s3_bucket]):
         logger.debug(
             "Backup configuration not complete for environment '%s'. "
-            "Required: COPAW_BACKUP_AWS_ACCESS_KEY_ID, "
-            "COPAW_BACKUP_AWS_SECRET_ACCESS_KEY, COPAW_BACKUP_S3_BUCKET",
+            "Required: SWE_BACKUP_AWS_ACCESS_KEY_ID, "
+            "SWE_BACKUP_AWS_SECRET_ACCESS_KEY, SWE_BACKUP_S3_BUCKET",
             env,
         )
         return None
@@ -123,9 +123,9 @@ def load_backup_config_from_env(
         aws_access_key_id=aws_access_key_id,
         aws_secret_access_key=aws_secret_access_key,
         s3_bucket=s3_bucket,
-        s3_prefix=get_var("COPAW_BACKUP_S3_PREFIX", "copaw"),
-        s3_region=get_var("COPAW_BACKUP_S3_REGION", "cn-north-1"),
-        endpoint_url=get_var("COPAW_BACKUP_ENDPOINT_URL", ""),
+        s3_prefix=get_var("SWE_BACKUP_S3_PREFIX", "swe"),
+        s3_region=get_var("SWE_BACKUP_S3_REGION", "cn-north-1"),
+        endpoint_url=get_var("SWE_BACKUP_ENDPOINT_URL", ""),
     )
 
     return BackupConfig(

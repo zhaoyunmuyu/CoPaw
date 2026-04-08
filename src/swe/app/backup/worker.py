@@ -13,8 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from copaw.constant import SECRET_DIR, WORKING_DIR
-from copaw.config.utils import (
+from swe.constant import SECRET_DIR, WORKING_DIR
+from swe.config.utils import (
     get_tenant_working_dir,
     get_tenant_secrets_dir,
     list_all_tenant_ids,

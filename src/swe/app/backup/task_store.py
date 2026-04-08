@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from copaw.constant import WORKING_DIR
+from swe.constant import WORKING_DIR
 from .models import BackupTask, BackupTaskStatus, BackupTaskType
 
 
