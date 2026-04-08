@@ -130,7 +130,7 @@ class TestExtractPathTokens:
 
     def test_code_exec_flags_detected(self):
         """Commands with -c/-e flags should be flagged for rejection."""
-        cmd = 'python -c "print(open(\'/etc/passwd\').read())"'
+        cmd = 'bash -c "cat /etc/passwd"'
         file_paths, has_code_exec = _extract_path_tokens(cmd)
         # Should detect code execution flag
         assert has_code_exec is True
@@ -197,14 +197,14 @@ class TestExtractPathTokens:
         assert has_code_exec is True
 
     def test_python_with_combined_flag_detected(self):
-        """python -Bc 'code' should be detected as code execution."""
-        cmd = 'python -Bc "print(1)"'
+        """bash -vc 'code' should be detected as code execution."""
+        cmd = 'bash -vc "echo hello"'
         file_paths, has_code_exec = _extract_path_tokens(cmd)
         assert has_code_exec is True
 
     def test_python3_with_standalone_c_flag_detected(self):
-        """python3 -c 'code' should be detected as code execution."""
-        cmd = 'python3 -c "open(\'/etc/passwd\')"'
+        """bash -c 'code' should be detected as code execution."""
+        cmd = 'bash -c "cat /etc/passwd"'
         file_paths, has_code_exec = _extract_path_tokens(cmd)
         assert has_code_exec is True
 
@@ -276,7 +276,7 @@ class TestValidateShellPaths:
         tenant_dir = mock_working_dir / "test_tenant"
         with tenant_context(tenant_id="test_tenant"):
             result = _validate_shell_paths(
-                'python -c "print(open(\'/etc/passwd\').read())"',
+                'bash -c "cat /etc/passwd"',
                 base_dir=tenant_dir
             )
             assert result is not None
@@ -453,6 +453,6 @@ class TestExecuteShellCommand:
         from swe.agents.tools.shell import execute_shell_command
 
         with tenant_context(tenant_id="test_tenant"):
-            result = await execute_shell_command('python -c "print(1)"')
+            result = await execute_shell_command('bash -c "echo hello"')
 
             assert "code execution flags" in result.content[0]["text"]

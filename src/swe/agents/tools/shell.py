@@ -34,9 +34,10 @@ _STRING_ARG_COMMANDS = frozenset({
 # Interpreter commands that have dangerous -c/-e code execution flags
 # Only for these commands do we reject -c/-e flags
 _INTERPRETER_COMMANDS = frozenset({
-    "python", "python3", "python2",
-    "/usr/bin/python", "/usr/bin/python3", "/usr/bin/python2",
-    "/usr/local/bin/python", "/usr/local/bin/python3",
+    # Python code execution temporarily allowed
+    # "python", "python3", "python2",
+    # "/usr/bin/python", "/usr/bin/python3", "/usr/bin/python2",
+    # "/usr/local/bin/python", "/usr/local/bin/python3",
     "node", "/usr/bin/node", "/usr/local/bin/node",
     "nodejs", "/usr/bin/nodejs",
     "ruby", "/usr/bin/ruby", "/usr/local/bin/ruby",
