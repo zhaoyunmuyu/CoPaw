@@ -66,7 +66,6 @@ export const DEFAULT_THEME: BrandThemeConfig = {
 export const BRAND_THEMES: Record<string, BrandThemeConfig> = {
   default: DEFAULT_THEME,
 
-  // ==================== 主题配置示例 ====================
   ruice: {
     source: "ruice",
     brandName: "睿策小助Claw版",
@@ -110,7 +109,6 @@ export const BRAND_THEMES: Record<string, BrandThemeConfig> = {
     favicon: "/swe-symbol.png",
     avatar: "/logo-center.png",
   },
-  // ==================== 主题配置结束 ====================
 };
 
 /**

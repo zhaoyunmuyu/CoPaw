@@ -22,7 +22,7 @@ import { getUserId, getChannel } from "../../../utils/identity";
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_SESSION_NAME = "New Chat";
+const DEFAULT_SESSION_NAME = "新会话";
 const ROLE_TOOL = "tool";
 const ROLE_USER = "user";
 const ROLE_ASSISTANT = "assistant";

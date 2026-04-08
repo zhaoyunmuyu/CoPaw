@@ -224,7 +224,7 @@ const ChatSessionDrawer: React.FC<ChatSessionDrawerProps> = (props) => {
             return (
               <ChatSessionItem
                 key={session.id}
-                name={session.name || "New Chat"}
+                name={session.name || "新会话"}
                 time={formatCreatedAt(ext.createdAt ?? null)}
                 channelKey={channelKey || undefined}
                 channelLabel={channelLabel}
@@ -235,7 +235,7 @@ const ChatSessionDrawer: React.FC<ChatSessionDrawerProps> = (props) => {
                 }
                 onClick={() => handleSessionClick(session.id!)}
                 onEdit={() =>
-                  handleEditStart(session.id!, session.name || "New Chat")
+                  handleEditStart(session.id!, session.name || "新会话")
                 }
                 onDelete={() => handleDelete(session.id!)}
                 onEditChange={handleEditChange}
