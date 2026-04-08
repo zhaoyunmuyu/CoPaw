@@ -113,6 +113,29 @@ class TestGrepSearchRegression:
             assert "tenant_a" in result_text
             assert "tenant_b" not in result_text
 
+    @pytest.mark.asyncio
+    async def test_default_search_root_uses_workspace_dir_when_set_but_stays_in_tenant(
+        self,
+        mock_working_dir: Path,
+    ):
+        """When workspace_dir is set, default search root should not allow escaping tenant."""
+        tenant_a_dir = mock_working_dir / "tenant_a"
+        tenant_b_dir = mock_working_dir / "tenant_b"
+
+        # Create a "workspace" directory path that points outside tenant_a via symlink.
+        # This simulates an unsafe workspace_dir configuration that must be rejected.
+        workspaces_dir = tenant_a_dir / "workspaces"
+        workspaces_dir.mkdir(parents=True, exist_ok=True)
+        workspace_dir = workspaces_dir / "agent_a"
+        workspace_dir.symlink_to(tenant_b_dir, target_is_directory=True)
+
+        with tenant_context(tenant_id="tenant_a", workspace_dir=workspace_dir):
+            result = await grep_search("secret")
+
+            result_text = result.content[0].get("text", "")
+            assert "outside" in result_text.lower() or "error" in result_text.lower()
+            assert "tenant_b secret" not in result_text
+
 
 # =============================================================================
 # Regression tests for glob_search
@@ -170,6 +193,27 @@ class TestGlobSearchRegression:
             # Should not find tenant_b files
             assert "secret.txt" not in result_text
             assert "confidential.txt" not in result_text
+
+    @pytest.mark.asyncio
+    async def test_relative_path_resolves_from_workspace_dir_when_set(
+        self,
+        mock_working_dir: Path,
+    ):
+        """When workspace_dir is set, a relative `path="."` should resolve from it."""
+        tenant_a_dir = mock_working_dir / "tenant_a"
+        workspace_dir = tenant_a_dir / "workspaces" / "agent_a"
+        workspace_dir.mkdir(parents=True, exist_ok=True)
+
+        # File in tenant root should not be discovered when searching from workspace dir.
+        (tenant_a_dir / "tenant_only.txt").write_text("tenant root only")
+        (workspace_dir / "workspace_only.txt").write_text("workspace only")
+
+        with tenant_context(tenant_id="tenant_a", workspace_dir=workspace_dir):
+            result = await glob_search("*.txt", path=".")
+
+        result_text = result.content[0].get("text", "")
+        assert "workspace_only.txt" in result_text
+        assert "tenant_only.txt" not in result_text
 
 
 # =============================================================================

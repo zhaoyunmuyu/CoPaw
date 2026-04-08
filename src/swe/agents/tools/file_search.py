@@ -17,11 +17,9 @@ from agentscope.tool import ToolResponse
 
 from ...security.tenant_path_boundary import (
     resolve_tenant_path,
-    validate_path_within_tenant,
     TenantPathBoundaryError,
-    make_permission_denied_response,
+    get_current_tool_base_dir,
 )
-from ...config.context import get_current_workspace_dir
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -143,24 +141,16 @@ def _resolve_search_root(
 
     Returns a ``Path`` on success or a ``ToolResponse`` error.
     """
-    # Use current workspace dir as default if no path provided
     if path is None:
         try:
-            workspace_dir = get_current_workspace_dir()
-            if workspace_dir is not None:
-                search_root = workspace_dir
-            else:
-                from ...security.tenant_path_boundary import get_current_tenant_root
-                search_root = get_current_tenant_root()
+            search_root = get_current_tool_base_dir()
         except TenantPathBoundaryError:
             return _make_response(
-                "Error: Tenant context is not available. "
-                "Cannot determine search root.",
+                "Error: Search root is outside the allowed workspace.",
             )
     else:
-        # Use current workspace dir as base for relative paths
-        base_dir = get_current_workspace_dir()
         try:
+            base_dir = get_current_tool_base_dir()
             search_root = resolve_tenant_path(path, base_dir=base_dir)
         except TenantPathBoundaryError:
             return _make_response(
@@ -513,13 +503,15 @@ async def grep_search(
     include_pattern: Optional[str] = None,
 ) -> ToolResponse:
     """Search file contents by pattern, recursively. Relative paths resolve
-    from the current tenant workspace. Output format: ``path:line_number: content``.
+    from the current agent workspace when available, otherwise the current
+    tenant workspace root. Output format: ``path:line_number: content``.
 
     Args:
         pattern (`str`):
             Search string (or regex when *is_regex* is True).
         path (`str`, optional):
-            File or directory to search in.  Defaults to tenant workspace.
+            File or directory to search in.  Defaults to current tool base
+            directory (agent workspace when available, otherwise tenant root).
         is_regex (`bool`, optional):
             Treat *pattern* as a regular expression.  Defaults to False.
         case_sensitive (`bool`, optional):
@@ -610,13 +602,15 @@ async def glob_search(
     path: Optional[str] = None,
 ) -> ToolResponse:
     """Find files matching a glob pattern (e.g. ``"*.py"``, ``"**/*.json"``).
-    Relative paths resolve from the current tenant workspace.
+    Relative paths resolve from the current agent workspace when available,
+    otherwise the current tenant workspace root.
 
     Args:
         pattern (`str`):
             Glob pattern to match.
         path (`str`, optional):
-            Root directory to search from.  Defaults to tenant workspace.
+            Root directory to search from.  Defaults to current tool base
+            directory (agent workspace when available, otherwise tenant root).
     """
     if not pattern:
         return _make_response("Error: No glob `pattern` provided.")

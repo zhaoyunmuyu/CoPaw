@@ -29,8 +29,12 @@ from ...config import (
     get_system_default_browser,
     is_running_in_container,
 )
-from ...config.context import get_current_workspace_dir
 from ...constant import WORKING_DIR
+from ...security.tenant_path_boundary import (
+    TenantContextMissingError,
+    get_current_tool_base_dir,
+    resolve_tenant_path,
+)
 
 from .browser_snapshot import build_role_snapshot_from_aria
 
@@ -38,12 +42,34 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_output_path(path: str) -> str:
-    """Resolve relative output paths under workspace_dir/browser/."""
-    if Path(path).is_absolute():
-        return path
-    base_dir = (get_current_workspace_dir() or WORKING_DIR) / "browser"
-    base_dir.mkdir(parents=True, exist_ok=True)
-    return str(base_dir / path)
+    """Resolve output paths for browser artifacts.
+
+    When tenant context exists, both absolute and relative paths are validated
+    against the tenant boundary (fail closed on violations).
+
+    Relative paths are resolved under `<tool_base_dir>/browser/`, where
+    `tool_base_dir` prefers the current agent workspace when available,
+    otherwise the current tenant workspace root.
+
+    If tenant context is missing, fall back to the process-wide WORKING_DIR.
+    """
+    try:
+        base_dir = get_current_tool_base_dir() / "browser"
+        base_dir.mkdir(parents=True, exist_ok=True)
+        return str(
+            resolve_tenant_path(
+                path,
+                base_dir=base_dir,
+                allow_nonexistent=True,
+            ),
+        )
+    except TenantContextMissingError:
+        # Best-effort fallback for non-tenant contexts.
+        base_dir = WORKING_DIR / "browser"
+        base_dir.mkdir(parents=True, exist_ok=True)
+        if Path(path).is_absolute():
+            return path
+        return str(base_dir / path)
 
 
 # Hybrid mode detection: Windows + Uvicorn reload mode requires sync Playwright

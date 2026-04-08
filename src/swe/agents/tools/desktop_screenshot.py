@@ -10,8 +10,13 @@ import time
 from agentscope.message import TextBlock
 from agentscope.tool import ToolResponse
 
-from ...config.context import get_current_workspace_dir
 from ...constant import WORKING_DIR
+from ...security.tenant_path_boundary import (
+    TenantContextMissingError,
+    TenantPathBoundaryError,
+    get_current_tool_base_dir,
+    resolve_tenant_path,
+)
 
 
 def _tool_error(msg: str) -> ToolResponse:
@@ -115,7 +120,8 @@ async def desktop_screenshot(
     Args:
         path (`str`):
             Optional path to save the screenshot. If empty, saves under
-            the current workspace directory. Should end in .png for PNG output.
+            the current agent workspace when available, otherwise the
+            current tenant workspace root. Should end in .png for PNG output.
         capture_window (`bool`):
             If True on macOS, the user can click a window to capture just
             that window. On Windows/Linux, only full-screen is supported
@@ -127,11 +133,40 @@ async def desktop_screenshot(
             or "error".
     """
     path = (path or "").strip()
+    try:
+        base_dir = get_current_tool_base_dir()
+        has_tenant_context = True
+    except TenantContextMissingError:
+        # Best-effort fallback for non-tenant contexts.
+        base_dir = WORKING_DIR
+        has_tenant_context = False
+    except TenantPathBoundaryError:
+        # Do not bubble tenant boundary exceptions out of the tool.
+        return _tool_error("Invalid workspace directory.")
+
+    if has_tenant_context:
+        # Ensure the tenant-scoped base_dir exists so allow_nonexistent writes
+        # can validate the parent directory.
+        base_dir.mkdir(parents=True, exist_ok=True)
+
     if not path:
-        base_dir = get_current_workspace_dir() or WORKING_DIR
         path = str(base_dir / f"desktop_screenshot_{int(time.time())}.png")
     if not path.lower().endswith(".png"):
         path = path.rstrip("/\\") + ".png"
+
+    if has_tenant_context:
+        try:
+            path = str(
+                resolve_tenant_path(
+                    path,
+                    base_dir=base_dir,
+                    allow_nonexistent=True,
+                ),
+            )
+        except TenantPathBoundaryError:
+            return _tool_error(
+                "desktop_screenshot failed. The requested path is outside the allowed workspace."
+            )
 
     system = platform.system()
 

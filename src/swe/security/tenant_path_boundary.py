@@ -13,6 +13,7 @@ from typing import Optional
 
 from swe.config.context import (
     get_current_tenant_id,
+    get_current_workspace_dir,
 )
 from swe.constant import WORKING_DIR
 
@@ -59,6 +60,29 @@ def get_current_tenant_root() -> Path:
             "This operation requires a valid tenant context."
         )
     return WORKING_DIR / tenant_id
+
+
+def get_current_tool_base_dir() -> Path:
+    """Return the default base directory for local path tools.
+
+    Prefer the current agent workspace when it is available, otherwise
+    fall back to the current tenant root. In both cases the returned
+    directory must remain inside the current tenant boundary.
+    """
+    tenant_root = get_current_tenant_root().resolve()
+    workspace_dir = get_current_workspace_dir()
+    if workspace_dir is None:
+        return tenant_root
+
+    workspace_resolved = Path(workspace_dir).expanduser().resolve()
+    try:
+        workspace_resolved.relative_to(tenant_root)
+    except ValueError as exc:
+        raise PathTraversalError(
+            "Workspace directory escapes the tenant workspace boundary.",
+            resolved_path=workspace_resolved,
+        ) from exc
+    return workspace_resolved
 
 
 def resolve_tenant_path(
