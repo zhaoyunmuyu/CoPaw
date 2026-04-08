@@ -88,6 +88,28 @@ class FeishuConfig(BaseChannelConfig):
     domain: Literal["feishu", "lark"] = "feishu"
 
 
+class ZhaohuConfig(BaseChannelConfig):
+    enabled: bool = True
+    # push_url: str = "https://agentframework.paasst.cmbchina.cn/exp-msg/push"  # dev
+    push_url: str = (
+        "https://agentframework.paas.cmbchina.cn/exp-msg/push"  # prd
+    )
+    sys_id: str = "RMS"
+    filter_thinking: bool = True
+    # robot_open_id: str = "4BB6901683AE5BF632E5D00405B3F8AF"  # dev
+    robot_open_id: str = "77D1CCFC2E210ED714ACC3093BFC9BAB"  # prd
+    channel: str = "ZH"
+    net: str = "DMZ"
+    # user_query_url (dev):
+    # "https://lq13gateway.paas.cmbchina.cn/agent-evaluate/evaluate/getYstUserList"
+    user_query_url: str = (
+        "https://llm-evaluate.paas.cmbchina.cn/evaluate/getYstUserList"  # prd
+    )
+    extract_url: str = (
+        "http://wplus-slots.paas.cmbchina.cn/api/extract/slots"  # prd/st
+    )
+
+
 class QQConfig(BaseChannelConfig):
     app_id: str = ""
     client_secret: str = ""
@@ -202,6 +224,7 @@ class ChannelConfig(BaseModel):
     discord: DiscordConfig = DiscordConfig()
     dingtalk: DingTalkConfig = DingTalkConfig()
     feishu: FeishuConfig = FeishuConfig()
+    zhaohu: ZhaohuConfig = ZhaohuConfig()
     qq: QQConfig = QQConfig()
     telegram: TelegramConfig = TelegramConfig()
     mattermost: MattermostConfig = MattermostConfig()
