@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class InstanceStatus(str, Enum):
@@ -66,6 +66,8 @@ class SourceWithStats(Source):
 class Instance(BaseModel):
     """Instance model."""
 
+    model_config = ConfigDict(use_enum_values=True)
+
     instance_id: str
     source_id: str
     bbk_id: Optional[str] = None
@@ -90,6 +92,8 @@ class InstanceWithUsage(Instance):
 
 class UserAllocation(BaseModel):
     """User allocation record."""
+
+    model_config = ConfigDict(use_enum_values=True)
 
     id: Optional[int] = None
     user_id: str

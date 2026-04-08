@@ -8,16 +8,10 @@ from dotenv import load_dotenv
 # Project root directory
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
-# Load base .env file first (contains COPAW_ENV)
+# Load base .env file (contains COPAW_ENV and local overrides)
 _base_env_path = _PROJECT_ROOT / ".env"
 if _base_env_path.exists():
     load_dotenv(_base_env_path, override=False)
-
-# Determine environment and load corresponding env file
-_env = os.environ.get("COPAW_ENV", "dev").lower()
-_env_file = _PROJECT_ROOT / f".env.{_env}"
-if _env_file.exists():
-    load_dotenv(_env_file, override=True)
 
 
 _ENV_VAR_OVERRIDES: ContextVar[dict[str, str] | None] = ContextVar(

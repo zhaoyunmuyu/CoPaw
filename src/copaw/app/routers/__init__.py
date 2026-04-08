@@ -23,7 +23,7 @@ from .messages import router as messages_router
 from .files import router as files_router
 from .settings import router as settings_router
 from .tracing import router as tracing_router
-from .instance import router as instance_router
+from ..instance import instance_router
 
 router = APIRouter()
 

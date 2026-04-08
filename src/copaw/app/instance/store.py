@@ -138,14 +138,16 @@ class InstanceStore:
                 VALUES (%s, %s, %s, %s, %s, %s)
             """
             await self.db.execute(
-                query,
                 (
-                    instance_id,
-                    source_id,
-                    bbk_id,
-                    instance_name,
-                    instance_url,
-                    max_users,
+                    query,
+                    (
+                        instance_id,
+                        source_id,
+                        bbk_id,
+                        instance_name,
+                        instance_url,
+                        max_users,
+                    ),
                 ),
             )
         return Instance(
@@ -222,7 +224,7 @@ class InstanceStore:
         """Get instances with optional filters."""
         if self._use_db:
             where_clauses = []
-            params = []
+            params: list[str] = []
 
             if source_id:
                 where_clauses.append("i.source_id = %s")
