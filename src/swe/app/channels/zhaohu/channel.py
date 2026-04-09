@@ -59,7 +59,7 @@ def _chunk_text_values(text: str, limit: int = _TEXT_PART_LIMIT) -> list[str]:
             continue
         while len(line) > limit:
             chunks.append(line[:limit])
-        line = line[limit:]
+            line = line[limit:]
         if line:
             chunks.append(line)
 
