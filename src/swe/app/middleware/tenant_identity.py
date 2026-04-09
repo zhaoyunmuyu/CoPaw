@@ -42,6 +42,7 @@ TENANT_EXEMPT_ROUTES = frozenset([
     "/api/auth/register",
     "/api/auth/refresh",
     "/api/auth/logout",
+    "/api/zhaohu/callback"
     # Static assets
     "/assets",
     "/logo.png",

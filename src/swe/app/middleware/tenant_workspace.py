@@ -229,6 +229,7 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
                 "/api/auth/register",
                 "/api/auth/refresh",
                 "/api/auth/logout",
+                "/api/zhaohu/callback",
                 "/logo.png",
                 "/dark-logo.png",
                 "/swe-symbol.svg",

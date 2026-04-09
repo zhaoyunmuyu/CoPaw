@@ -38,14 +38,18 @@ class ZhaohuCallbackRequest(BaseModel):
 
 
 def _get_zhaohu_channel(request: Request):
-    """Retrieve the ZhaohuChannel from app state, or None."""
-    app = getattr(request, "app", None)
-    if not app:
+    """Retrieve the ZhaohuChannel from workspace, or None."""
+    from ..agent_context import get_agent_for_request
+
+    try:
+        workspace = get_agent_for_request(request)
+    except Exception:
         return None
-    cm = getattr(app.state, "channel_manager", None)
-    if not cm:
+
+    if not workspace or not workspace.channel_manager:
         return None
-    for ch in cm.channels:
+
+    for ch in workspace.channel_manager.channels:
         if ch.channel == "zhaohu":
             return ch
     return None
