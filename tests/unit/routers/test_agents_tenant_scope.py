@@ -2,6 +2,7 @@
 """Tenant-local agent resolution tests."""
 import asyncio
 import importlib.util
+import json
 import sys
 import types
 from pathlib import Path
@@ -11,6 +12,12 @@ import pytest
 from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
+
+from swe.agents.skills_manager import (
+    get_skill_pool_dir,
+    get_workspace_skill_manifest_path,
+    reconcile_pool_manifest,
+)
 
 SRC_ROOT = Path(__file__).parent.parent.parent.parent / "src"
 _AGENT_CONTEXT_FILE = SRC_ROOT / "swe" / "app" / "agent_context.py"
@@ -65,6 +72,17 @@ class HeartbeatConfig:
 
 class ToolsConfig:
     pass
+
+
+def _write_skill(skill_dir: Path, description: str) -> None:
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(
+        (
+            f"---\nname: {skill_dir.name}\n"
+            f"description: {description}\n---\n"
+        ),
+        encoding="utf-8",
+    )
 
 
 def _restore_original_modules(original_modules):
@@ -448,3 +466,205 @@ def test_create_agent_requires_tenant_context_for_workspace_path(monkeypatch):
 
     with pytest.raises(Exception, match="tenant"):
         asyncio.run(agents_router.create_agent(request, body))
+
+
+def test_create_agent_omitted_skill_names_seed_all_tenant_pool_skills(
+    tmp_path,
+    monkeypatch,
+):
+    tenant_dir = tmp_path / "tenant-a"
+    request = SimpleNamespace(
+        state=SimpleNamespace(tenant_id="tenant-a"),
+        app=SimpleNamespace(state=SimpleNamespace()),
+    )
+    config = SimpleNamespace(agents=SimpleNamespace(profiles={}))
+
+    _write_skill(
+        get_skill_pool_dir(working_dir=tenant_dir) / "guidance",
+        "tenant guidance",
+    )
+    _write_skill(
+        get_skill_pool_dir(working_dir=tenant_dir) / "docx",
+        "tenant docx",
+    )
+    reconcile_pool_manifest(working_dir=tenant_dir)
+
+    monkeypatch.setattr(agents_router, "_get_tenant_config", lambda req: config)
+    monkeypatch.setattr(
+        agents_router,
+        "_save_tenant_config",
+        lambda saved_config, req: None,
+    )
+    monkeypatch.setattr(
+        agents_router,
+        "_save_agent_config_for_request",
+        lambda agent_id, cfg, req: None,
+    )
+    monkeypatch.setattr(
+        agents_router,
+        "_ensure_default_heartbeat_md",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        agents_router,
+        "generate_short_agent_id",
+        lambda: "agent1",
+    )
+    monkeypatch.setattr(
+        agents_router,
+        "get_tenant_working_dir_strict",
+        lambda tenant_id=None: tenant_dir,
+    )
+
+    response = asyncio.run(
+        agents_router.create_agent(
+            request,
+            agents_router.CreateAgentRequest(name="Tenant Agent"),
+        ),
+    )
+
+    workspace_dir = Path(response.workspace_dir)
+    assert (workspace_dir / "skills" / "guidance" / "SKILL.md").exists()
+    assert (workspace_dir / "skills" / "docx" / "SKILL.md").exists()
+
+    manifest = json.loads(
+        get_workspace_skill_manifest_path(workspace_dir).read_text(
+            encoding="utf-8",
+        ),
+    )
+    assert set(manifest["skills"]) == {"guidance", "docx"}
+
+
+def test_create_agent_explicit_skill_names_stay_selective(
+    tmp_path,
+    monkeypatch,
+):
+    tenant_dir = tmp_path / "tenant-a"
+    request = SimpleNamespace(
+        state=SimpleNamespace(tenant_id="tenant-a"),
+        app=SimpleNamespace(state=SimpleNamespace()),
+    )
+    config = SimpleNamespace(agents=SimpleNamespace(profiles={}))
+
+    _write_skill(
+        get_skill_pool_dir(working_dir=tenant_dir) / "guidance",
+        "tenant guidance",
+    )
+    _write_skill(
+        get_skill_pool_dir(working_dir=tenant_dir) / "docx",
+        "tenant docx",
+    )
+    reconcile_pool_manifest(working_dir=tenant_dir)
+
+    monkeypatch.setattr(agents_router, "_get_tenant_config", lambda req: config)
+    monkeypatch.setattr(
+        agents_router,
+        "_save_tenant_config",
+        lambda saved_config, req: None,
+    )
+    monkeypatch.setattr(
+        agents_router,
+        "_save_agent_config_for_request",
+        lambda agent_id, cfg, req: None,
+    )
+    monkeypatch.setattr(
+        agents_router,
+        "_ensure_default_heartbeat_md",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        agents_router,
+        "generate_short_agent_id",
+        lambda: "agent1",
+    )
+    monkeypatch.setattr(
+        agents_router,
+        "get_tenant_working_dir_strict",
+        lambda tenant_id=None: tenant_dir,
+    )
+
+    response = asyncio.run(
+        agents_router.create_agent(
+            request,
+            agents_router.CreateAgentRequest(
+                name="Tenant Agent",
+                skill_names=["guidance"],
+            ),
+        ),
+    )
+
+    workspace_dir = Path(response.workspace_dir)
+    assert (workspace_dir / "skills" / "guidance" / "SKILL.md").exists()
+    assert not (workspace_dir / "skills" / "docx").exists()
+
+    manifest = json.loads(
+        get_workspace_skill_manifest_path(workspace_dir).read_text(
+            encoding="utf-8",
+        ),
+    )
+    assert set(manifest["skills"]) == {"guidance"}
+
+
+def test_create_agent_explicit_empty_skill_names_create_empty_workspace_skills(
+    tmp_path,
+    monkeypatch,
+):
+    tenant_dir = tmp_path / "tenant-a"
+    request = SimpleNamespace(
+        state=SimpleNamespace(tenant_id="tenant-a"),
+        app=SimpleNamespace(state=SimpleNamespace()),
+    )
+    config = SimpleNamespace(agents=SimpleNamespace(profiles={}))
+
+    _write_skill(
+        get_skill_pool_dir(working_dir=tenant_dir) / "guidance",
+        "tenant guidance",
+    )
+    reconcile_pool_manifest(working_dir=tenant_dir)
+
+    monkeypatch.setattr(agents_router, "_get_tenant_config", lambda req: config)
+    monkeypatch.setattr(
+        agents_router,
+        "_save_tenant_config",
+        lambda saved_config, req: None,
+    )
+    monkeypatch.setattr(
+        agents_router,
+        "_save_agent_config_for_request",
+        lambda agent_id, cfg, req: None,
+    )
+    monkeypatch.setattr(
+        agents_router,
+        "_ensure_default_heartbeat_md",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        agents_router,
+        "generate_short_agent_id",
+        lambda: "agent1",
+    )
+    monkeypatch.setattr(
+        agents_router,
+        "get_tenant_working_dir_strict",
+        lambda tenant_id=None: tenant_dir,
+    )
+
+    response = asyncio.run(
+        agents_router.create_agent(
+            request,
+            agents_router.CreateAgentRequest(
+                name="Tenant Agent",
+                skill_names=[],
+            ),
+        ),
+    )
+
+    workspace_dir = Path(response.workspace_dir)
+    assert not (workspace_dir / "skills" / "guidance").exists()
+
+    manifest = json.loads(
+        get_workspace_skill_manifest_path(workspace_dir).read_text(
+            encoding="utf-8",
+        ),
+    )
+    assert manifest["skills"] == {}

@@ -322,13 +322,19 @@ async def create_agent(
         tools=ToolsConfig(),
     )
 
+    if request.skill_names is None:
+        from ...agents.skills_manager import read_skill_pool_manifest
+
+        manifest = read_skill_pool_manifest(working_dir=tenant_dir)
+        initial_skill_names = sorted(manifest.get("skills", {}))
+    else:
+        initial_skill_names = request.skill_names
+
     # Initialize workspace with default files
     _initialize_agent_workspace(
         workspace_dir,
         agent_config,
-        skill_names=(
-            request.skill_names if request.skill_names is not None else []
-        ),
+        skill_names=initial_skill_names,
         working_dir=tenant_dir,
     )
 
