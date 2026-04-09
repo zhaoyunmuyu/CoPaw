@@ -65,7 +65,7 @@ const pathToKey: Record<string, string> = {
   "/instance/overview": "instance-overview",
   "/instance/instances": "instance-instances",
   "/instance/allocations": "instance-allocations",
-  "/instance/logs": "instance-logs",
+  "/instance/operation-logs": "instance-operation-logs",
 };
 
 export default function MainLayout() {

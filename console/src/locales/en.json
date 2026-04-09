@@ -57,7 +57,7 @@
     "instanceOverview": "Overview",
     "instanceInstances": "Instances",
     "instanceAllocations": "Allocations",
-    "instanceLogs": "Logs"
+    "instanceOperationLogs": "Operation Logs"
   },
   "voiceTranscription": {
     "title": "Voice Transcription",

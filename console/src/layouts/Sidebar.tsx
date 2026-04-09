@@ -292,10 +292,10 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       label: t("nav.instanceAllocations", "Allocations"),
     },
     {
-      key: "instance-logs",
+      key: "instance-operation-logs",
       icon: <SparkAuditLogLine size={18} />,
-      path: "/instance/logs",
-      label: t("nav.instanceLogs", "Logs"),
+      path: "/instance/operation-logs",
+      label: t("nav.instanceOperationLogs", "Operation Logs"),
     },
   ];
 
@@ -456,8 +456,8 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
           icon: <SparkOtherLine size={16} />,
         },
         {
-          key: "instance-logs",
-          label: collapsed ? null : t("nav.instanceLogs", "Logs"),
+          key: "instance-operation-logs",
+          label: collapsed ? null : t("nav.instanceOperationLogs", "Operation Logs"),
           icon: <SparkAuditLogLine size={16} />,
         },
       ],
