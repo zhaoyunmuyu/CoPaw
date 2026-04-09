@@ -174,7 +174,6 @@ TRACING_MAX_OUTPUT_LENGTH = EnvVarLoader.get_int(
     500,
     min_value=100,
 )
-TRACING_STORAGE_PATH = EnvVarLoader.get_str("SWE_TRACING_STORAGE_PATH", "")
 
 CONFIG_FILE = EnvVarLoader.get_str("SWE_CONFIG_FILE", "config.json")
 

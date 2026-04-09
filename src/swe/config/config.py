@@ -26,7 +26,6 @@ from ..constant import (
     TRACING_RETENTION_DAYS,
     TRACING_SANITIZE_OUTPUT,
     TRACING_MAX_OUTPUT_LENGTH,
-    TRACING_STORAGE_PATH,
 )
 from ..providers.models import ModelSlotConfig
 from ..tracing.config import TracingConfig
@@ -595,7 +594,6 @@ class AgentsRunningConfig(BaseModel):
             retention_days=TRACING_RETENTION_DAYS,
             sanitize_output=TRACING_SANITIZE_OUTPUT,
             max_output_length=TRACING_MAX_OUTPUT_LENGTH,
-            storage_path=TRACING_STORAGE_PATH or None,
         ),
         description="Tracing configuration for request tracking and analytics",
     )

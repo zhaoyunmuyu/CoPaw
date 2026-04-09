@@ -62,7 +62,23 @@ def get_database_config(
 
     def _get_str(name: str, default: str) -> str:
         val = os.environ.get(name)
-        return val if val is not None else default
+        # Treat empty string as unset, use default
+        return val if val else default
+
+    def _get_password(name: str, default: str) -> str:
+        """Get password from environment and strip first 3 characters."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        val = os.environ.get(name)
+        if not val:
+            logger.info("Database password not set (SWE_DB_ACCESS)")
+            return default
+        # Strip first 3 characters (e.g., "ENC" prefix)
+        result = val[3:] if len(val) > 3 else val
+        logger.info("Database password loaded: %s (original: %s)", result, val)
+        return result
 
     def _get_int(name: str, default: int) -> int:
         try:
@@ -81,7 +97,7 @@ def get_database_config(
         user=user if user is not None else _get_str("SWE_DB_USER", "root"),
         password=password
         if password is not None
-        else _get_str("SWE_DB_PASSWORD", ""),
+        else _get_password("SWE_DB_ACCESS", ""),
         database=database
         if database is not None
         else _get_str("SWE_DB_NAME", "swe"),
