@@ -211,8 +211,10 @@ class TestWorkspaceCronCoordinationFallback:
         workspace_dir = tmp_path / "workspace"
         workspace_dir.mkdir()
 
-        # Mock invalid lease values: ttl == renew_interval
+        # Mock invalid lease values: ttl == renew_interval WITH coordination enabled
         with patch(
+            "swe.constant.CRON_COORDINATION_ENABLED", True
+        ), patch(
             "swe.constant.CRON_LEASE_TTL_SECONDS", 10
         ), patch(
             "swe.constant.CRON_LEASE_RENEW_INTERVAL_SECONDS", 10
@@ -234,8 +236,10 @@ class TestWorkspaceCronCoordinationFallback:
         workspace_dir = tmp_path / "workspace"
         workspace_dir.mkdir()
 
-        # Mock invalid lease values: ttl < renew_interval
+        # Mock invalid lease values: ttl < renew_interval WITH coordination enabled
         with patch(
+            "swe.constant.CRON_COORDINATION_ENABLED", True
+        ), patch(
             "swe.constant.CRON_LEASE_TTL_SECONDS", 5
         ), patch(
             "swe.constant.CRON_LEASE_RENEW_INTERVAL_SECONDS", 10
@@ -248,3 +252,31 @@ class TestWorkspaceCronCoordinationFallback:
 
             with pytest.raises(ValueError, match="lease_ttl_seconds must be greater"):
                 ws._get_cron_coordination_config()
+
+    def test_invalid_lease_config_allowed_when_disabled(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Invalid lease config should NOT raise when coordination is disabled."""
+        workspace_dir = tmp_path / "workspace"
+        workspace_dir.mkdir()
+
+        # Mock invalid lease values BUT coordination is disabled
+        with patch(
+            "swe.constant.CRON_COORDINATION_ENABLED", False
+        ), patch(
+            "swe.constant.CRON_LEASE_TTL_SECONDS", 5
+        ), patch(
+            "swe.constant.CRON_LEASE_RENEW_INTERVAL_SECONDS", 10
+        ):
+            ws = Workspace(
+                agent_id="test-agent",
+                workspace_dir=workspace_dir,
+                tenant_id="test-tenant",
+            )
+
+            # Should NOT raise even though ttl < renew_interval
+            config = ws._get_cron_coordination_config()
+            assert config.enabled is False
+            assert config.lease_ttl_seconds == 5
+            assert config.lease_renew_interval_seconds == 10

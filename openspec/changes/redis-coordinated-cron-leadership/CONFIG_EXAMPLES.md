@@ -5,7 +5,7 @@
 Cron coordination is configured **exclusively through environment-derived values**:
 
 1. **Process environment variables** (highest priority)
-2. **User's `envs.json`** (persisted secrets at `~/.swe/secret/envs.json`)
+2. **User's `envs.json`** (persisted secrets at `~/.swe.secret/envs.json`)
 3. **Packaged environment presets**: `src/swe/config/envs/{dev|prd}.json`
 4. **`.env` file** in the working directory
 5. **Hardcoded defaults** (lowest priority)
