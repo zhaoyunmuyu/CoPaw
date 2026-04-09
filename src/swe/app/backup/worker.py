@@ -125,7 +125,7 @@ class BackupWorker:
         """Execute a backup task."""
         task.status = BackupTaskStatus.RUNNING
         task.started_at = datetime.now(BJ_TZ)
-        self.task_store.save(task)
+        await self.task_store.save(task)
 
         try:
             if task.target_tenant_ids:
@@ -139,12 +139,12 @@ class BackupWorker:
                 task.current_step = "completed"
                 task.progress_percent = 100
                 task.completed_at = datetime.now(BJ_TZ)
-                self.task_store.save(task)
+                await self.task_store.save(task)
                 return
 
             task.total_tenants = len(tenant_ids)
             task.current_step = "compressing"
-            self.task_store.save(task)
+            await self.task_store.save(task)
 
             s3_keys = []
             local_paths = []
@@ -172,7 +172,7 @@ class BackupWorker:
                 compress_tasks.append((tenant_id, tenant_dir, zip_path))
 
             task.total_tenants = len(compress_tasks)
-            self.task_store.save(task)
+            await self.task_store.save(task)
 
             # Parallel compression with concurrency limit
             compress_start = time.time()
@@ -198,7 +198,7 @@ class BackupWorker:
                 task.progress_percent = int(
                     (completed / len(compress_tasks)) * 50,
                 )
-                self.task_store.save(task)
+                await self.task_store.save(task)
 
             # Sort by tenant_id and collect paths
             results.sort(key=lambda x: x[0])
@@ -214,7 +214,7 @@ class BackupWorker:
 
             # Upload to S3
             task.current_step = "uploading"
-            self.task_store.save(task)
+            await self.task_store.save(task)
 
             # Check for empty local_paths to avoid division by zero
             if not local_paths:
@@ -222,7 +222,7 @@ class BackupWorker:
                 task.current_step = "completed"
                 task.progress_percent = 100
                 task.completed_at = datetime.now(BJ_TZ)
-                self.task_store.save(task)
+                await self.task_store.save(task)
                 return
 
             upload_start = time.time()
@@ -253,7 +253,7 @@ class BackupWorker:
                 task.progress_percent = 50 + int(
                     (completed / len(local_paths)) * 50,
                 )
-                self.task_store.save(task)
+                await self.task_store.save(task)
 
             # Sort results by tenant_id to maintain consistent order
             upload_results.sort(key=lambda x: x[0])
@@ -281,7 +281,7 @@ class BackupWorker:
             task.current_step = "failed"
         finally:
             task.completed_at = datetime.now(BJ_TZ)
-            self.task_store.save(task)
+            await self.task_store.save(task)
             # Cleanup temp files
             for path in task.local_zip_paths:
                 try:
@@ -297,7 +297,7 @@ class BackupWorker:
         """Execute a restore task."""
         task.status = BackupTaskStatus.RUNNING
         task.started_at = datetime.now(BJ_TZ)
-        self.task_store.save(task)
+        await self.task_store.save(task)
 
         rollback_paths = []
 
@@ -333,12 +333,12 @@ class BackupWorker:
                 task.current_step = "completed"
                 task.progress_percent = 100
                 task.completed_at = datetime.now(BJ_TZ)
-                self.task_store.save(task)
+                await self.task_store.save(task)
                 return
 
             task.total_tenants = len(tenant_ids)
             task.current_step = "backing_up_current"
-            self.task_store.save(task)
+            await self.task_store.save(task)
 
             # Backup current data for rollback
             for i, tenant_id in enumerate(tenant_ids):
@@ -353,14 +353,14 @@ class BackupWorker:
 
             task.rollback_data_paths = rollback_paths
             task.current_step = "downloading"
-            self.task_store.save(task)
+            await self.task_store.save(task)
 
             # Download and restore
             restored_tenants = []
             for i, tenant_id in enumerate(tenant_ids):
                 task.processed_tenants = i + 1
                 task.progress_percent = int(((i + 1) / len(tenant_ids)) * 50)
-                self.task_store.save(task)
+                await self.task_store.save(task)
 
                 # Get the backup hour (use task's hour or find latest available)
                 hour_to_restore = backup_hour
@@ -422,7 +422,7 @@ class BackupWorker:
             task.error_message = str(e)
             task.current_step = "rolling_back"
             task.status = BackupTaskStatus.ROLLING_BACK
-            self.task_store.save(task)
+            await self.task_store.save(task)
 
             # Rollback all tenants
             await self._rollback_all(rollback_paths)
@@ -430,7 +430,7 @@ class BackupWorker:
             task.status = BackupTaskStatus.ROLLED_BACK
         finally:
             task.completed_at = datetime.now(BJ_TZ)
-            self.task_store.save(task)
+            await self.task_store.save(task)
 
     def _get_all_tenant_ids(self) -> list[str]:
         """Get all tenant IDs from working directory."""

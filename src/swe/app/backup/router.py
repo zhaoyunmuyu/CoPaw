@@ -191,7 +191,7 @@ async def list_tasks(
     ),
 ) -> TaskListResponse:
     service = get_backup_service()
-    tasks = service.list_tasks(
+    tasks = await service.list_tasks(
         status=BackupTaskStatus(status) if status else None,
         task_type=task_type,
         limit=limit,
@@ -210,7 +210,7 @@ async def list_tasks(
 )
 async def get_task(task_id: str) -> TaskDetailResponse:
     service = get_backup_service()
-    task = service.get_task(task_id)
+    task = await service.get_task(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     return TaskDetailResponse(task=task.model_dump(mode="json"))
@@ -224,7 +224,7 @@ async def get_task(task_id: str) -> TaskDetailResponse:
 )
 async def delete_task(task_id: str) -> DeleteTaskResponse:
     service = get_backup_service()
-    success = service.delete_task(task_id)
+    success = await service.delete_task(task_id)
     if not success:
         raise HTTPException(
             status_code=400,

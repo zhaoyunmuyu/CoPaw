@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -11,19 +12,73 @@ from zoneinfo import ZoneInfo
 from fastapi import HTTPException
 
 from swe.config.utils import list_all_tenant_ids
+from swe.constant import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
+from swe.database import DatabaseConfig, DatabaseConnection
 from .config import BackupConfig, load_backup_config
 from .models import BackupTask, BackupTaskStatus, BackupTaskType
 from .task_store import TaskStore
 from .worker import BackupWorker
+
+logger = logging.getLogger(__name__)
+
+# Global task store instance
+_task_store: TaskStore | None = None
+_task_store_lock = asyncio.Lock()
+
+
+async def get_task_store() -> TaskStore:
+    """Get the global task store instance.
+
+    Initializes the task store with database connection if available.
+    """
+    global _task_store
+
+    if _task_store is not None:
+        return _task_store
+
+    async with _task_store_lock:
+        if _task_store is not None:
+            return _task_store
+
+        # Create database connection if configured
+        db: DatabaseConnection | None = None
+        if DB_HOST:
+            try:
+                db_config = DatabaseConfig(
+                    host=DB_HOST,
+                    port=DB_PORT or 3306,
+                    user=DB_USER or "root",
+                    password=DB_PASSWORD or "",
+                    database=DB_NAME or "copaw",
+                )
+                db = DatabaseConnection(db_config)
+                await db.connect()
+                logger.info(
+                    "BackupTaskStore database connection established: %s",
+                    DB_HOST,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Failed to connect to database for backup tasks: %s",
+                    e,
+                )
+                db = None
+
+        _task_store = TaskStore(db)
+        await _task_store.initialize()
+        return _task_store
 
 
 class BackupService:
     """Backup business logic service."""
 
     def __init__(self):
-        self.task_store = TaskStore()
         self._worker: BackupWorker | None = None
         self._lock = asyncio.Lock()
+
+    async def _get_task_store(self) -> TaskStore:
+        """Get task store instance."""
+        return await get_task_store()
 
     def _get_backup_config(self) -> BackupConfig:
         """Get backup config from file."""
@@ -35,7 +90,7 @@ class BackupService:
             )
         return config
 
-    def _get_worker(self) -> BackupWorker:
+    def _get_worker(self, task_store: TaskStore) -> BackupWorker:
         """Get or create worker instance."""
         if self._worker is None:
             backup_config = self._get_backup_config()
@@ -45,7 +100,7 @@ class BackupService:
                     status_code=400,
                     detail="Backup environment not configured",
                 )
-            self._worker = BackupWorker(self.task_store, env_config)
+            self._worker = BackupWorker(task_store, env_config)
         return self._worker
 
     async def create_backup_task(
@@ -63,8 +118,10 @@ class BackupService:
             backup_date: Backup date (YYYY-MM-DD), defaults to today
             backup_hour: Hour of day (0-23), defaults to current hour
         """
+        task_store = await self._get_task_store()
+
         async with self._lock:
-            if self.task_store.has_running_task():
+            if await task_store.has_running_task():
                 raise HTTPException(
                     status_code=409,
                     detail="Another backup task is already running",
@@ -87,10 +144,11 @@ class BackupService:
             backup_date=backup_date,
             backup_hour=backup_hour,
         )
-        self.task_store.save(task)
+        await task_store.save(task)
 
         # Start async execution
-        asyncio.create_task(self._get_worker().run_backup_task(task))
+        worker = self._get_worker(task_store)
+        asyncio.create_task(worker.run_backup_task(task))
 
         return task
 
@@ -109,8 +167,10 @@ class BackupService:
             instance_id: Instance identifier
             tenant_ids: Specific tenants to restore, or None for all
         """
+        task_store = await self._get_task_store()
+
         async with self._lock:
-            if self.task_store.has_running_task():
+            if await task_store.has_running_task():
                 raise HTTPException(
                     status_code=409,
                     detail="Another backup task is already running",
@@ -131,33 +191,37 @@ class BackupService:
             instance_id=instance_id,
             target_tenant_ids=tenant_ids,
         )
-        self.task_store.save(task)
+        await task_store.save(task)
 
         # Start async execution
-        asyncio.create_task(self._get_worker().run_restore_task(task))
+        worker = self._get_worker(task_store)
+        asyncio.create_task(worker.run_restore_task(task))
 
         return task
 
-    def get_task(self, task_id: str) -> BackupTask | None:
+    async def get_task(self, task_id: str) -> BackupTask | None:
         """Get task by ID."""
-        return self.task_store.get(task_id)
+        task_store = await self._get_task_store()
+        return await task_store.get(task_id)
 
-    def list_tasks(
+    async def list_tasks(
         self,
         status: BackupTaskStatus | None = None,
         task_type: str | None = None,
         limit: int = 50,
     ) -> list[BackupTask]:
         """List tasks with filters."""
-        return self.task_store.get_all(
+        task_store = await self._get_task_store()
+        return await task_store.get_all(
             status=status,
             task_type=task_type,
             limit=limit,
         )
 
-    def delete_task(self, task_id: str) -> bool:
+    async def delete_task(self, task_id: str) -> bool:
         """Delete a task."""
-        return self.task_store.delete(task_id)
+        task_store = await self._get_task_store()
+        return await task_store.delete(task_id)
 
     def list_available_backups(
         self,
