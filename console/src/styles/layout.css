@@ -4,10 +4,12 @@ body {
   overflow: hidden;
   margin: 0;
   padding: 0;
+  /* background: #fff; */
   background: #f9f8f4;
 }
 
 .swe-layout {
+  /* background: #fff; */
   background: #f9f8f4;
 }
 

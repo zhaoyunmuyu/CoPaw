@@ -41,6 +41,7 @@ from ..providers.retry_chat_model import (
     RateLimitConfig,
 )
 from ..token_usage import TokenRecordingModelWrapper
+from ..tracing import TracingModelWrapper, has_trace_manager, get_trace_manager
 
 
 def _file_url_to_path(url: str) -> str:
@@ -688,6 +689,103 @@ def _strip_top_level_message_name(
     return messages
 
 
+def _get_agent_id(agent_id: Optional[str]) -> Optional[str]:
+    """Resolve agent_id from parameter or context."""
+    if agent_id is not None:
+        return agent_id
+    try:
+        from ..app.agent_context import get_current_agent_id
+
+        return get_current_agent_id()
+    except Exception:
+        return None
+
+
+def _get_tenant_id() -> Optional[str]:
+    """Get current tenant ID."""
+    try:
+        from ..config.context import get_current_tenant_id
+
+        return get_current_tenant_id()
+    except Exception:
+        return None
+
+
+def _get_model_slot(
+    manager: "ProviderManager",
+):
+    """Get active model slot from provider manager."""
+    from ..tenant_models.models import ModelSlot
+
+    active_model = manager.get_active_model()
+    if (
+        not active_model
+        or not active_model.provider_id
+        or not active_model.model
+    ):
+        return None
+    return ModelSlot(
+        provider_id=active_model.provider_id,
+        model=active_model.model,
+    )
+
+
+def _get_retry_config(
+    agent_id: Optional[str],
+) -> Optional[RetryConfig]:
+    """Load retry config for agent if available."""
+    if not agent_id:
+        return None
+    try:
+        from ..config.config import load_agent_config
+
+        agent_config = load_agent_config(agent_id)
+        return RetryConfig(
+            enabled=agent_config.running.llm_retry_enabled,
+            max_retries=agent_config.running.llm_max_retries,
+            backoff_base=agent_config.running.llm_backoff_base,
+            backoff_cap=agent_config.running.llm_backoff_cap,
+        )
+    except Exception:
+        return None
+
+
+def _get_rate_limit_config(
+    agent_id: Optional[str],
+) -> Optional[RateLimitConfig]:
+    """Load rate limit config for agent if available."""
+    if not agent_id:
+        return None
+    try:
+        from ..config.config import load_agent_config
+
+        agent_config = load_agent_config(agent_id)
+        return RateLimitConfig(
+            max_concurrent=agent_config.running.llm_max_concurrent,
+            max_qpm=agent_config.running.llm_max_qpm,
+            pause_seconds=agent_config.running.llm_rate_limit_pause,
+            jitter_range=agent_config.running.llm_rate_limit_jitter,
+            acquire_timeout=agent_config.running.llm_acquire_timeout,
+        )
+    except Exception:
+        return None
+
+
+def _wrap_model_with_tracing(
+    provider_id: str,
+    model: ChatModelBase,
+) -> ChatModelBase:
+    """Wrap model with tracing or token recording."""
+    if has_trace_manager():
+        try:
+            trace_mgr = get_trace_manager()
+            if trace_mgr.enabled:
+                return TracingModelWrapper(provider_id, model)
+        except RuntimeError:
+            pass
+    return TokenRecordingModelWrapper(provider_id, model)
+
+
 def create_model_and_formatter(
     agent_id: Optional[str] = None,
 ) -> Tuple[ChatModelBase, FormatterBase]:
@@ -706,15 +804,9 @@ def create_model_and_formatter(
     Example:
         >>> model, formatter = create_model_and_formatter()
     """
-    from ..app.agent_context import get_current_agent_id
-    from ..config.config import load_agent_config
-
-    # Determine agent_id (parameter > context > None)
-    if agent_id is None:
-        try:
-            agent_id = get_current_agent_id()
-        except Exception:
-            pass
+    # Resolve agent_id and tenant_id
+    resolved_agent_id = _get_agent_id(agent_id)
+    tenant_id = _get_tenant_id()
 
     # Try to get model from tenant-aware ProviderManager
     # This is the primary and only supported path for active model resolution
@@ -732,64 +824,35 @@ def create_model_and_formatter(
 
     # Ensure tenant provider storage exists before accessing ProviderManager
     ProviderManager.ensure_tenant_provider_storage(tenant_id)
-
-    # Get active model from tenant-aware ProviderManager (primary source)
     manager = ProviderManager.get_instance(tenant_id)
-    active_model = manager.get_active_model()
-    if active_model and active_model.provider_id and active_model.model:
-        from swe.tenant_models.models import ModelSlot
 
-        model_slot = ModelSlot(
-            provider_id=active_model.provider_id,
-            model=active_model.model,
-        )
-
-    # Load agent-specific retry/rate limit config if agent_id provided
-    if agent_id:
-        try:
-            agent_config = load_agent_config(agent_id)
-            # Use running config for retry/rate limit settings
-            retry_config = RetryConfig(
-                enabled=agent_config.running.llm_retry_enabled,
-                max_retries=agent_config.running.llm_max_retries,
-                backoff_base=agent_config.running.llm_backoff_base,
-                backoff_cap=agent_config.running.llm_backoff_cap,
-            )
-            rate_limit_config = RateLimitConfig(
-                max_concurrent=agent_config.running.llm_max_concurrent,
-                max_qpm=agent_config.running.llm_max_qpm,
-                pause_seconds=agent_config.running.llm_rate_limit_pause,
-                jitter_range=agent_config.running.llm_rate_limit_jitter,
-                acquire_timeout=agent_config.running.llm_acquire_timeout,
-            )
-        except Exception:
-            pass
-
-    # Create chat model from tenant-level active model configuration
-    if model_slot and model_slot.provider_id and model_slot.model:
-        # Use tenant-specific provider manager (already initialized above)
-        provider = manager.get_provider(model_slot.provider_id)
-        if provider is None:
-            raise ValueError(
-                f"Provider '{model_slot.provider_id}' not found.",
-            )
-
-        model = provider.get_chat_model_instance(model_slot.model)
-        provider_id = model_slot.provider_id
-    else:
-        # Tenant must have explicit model configuration via ProviderManager
+    # Get model slot from active model configuration
+    model_slot = _get_model_slot(manager)
+    if not model_slot or not model_slot.provider_id or not model_slot.model:
         raise ValueError(
             "No tenant model configuration found. "
             "Please configure a model for this tenant using the admin panel "
             "or ensure provider configuration is properly set. "
-            "Multi-tenant isolation requires explicit per-tenant model configuration.",
+            "Multi-tenant isolation requires explicit model config.",
         )
+
+    # Get provider and create model instance
+    provider = manager.get_provider(model_slot.provider_id)
+    if provider is None:
+        raise ValueError(f"Provider '{model_slot.provider_id}' not found.")
+
+    model = provider.get_chat_model_instance(model_slot.model)
+    provider_id = model_slot.provider_id
 
     # Create the formatter based on the real model class
     formatter = _create_formatter_instance(model.__class__)
 
+    # Wrap with tracing and token recording
+    wrapped_model = _wrap_model_with_tracing(provider_id, model)
+
     # Wrap with retry logic for transient LLM API errors
-    wrapped_model = TokenRecordingModelWrapper(provider_id, model)
+    retry_config = _get_retry_config(resolved_agent_id)
+    rate_limit_config = _get_rate_limit_config(resolved_agent_id)
     wrapped_model = RetryChatModel(
         wrapped_model,
         retry_config=retry_config,

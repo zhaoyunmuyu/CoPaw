@@ -25,6 +25,7 @@ from ...config.config import (
     HeartbeatConfig,
     SkillScannerConfig,
     SkillScannerWhitelistEntry,
+    ZhaohuConfig,
 )
 
 from .schemas_config import HeartbeatBody
@@ -34,6 +35,7 @@ router = APIRouter(prefix="/config", tags=["config"])
 
 _CHANNEL_CONFIG_CLASS_MAP = {
     "console": ConsoleConfig,
+    "zhaohu": ZhaohuConfig,
 }
 
 

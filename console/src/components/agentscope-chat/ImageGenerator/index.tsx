@@ -75,7 +75,7 @@ const ImageGenerator: React.FC<IImageGeneratorProps> = (props) => {
     <div className={`${prefixCls}-default-skeleton-content`}>
       <img
         className={`${prefixCls}-default-skeleton-icon`}
-        src="https://img.alicdn.com/imgextra/i2/O1CN01M1X8yM1MWUC7u3Go5_!!6000000001442-54-tps-72-72.apng"
+        src="/icons/image_generator.apng"
       />
       {
         skeletonText && <div className={`${prefixCls}-default-skeleton-text`}>{skeletonText}</div>

@@ -35,6 +35,7 @@ dependencies = [
     "anyio>=4.0.0,<4.13.0",
     # Redis for cron coordination (multi-instance support)
     "redis>=5.0.0",
+    "boto3>=1.24.1"
 ]
 
 [tool.setuptools.dynamic]

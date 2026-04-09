@@ -34,6 +34,11 @@ from ...constant import (
     WORKING_DIR,
 )
 from ...security.tool_guard.approval import ApprovalDecision
+from ...tracing import (
+    has_trace_manager,
+    get_trace_manager,
+)
+from ...tracing.models import TraceStatus
 from ...config.context import get_current_passthrough_headers
 
 if TYPE_CHECKING:
@@ -254,6 +259,33 @@ class AgentRunner(Runner):
         agent = None
         chat = None
         session_state_loaded = False
+        trace_id = None
+
+        # Initialize tracing context
+        if has_trace_manager():
+            try:
+                trace_mgr = get_trace_manager()
+                if trace_mgr.enabled:
+                    session_id_for_trace = (
+                        getattr(request, "session_id", "") or ""
+                    )
+                    user_id_for_trace = getattr(request, "user_id", "") or ""
+                    channel_for_trace = getattr(
+                        request,
+                        "channel",
+                        DEFAULT_CHANNEL,
+                    )
+                    user_message = _get_last_user_text(msgs)
+
+                    trace_id = await trace_mgr.start_trace(
+                        user_id=user_id_for_trace,
+                        session_id=session_id_for_trace,
+                        channel=channel_for_trace,
+                        user_message=user_message,
+                    )
+            except Exception as e:
+                logger.warning("Failed to start trace: %s", e)
+
         try:
             session_id = request.session_id
             user_id = request.user_id
@@ -387,8 +419,29 @@ class AgentRunner(Runner):
             ):
                 yield msg, last
 
+            # End trace with success status
+            if trace_id and has_trace_manager():
+                try:
+                    trace_mgr = get_trace_manager()
+                    await trace_mgr.end_trace(
+                        trace_id,
+                        status=TraceStatus.COMPLETED,
+                    )
+                except Exception as trace_err:
+                    logger.warning("Failed to end trace: %s", trace_err)
+
         except asyncio.CancelledError as exc:
             logger.info(f"query_handler: {session_id} cancelled!")
+            # End trace with cancelled status
+            if trace_id and has_trace_manager():
+                try:
+                    trace_mgr = get_trace_manager()
+                    await trace_mgr.end_trace(
+                        trace_id,
+                        status=TraceStatus.CANCELLED,
+                    )
+                except Exception as trace_err:
+                    logger.warning("Failed to end trace: %s", trace_err)
             if agent is not None:
                 await agent.interrupt()
             raise AgentException("Task has been cancelled!") from exc
@@ -402,6 +455,17 @@ class AgentRunner(Runner):
                 f"\n(Details:  {debug_dump_path})" if debug_dump_path else ""
             )
             logger.exception(f"Error in query handler: {e}{path_hint}")
+            # End trace with error status
+            if trace_id and has_trace_manager():
+                try:
+                    trace_mgr = get_trace_manager()
+                    await trace_mgr.end_trace(
+                        trace_id,
+                        status=TraceStatus.ERROR,
+                        error=str(e),
+                    )
+                except Exception as trace_err:
+                    logger.warning("Failed to end trace: %s", trace_err)
             if debug_dump_path:
                 setattr(e, "debug_dump_path", debug_dump_path)
                 if hasattr(e, "add_note"):

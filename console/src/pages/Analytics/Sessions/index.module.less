@@ -1,0 +1,158 @@
+.sessionsPage {
+  padding: 24px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+
+  h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+  }
+}
+
+.filters {
+  display: flex;
+  gap: 12px;
+}
+
+/* 抽屉内容 */
+.drawerLoading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+}
+
+.drawerContent {
+  .section {
+    margin-top: 24px;
+
+    h4 {
+      margin-bottom: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #333;
+    }
+  }
+
+  .tagList {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
+
+/* 统计卡片 */
+.statsRow {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.statItem {
+  flex: 1;
+  text-align: center;
+  padding: 12px;
+  background: #fafafa;
+  border-radius: 6px;
+
+  .value {
+    font-size: 20px;
+    font-weight: 600;
+    color: #1890ff;
+  }
+
+  .label {
+    font-size: 12px;
+    color: #666;
+    margin-top: 4px;
+  }
+}
+
+/* 对话列表 */
+.tracesList {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.traceItem {
+  padding: 12px;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: #1890ff;
+    background: #f0f7ff;
+  }
+
+  &.active {
+    border-color: #1890ff;
+    background: #e6f4ff;
+  }
+}
+
+.traceHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.traceId {
+  font-family: monospace;
+  font-size: 12px;
+  color: #666;
+}
+
+.traceMeta {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: #888;
+}
+
+/* 加载状态 */
+.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 200px;
+}
+
+/* 用户输入 */
+.userMessageSection {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: #f6f8fa;
+  border-radius: 6px;
+  border-left: 3px solid #1890ff;
+
+  h4 {
+    margin-bottom: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #333;
+  }
+}
+
+.userMessageContent {
+  font-size: 13px;
+  color: #333;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

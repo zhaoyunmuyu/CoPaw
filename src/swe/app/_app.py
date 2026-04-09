@@ -14,7 +14,27 @@ from agentscope_runtime.engine.app import AgentApp
 
 from ..config import load_config  # pylint: disable=no-name-in-module
 from ..config.utils import get_config_path
-from ..constant import DOCS_ENABLED, LOG_LEVEL_ENV, CORS_ORIGINS, WORKING_DIR
+from ..constant import (
+    DOCS_ENABLED,
+    LOG_LEVEL_ENV,
+    CORS_ORIGINS,
+    WORKING_DIR,
+    DB_HOST,
+    DB_PORT,
+    DB_USER,
+    DB_PASSWORD,
+    DB_NAME,
+    DB_MIN_CONN,
+    DB_MAX_CONN,
+    # Backward compatibility
+    TRACING_DB_HOST,
+    TRACING_DB_PORT,
+    TRACING_DB_USER,
+    TRACING_DB_PASSWORD,
+    TRACING_DB_NAME,
+    TRACING_DB_MIN_CONN,
+    TRACING_DB_MAX_CONN,
+)
 from ..__version__ import __version__
 from ..utils.logging import setup_logger, add_swe_file_handler
 from .auth import AuthMiddleware
@@ -31,6 +51,9 @@ from .migration import (
     ensure_default_agent_exists,
 )
 from .channels.registry import register_custom_channel_routes
+from ..tracing import init_trace_manager, close_trace_manager
+from ..database import DatabaseConfig
+from .service_heartbeat import start_service_heartbeat, stop_service_heartbeat
 
 # Apply log level on load so reload child process gets same level as CLI.
 logger = setup_logger(os.environ.get(LOG_LEVEL_ENV, "info"))
@@ -198,15 +221,83 @@ async def lifespan(
     # are initialized on-demand via their respective feature entrypoints.
     # See design.md for lazy-loading architecture.
 
+    # --- Initialize tracing manager ---
+    try:
+        from ..config.config import load_agent_config
+        from ..tracing.config import TracingConfig
+
+        agent_config = load_agent_config("default")
+        tracing_config = agent_config.running.tracing
+
+        # Check if database is configured via environment variables
+        # Support both new DB_* and legacy TRACING_DB_* env vars
+        db_host = DB_HOST or TRACING_DB_HOST
+        if db_host:
+            database_config = DatabaseConfig(
+                host=db_host,
+                port=DB_PORT or TRACING_DB_PORT,
+                user=DB_USER or TRACING_DB_USER,
+                password=DB_PASSWORD or TRACING_DB_PASSWORD,
+                database=DB_NAME or TRACING_DB_NAME,
+                min_connections=DB_MIN_CONN or TRACING_DB_MIN_CONN,
+                max_connections=DB_MAX_CONN or TRACING_DB_MAX_CONN,
+            )
+            tracing_config = TracingConfig(
+                enabled=tracing_config.enabled,
+                batch_size=tracing_config.batch_size,
+                flush_interval=tracing_config.flush_interval,
+                retention_days=tracing_config.retention_days,
+                sanitize_output=tracing_config.sanitize_output,
+                max_output_length=tracing_config.max_output_length,
+                storage_path=tracing_config.storage_path,
+                database=database_config,
+            )
+            storage_path = (
+                Path(tracing_config.storage_path)
+                if tracing_config.storage_path
+                else WORKING_DIR / "tracing"
+            )
+            await init_trace_manager(tracing_config, storage_path)
+            logger.info(
+                "Tracing manager initialized (database storage: %s)",
+                db_host,
+            )
+        else:
+            storage_path = (
+                Path(tracing_config.storage_path)
+                if tracing_config.storage_path
+                else WORKING_DIR / "tracing"
+            )
+            await init_trace_manager(tracing_config, storage_path)
+            logger.info(
+                "Tracing manager initialized (JSON file storage, enabled: %s)",
+                tracing_config.enabled,
+            )
+    except Exception as e:
+        logger.warning("Failed to initialize tracing manager: %s", e)
+
     startup_elapsed = time.time() - startup_start_time
     logger.info(
         f"Application startup completed in {startup_elapsed:.3f} seconds "
         f"(minimal initialization - runtimes deferred to first use)",
     )
 
+    # 启动服务心跳任务
+    await start_service_heartbeat()
+
     try:
         yield
     finally:
+        # Close tracing manager
+        try:
+            await close_trace_manager()
+            logger.info("Tracing manager closed")
+        except Exception as e:
+            logger.warning("Error closing tracing manager: %s", e)
+
+        # 停止服务心跳并发送关闭信号
+        await stop_service_heartbeat()
+
         local_model_mgr = getattr(app.state, "local_model_manager", None)
         if local_model_mgr is not None:
             logger.info("Stopping local model server...")

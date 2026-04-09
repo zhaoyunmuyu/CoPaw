@@ -65,6 +65,12 @@ const initialState: IframeContext = {
   authHeaders: [],
   parentOrigin: null,
   receivedAt: null,
+  sysId: null,
+  token: null,
+  bbk: null,
+  orgCode: null,
+  orgLvl: null,
+  positionId: null,
 };
 
 export const useIframeStore = create<IframeStore>()(
@@ -96,6 +102,12 @@ export const useIframeStore = create<IframeStore>()(
         isSuperManager: state.isSuperManager,
         authHeaders: state.authHeaders,
         parentOrigin: state.parentOrigin,
+        sysId: state.sysId,
+        token: state.token,
+        bbk: state.bbk,
+        orgCode: state.orgCode,
+        orgLvl: state.orgLvl,
+        positionId: state.positionId,
       }),
       storage: {
         getItem: (name) => {

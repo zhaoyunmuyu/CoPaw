@@ -60,6 +60,19 @@ def _make_chunk(tool_calls: list[Any]) -> Any:
     return SimpleNamespace(usage=None, choices=[choice])
 
 
+def _make_reasoning_chunk(
+    reasoning_content: str | None,
+    content: str | None = None,
+) -> Any:
+    delta = SimpleNamespace(
+        reasoning_content=reasoning_content,
+        content=content,
+        tool_calls=None,
+    )
+    choice = SimpleNamespace(delta=delta)
+    return SimpleNamespace(id="resp_1", usage=None, choices=[choice])
+
+
 async def test_stream_parser_skips_tool_call_without_function() -> None:
     model = CompatHarnessOpenAIChatModel(
         "dummy",
@@ -169,3 +182,34 @@ def test_sanitize_tool_call_normalizes_non_string_arguments() -> None:
     assert sanitized_missing_name_and_arguments is not None
     assert sanitized_missing_name_and_arguments.function.name == ""
     assert sanitized_missing_name_and_arguments.function.arguments == ""
+
+
+async def test_stream_parser_filters_placeholder_think_first_frame() -> None:
+    model = CompatHarnessOpenAIChatModel(
+        "dummy",
+        api_key="sk-test",
+        stream=True,
+    )
+
+    stream = FakeAsyncStream(
+        [
+            _make_reasoning_chunk("<think>"),
+            _make_reasoning_chunk("abc"),
+            _make_reasoning_chunk("def", "tail"),
+        ],
+    )
+
+    responses = await model.parse_stream_for_test(
+        datetime.now(),
+        stream,
+    )
+
+    assert [response.content for response in responses] == [
+        [
+            {"type": "thinking", "thinking": "abc"},
+        ],
+        [
+            {"type": "thinking", "thinking": "abcdef"},
+            {"type": "text", "text": "tail"},
+        ],
+    ]

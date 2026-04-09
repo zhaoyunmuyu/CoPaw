@@ -6,6 +6,18 @@ export interface AgentRequest {
   [key: string]: unknown;
 }
 
+export interface AgentInitRequest {
+  filename: string;
+  text: string;
+}
+
+export interface AgentInitResponse {
+  success: boolean;
+  file_path: string;
+  fileName: string;
+  content: string;
+}
+
 export interface ContextCompactConfig {
   token_count_model: string;
   token_count_use_mirror: boolean;

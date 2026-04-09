@@ -20,6 +20,13 @@ from ..constant import (
     LLM_RATE_LIMIT_JITTER,
     LLM_RATE_LIMIT_PAUSE,
     WORKING_DIR,
+    TRACING_ENABLED,
+    TRACING_BATCH_SIZE,
+    TRACING_FLUSH_INTERVAL,
+    TRACING_RETENTION_DAYS,
+    TRACING_SANITIZE_OUTPUT,
+    TRACING_MAX_OUTPUT_LENGTH,
+    TRACING_STORAGE_PATH,
     CRON_COORDINATION_ENABLED,
     CRON_CLUSTER_MODE,
     CRON_REDIS_URL,
@@ -30,6 +37,7 @@ from ..constant import (
     CRON_LOCK_SAFETY_MARGIN_SECONDS,
 )
 from ..providers.models import ModelSlotConfig
+from ..tracing.config import TracingConfig
 
 
 def generate_short_agent_id() -> str:
@@ -55,6 +63,28 @@ class BaseChannelConfig(BaseModel):
     require_mention: bool = False
 
 
+class ZhaohuConfig(BaseChannelConfig):
+    enabled: bool = True
+    # push_url: str = "https://agentframework.paasst.cmbchina.cn/exp-msg/push"  # dev
+    push_url: str = (
+        "https://agentframework.paas.cmbchina.cn/exp-msg/push"  # prd
+    )
+    sys_id: str = "RMS"
+    filter_thinking: bool = True
+    # robot_open_id: str = "4BB6901683AE5BF632E5D00405B3F8AF"  # dev
+    robot_open_id: str = "77D1CCFC2E210ED714ACC3093BFC9BAB"  # prd
+    channel: str = "ZH"
+    net: str = "DMZ"
+    # user_query_url (dev):
+    # "https://lq13gateway.paas.cmbchina.cn/agent-evaluate/evaluate/getYstUserList"
+    user_query_url: str = (
+        "https://llm-evaluate.paas.cmbchina.cn/evaluate/getYstUserList"  # prd
+    )
+    extract_url: str = (
+        "http://wplus-slots.paas.cmbchina.cn/api/extract/slots"  # prd/st
+    )
+
+
 class ConsoleConfig(BaseChannelConfig):
     """Console channel: prints agent responses to stdout."""
 
@@ -68,6 +98,7 @@ class ChannelConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     console: ConsoleConfig = ConsoleConfig()
+    zhaohu: ZhaohuConfig = ZhaohuConfig()
 
 
 class LastApiConfig(BaseModel):
@@ -410,6 +441,19 @@ class AgentsRunningConfig(BaseModel):
             "Memory manager backend type. "
             "Currently only 'remelight' is supported."
         ),
+    )
+
+    tracing: TracingConfig = Field(
+        default_factory=lambda: TracingConfig(
+            enabled=TRACING_ENABLED,
+            batch_size=TRACING_BATCH_SIZE,
+            flush_interval=TRACING_FLUSH_INTERVAL,
+            retention_days=TRACING_RETENTION_DAYS,
+            sanitize_output=TRACING_SANITIZE_OUTPUT,
+            max_output_length=TRACING_MAX_OUTPUT_LENGTH,
+            storage_path=TRACING_STORAGE_PATH or None,
+        ),
+        description="Tracing configuration for request tracking and analytics",
     )
 
     @property
@@ -921,6 +965,54 @@ class SecurityConfig(BaseModel):
     )
 
 
+class ServiceHeartbeatConfig(BaseModel):
+    """服务心跳配置：向远程接口定期发送心跳信号。
+
+    用于服务注册和健康检查，在服务启动时开启后台心跳任务，
+    进程结束前发送关闭信号（enabled=false）。
+
+    注意：心跳URL和间隔时间从环境变量读取，支持dev/prd环境区分：
+    - SWE_SERVICE_HEARTBEAT_URL: 心跳接口地址
+    - SWE_SERVICE_HEARTBEAT_INTERVAL: 心跳间隔秒数
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="是否启用服务心跳",
+    )
+    service_name: str = Field(
+        default="swe",
+        description="服务名称，固定为swe",
+    )
+    instance_port: int = Field(
+        default=8088,
+        ge=1,
+        le=65535,
+        description="实例端口，默认8088",
+    )
+    weight: int = Field(
+        default=1,
+        ge=1,
+        le=100,
+        description="权重，默认1",
+    )
+
+    @property
+    def url(self) -> str:
+        """从环境变量获取心跳URL。"""
+        return EnvVarLoader.get_str("SWE_SERVICE_HEARTBEAT_URL", "")
+
+    @property
+    def interval_seconds(self) -> int:
+        """从环境变量获取心跳间隔秒数。"""
+        return EnvVarLoader.get_int(
+            "SWE_SERVICE_HEARTBEAT_INTERVAL",
+            default=30,
+            min_value=5,
+            max_value=300,
+        )
+
+
 def _parse_cluster_nodes(env_value: str) -> List[Dict[str, Any]]:
     """Parse cluster nodes from environment variable string.
 
@@ -1040,6 +1132,10 @@ class Config(BaseModel):
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
     last_dispatch: Optional[LastDispatchConfig] = None
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    service_heartbeat: ServiceHeartbeatConfig = Field(
+        default_factory=ServiceHeartbeatConfig,
+        description="服务心跳配置",
+    )
     show_tool_details: bool = True
     user_timezone: str = Field(
         default_factory=detect_system_timezone,

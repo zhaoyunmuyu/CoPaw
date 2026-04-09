@@ -78,7 +78,7 @@ async def test_kimi_chat_model_extracts_closing_only_think_blocks() -> None:
     ]
 
 
-async def test_kimi_chat_model_keeps_plain_text_unchanged() -> None:
+async def test_kimi_chat_model_wraps_plain_text_as_thinking() -> None:
     model = KimiHarnessChatModel(
         "dummy",
         api_key="sk-test",
@@ -94,5 +94,5 @@ async def test_kimi_chat_model_keeps_plain_text_unchanged() -> None:
     )
 
     assert responses[0].content == [
-        {"type": "text", "text": "plain text"},
+        {"type": "thinking", "thinking": "plain text"},
     ]

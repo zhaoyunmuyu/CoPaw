@@ -1,0 +1,53 @@
+.overviewPage {
+  padding: 24px;
+  height: calc(100vh - 128px);
+  overflow: auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+
+  h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+  }
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 400px;
+}
+
+.empty {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 400px;
+}
+
+/* 让同一行的卡片高度一致 */
+.tableRow {
+  display: flex;
+
+  > div {
+    display: flex;
+  }
+}
+
+.tableCard {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+
+  :global {
+    .ant-card-body {
+      flex: 1;
+    }
+  }
+}
