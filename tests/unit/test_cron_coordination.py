@@ -681,7 +681,7 @@ class TestCronCoordinationClusterMode:
         )
         assert config_no_skip.cluster_skip_full_coverage_check is False
 
-    def test_publish_reload_uses_pubsub_client_in_cluster_mode(self):
+    async def test_publish_reload_uses_pubsub_client_in_cluster_mode(self):
         """Test that publish_reload uses _pubsub_client in cluster mode.
 
         RedisCluster doesn't have publish() method, so we need to use
@@ -711,12 +711,20 @@ class TestCronCoordinationClusterMode:
         coord._redis = mock_cluster
         coord._pubsub_client = mock_pubsub
 
-        # publish_reload should use _pubsub_client, not _redis
-        # We can't easily test the actual publish without Redis,
-        # but we verify the code path selects the right client
-        assert coord._config.cluster_mode is True
-        assert coord._pubsub_client is mock_pubsub
-        assert coord._redis is mock_cluster
+        with patch("swe.app.crons.coordination.ReloadPublisher") as mock_cls:
+            mock_publisher = MagicMock()
+            mock_publisher.publish = AsyncMock(return_value=True)
+            mock_cls.return_value = mock_publisher
+
+            result = await coord.publish_reload()
+
+        assert result is True
+        mock_cls.assert_called_once_with(
+            redis_client=mock_pubsub,
+            config=config,
+        )
+        mock_publisher.publish.assert_awaited_once_with("test", "test-agent")
+        mock_cluster.publish.assert_not_called()
 
 
 class TestCronCoordinationCandidateLoop:

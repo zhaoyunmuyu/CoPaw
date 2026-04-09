@@ -440,8 +440,8 @@ class TestCronManagerState:
 
 
 @pytest.mark.skipif(not REDIS_AVAILABLE, reason="Redis not available")
-class TestCronManagerFailover:
-    """Tests for automatic failover between managers."""
+class TestCronManagerFailoverIntegration:
+    """Integration test for automatic failover between managers."""
 
     async def test_follower_takes_over_after_leader_loses_lease(
         self,
@@ -539,18 +539,21 @@ class TestCronManagerFailover:
             await leader.disconnect_coordination()
             await follower.disconnect_coordination()
 
-    async def test_failover_releases_lease_on_startup_failure(
+class TestCronManagerLeaderStartupCallback:
+    """Unit tests for manager callback/rollback behavior."""
+
+    async def test_callback_startup_failure_no_task_exception(
         self,
         temp_jobs_file,
         mock_runner,
         mock_channel_manager,
     ):
-        """Test that lease is released if _do_start fails during failover."""
-        # Use a repo that will fail to load
-        from unittest.mock import AsyncMock
-
+        """Test callback path uses manager cleanup and doesn't leak task error."""
+        # Use a repo that will fail to load.
         failing_repo = AsyncMock()
-        failing_repo.load = AsyncMock(side_effect=RuntimeError("Simulated repo load failure"))
+        failing_repo.load = AsyncMock(
+            side_effect=RuntimeError("Simulated repo load failure")
+        )
 
         manager = CronManager(
             repo=failing_repo,
@@ -560,13 +563,236 @@ class TestCronManagerFailover:
             tenant_id="test-tenant",
             coordination_config=CoordinationConfig(enabled=False),
         )
+        manager._coordination = AsyncMock()
+        original_deactivate = manager.deactivate
+        manager.deactivate = AsyncMock(wraps=original_deactivate)
 
-        # Initialize scheduler
+        # Initialize scheduler.
         await manager.initialize()
 
-        # Try to start - should fail
-        with pytest.raises(RuntimeError, match="Simulated repo load failure"):
+        loop = asyncio.get_running_loop()
+        created_tasks = []
+        original_create_task = loop.create_task
+
+        def _capture_task(coro):
+            task = original_create_task(coro)
+            created_tasks.append(task)
+            return task
+
+        with patch.object(loop, "create_task", side_effect=_capture_task):
+            manager._on_become_leader()
+
+        assert len(created_tasks) == 1
+        await created_tasks[0]
+
+        # Failure should be handled internally (no task exception leak),
+        # and leadership cleanup should still run.
+        assert created_tasks[0].exception() is None
+        manager.deactivate.assert_awaited_once()
+        manager._coordination.deactivate.assert_awaited_once()
+        assert not manager.is_started
+
+    async def test_callback_cleanup_failure_no_task_exception(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+    ):
+        """Test callback path swallows cleanup failures too."""
+        failing_repo = AsyncMock()
+        failing_repo.load = AsyncMock(
+            side_effect=RuntimeError("Simulated repo load failure")
+        )
+
+        manager = CronManager(
+            repo=failing_repo,
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        manager._coordination = AsyncMock()
+        manager.deactivate = AsyncMock(
+            side_effect=RuntimeError("Simulated cleanup failure")
+        )
+
+        await manager.initialize()
+
+        loop = asyncio.get_running_loop()
+        created_tasks = []
+        original_create_task = loop.create_task
+
+        def _capture_task(coro):
+            task = original_create_task(coro)
+            created_tasks.append(task)
+            return task
+
+        with patch.object(loop, "create_task", side_effect=_capture_task):
+            manager._on_become_leader()
+
+        assert len(created_tasks) == 1
+        await created_tasks[0]
+        assert created_tasks[0].exception() is None
+
+    async def test_activate_leader_startup_failure_runs_cleanup_then_raises(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+    ):
+        """Test activate() leader path wires startup failure through cleanup."""
+        repo = AsyncMock()
+        manager = CronManager(
+            repo=repo,
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        manager._coordination = AsyncMock()
+        manager._coordination.connect = AsyncMock(return_value=True)
+        manager._coordination.activate = AsyncMock(return_value=True)
+        manager._coordination.instance_id = "i-1"
+        manager._do_start = AsyncMock(
+            side_effect=RuntimeError("Simulated startup failure")
+        )
+        manager._cleanup_failed_leader_startup = AsyncMock()
+
+        with pytest.raises(RuntimeError, match="Simulated startup failure"):
+            await manager.activate()
+
+        manager._cleanup_failed_leader_startup.assert_awaited_once()
+
+    async def test_callback_rolls_back_real_partial_scheduler_startup(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+    ):
+        """Test startup failure cleanup rolls back real partial start window."""
+        repo = AsyncMock()
+        repo.load = AsyncMock(return_value=MagicMock(jobs=[]))
+        manager = CronManager(
+            repo=repo,
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        manager._coordination = AsyncMock()
+
+        await manager.initialize()
+
+        original_scheduler = manager._scheduler
+        assert original_scheduler is not None
+        with patch.object(
+            original_scheduler,
+            "shutdown",
+            wraps=original_scheduler.shutdown,
+        ) as shutdown_mock:
+            manager._update_heartbeat = AsyncMock(
+                side_effect=RuntimeError(
+                    "Simulated failure after scheduler start"
+                )
+            )
+
             await manager._become_leader_and_start()
 
-        # Manager should not be started
-        assert not manager.is_started
+        shutdown_mock.assert_called_once_with(wait=False)
+        assert manager._scheduler is not original_scheduler
+        assert manager._scheduler is not None
+        assert manager._active_jobs == set()
+        assert manager._started is False
+        manager._coordination.deactivate.assert_awaited_once()
+
+    async def test_callback_shutdown_failure_uses_disable_and_releases(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+    ):
+        """Test rollback can safely disable and then release leadership."""
+        repo = AsyncMock()
+        repo.load = AsyncMock(return_value=MagicMock(jobs=[]))
+        manager = CronManager(
+            repo=repo,
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        manager._coordination = AsyncMock()
+
+        await manager.initialize()
+
+        original_scheduler = manager._scheduler
+        assert original_scheduler is not None
+
+        async def _raise_after_start():
+            raise RuntimeError("Simulated failure after scheduler start")
+
+        manager._update_heartbeat = AsyncMock(side_effect=_raise_after_start)
+
+        with patch.object(
+            original_scheduler,
+            "shutdown",
+            side_effect=RuntimeError("Simulated shutdown failure"),
+        ):
+            await manager._become_leader_and_start()
+
+        assert manager._scheduler is original_scheduler
+        assert manager._started is False
+        manager._coordination.deactivate.assert_awaited_once()
+
+    async def test_callback_keeps_leadership_if_shutdown_and_disable_fail(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+    ):
+        """Test degraded emergency path when scheduler cannot be safely stopped."""
+        repo = AsyncMock()
+        repo.load = AsyncMock(return_value=MagicMock(jobs=[]))
+        manager = CronManager(
+            repo=repo,
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        manager._coordination = AsyncMock()
+
+        await manager.initialize()
+
+        original_scheduler = manager._scheduler
+        assert original_scheduler is not None
+
+        manager._update_heartbeat = AsyncMock(
+            side_effect=RuntimeError("Simulated failure after scheduler start")
+        )
+
+        with patch.object(
+            original_scheduler,
+            "shutdown",
+            side_effect=RuntimeError("Simulated shutdown failure"),
+        ):
+            with patch.object(
+                original_scheduler,
+                "pause",
+                side_effect=RuntimeError("Simulated pause failure"),
+            ):
+                with patch.object(
+                    original_scheduler,
+                    "remove_all_jobs",
+                    side_effect=RuntimeError("Simulated remove failure"),
+                ):
+                    await manager._become_leader_and_start()
+
+        assert manager._scheduler is original_scheduler
+        assert manager._started is True
+        manager._coordination.deactivate.assert_not_awaited()

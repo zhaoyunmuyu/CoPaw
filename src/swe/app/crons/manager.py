@@ -187,7 +187,15 @@ class CronManager:
             )
 
         # Start the scheduler
-        await self._do_start()
+        try:
+            await self._do_start()
+        except Exception:
+            logger.exception(
+                "Failed to start scheduler during activate: agent=%s",
+                self._agent_id,
+            )
+            await self._cleanup_failed_leader_startup()
+            raise
         return True
 
     async def deactivate(self) -> None:
@@ -385,19 +393,120 @@ class CronManager:
                 "Successfully started scheduler after becoming leader: agent=%s",
                 self._agent_id,
             )
-        except Exception as e:
+        except Exception:
             logger.exception(
                 "Failed to start scheduler after becoming leader: agent=%s",
                 self._agent_id,
             )
-            # Release lease to allow another instance to take over
-            if self._coordination is not None:
-                logger.warning(
-                    "Releasing lease due to startup failure: agent=%s",
+            try:
+                await self._cleanup_failed_leader_startup()
+            except Exception:
+                logger.exception(
+                    "Unexpected error during startup failure cleanup: "
+                    "agent=%s",
                     self._agent_id,
                 )
-                await self._coordination.deactivate()
-            raise
+            return
+
+    async def _cleanup_failed_leader_startup(self) -> None:
+        """Rollback partial startup and release leadership on startup failure.
+
+        Never raises: best-effort cleanup for callback/background safety.
+        """
+        # _do_start() can fail after starting APScheduler but before _started=True.
+        # Roll back scheduler runtime state before manager-level cleanup.
+        had_running_scheduler = self._scheduler is not None and getattr(
+            self._scheduler, "running", False
+        )
+        safe_to_release = True
+        if had_running_scheduler:
+            safe_to_release = self._rollback_partially_started_scheduler()
+
+        if had_running_scheduler and not safe_to_release:
+            # Scheduler may still run jobs: keep coordination ownership to
+            # avoid split-brain duplicate execution.
+            self._started = True
+            logger.error(
+                "Emergency path: scheduler not safely stopped during startup "
+                "rollback, keeping leadership: agent=%s",
+                self._agent_id,
+            )
+            return
+
+        self._started = False
+        self._active_jobs.clear()
+        self._rt.clear()
+
+        if self._coordination is not None:
+            logger.warning(
+                "Releasing lease due to startup failure: agent=%s",
+                self._agent_id,
+            )
+        try:
+            await self.deactivate()
+        except Exception:
+            logger.exception(
+                "Failed to deactivate during startup failure cleanup: "
+                "agent=%s",
+                self._agent_id,
+            )
+            return
+
+    def _rollback_partially_started_scheduler(self) -> bool:
+        """Try to stop/disable a running scheduler after startup failure."""
+        if self._scheduler is None:
+            return True
+
+        try:
+            self._scheduler.shutdown(wait=False)
+        except Exception:
+            logger.exception(
+                "Failed to shutdown scheduler during rollback: agent=%s",
+                self._agent_id,
+            )
+            return self._best_effort_disable_scheduler()
+
+        # AsyncIOScheduler is not restartable after shutdown.
+        self._scheduler = AsyncIOScheduler(timezone=self._timezone)
+        return True
+
+    def _best_effort_disable_scheduler(self) -> bool:
+        """Best-effort disable path when scheduler.shutdown() fails."""
+        if self._scheduler is None:
+            return True
+
+        paused = False
+        removed = False
+
+        try:
+            self._scheduler.pause()
+            paused = True
+        except Exception:
+            logger.exception(
+                "Failed to pause scheduler during rollback: agent=%s",
+                self._agent_id,
+            )
+
+        try:
+            self._scheduler.remove_all_jobs()
+            removed = True
+            self._active_jobs.clear()
+        except Exception:
+            logger.exception(
+                "Failed to remove scheduler jobs during rollback: agent=%s",
+                self._agent_id,
+            )
+
+        if paused or removed:
+            logger.warning(
+                "Scheduler shutdown failed, used disable fallback: "
+                "agent=%s paused=%s removed=%s",
+                self._agent_id,
+                paused,
+                removed,
+            )
+            return True
+        return False
 
     async def _update_heartbeat(self) -> None:
         """Update heartbeat job based on current config."""
