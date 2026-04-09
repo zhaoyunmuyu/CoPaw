@@ -50,49 +50,68 @@ SERVICE_UNIT_ENV_VAR = "CMB_CAAS_SERVICEUNITID"
 _shutdown_requested = False
 
 
+def _is_valid_instance_ip(ip: str) -> bool:
+    """Return whether the IP is a non-loopback IPv4 address."""
+    if ip in ("127.0.0.1", "::1", "localhost"):
+        return False
+    try:
+        socket.inet_aton(ip)
+    except socket.error:
+        return False
+    return True
+
+
+def _get_instance_ip_from_hosts(
+    hosts_path: str = "/etc/hosts",
+) -> Optional[str]:
+    """Read the first non-loopback IPv4 from the hosts file."""
+    if not os.path.exists(hosts_path):
+        return None
+
+    try:
+        with open(hosts_path, "r", encoding="utf-8") as f:
+            for raw_line in f:
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+                ip = parts[0]
+                if _is_valid_instance_ip(ip):
+                    logger.info("浠?etc/hosts鑾峰彇瀹炰緥IP: %s", ip)
+                    return ip
+    except OSError as e:
+        logger.warning(
+            "璇诲彇/etc/hosts澶辫触: %s锛屽皢灏濊瘯鑾峰彇鏈満IP",
+            e,
+        )
+
+    return None
+
+
+def _get_local_instance_ip() -> str:
+    """Probe the local IPv4 address via a UDP socket."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            logger.info("鑾峰彇鏈満IP: %s", local_ip)
+            return local_ip
+    except OSError as e:
+        logger.warning("鑾峰彇鏈満IP澶辫触: %s", e)
+        return "127.0.0.1"
+
+
 def get_instance_ip() -> str:
     """获取实例IP地址。
 
     优先从/etc/hosts文件中读取容器IP，如果失败则尝试获取本机IP。
     """
-    # 尝试从/etc/hosts读取容器IP
-    hosts_path = "/etc/hosts"
-    if os.path.exists(hosts_path):
-        try:
-            with open(hosts_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        ip = parts[0]
-                        # 过滤掉localhost和常见保留地址
-                        if ip not in ("127.0.0.1", "::1", "localhost"):
-                            # 验证是有效的IPv4地址
-                            try:
-                                socket.inet_aton(ip)
-                                logger.info("从/etc/hosts获取实例IP: %s", ip)
-                                return ip
-                            except socket.error:
-                                continue
-        except OSError as e:
-            logger.warning("读取/etc/hosts失败: %s，将尝试获取本机IP", e)
-
-    # 备用方案：获取本机IP
-    try:
-        # 创建一个UDP socket连接外部地址来获取本机IP
-        # 这种方法不需要实际建立连接
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            # 使用一个公共IP地址（不会实际发送数据）
-            s.connect(("8.8.8.8", 80))
-            local_ip = s.getsockname()[0]
-            logger.info("获取本机IP: %s", local_ip)
-            return local_ip
-    except OSError as e:
-        logger.warning("获取本机IP失败: %s", e)
-        # 最后的备用方案
-        return "127.0.0.1"
+    instance_ip = _get_instance_ip_from_hosts()
+    if instance_ip:
+        return instance_ip
+    return _get_local_instance_ip()
 
 
 def get_service_unit() -> Optional[str]:

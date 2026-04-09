@@ -45,7 +45,7 @@ export const KEY_TO_PATH: Record<string, string> = {
   "instance-overview": "/instance/overview",
   "instance-instances": "/instance/instances",
   "instance-allocations": "/instance/allocations",
-  "instance-logs": "/instance/logs",
+  "instance-operation-logs": "/instance/operation-logs",
 };
 
 export const KEY_TO_LABEL: Record<string, string> = {
@@ -73,7 +73,7 @@ export const KEY_TO_LABEL: Record<string, string> = {
   "instance-overview": "nav.instanceOverview",
   "instance-instances": "nav.instanceInstances",
   "instance-allocations": "nav.instanceAllocations",
-  "instance-logs": "nav.instanceLogs",
+  "instance-operation-logs": "nav.instanceOperationLogs",
 };
 
 // ── URL helpers ───────────────────────────────────────────────────────────

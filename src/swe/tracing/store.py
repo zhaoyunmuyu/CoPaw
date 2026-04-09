@@ -8,7 +8,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from .config import TracingConfig
 from ..database import DatabaseConnection
@@ -34,6 +34,36 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _matches_trace_filters(
+    trace: Trace,
+    user_id: Optional[str],
+    start_date: Optional[datetime],
+    end_date: Optional[datetime],
+) -> bool:
+    """Return whether a trace matches the requested user/date filters."""
+    uid = trace.user_id
+    if not uid:
+        return False
+    if user_id and user_id not in uid:
+        return False
+    if start_date and trace.start_time < start_date:
+        return False
+    if end_date and trace.start_time > end_date:
+        return False
+    return True
+
+
+def _create_user_summary(trace: Trace) -> dict[str, Any]:
+    """Create an in-memory aggregation bucket for a user."""
+    return {
+        "sessions": 0,
+        "conversations": set(),
+        "tokens": 0,
+        "skills": 0,
+        "last_active": trace.start_time,
+    }
 
 
 class TraceStore:
@@ -555,45 +585,39 @@ class TraceStore:
     ) -> tuple[list[UserListItem], int]:
         """Get list of users with stats."""
         # Aggregate by user
-        user_data: dict[str, dict] = {}
-        for t in self._traces.values():
-            uid = t.user_id
-            if not uid:
+        user_data: dict[str, dict[str, Any]] = {}
+        for trace in self._traces.values():
+            if not _matches_trace_filters(
+                trace,
+                user_id,
+                start_date,
+                end_date,
+            ):
                 continue
-            if user_id and user_id not in uid:
-                continue
-            if start_date and t.start_time < start_date:
-                continue
-            if end_date and t.start_time > end_date:
-                continue
+            uid = trace.user_id
             if uid not in user_data:
-                user_data[uid] = {
-                    "sessions": 0,
-                    "conversations": set(),
-                    "tokens": 0,
-                    "skills": 0,
-                    "last_active": t.start_time,
-                }
+                user_data[uid] = _create_user_summary(trace)
             user_data[uid]["sessions"] += 1
-            user_data[uid]["conversations"].add(t.session_id)
+            user_data[uid]["conversations"].add(trace.session_id)
             user_data[uid]["tokens"] += (
-                t.total_input_tokens + t.total_output_tokens
+                trace.total_input_tokens + trace.total_output_tokens
             )
-            if t.start_time > user_data[uid]["last_active"]:
-                user_data[uid]["last_active"] = t.start_time
+            if trace.start_time > user_data[uid]["last_active"]:
+                user_data[uid]["last_active"] = trace.start_time
 
         # Count skills per user from spans
         for trace_id, spans in self._spans.items():
             trace = self._traces.get(trace_id)
-            if trace and trace.user_id in user_data:
-                for s in spans:
-                    event_type_str = (
-                        s.event_type.value
-                        if hasattr(s.event_type, "value")
-                        else str(s.event_type)
-                    )
-                    if event_type_str == EventType.SKILL_INVOCATION.value:
-                        user_data[trace.user_id]["skills"] += 1
+            if not trace or trace.user_id not in user_data:
+                continue
+            for span in spans:
+                event_type_str = (
+                    span.event_type.value
+                    if hasattr(span.event_type, "value")
+                    else str(span.event_type)
+                )
+                if event_type_str == EventType.SKILL_INVOCATION.value:
+                    user_data[trace.user_id]["skills"] += 1
 
         # Sort and paginate
         sorted_users = sorted(

@@ -24,6 +24,19 @@ from ...tracing.models import (
 router = APIRouter(prefix="/tracing", tags=["tracing"])
 logger = logging.getLogger(__name__)
 
+_USER_MESSAGE_EXPORT_HEADERS = [
+    "trace_id",
+    "user_id",
+    "session_id",
+    "channel",
+    "user_message",
+    "input_tokens",
+    "output_tokens",
+    "model_name",
+    "start_time",
+    "duration_ms",
+]
+
 
 def _parse_date(
     date_str: Optional[str],
@@ -64,6 +77,169 @@ def _check_tracing_available() -> None:
             status_code=503,
             detail="Tracing not available. Enable tracing in configuration.",
         )
+
+
+def _get_trace_store_or_503():
+    """Return the trace store or raise 503 if tracing is unavailable."""
+    try:
+        manager = get_trace_manager()
+        return manager.store
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Tracing not available",
+        ) from exc
+
+
+def _build_download_headers(filename: str) -> dict[str, str]:
+    """Return standard attachment headers for exports."""
+    return {"Content-Disposition": f"attachment; filename={filename}"}
+
+
+def _build_user_message_export_row(message) -> list[object]:
+    """Convert a user-message record into an export row."""
+    return [
+        message.trace_id,
+        message.user_id,
+        message.session_id,
+        message.channel,
+        message.user_message or "",
+        message.input_tokens,
+        message.output_tokens,
+        message.model_name or "",
+        message.start_time.isoformat() if message.start_time else "",
+        message.duration_ms or "",
+    ]
+
+
+def _build_user_messages_json_response(
+    messages,
+    timestamp: str,
+) -> StreamingResponse:
+    """Build a JSON export response."""
+    import json
+
+    data = [message.model_dump() for message in messages]
+    for item in data:
+        if item.get("start_time"):
+            item["start_time"] = item["start_time"].isoformat()
+    content = json.dumps(data, ensure_ascii=False, indent=2)
+    return StreamingResponse(
+        iter([content]),
+        media_type="application/json",
+        headers=_build_download_headers(
+            f"user_messages_{timestamp}.json",
+        ),
+    )
+
+
+def _build_user_messages_xlsx_response(
+    messages,
+    timestamp: str,
+) -> StreamingResponse:
+    """Build an XLSX export response."""
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import (
+            Alignment,
+            Border,
+            Font,
+            PatternFill,
+            Side,
+        )
+        from openpyxl.utils import get_column_letter
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="openpyxl not installed. Use csv or json format.",
+        ) from exc
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "User Messages"
+
+    header_fill = PatternFill(
+        start_color="4472C4",
+        end_color="4472C4",
+        fill_type="solid",
+    )
+    header_font = Font(bold=True, color="FFFFFF")
+    header_alignment = Alignment(horizontal="center", vertical="center")
+    thin_border = Border(
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
+    )
+
+    excel_headers = [
+        "Trace ID",
+        "User ID",
+        "Session ID",
+        "Channel",
+        "User Message",
+        "Input Tokens",
+        "Output Tokens",
+        "Model Name",
+        "Start Time",
+        "Duration (ms)",
+    ]
+    for column, header in enumerate(excel_headers, 1):
+        cell = ws.cell(row=1, column=column, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = thin_border
+
+    for row, message in enumerate(messages, 2):
+        for column, value in enumerate(
+            _build_user_message_export_row(message),
+            1,
+        ):
+            cell = ws.cell(row=row, column=column, value=value)
+            cell.border = thin_border
+            if column == 5:
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+    for column, width in enumerate(
+        [36, 20, 36, 15, 60, 12, 12, 25, 22, 12],
+        1,
+    ):
+        ws.column_dimensions[get_column_letter(column)].width = width
+
+    excel_buffer = io.BytesIO()
+    wb.save(excel_buffer)
+    excel_buffer.seek(0)
+
+    return StreamingResponse(
+        iter([excel_buffer.getvalue()]),
+        media_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+        headers=_build_download_headers(
+            f"user_messages_{timestamp}.xlsx",
+        ),
+    )
+
+
+def _build_user_messages_csv_response(
+    messages,
+    timestamp: str,
+) -> StreamingResponse:
+    """Build a CSV export response."""
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(_USER_MESSAGE_EXPORT_HEADERS)
+    for message in messages:
+        writer.writerow(_build_user_message_export_row(message))
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers=_build_download_headers(
+            f"user_messages_{timestamp}.csv",
+        ),
+    )
 
 
 @router.get("/overview", response_model=OverviewStats)
@@ -565,14 +741,7 @@ async def export_user_messages(
     Returns:
         StreamingResponse with exported data
     """
-    try:
-        manager = get_trace_manager()
-        store = manager.store
-    except RuntimeError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="Tracing not available",
-        ) from exc
+    store = _get_trace_store_or_503()
 
     start = _parse_date(start_date, "start_date")
     end = _parse_date(end_date, "end_date", add_day=True)
@@ -591,180 +760,7 @@ async def export_user_messages(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     if export_format == "json":
-        import json
-
-        data = [m.model_dump() for m in messages]
-        # Convert datetime to string for JSON serialization
-        for item in data:
-            if item.get("start_time"):
-                item["start_time"] = item["start_time"].isoformat()
-        content = json.dumps(data, ensure_ascii=False, indent=2)
-        return StreamingResponse(
-            iter([content]),
-            media_type="application/json",
-            headers={
-                "Content-Disposition": (
-                    f"attachment; filename=user_messages_{timestamp}.json"
-                ),
-            },
-        )
-    elif export_format == "xlsx":
-        # Excel format
-        try:
-            from openpyxl import Workbook
-            from openpyxl.styles import (
-                Font,
-                Alignment,
-                Border,
-                Side,
-                PatternFill,
-            )
-            from openpyxl.utils import get_column_letter
-        except ImportError as exc:
-            raise HTTPException(
-                status_code=400,
-                detail="openpyxl not installed. Use csv or json format.",
-            ) from exc
-
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "User Messages"
-
-        # Header style
-        header_fill = PatternFill(
-            start_color="4472C4",
-            end_color="4472C4",
-            fill_type="solid",
-        )
-        header_font = Font(bold=True, color="FFFFFF")
-        header_alignment = Alignment(horizontal="center", vertical="center")
-        thin_border = Border(
-            left=Side(style="thin"),
-            right=Side(style="thin"),
-            top=Side(style="thin"),
-            bottom=Side(style="thin"),
-        )
-
-        # Write header
-        headers = [
-            "Trace ID",
-            "User ID",
-            "Session ID",
-            "Channel",
-            "User Message",
-            "Input Tokens",
-            "Output Tokens",
-            "Model Name",
-            "Start Time",
-            "Duration (ms)",
-        ]
-        for col, header in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col, value=header)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = header_alignment
-            cell.border = thin_border
-
-        # Write data
-        for row, m in enumerate(messages, 2):
-            ws.cell(row=row, column=1, value=m.trace_id).border = thin_border
-            ws.cell(row=row, column=2, value=m.user_id).border = thin_border
-            ws.cell(row=row, column=3, value=m.session_id).border = thin_border
-            ws.cell(row=row, column=4, value=m.channel).border = thin_border
-            # Wrap text for user message
-            msg_cell = ws.cell(row=row, column=5, value=m.user_message or "")
-            msg_cell.border = thin_border
-            msg_cell.alignment = Alignment(wrap_text=True, vertical="top")
-            ws.cell(
-                row=row,
-                column=6,
-                value=m.input_tokens,
-            ).border = thin_border
-            ws.cell(
-                row=row,
-                column=7,
-                value=m.output_tokens,
-            ).border = thin_border
-            ws.cell(
-                row=row,
-                column=8,
-                value=m.model_name or "",
-            ).border = thin_border
-            ws.cell(
-                row=row,
-                column=9,
-                value=m.start_time.isoformat() if m.start_time else "",
-            ).border = thin_border
-            ws.cell(
-                row=row,
-                column=10,
-                value=m.duration_ms or "",
-            ).border = thin_border
-
-        # Auto-adjust column widths
-        column_widths = [36, 20, 36, 15, 60, 12, 12, 25, 22, 12]
-        for col, width in enumerate(column_widths, 1):
-            ws.column_dimensions[get_column_letter(col)].width = width
-
-        # Save to bytes
-        excel_buffer = io.BytesIO()
-        wb.save(excel_buffer)
-        excel_buffer.seek(0)
-
-        return StreamingResponse(
-            iter([excel_buffer.getvalue()]),
-            media_type=(
-                "application/vnd.openxmlformats-officedocument."
-                "spreadsheetml.sheet"
-            ),
-            headers={
-                "Content-Disposition": (
-                    f"attachment; filename=user_messages_{timestamp}.xlsx"
-                ),
-            },
-        )
-    else:
-        # CSV format
-        output = io.StringIO()
-        writer = csv.writer(output)
-        # Write header
-        writer.writerow(
-            [
-                "trace_id",
-                "user_id",
-                "session_id",
-                "channel",
-                "user_message",
-                "input_tokens",
-                "output_tokens",
-                "model_name",
-                "start_time",
-                "duration_ms",
-            ],
-        )
-        # Write data
-        for m in messages:
-            writer.writerow(
-                [
-                    m.trace_id,
-                    m.user_id,
-                    m.session_id,
-                    m.channel,
-                    m.user_message or "",
-                    m.input_tokens,
-                    m.output_tokens,
-                    m.model_name or "",
-                    m.start_time.isoformat() if m.start_time else "",
-                    m.duration_ms or "",
-                ],
-            )
-        content = output.getvalue()
-        return StreamingResponse(
-            iter([content]),
-            media_type="text/csv",
-            headers={
-                "Content-Disposition": (
-                    f"attachment; filename=user_messages_{timestamp}.csv"
-                ),
-            },
-        )
+        return _build_user_messages_json_response(messages, timestamp)
+    if export_format == "xlsx":
+        return _build_user_messages_xlsx_response(messages, timestamp)
+    return _build_user_messages_csv_response(messages, timestamp)

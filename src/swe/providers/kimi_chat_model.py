@@ -25,14 +25,14 @@ class KimiChatModel(OpenAIChatModelCompat):
     def _prepend_open_think_tag_to_first_frame(
         self,
         parsed: ChatResponse,
-    ) -> ChatResponse:
+    ) -> None:
         """Assume Kimi omitted ``<think>`` on the current reasoning snapshot."""
         if not parsed.content:
-            return parsed
+            return
 
         for block in parsed.content:
             if block.get("type") == "thinking":
-                return parsed
+                return
 
         for block in parsed.content:
             if block.get("type") != "text":
@@ -40,12 +40,10 @@ class KimiChatModel(OpenAIChatModelCompat):
 
             text = block.get("text") or ""
             if not text.strip() or text_contains_think_tag(text):
-                return parsed
+                return
 
             block["text"] = f"<think>{text}"
-            return parsed
-
-        return parsed
+            return
 
     def _content_has_thinking_started(self, parsed: ChatResponse) -> bool:
         """Return True once a snapshot already carries thinking markers."""
@@ -142,7 +140,7 @@ class KimiChatModel(OpenAIChatModelCompat):
             )
 
             if should_inject_open_think:
-                parsed = self._prepend_open_think_tag_to_first_frame(parsed)
+                self._prepend_open_think_tag_to_first_frame(parsed)
 
             if source_has_thinking_started:
                 should_inject_open_think = False

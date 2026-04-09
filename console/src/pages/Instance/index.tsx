@@ -2,7 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import OverviewPage from "./Overview";
 import InstancesPage from "./Instances";
 import AllocationsPage from "./Allocations";
-import LogsPage from "./Logs";
+import OperationLogsPage from "./OperationLogs";
 
 export default function InstancePage() {
   return (
@@ -11,7 +11,7 @@ export default function InstancePage() {
       <Route path="overview" element={<OverviewPage />} />
       <Route path="instances" element={<InstancesPage />} />
       <Route path="allocations" element={<AllocationsPage />} />
-      <Route path="logs" element={<LogsPage />} />
+      <Route path="operation-logs" element={<OperationLogsPage />} />
     </Routes>
   );
 }

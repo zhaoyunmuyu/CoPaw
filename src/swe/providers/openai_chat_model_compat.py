@@ -239,67 +239,83 @@ def _attach_tool_extra_content(
             block["extra_content"] = extra_content
 
 
+def _build_tool_use_blocks(
+    tool_calls: list[Any],
+    key_prefix: str,
+    id_prefix: str,
+) -> dict[str, dict]:
+    """Convert parsed tool calls into stable tool-use blocks."""
+    return {
+        f"{key_prefix}_{index}": {
+            "type": "tool_use",
+            "id": f"{id_prefix}_{index}",
+            "name": tool_call.name,
+            "input": tool_call.arguments,
+            "raw_input": tool_call.raw_arguments,
+        }
+        for index, tool_call in enumerate(tool_calls)
+    }
+
+
+def _extract_tool_calls_from_blocks(
+    content: list[dict[str, Any]],
+    block_type: str,
+    text_key: str,
+    key_prefix: str,
+    id_prefix: str,
+    drop_empty_blocks: bool = False,
+) -> tuple[list[dict[str, Any]], dict[str, dict]]:
+    """Extract tagged tool calls from matching blocks."""
+    extracted: dict[str, dict] = {}
+    updated_content: list[dict[str, Any] | None] | None = None
+
+    for index, block in enumerate(content):
+        if block.get("type") != block_type:
+            continue
+        text = block.get(text_key) or ""
+        if not text_contains_tool_call_tag(text):
+            continue
+
+        parsed = parse_tool_calls_from_text(text)
+        clean_text = parsed.text_before.strip()
+        block[text_key] = clean_text
+
+        if parsed.tool_calls:
+            extracted = _build_tool_use_blocks(
+                parsed.tool_calls,
+                key_prefix=key_prefix,
+                id_prefix=id_prefix,
+            )
+
+        if drop_empty_blocks and not clean_text:
+            if updated_content is None:
+                updated_content = list(content)
+            updated_content[index] = None
+
+    if updated_content is None:
+        return content, extracted
+    return [block for block in updated_content if block is not None], extracted
+
+
 def _extract_tagged_tool_call_blocks(
     content: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, dict], dict[str, dict]]:
     """Extract tool-call tags embedded in thinking or text blocks."""
-    think_tool_calls: dict[str, dict] = {}
-    text_tool_calls: dict[str, dict] = {}
-
-    for block in content:
-        if block.get("type") != "thinking":
-            continue
-        thinking_text = block.get("thinking") or ""
-        if not text_contains_tool_call_tag(thinking_text):
-            continue
-
-        think_parsed = parse_tool_calls_from_text(thinking_text)
-        if not think_parsed.tool_calls:
-            continue
-
-        block["thinking"] = think_parsed.text_before.strip()
-        think_tool_calls = {
-            f"thinking_{i}": {
-                "type": "tool_use",
-                "id": f"think_call_{i}",
-                "name": ptc.name,
-                "input": ptc.arguments,
-                "raw_input": ptc.raw_arguments,
-            }
-            for i, ptc in enumerate(think_parsed.tool_calls)
-        }
-
-    new_content: list[dict[str, Any] | None] | None = None
-    for i, block in enumerate(content):
-        if block.get("type") != "text":
-            continue
-        text = block.get("text") or ""
-        if not text_contains_tool_call_tag(text):
-            continue
-
-        text_parsed = parse_tool_calls_from_text(text)
-        clean_text = text_parsed.text_before.strip()
-        block["text"] = clean_text
-
-        if text_parsed.tool_calls:
-            text_tool_calls = {
-                f"text_{j}": {
-                    "type": "tool_use",
-                    "id": f"text_call_{j}",
-                    "name": ptc.name,
-                    "input": ptc.arguments,
-                    "raw_input": ptc.raw_arguments,
-                }
-                for j, ptc in enumerate(text_parsed.tool_calls)
-            }
-
-        if not clean_text:
-            if new_content is None:
-                new_content = list(content)
-            new_content[i] = None
-
-    if new_content is not None:
-        content = [block for block in new_content if block is not None]
+    content, think_tool_calls = _extract_tool_calls_from_blocks(
+        content,
+        block_type="thinking",
+        text_key="thinking",
+        key_prefix="thinking",
+        id_prefix="think_call",
+    )
+    content, text_tool_calls = _extract_tool_calls_from_blocks(
+        content,
+        block_type="text",
+        text_key="text",
+        key_prefix="text",
+        id_prefix="text_call",
+        drop_empty_blocks=True,
+    )
 
     extra = list(think_tool_calls.values()) + list(text_tool_calls.values())
     if extra:
