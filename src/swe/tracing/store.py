@@ -33,6 +33,36 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
+def _matches_trace_filters(
+    trace: Trace,
+    user_id: Optional[str],
+    start_date: Optional[datetime],
+    end_date: Optional[datetime],
+) -> bool:
+    """Return whether a trace matches the requested user/date filters."""
+    uid = trace.user_id
+    if not uid:
+        return False
+    if user_id and user_id not in uid:
+        return False
+    if start_date and trace.start_time < start_date:
+        return False
+    if end_date and trace.start_time > end_date:
+        return False
+    return True
+
+
+def _create_user_summary(trace: Trace) -> dict[str, Any]:
+    """Create an in-memory aggregation bucket for a user."""
+    return {
+        "sessions": 0,
+        "conversations": set(),
+        "tokens": 0,
+        "skills": 0,
+        "last_active": trace.start_time,
+    }
+
+
 class TraceStore:
     """Store for traces and spans using database storage only."""
 

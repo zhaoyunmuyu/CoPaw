@@ -23,6 +23,15 @@ repos:
       - id: detect-private-key
       - id: trailing-whitespace
         exclude: '(?x)(.*/skills/.*|^scripts/pack/)'
+  # TypeScript type check for console frontend
+  - repo: local
+    hooks:
+      - id: tsc
+        name: TypeScript type check
+        entry: bash -c 'cd console && pnpm exec tsc --noEmit'
+        language: system
+        files: ^console/.*\.(tsx?|json)$
+        pass_filenames: false
   - repo: https://github.com/asottile/add-trailing-comma
     rev: v3.1.0
     hooks:
@@ -115,10 +124,4 @@ repos:
           --disable=C0115,  # Disable missing class docstring for quick dev
           --disable=C0116,  # Disable missing function or method docstring for quick dev
         ]
-  - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: 'v3.0.0'
-    hooks:
-      - id: prettier
-        additional_dependencies: [ 'prettier@3.0.0' ]
-        files: \.(tsx?)$
-        exclude: '(?x)(^web/|^console/|/dist/|.*/skills/.*|^scripts/pack/)'
+  # prettier hook removed - console/ is excluded and it requires downloading Node.js

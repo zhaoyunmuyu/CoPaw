@@ -704,7 +704,7 @@ def _get_agent_id(agent_id: Optional[str]) -> Optional[str]:
 def _get_tenant_id() -> Optional[str]:
     """Get current tenant ID."""
     try:
-        from swe.config.context import get_current_tenant_id
+        from ..config.context import get_current_tenant_id
 
         return get_current_tenant_id()
     except Exception:
@@ -715,7 +715,7 @@ def _get_model_slot(
     manager: "ProviderManager",
 ):
     """Get active model slot from provider manager."""
-    from swe.tenant_models.models import ModelSlot
+    from ..tenant_models.models import ModelSlot
 
     active_model = manager.get_active_model()
     if (

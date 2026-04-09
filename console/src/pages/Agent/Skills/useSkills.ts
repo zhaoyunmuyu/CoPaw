@@ -14,9 +14,18 @@ import {
   showScanErrorModal,
 } from "../../../utils/scanError";
 
-type SkillActionResult =
+export type SkillConflictDetail = {
+  suggested_name?: string;
+  conflicts?: {
+    reason?: string;
+    skill_name?: string;
+    suggested_name?: string;
+  }[];
+};
+
+export type SkillActionResult =
   | { success: true; name?: string; imported?: string[] }
-  | { success: false; conflict?: Record<string, any> };
+  | { success: false; conflict?: SkillConflictDetail };
 
 export function useSkills() {
   const { t } = useTranslation();
@@ -196,9 +205,9 @@ export function useSkills() {
             Array.isArray(status.result?.conflicts) &&
             status.result.conflicts.length > 0
           ) {
-            return { success: false, conflict: status.result };
+            return { success: false, conflict: status.result as SkillConflictDetail };
           }
-          const hubResult = status.result as
+          const hubResult = status.result as unknown as
             | SecurityScanErrorResponse
             | null
             | undefined;
