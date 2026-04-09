@@ -106,7 +106,11 @@ def load_backup_config_from_env(
 
     # Check required variables
     aws_access_key_id = get_var("SWE_BACKUP_AWS_ACCESS_KEY_ID")
-    aws_secret_access_key = get_var("SWE_BACKUP_AWS_SECRET_ACCESS_KEY")
+    aws_secret_access_key = get_var(
+        "SWE_BACKUP_AWS_SECRET_ACCESS_KEY",
+    ).removeprefix(
+        "BEE_",
+    )
     s3_bucket = get_var("SWE_BACKUP_S3_BUCKET")
 
     if not all([aws_access_key_id, aws_secret_access_key, s3_bucket]):
@@ -123,7 +127,7 @@ def load_backup_config_from_env(
         aws_access_key_id=aws_access_key_id,
         aws_secret_access_key=aws_secret_access_key,
         s3_bucket=s3_bucket,
-        s3_prefix=get_var("SWE_BACKUP_S3_PREFIX", "swe"),
+        s3_prefix=get_var("SWE_BACKUP_S3_PREFIX", "swe_backup"),
         s3_region=get_var("SWE_BACKUP_S3_REGION", "cn-north-1"),
         endpoint_url=get_var("SWE_BACKUP_ENDPOINT_URL", ""),
     )
