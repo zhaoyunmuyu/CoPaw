@@ -56,48 +56,48 @@ const PRESET_FILE_ICONS: {
   icon: React.ReactElement;
 }[] = [
     {
-      icon: <IconImage url="https://gw.alicdn.com/imgextra/i1/O1CN01cVtZXI23tPVhiZoPJ_!!6000000007313-55-tps-40-40.svg" />,
+      icon: <IconImage url="/icons/files/xlsx.svg" />,
       color: '#22b35e',
       ext: ['xlsx', 'xls'],
     },
     {
-      icon: <IconImage url="https://gw.alicdn.com/imgextra/i1/O1CN01uDnnuz1XMNEjgFMul_!!6000000002909-55-tps-40-40.svg" />,
+      icon: <IconImage url="/icons/files/img.svg" />,
       color: DEFAULT_ICON_COLOR,
       ext: IMG_EXTS,
     },
     {
-      icon: <IconImage url="https://gw.alicdn.com/imgextra/i1/O1CN01PaXli01DDPAO68fsI_!!6000000000182-55-tps-40-40.svg" />,
+      icon: <IconImage url="/icons/files/md.svg" />,
       color: DEFAULT_ICON_COLOR,
       ext: ['md', 'mdx'],
     },
     {
-      icon: <IconImage url="https://gw.alicdn.com/imgextra/i3/O1CN01mB5PzD27fuIWK661W_!!6000000007825-55-tps-40-40.svg" />,
+      icon: <IconImage url="/icons/files/pdf.svg" />,
       color: '#ff4d4f',
       ext: ['pdf'],
     },
     {
-      icon: <IconImage url="https://gw.alicdn.com/imgextra/i3/O1CN01a8j7Jv1nW1QyFme7k_!!6000000005096-55-tps-40-40.svg" />,
+      icon: <IconImage url="/icons/files/ppt.svg" />,
       color: '#ff6e31',
       ext: ['ppt', 'pptx'],
     },
     {
-      icon: <IconImage url="https://gw.alicdn.com/imgextra/i1/O1CN01XaNi8P1UkhQXoQdUL_!!6000000002556-55-tps-40-40.svg" />,
+      icon: <IconImage url="/icons/files/doc.svg" />,
       color: '#1677ff',
       ext: ['doc', 'docx'],
     },
     {
-      icon: <IconImage url="https://gw.alicdn.com/imgextra/i1/O1CN01K7jgEj1sywWTkPSGY_!!6000000005836-55-tps-40-40.svg" />,
+      icon: <IconImage url="/icons/files/zip.svg" />,
       color: '#fab714',
       ext: ['zip', 'rar', '7z', 'tar', 'gz'],
     },
     {
-      icon: <IconImage url="https://gw.alicdn.com/imgextra/i2/O1CN01zTTe0q1Xg4GkZgJol_!!6000000002952-55-tps-40-40.svg" />,
+      icon: <IconImage url="/icons/files/video.svg" />,
 
       color: '#ff4d4f',
       ext: ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv'],
     },
     {
-      icon: <IconImage url="https://gw.alicdn.com/imgextra/i2/O1CN01qOBdXG1UpHO6f3Vvc_!!6000000002566-55-tps-40-40.svg" />,
+      icon: <IconImage url="/icons/files/audio.svg" />,
 
       color: '#8c8c8c',
       ext: ['mp3', 'wav', 'flac', 'ape', 'aac', 'ogg'],
@@ -177,7 +177,7 @@ function FileListCard(props: FileListCardProps, ref: React.Ref<HTMLDivElement>) 
       }
     }
 
-    return [<IconImage url="https://gw.alicdn.com/imgextra/i1/O1CN01K7jgEj1sywWTkPSGY_!!6000000005836-55-tps-40-40.svg" key="defaultIcon" />, DEFAULT_ICON_COLOR];
+    return [<IconImage url="/icons/files/zip.svg" key="defaultIcon" />, DEFAULT_ICON_COLOR];
   })();
 
   return (

@@ -76,11 +76,11 @@ function Prompt(props: {
   return (
     <div className={`${prefixCls}-prompt`} onClick={() => props.onClick?.(props.prompt.value)}>
       {/* =========== 移除图标展示Start =========== */}
-      {/* <img
+      <img
         className={`${prefixCls}-prompt-icon`}
-        src="https://img.alicdn.com/imgextra/i3/O1CN01822qqr1PVyaK7MYtn_!!6000000001847-2-tps-40-40.png"
+        src="/chat_icon.png"
         alt=""
-      /> */}
+      />
       {/* =========== 移除图标展示End =========== */}
       <Tooltip
         title={props.prompt.label?.length > 28 ? props.prompt.label : ''}
