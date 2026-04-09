@@ -6,7 +6,7 @@ export default () => {
       darkMode: true,
       prefix: 'agentscope-runtime-webui',
       leftHeader: {
-        logo: 'https://img.alicdn.com/imgextra/i2/O1CN01lmoGYn1kjoXATy4PX_!!6000000004720-2-tps-200-200.png',
+        logo: '/icons/agent_default_logo.png',
         title: 'Runtime WebUI',
       },
     },
@@ -34,7 +34,7 @@ export default () => {
       description:
         'I am a helpful assistant that can help you with your questions.',
       avatar:
-        'https://img.alicdn.com/imgextra/i2/O1CN01lmoGYn1kjoXATy4PX_!!6000000004720-2-tps-200-200.png',
+        '/icons/agent_default_logo.png',
 
       prompts: [
         {

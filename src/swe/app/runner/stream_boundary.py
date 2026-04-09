@@ -61,6 +61,7 @@ def _normalize_reasoning_boundary_events(
                 completed_reasoning.completed()
                 current_reasoning = None
                 yield completed_reasoning
+                yield event
                 continue
 
         yield event
@@ -102,6 +103,7 @@ async def normalize_reasoning_boundary_stream(
                 completed_reasoning.completed()
                 current_reasoning = None
                 yield completed_reasoning
+                yield event
                 continue
 
         yield event

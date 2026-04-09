@@ -153,6 +153,42 @@ class TestTenantBootstrapBoundaries:
 class TestLazyRuntimeStartup:
     """Tests that runtime starts only on demand."""
 
+    async def test_workspace_start_loads_agent_config_with_tenant_scope(
+        self,
+        tmp_path,
+    ):
+        """Workspace.start uses tenant-aware agent config lookup."""
+        from swe.app.workspace.workspace import Workspace
+
+        workspace_dir = tmp_path / "tenant-a" / "workspaces" / "default"
+        workspace_dir.mkdir(parents=True)
+
+        workspace = Workspace(
+            agent_id="default",
+            workspace_dir=str(workspace_dir),
+            tenant_id="tenant-a",
+        )
+
+        with patch(
+            "swe.app.workspace.workspace.load_agent_config",
+        ) as mock_load_agent:
+            mock_load_agent.return_value = Mock(
+                id="default",
+                name="Tenant Agent",
+                running=Mock(memory_manager_backend="remelight"),
+            )
+            with patch.object(
+                workspace._service_manager,
+                "start_all",
+                new=AsyncMock(),
+            ):
+                await workspace.start()
+
+        mock_load_agent.assert_called_once_with(
+            "default",
+            tenant_id="tenant-a",
+        )
+
     async def test_multi_agent_manager_get_agent_starts_runtime(
         self,
         tmp_path,

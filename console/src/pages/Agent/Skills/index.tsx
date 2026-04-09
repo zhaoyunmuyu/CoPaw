@@ -19,7 +19,7 @@ import {
   ImportHubModal,
   PoolTransferModal,
 } from "./components";
-import { useSkills } from "./useSkills";
+import { useSkills, type SkillActionResult, type SkillConflictDetail } from "./useSkills";
 import { useTranslation } from "react-i18next";
 import { useAgentStore } from "../../../stores/agentStore";
 import { useAppMessage } from "../../../hooks/useAppMessage";
@@ -120,18 +120,20 @@ function SkillsPage() {
     let renameMap: Record<string, string> | undefined;
     while (true) {
       const result = await uploadSkill(file, undefined, renameMap);
-      if (result.success || !result.conflict) break;
+      if (result.success) break;
+      const conflict = (result as { success: false; conflict?: SkillConflictDetail }).conflict;
+      if (!conflict) break;
 
-      const conflicts = Array.isArray(result.conflict.conflicts)
-        ? result.conflict.conflicts
+      const conflicts = Array.isArray(conflict.conflicts)
+        ? conflict.conflicts
         : [];
       if (conflicts.length === 0) break;
 
       const newRenames = await showConflictRenameModal(
-        conflicts.map((c: { skill_name: string; suggested_name: string }) => ({
-          key: c.skill_name,
-          label: c.skill_name,
-          suggested_name: c.suggested_name,
+        conflicts.map((c) => ({
+          key: c.skill_name || "",
+          label: c.skill_name || "",
+          suggested_name: c.suggested_name || "",
         })),
       );
       if (!newRenames) break;
@@ -158,24 +160,26 @@ function SkillsPage() {
     const result = await importFromHub(url, targetName);
     if (result.success) {
       closeImportModal();
-    } else if (result.conflict) {
-      const detail = result.conflict;
-      const suggested =
-        detail?.suggested_name || detail?.conflicts?.[0]?.suggested_name;
-      if (suggested) {
-        const skillName =
-          detail?.skill_name || detail?.conflicts?.[0]?.skill_name || "";
-        const renameMap = await showConflictRenameModal([
-          {
-            key: skillName,
-            label: skillName,
-            suggested_name: String(suggested),
-          },
-        ]);
-        if (renameMap) {
-          const newName = Object.values(renameMap)[0];
-          if (newName) {
-            await handleConfirmImport(url, newName);
+    } else {
+      const detail = (result as { success: false; conflict?: SkillConflictDetail }).conflict;
+      if (detail) {
+        const suggested =
+          detail?.suggested_name || detail?.conflicts?.[0]?.suggested_name;
+        if (suggested) {
+          const skillName =
+            detail?.conflicts?.[0]?.skill_name || "";
+          const renameMap = await showConflictRenameModal([
+            {
+              key: skillName,
+              label: skillName,
+              suggested_name: String(suggested),
+            },
+          ]);
+          if (renameMap) {
+            const newName = Object.values(renameMap)[0];
+            if (newName) {
+              await handleConfirmImport(url, newName);
+            }
           }
         }
       }
@@ -273,12 +277,13 @@ function SkillsPage() {
         await refreshSkills();
         return;
       }
-      if (result.conflict?.suggested_name) {
+      const conflictDetail = (result as { success: false; conflict?: SkillConflictDetail }).conflict;
+      if (conflictDetail?.suggested_name) {
         const renameMap = await showConflictRenameModal([
           {
             key: submitName,
             label: submitName,
-            suggested_name: result.conflict!.suggested_name,
+            suggested_name: conflictDetail.suggested_name,
           },
         ]);
         if (renameMap) {

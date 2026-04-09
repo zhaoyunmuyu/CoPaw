@@ -188,6 +188,142 @@ class _SanitizedStream:
                     self.extra_contents[tc_id] = extra
 
 
+def _filter_placeholder_thinking_blocks(
+    content: list[dict[str, Any]],
+    strip_leading_think_prefix: bool,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Drop placeholder thinking frames and trim a leading ``<think>``."""
+    filtered_content: list[dict[str, Any]] = []
+
+    for block in content:
+        if block.get("type") != "thinking":
+            filtered_content.append(block)
+            continue
+
+        thinking_text = block.get("thinking") or ""
+        if thinking_text in ("", "<think>"):
+            strip_leading_think_prefix = True
+            continue
+
+        if thinking_text.startswith("<think>"):
+            strip_leading_think_prefix = True
+
+        if strip_leading_think_prefix and thinking_text.startswith("<think>"):
+            thinking_text = thinking_text.removeprefix("<think>")
+
+        if not thinking_text:
+            continue
+
+        block["thinking"] = thinking_text
+        filtered_content.append(block)
+
+    return filtered_content, strip_leading_think_prefix
+
+
+def _attach_tool_extra_content(
+    content: list[dict[str, Any]],
+    extra_contents: dict[str, Any],
+) -> None:
+    """Attach captured tool-call extra content to parsed blocks."""
+    if not extra_contents:
+        return
+
+    for block in content:
+        if block.get("type") != "tool_use":
+            continue
+        tool_id = block.get("id")
+        if not isinstance(tool_id, str):
+            continue
+        extra_content = extra_contents.get(tool_id)
+        if extra_content:
+            block["extra_content"] = extra_content
+
+
+def _build_tool_use_blocks(
+    tool_calls: list[Any],
+    key_prefix: str,
+    id_prefix: str,
+) -> dict[str, dict]:
+    """Convert parsed tool calls into stable tool-use blocks."""
+    return {
+        f"{key_prefix}_{index}": {
+            "type": "tool_use",
+            "id": f"{id_prefix}_{index}",
+            "name": tool_call.name,
+            "input": tool_call.arguments,
+            "raw_input": tool_call.raw_arguments,
+        }
+        for index, tool_call in enumerate(tool_calls)
+    }
+
+
+def _extract_tool_calls_from_blocks(
+    content: list[dict[str, Any]],
+    block_type: str,
+    text_key: str,
+    key_prefix: str,
+    id_prefix: str,
+    drop_empty_blocks: bool = False,
+) -> tuple[list[dict[str, Any]], dict[str, dict]]:
+    """Extract tagged tool calls from matching blocks."""
+    extracted: dict[str, dict] = {}
+    updated_content: list[dict[str, Any] | None] | None = None
+
+    for index, block in enumerate(content):
+        if block.get("type") != block_type:
+            continue
+        text = block.get(text_key) or ""
+        if not text_contains_tool_call_tag(text):
+            continue
+
+        parsed = parse_tool_calls_from_text(text)
+        clean_text = parsed.text_before.strip()
+        block[text_key] = clean_text
+
+        if parsed.tool_calls:
+            extracted = _build_tool_use_blocks(
+                parsed.tool_calls,
+                key_prefix=key_prefix,
+                id_prefix=id_prefix,
+            )
+
+        if drop_empty_blocks and not clean_text:
+            if updated_content is None:
+                updated_content = list(content)
+            updated_content[index] = None
+
+    if updated_content is None:
+        return content, extracted
+    return [block for block in updated_content if block is not None], extracted
+
+
+def _extract_tagged_tool_call_blocks(
+    content: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, dict], dict[str, dict]]:
+    """Extract tool-call tags embedded in thinking or text blocks."""
+    content, think_tool_calls = _extract_tool_calls_from_blocks(
+        content,
+        block_type="thinking",
+        text_key="thinking",
+        key_prefix="thinking",
+        id_prefix="think_call",
+    )
+    content, text_tool_calls = _extract_tool_calls_from_blocks(
+        content,
+        block_type="text",
+        text_key="text",
+        key_prefix="text",
+        id_prefix="text_call",
+        drop_empty_blocks=True,
+    )
+
+    extra = list(think_tool_calls.values()) + list(text_tool_calls.values())
+    if extra:
+        content = list(content) + extra
+
+    return content, think_tool_calls, text_tool_calls
+
+
 class OpenAIChatModelCompat(OpenAIChatModel):
     """OpenAIChatModel with robust parsing for malformed tool-call chunks
     and transparent ``extra_content`` (Gemini thought_signature) relay."""
@@ -206,24 +342,27 @@ class OpenAIChatModelCompat(OpenAIChatModel):
         # accumulate.  Two sources: "thinking" blocks and plain "text" blocks.
         _think_tool_calls: dict[str, dict] = {}
         _text_tool_calls: dict[str, dict] = {}
+        _strip_leading_think_prefix = False
 
         async for parsed in super()._parse_openai_stream_response(
             start_datetime=start_datetime,
             response=sanitized_response,
             structured_model=structured_model,
         ):
-            # Attach extra_content (Gemini thought_signature) to tool_use
-            # blocks.
-            if sanitized_response.extra_contents:
-                for block in parsed.content:
-                    if block.get("type") != "tool_use":
-                        continue
-                    tool_id = block.get("id")
-                    if not isinstance(tool_id, str):
-                        continue
-                    ec = sanitized_response.extra_contents.get(tool_id)
-                    if ec:
-                        block["extra_content"] = ec
+            (
+                parsed.content,
+                _strip_leading_think_prefix,
+            ) = _filter_placeholder_thinking_blocks(
+                parsed.content,
+                _strip_leading_think_prefix,
+            )
+            if not parsed.content:
+                continue
+
+            _attach_tool_extra_content(
+                parsed.content,
+                sanitized_response.extra_contents,
+            )
 
             # Check whether the response already carries structured tool_use
             # blocks (either from the model or from extra_content above).
@@ -237,76 +376,12 @@ class OpenAIChatModelCompat(OpenAIChatModel):
                 _think_tool_calls.clear()
                 _text_tool_calls.clear()
             else:
-                # --- 1. Scan thinking blocks ---
-                for block in parsed.content:
-                    if block.get("type") != "thinking":
-                        continue
-                    thinking_text = block.get("thinking") or ""
-                    if not text_contains_tool_call_tag(thinking_text):
-                        continue
-
-                    think_parsed = parse_tool_calls_from_text(thinking_text)
-                    if not think_parsed.tool_calls:
-                        continue
-
-                    # Keep only the text before the first <tool_call>.
-                    # Everything after is the model's simulated continuation
-                    # (may include </tool_response>, </think> artefacts).
-                    block["thinking"] = think_parsed.text_before.strip()
-
-                    _think_tool_calls = {
-                        f"thinking_{i}": {
-                            "type": "tool_use",
-                            "id": f"think_call_{i}",
-                            "name": ptc.name,
-                            "input": ptc.arguments,
-                            "raw_input": ptc.raw_arguments,
-                        }
-                        for i, ptc in enumerate(think_parsed.tool_calls)
-                    }
-
-                # --- 2. Scan text/content blocks ---
-                # Some models emit <tool_call> tags directly in their
-                # response text instead of (or in addition to) thinking.
-                new_content: list | None = None
-                for i, block in enumerate(parsed.content):
-                    if block.get("type") != "text":
-                        continue
-                    text = block.get("text") or ""
-                    if not text_contains_tool_call_tag(text):
-                        continue
-
-                    text_parsed = parse_tool_calls_from_text(text)
-                    # Keep only text_before; discard the tag block and
-                    # everything after (same rationale as thinking).
-                    clean_text = text_parsed.text_before.strip()
-                    block["text"] = clean_text
-
-                    if text_parsed.tool_calls:
-                        _text_tool_calls = {
-                            f"text_{j}": {
-                                "type": "tool_use",
-                                "id": f"text_call_{j}",
-                                "name": ptc.name,
-                                "input": ptc.arguments,
-                                "raw_input": ptc.raw_arguments,
-                            }
-                            for j, ptc in enumerate(text_parsed.tool_calls)
-                        }
-
-                    # If the text block is now empty, mark it for removal.
-                    if not clean_text:
-                        if new_content is None:
-                            new_content = list(parsed.content)
-                        new_content[i] = None  # type: ignore[index]
-
-                if new_content is not None:
-                    parsed.content = [b for b in new_content if b is not None]
-
-                extra = list(_think_tool_calls.values()) + list(
-                    _text_tool_calls.values(),
+                (
+                    parsed.content,
+                    _think_tool_calls,
+                    _text_tool_calls,
+                ) = _extract_tagged_tool_call_blocks(
+                    parsed.content,
                 )
-                if extra:
-                    parsed.content = list(parsed.content) + extra
 
             yield parsed

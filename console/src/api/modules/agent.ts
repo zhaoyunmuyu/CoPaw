@@ -1,8 +1,14 @@
 import { request } from "../request";
-import type { AgentRequest, AgentsRunningConfig } from "../types";
+import type { AgentRequest, AgentInitRequest, AgentsRunningConfig, AgentInitResponse } from "../types/agent";
 
 // Agent API
 export const agentApi = {
+  agentInit: (body: AgentInitRequest) =>
+    request<AgentInitResponse>("/agent/init", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   agentRoot: () => request<unknown>("/agent/"),
 
   healthCheck: () => request<unknown>("/agent/health"),

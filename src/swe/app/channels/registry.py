@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 _BUILTIN_SPECS: dict[str, tuple[str, str]] = {
     "console": (".console", "ConsoleChannel"),
+    "zhaohu": (".zhaohu", "ZhaohuChannel"),
 }
 
 # Required channels must load; failures are raised, not skipped.

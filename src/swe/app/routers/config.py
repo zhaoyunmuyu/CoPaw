@@ -36,6 +36,7 @@ from ...config.config import (
     TelegramConfig,
     VoiceChannelConfig,
     WecomConfig,
+    ZhaohuConfig,
 )
 
 from .schemas_config import HeartbeatBody
@@ -49,6 +50,7 @@ _CHANNEL_CONFIG_CLASS_MAP = {
     "discord": DiscordConfig,
     "feishu": FeishuConfig,
     "qq": QQConfig,
+    "zhaohu": ZhaohuConfig,
     "imessage": IMessageChannelConfig,
     "console": ConsoleConfig,
     "voice": VoiceChannelConfig,

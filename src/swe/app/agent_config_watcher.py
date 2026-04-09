@@ -45,6 +45,7 @@ class AgentConfigWatcher:
         workspace_dir: Path,
         channel_manager: Any,
         cron_manager: Any = None,
+        tenant_id: str | None = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
     ):
         """Initialize agent config watcher.
@@ -54,6 +55,7 @@ class AgentConfigWatcher:
             workspace_dir: Path to agent's workspace directory
             channel_manager: ChannelManager instance for this agent
             cron_manager: CronManager instance for this agent (optional)
+            tenant_id: Optional tenant ID owning this workspace
             poll_interval: How often to check for changes (seconds)
         """
         self._agent_id = agent_id
@@ -61,6 +63,7 @@ class AgentConfigWatcher:
         self._config_path = workspace_dir / "agent.json"
         self._channel_manager = channel_manager
         self._cron_manager = cron_manager
+        self._tenant_id = tenant_id
         self._poll_interval = poll_interval
         self._task: Optional[asyncio.Task] = None
 
@@ -70,6 +73,13 @@ class AgentConfigWatcher:
         self._last_heartbeat_hash: Optional[int] = None
         # mtime of agent.json at last check
         self._last_mtime: float = 0.0
+
+    def _load_agent_config(self):
+        """Load agent config using the owning tenant scope."""
+        return load_agent_config(
+            self._agent_id,
+            tenant_id=self._tenant_id,
+        )
 
     async def start(self) -> None:
         """Take initial snapshot and start the polling task."""
@@ -106,7 +116,7 @@ class AgentConfigWatcher:
             self._last_mtime = 0.0
 
         try:
-            agent_config = load_agent_config(self._agent_id)
+            agent_config = self._load_agent_config()
             if agent_config.channels:
                 self._last_channels = agent_config.channels.model_copy(
                     deep=True,
@@ -262,7 +272,7 @@ class AgentConfigWatcher:
         self._last_mtime = mtime
 
         try:
-            agent_config = load_agent_config(self._agent_id)
+            agent_config = self._load_agent_config()
         except Exception:
             logger.exception(
                 f"AgentConfigWatcher ({self._agent_id}): "

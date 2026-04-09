@@ -51,7 +51,7 @@ export default function (props: IDeepThinking) {
   const { theme: providerTheme, getPrefixCls } = useProviderContext();
   const prefixCls = getPrefixCls('accordion-deep-thinking');
   const isDarkMode = providerTheme?.algorithm === AntdTheme.darkAlgorithm;
-  const icon = <img style={{ display: 'block', width: 16, height: 16, filter: isDarkMode ? 'invert(1)  brightness(100%) saturate(0%)' : '' }} src="https://img.alicdn.com/imgextra/i2/O1CN01QZgWRv1I4JM0BAZ9O_!!6000000000839-54-tps-56-56.apng" />
+  const icon = <img style={{ display: 'block', width: 16, height: 16, filter: isDarkMode ? 'invert(1)  brightness(100%) saturate(0%)' : '' }} src="/icons/deepthinking.apng" />
   
   // 构建标题文本
   let titleText = props.title || 'Deep thinking';

@@ -5,10 +5,13 @@ from contextvars import ContextVar
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env file from project root before reading any env vars
-_env_path = Path(__file__).resolve().parent.parent.parent / ".env"
-if _env_path.exists():
-    load_dotenv(_env_path)
+# Project root directory
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# Load base .env file (contains SWE_ENV and local overrides)
+_base_env_path = _PROJECT_ROOT / ".env"
+if _base_env_path.exists():
+    load_dotenv(_base_env_path, override=False)
 
 
 _ENV_VAR_OVERRIDES: ContextVar[dict[str, str]] = ContextVar(
@@ -17,9 +20,15 @@ _ENV_VAR_OVERRIDES: ContextVar[dict[str, str]] = ContextVar(
 )
 
 
+def _get_overrides() -> dict[str, str]:
+    """Get current env var overrides, returning empty dict if not set."""
+    val = _ENV_VAR_OVERRIDES.get()
+    return val if val is not None else {}
+
+
 @contextmanager
 def env_var_overrides(overrides: dict[str, str]):
-    current = dict(_ENV_VAR_OVERRIDES.get())
+    current = _get_overrides().copy()
     current.update(overrides)
     token = _ENV_VAR_OVERRIDES.set(current)
     try:
@@ -37,7 +46,7 @@ class EnvVarLoader:
     def get_bool(env_var: str, default: bool = False) -> bool:
         """Get a boolean environment variable,
         interpreting common truthy values."""
-        overrides = _ENV_VAR_OVERRIDES.get()
+        overrides = _get_overrides()
         val = overrides.get(
             env_var,
             os.environ.get(env_var, str(default)),
@@ -55,7 +64,7 @@ class EnvVarLoader:
         """Get a float environment variable with optional bounds
         and infinity handling."""
         try:
-            overrides = _ENV_VAR_OVERRIDES.get()
+            overrides = _get_overrides()
             value = float(
                 overrides.get(env_var, os.environ.get(env_var, str(default))),
             )
@@ -80,7 +89,7 @@ class EnvVarLoader:
     ) -> int:
         """Get an integer environment variable with optional bounds."""
         try:
-            overrides = _ENV_VAR_OVERRIDES.get()
+            overrides = _get_overrides()
             value = int(
                 overrides.get(env_var, os.environ.get(env_var, str(default))),
             )
@@ -95,7 +104,7 @@ class EnvVarLoader:
     @staticmethod
     def get_str(env_var: str, default: str = "") -> str:
         """Get a string environment variable with a default fallback."""
-        overrides = _ENV_VAR_OVERRIDES.get()
+        overrides = _get_overrides()
         return overrides.get(env_var, os.environ.get(env_var, default))
 
 
@@ -138,6 +147,100 @@ TOKEN_USAGE_FILE = EnvVarLoader.get_str(
     "SWE_TOKEN_USAGE_FILE",
     "token_usage.json",
 )
+
+# Tracing configuration
+TRACING_ENABLED = EnvVarLoader.get_bool("SWE_TRACING_ENABLED", False)
+TRACING_BATCH_SIZE = EnvVarLoader.get_int(
+    "SWE_TRACING_BATCH_SIZE",
+    100,
+    min_value=1,
+)
+TRACING_FLUSH_INTERVAL = EnvVarLoader.get_int(
+    "SWE_TRACING_FLUSH_INTERVAL",
+    5,
+    min_value=1,
+)
+TRACING_RETENTION_DAYS = EnvVarLoader.get_int(
+    "SWE_TRACING_RETENTION_DAYS",
+    30,
+    min_value=0,
+)
+TRACING_SANITIZE_OUTPUT = EnvVarLoader.get_bool(
+    "SWE_TRACING_SANITIZE_OUTPUT",
+    True,
+)
+TRACING_MAX_OUTPUT_LENGTH = EnvVarLoader.get_int(
+    "SWE_TRACING_MAX_OUTPUT_LENGTH",
+    500,
+    min_value=100,
+)
+TRACING_STORAGE_PATH = EnvVarLoader.get_str("SWE_TRACING_STORAGE_PATH", "")
+
+# Database configuration (shared by tracing, instance, etc.)
+# New environment variable names (recommended)
+DB_HOST = EnvVarLoader.get_str("SWE_DB_HOST", "")
+DB_PORT = EnvVarLoader.get_int(
+    "SWE_DB_PORT",
+    3306,
+    min_value=1,
+    max_value=65535,
+)
+DB_USER = EnvVarLoader.get_str("SWE_DB_USER", "root")
+DB_PASSWORD = EnvVarLoader.get_str("SWE_DB_PASSWORD", "")
+DB_NAME = EnvVarLoader.get_str(
+    "SWE_DB_NAME",
+    "swe",
+)
+DB_MIN_CONN = EnvVarLoader.get_int(
+    "SWE_DB_MIN_CONN",
+    2,
+    min_value=1,
+)
+DB_MAX_CONN = EnvVarLoader.get_int(
+    "SWE_DB_MAX_CONN",
+    10,
+    min_value=1,
+)
+
+# Backward compatibility: TRACING_DB_* aliases
+# These will be removed in a future version
+TRACING_DB_HOST = DB_HOST or EnvVarLoader.get_str("SWE_TRACING_DB_HOST", "")
+TRACING_DB_PORT = (
+    EnvVarLoader.get_int(
+        "SWE_TRACING_DB_PORT",
+        DB_PORT,
+        min_value=1,
+        max_value=65535,
+    )
+    if not DB_HOST
+    else DB_PORT
+)
+TRACING_DB_USER = (
+    DB_USER
+    if DB_HOST
+    else EnvVarLoader.get_str(
+        "SWE_TRACING_DB_USER",
+        "root",
+    )
+)
+TRACING_DB_PASSWORD = (
+    DB_PASSWORD
+    if DB_HOST
+    else EnvVarLoader.get_str(
+        "SWE_TRACING_DB_PASSWORD",
+        "",
+    )
+)
+TRACING_DB_NAME = (
+    DB_NAME
+    if DB_HOST
+    else EnvVarLoader.get_str(
+        "SWE_TRACING_DB_NAME",
+        "swe_tracing",
+    )
+)
+TRACING_DB_MIN_CONN = DB_MIN_CONN
+TRACING_DB_MAX_CONN = DB_MAX_CONN
 
 CONFIG_FILE = EnvVarLoader.get_str("SWE_CONFIG_FILE", "config.json")
 

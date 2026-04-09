@@ -72,3 +72,28 @@ def test_non_reasoning_message_boundary_is_preserved() -> None:
     )
 
     assert events == [message, next_message]
+
+
+def test_reasoning_boundary_keeps_following_assistant_message_start() -> None:
+    reasoning = _message(
+        msg_id="reason-1",
+        msg_type=MessageType.REASONING,
+        status=RunStatus.InProgress,
+        text="thinking",
+    )
+    answer_start = _message(
+        msg_id="answer-1",
+        msg_type=MessageType.MESSAGE,
+        status=RunStatus.InProgress,
+    )
+
+    events = list(
+        _normalize_reasoning_boundary_events([reasoning, answer_start]),
+    )
+
+    assert len(events) == 3
+    assert events[0] is reasoning
+    assert events[1].id == "reason-1"
+    assert events[1].type == MessageType.REASONING
+    assert events[1].status == RunStatus.Completed
+    assert events[2] is answer_start

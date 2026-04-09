@@ -181,6 +181,8 @@ function AppInner() {
             // ==================== 品牌主题 (Kun He) ====================
             // 使用动态品牌主题色
             colorPrimary: brandTheme.primaryColor,
+            // 确保浅色主题下 primary button 字体为白色
+            colorTextOnPrimary: '#ffffff',
             // ==================== 品牌主题结束 ====================
           },
         }}

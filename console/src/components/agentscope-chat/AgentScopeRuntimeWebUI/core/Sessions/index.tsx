@@ -38,7 +38,7 @@ export function InnerHeader({ className }: { className?: string }) {
 
 
   const {
-    logo = 'https://img.alicdn.com/imgextra/i2/O1CN01lmoGYn1kjoXATy4PX_!!6000000004720-2-tps-200-200.png',
+    logo = '/icons/agent_default_logo.png',
     title = 'Runtime WebUI'
   } = leftHeader as { logo?: string; title?: string };
 

@@ -20,8 +20,16 @@ from ..constant import (
     LLM_RATE_LIMIT_JITTER,
     LLM_RATE_LIMIT_PAUSE,
     WORKING_DIR,
+    TRACING_ENABLED,
+    TRACING_BATCH_SIZE,
+    TRACING_FLUSH_INTERVAL,
+    TRACING_RETENTION_DAYS,
+    TRACING_SANITIZE_OUTPUT,
+    TRACING_MAX_OUTPUT_LENGTH,
+    TRACING_STORAGE_PATH,
 )
 from ..providers.models import ModelSlotConfig
+from ..tracing.config import TracingConfig
 
 
 def generate_short_agent_id() -> str:
@@ -86,6 +94,28 @@ class FeishuConfig(BaseChannelConfig):
     verification_token: str = ""
     media_dir: Optional[str] = None
     domain: Literal["feishu", "lark"] = "feishu"
+
+
+class ZhaohuConfig(BaseChannelConfig):
+    enabled: bool = True
+    # push_url: str = "https://agentframework.paasst.cmbchina.cn/exp-msg/push"  # dev
+    push_url: str = (
+        "https://agentframework.paas.cmbchina.cn/exp-msg/push"  # prd
+    )
+    sys_id: str = "RMS"
+    filter_thinking: bool = True
+    # robot_open_id: str = "4BB6901683AE5BF632E5D00405B3F8AF"  # dev
+    robot_open_id: str = "77D1CCFC2E210ED714ACC3093BFC9BAB"  # prd
+    channel: str = "ZH"
+    net: str = "DMZ"
+    # user_query_url (dev):
+    # "https://lq13gateway.paas.cmbchina.cn/agent-evaluate/evaluate/getYstUserList"
+    user_query_url: str = (
+        "https://llm-evaluate.paas.cmbchina.cn/evaluate/getYstUserList"  # prd
+    )
+    extract_url: str = (
+        "http://wplus-slots.paas.cmbchina.cn/api/extract/slots"  # prd/st
+    )
 
 
 class QQConfig(BaseChannelConfig):
@@ -202,6 +232,7 @@ class ChannelConfig(BaseModel):
     discord: DiscordConfig = DiscordConfig()
     dingtalk: DingTalkConfig = DingTalkConfig()
     feishu: FeishuConfig = FeishuConfig()
+    zhaohu: ZhaohuConfig = ZhaohuConfig()
     qq: QQConfig = QQConfig()
     telegram: TelegramConfig = TelegramConfig()
     mattermost: MattermostConfig = MattermostConfig()
@@ -554,6 +585,19 @@ class AgentsRunningConfig(BaseModel):
             "Memory manager backend type. "
             "Currently only 'remelight' is supported."
         ),
+    )
+
+    tracing: TracingConfig = Field(
+        default_factory=lambda: TracingConfig(
+            enabled=TRACING_ENABLED,
+            batch_size=TRACING_BATCH_SIZE,
+            flush_interval=TRACING_FLUSH_INTERVAL,
+            retention_days=TRACING_RETENTION_DAYS,
+            sanitize_output=TRACING_SANITIZE_OUTPUT,
+            max_output_length=TRACING_MAX_OUTPUT_LENGTH,
+            storage_path=TRACING_STORAGE_PATH or None,
+        ),
+        description="Tracing configuration for request tracking and analytics",
     )
 
     @property
@@ -1059,6 +1103,54 @@ class SecurityConfig(BaseModel):
     )
 
 
+class ServiceHeartbeatConfig(BaseModel):
+    """服务心跳配置：向远程接口定期发送心跳信号。
+
+    用于服务注册和健康检查，在服务启动时开启后台心跳任务，
+    进程结束前发送关闭信号（enabled=false）。
+
+    注意：心跳URL和间隔时间从环境变量读取，支持dev/prd环境区分：
+    - SWE_SERVICE_HEARTBEAT_URL: 心跳接口地址
+    - SWE_SERVICE_HEARTBEAT_INTERVAL: 心跳间隔秒数
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="是否启用服务心跳",
+    )
+    service_name: str = Field(
+        default="swe",
+        description="服务名称，固定为swe",
+    )
+    instance_port: int = Field(
+        default=8088,
+        ge=1,
+        le=65535,
+        description="实例端口，默认8088",
+    )
+    weight: int = Field(
+        default=1,
+        ge=1,
+        le=100,
+        description="权重，默认1",
+    )
+
+    @property
+    def url(self) -> str:
+        """从环境变量获取心跳URL。"""
+        return EnvVarLoader.get_str("SWE_SERVICE_HEARTBEAT_URL", "")
+
+    @property
+    def interval_seconds(self) -> int:
+        """从环境变量获取心跳间隔秒数。"""
+        return EnvVarLoader.get_int(
+            "SWE_SERVICE_HEARTBEAT_INTERVAL",
+            default=30,
+            min_value=5,
+            max_value=300,
+        )
+
+
 class Config(BaseModel):
     """Root config (config.json)."""
 
@@ -1069,6 +1161,10 @@ class Config(BaseModel):
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
     last_dispatch: Optional[LastDispatchConfig] = None
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    service_heartbeat: ServiceHeartbeatConfig = Field(
+        default_factory=ServiceHeartbeatConfig,
+        description="服务心跳配置",
+    )
     show_tool_details: bool = True
     user_timezone: str = Field(
         default_factory=detect_system_timezone,
@@ -1098,11 +1194,33 @@ ChannelConfigUnion = Union[
 # Agent configuration utility functions
 
 
-def load_agent_config(agent_id: str) -> AgentProfileConfig:
+def _resolve_agent_root_config_path(
+    config_path: Path | None = None,
+    tenant_id: str | None = None,
+) -> Path | None:
+    """Resolve the root config path for agent load/save helpers."""
+    if config_path is not None:
+        return Path(config_path).expanduser()
+    if tenant_id is None:
+        return None
+
+    from .utils import get_tenant_config_path
+
+    return get_tenant_config_path(tenant_id)
+
+
+def load_agent_config(
+    agent_id: str,
+    config_path: Path | None = None,
+    *,
+    tenant_id: str | None = None,
+) -> AgentProfileConfig:
     """Load agent's complete configuration from workspace/agent.json.
 
     Args:
         agent_id: Agent ID to load
+        config_path: Optional root config.json path to resolve agent refs from
+        tenant_id: Optional tenant ID to resolve tenant-scoped root config
 
     Returns:
         AgentProfileConfig: Complete agent configuration
@@ -1112,7 +1230,11 @@ def load_agent_config(agent_id: str) -> AgentProfileConfig:
     """
     from .utils import load_config
 
-    config = load_config()
+    resolved_config_path = _resolve_agent_root_config_path(
+        config_path=config_path,
+        tenant_id=tenant_id,
+    )
+    config = load_config(resolved_config_path)
 
     if agent_id not in config.agents.profiles:
         raise ValueError(f"Agent '{agent_id}' not found in config")
@@ -1166,7 +1288,12 @@ def load_agent_config(agent_id: str) -> AgentProfileConfig:
             ),
         )
         # Save for future use
-        save_agent_config(agent_id, fallback_config)
+        save_agent_config(
+            agent_id,
+            fallback_config,
+            config_path=resolved_config_path,
+            tenant_id=tenant_id,
+        )
         return fallback_config
 
     with open(agent_config_path, "r", encoding="utf-8") as f:
@@ -1188,19 +1315,28 @@ def load_agent_config(agent_id: str) -> AgentProfileConfig:
 def save_agent_config(
     agent_id: str,
     agent_config: AgentProfileConfig,
+    config_path: Path | None = None,
+    *,
+    tenant_id: str | None = None,
 ) -> None:
     """Save agent configuration to workspace/agent.json.
 
     Args:
         agent_id: Agent ID
         agent_config: Complete agent configuration to save
+        config_path: Optional root config.json path to resolve agent refs from
+        tenant_id: Optional tenant ID to resolve tenant-scoped root config
 
     Raises:
         ValueError: If agent ID not found in root config
     """
     from .utils import load_config
 
-    config = load_config()
+    resolved_config_path = _resolve_agent_root_config_path(
+        config_path=config_path,
+        tenant_id=tenant_id,
+    )
+    config = load_config(resolved_config_path)
 
     if agent_id not in config.agents.profiles:
         raise ValueError(f"Agent '{agent_id}' not found in config")
