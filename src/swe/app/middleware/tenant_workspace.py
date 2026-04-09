@@ -218,6 +218,7 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
             [
                 "/health",
                 "/healthz",
+                "/api/health/health",
                 "/ready",
                 "/readyz",
                 "/alive",

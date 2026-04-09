@@ -28,6 +28,7 @@ TENANT_EXEMPT_ROUTES = frozenset([
     # Health check endpoints
     "/health",
     "/healthz",
+    "/api/health/health",
     "/ready",
     "/readyz",
     "/alive",

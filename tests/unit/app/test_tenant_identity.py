@@ -101,6 +101,7 @@ class TestTenantIdentityExemptions:
 
         assert is_tenant_exempt("/health") is True
         assert is_tenant_exempt("/healthz") is True
+        assert is_tenant_exempt("/api/health/health") is True
         assert is_tenant_exempt("/ready") is True
         assert is_tenant_exempt("/readyz") is True
         assert is_tenant_exempt("/alive") is True
