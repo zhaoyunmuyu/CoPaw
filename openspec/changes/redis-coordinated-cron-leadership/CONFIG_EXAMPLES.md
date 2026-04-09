@@ -1,15 +1,21 @@
 # Redis-Coordinated Cron Leadership - Configuration Examples
 
-## Configuration Sources (优先级从高到低)
+## Configuration Sources
 
-1. **环境变量** (`.env` 文件或系统环境变量)
-2. **`config.json` 中的 `cron_coordination` 配置**
+Cron coordination is configured **exclusively through environment-derived values**:
 
-## 使用环境变量配置 (推荐)
+1. **Process environment variables** (highest priority)
+2. **`.env` file** in the working directory
+3. **Packaged environment presets**: `src/swe/config/envs/{dev|prd}.json`
+4. **Hardcoded defaults** (lowest priority)
 
-在 `.env` 文件中添加：
+**Note**: `config.json` is **not** a supported source for cron coordination settings. Legacy `cron_coordination` sections in `config.json` are ignored.
+
+## Environment Variable Configuration
 
 ### Standalone Redis Mode
+
+In `.env` file or as process environment variables:
 
 ```bash
 # Enable cron coordination
@@ -45,75 +51,22 @@ SWE_CRON_LEASE_RENEW_FAILURE_THRESHOLD=3
 SWE_CRON_LOCK_SAFETY_MARGIN_SECONDS=30
 ```
 
-## 使用 config.json 配置
+## Environment Preset Files
 
-### Standalone Redis Mode
+For deployment-wide configuration, use the packaged environment presets:
 
+**Development** (`src/swe/config/envs/dev.json`):
 ```json
 {
-  "cron_coordination": {
-    "enabled": true,
-    "cluster_mode": false,
-    "redis_url": "redis://localhost:6379/0",
-    "lease_ttl_seconds": 30,
-    "lease_renew_interval_seconds": 10,
-    "lease_renew_failure_threshold": 3,
-    "lock_safety_margin_seconds": 30,
-    "reload_channel_prefix": "swe:cron:reload"
-  }
+  "SWE_CRON_COORDINATION_ENABLED": "true",
+  "SWE_CRON_CLUSTER_MODE": "false",
+  "SWE_CRON_REDIS_URL": "redis://localhost:6379/0",
+  "SWE_CRON_LEASE_TTL_SECONDS": "30",
+  "SWE_CRON_LEASE_RENEW_INTERVAL_SECONDS": "10"
 }
 ```
 
-### Redis Cluster Mode
-
-```json
-{
-  "cron_coordination": {
-    "enabled": true,
-    "cluster_mode": true,
-    "cluster_nodes": [
-      {"host": "redis-node-1", "port": 6379},
-      {"host": "redis-node-2", "port": 6379},
-      {"host": "redis-node-3", "port": 6379}
-    ],
-    "cluster_max_connections": 50,
-    "lease_ttl_seconds": 30,
-    "lease_renew_interval_seconds": 10,
-    "lease_renew_failure_threshold": 3,
-    "lock_safety_margin_seconds": 30,
-    "reload_channel_prefix": "swe:cron:reload"
-  }
-}
-```
-
-### 混合配置 (环境变量 + config.json)
-
-环境变量：
-```bash
-SWE_CRON_COORDINATION_ENABLED=true
-SWE_CRON_CLUSTER_MODE=true
-SWE_CRON_CLUSTER_NODES=redis-1:6379,redis-2:6379
-```
-
-config.json (仅覆盖部分设置)：
-```json
-{
-  "cron_coordination": {
-    "enabled": true,
-    "lease_ttl_seconds": 60
-  }
-}
-```
-
-## 环境变量文件
-
-项目提供了预设的环境变量文件：
-
-- `src/swe/config/envs/dev.json` - 开发环境配置
-- `src/swe/config/envs/prd.json` - 生产环境配置
-
-可以在这些文件中添加 Redis 配置：
-
+**Production** (`src/swe/config/envs/prd.json`):
 ```json
 {
   "SWE_CRON_COORDINATION_ENABLED": "true",
@@ -124,47 +77,37 @@ config.json (仅覆盖部分设置)：
 }
 ```
 
-## 配置参数说明
+## Configuration Parameters
 
-### 通用参数
+### Common Parameters
 
-| 参数 | 环境变量 | 类型 | 默认值 | 说明 |
-|------|----------|------|--------|------|
-| `enabled` | `SWE_CRON_COORDINATION_ENABLED` | bool | `false` | 启用 Redis 协调 |
-| `cluster_mode` | `SWE_CRON_CLUSTER_MODE` | bool | `false` | 使用 Cluster 模式 |
-| `lease_ttl_seconds` | `SWE_CRON_LEASE_TTL_SECONDS` | int | `30` | Leader 租约 TTL |
-| `lease_renew_interval_seconds` | `SWE_CRON_LEASE_RENEW_INTERVAL_SECONDS` | int | `10` | 租约续期间隔 |
-| `lease_renew_failure_threshold` | `SWE_CRON_LEASE_RENEW_FAILURE_THRESHOLD` | int | `3` | 失败阈值 |
-| `lock_safety_margin_seconds` | `SWE_CRON_LOCK_SAFETY_MARGIN_SECONDS` | int | `30` | 执行锁安全边距 |
-| `reload_channel_prefix` | - | str | `"swe:cron:reload"` | reload 频道前缀 |
+| Parameter | Environment Variable | Type | Default | Description |
+|-----------|---------------------|------|---------|-------------|
+| `enabled` | `SWE_CRON_COORDINATION_ENABLED` | bool | `false` | Enable Redis coordination |
+| `cluster_mode` | `SWE_CRON_CLUSTER_MODE` | bool | `false` | Use Cluster mode |
+| `lease_ttl_seconds` | `SWE_CRON_LEASE_TTL_SECONDS` | int | `30` | Leader lease TTL |
+| `lease_renew_interval_seconds` | `SWE_CRON_LEASE_RENEW_INTERVAL_SECONDS` | int | `10` | Lease renew interval |
+| `lease_renew_failure_threshold` | `SWE_CRON_LEASE_RENEW_FAILURE_THRESHOLD` | int | `3` | Failure threshold |
+| `lock_safety_margin_seconds` | `SWE_CRON_LOCK_SAFETY_MARGIN_SECONDS` | int | `30` | Lock safety margin |
+| `reload_channel_prefix` | - | str | `"swe:cron:reload"` | Reload channel prefix (code default) |
 
-### Standalone 模式参数
+### Standalone Mode Parameters
 
-| 参数 | 环境变量 | 类型 | 默认值 | 说明 |
-|------|----------|------|--------|------|
+| Parameter | Environment Variable | Type | Default | Description |
+|-----------|---------------------|------|---------|-------------|
 | `redis_url` | `SWE_CRON_REDIS_URL` | str | `"redis://localhost:6379/0"` | Redis URL |
 
-### Cluster 模式参数
+### Cluster Mode Parameters
 
-| 参数 | 环境变量 | 类型 | 默认值 | 说明 |
-|------|----------|------|--------|------|
-| `cluster_nodes` | `SWE_CRON_CLUSTER_NODES` | str | `""` | 节点列表 (host:port,host:port) |
-| `cluster_max_connections` | - | int | `50` | 最大连接数 |
+| Parameter | Environment Variable | Type | Default | Description |
+|-----------|---------------------|------|---------|-------------|
+| `cluster_nodes` | `SWE_CRON_CLUSTER_NODES` | str | `""` | Node list (host:port,host:port) |
+| `cluster_max_connections` | - | int | `50` | Max connections (code default) |
 
-## 禁用协调 (默认)
+## Disabling Coordination (Default)
 
 ```bash
 SWE_CRON_COORDINATION_ENABLED=false
 ```
 
-或 config.json:
-
-```json
-{
-  "cron_coordination": {
-    "enabled": false
-  }
-}
-```
-
-当禁用时，系统保持单实例模式运行，不依赖 Redis。
+When disabled, the system runs in single-instance mode without Redis dependency.

@@ -1046,10 +1046,6 @@ class Config(BaseModel):
         description="User IANA timezone (e.g. Asia/Shanghai). "
         "Defaults to the system timezone.",
     )
-    cron_coordination: CronCoordinationConfig = Field(
-        default_factory=CronCoordinationConfig,
-        description="Redis-based cron coordination configuration",
-    )
 
 
 ChannelConfigUnion = ConsoleConfig

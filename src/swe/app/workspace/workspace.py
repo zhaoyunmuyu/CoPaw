@@ -150,37 +150,36 @@ class Workspace:
             self.runner._manager = manager  # pylint: disable=protected-access
 
     def _get_cron_coordination_config(self) -> "CoordinationConfig":
-        """Get coordination config from agent configuration.
+        """Get coordination config from environment-backed constants.
 
         Returns:
-            CoordinationConfig for cron leadership election
+            CoordinationConfig for cron leadership election built from
+            environment-derived values and hardcoded defaults.
         """
-        # Try to get from root config first
-        try:
-            from ...config.utils import load_config, get_tenant_config_path
+        from ...constant import (
+            CRON_COORDINATION_ENABLED,
+            CRON_CLUSTER_MODE,
+            CRON_REDIS_URL,
+            CRON_CLUSTER_NODES,
+            CRON_LEASE_TTL_SECONDS,
+            CRON_LEASE_RENEW_INTERVAL_SECONDS,
+            CRON_LEASE_RENEW_FAILURE_THRESHOLD,
+            CRON_LOCK_SAFETY_MARGIN_SECONDS,
+        )
+        from ...config.config import _parse_cluster_nodes
 
-            config_path = get_tenant_config_path(self.tenant_id)
-            config = load_config(config_path)
-            if hasattr(config, 'cron_coordination'):
-                cc = config.cron_coordination
-                return CoordinationConfig(
-                    enabled=cc.enabled,
-                    redis_url=cc.redis_url,
-                    cluster_mode=cc.cluster_mode,
-                    cluster_nodes=cc.cluster_nodes if cc.cluster_mode else None,
-                    cluster_skip_full_coverage_check=cc.cluster_skip_full_coverage_check,
-                    cluster_max_connections=cc.cluster_max_connections,
-                    lease_ttl_seconds=cc.lease_ttl_seconds,
-                    lease_renew_interval_seconds=cc.lease_renew_interval_seconds,
-                    lease_renew_failure_threshold=cc.lease_renew_failure_threshold,
-                    lock_safety_margin_seconds=cc.lock_safety_margin_seconds,
-                    reload_channel_prefix=cc.reload_channel_prefix,
-                )
-        except Exception:  # pylint: disable=broad-exempt
-            pass
+        cluster_nodes = _parse_cluster_nodes(CRON_CLUSTER_NODES)
 
-        # Return default (disabled)
-        return CoordinationConfig()
+        return CoordinationConfig(
+            enabled=CRON_COORDINATION_ENABLED,
+            redis_url=CRON_REDIS_URL,
+            cluster_mode=CRON_CLUSTER_MODE,
+            cluster_nodes=cluster_nodes if CRON_CLUSTER_MODE else None,
+            lease_ttl_seconds=CRON_LEASE_TTL_SECONDS,
+            lease_renew_interval_seconds=CRON_LEASE_RENEW_INTERVAL_SECONDS,
+            lease_renew_failure_threshold=CRON_LEASE_RENEW_FAILURE_THRESHOLD,
+            lock_safety_margin_seconds=CRON_LOCK_SAFETY_MARGIN_SECONDS,
+        )
 
     def _register_services(  # pylint: disable=too-many-statements
         self,
