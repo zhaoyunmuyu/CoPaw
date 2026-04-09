@@ -343,6 +343,12 @@ def get_version():
     return {"version": __version__}
 
 
+@app.get("/api/health/health")
+def get_api_health():
+    """Lightweight health check endpoint for load balancers and probes."""
+    return {"status": "ok"}
+
+
 app.include_router(api_router, prefix="/api")
 
 # Agent-scoped router: /api/agents/{agentId}/chats, etc.
