@@ -191,7 +191,7 @@ function Stream<Output = SSEOutput>(
       yield config?.openaiCompatible
         ? {
             ...value,
-            data: value.data.slice(1),
+            data: typeof (value as SSEOutput).data === 'string' ? (value as SSEOutput).data.slice(1) : (value as SSEOutput).data,
           }
         : value;
     }
