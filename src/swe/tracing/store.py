@@ -335,6 +335,43 @@ class TraceStore:
 
     # Query operations
 
+    def _build_overview_stats(
+        self,
+        total_users: int,
+        online_users: int,
+        token_row: Optional[dict],
+        model_distribution: list,
+        top_tools: list,
+        top_skills: list,
+        top_mcp_tools: list,
+        mcp_servers: list,
+    ) -> OverviewStats:
+        """Build OverviewStats from collected data."""
+        return OverviewStats(
+            online_users=online_users,
+            total_users=total_users,
+            model_distribution=model_distribution,
+            total_tokens=token_row["total_tokens"] or 0 if token_row else 0,
+            input_tokens=token_row["input_tokens"] or 0 if token_row else 0,
+            output_tokens=token_row["output_tokens"] or 0 if token_row else 0,
+            total_sessions=token_row["total_sessions"] or 0
+            if token_row
+            else 0,
+            total_conversations=token_row["total_sessions"] or 0
+            if token_row
+            else 0,
+            avg_duration_ms=(
+                int(token_row["avg_duration"] or 0)
+                if token_row and token_row["avg_duration"]
+                else 0
+            ),
+            top_tools=top_tools,
+            top_skills=top_skills,
+            top_mcp_tools=top_mcp_tools,
+            mcp_servers=mcp_servers,
+            daily_trend=[],
+        )
+
     async def get_overview_stats(
         self,
         start_date: Optional[datetime] = None,
@@ -382,27 +419,15 @@ class TraceStore:
             end_date,
         )
 
-        return OverviewStats(
-            online_users=online_users,
-            total_users=total_users,
-            model_distribution=model_distribution,
-            total_tokens=token_row["total_tokens"] or 0 if token_row else 0,
-            input_tokens=token_row["input_tokens"] or 0 if token_row else 0,
-            output_tokens=token_row["output_tokens"] or 0 if token_row else 0,
-            total_sessions=token_row["total_sessions"] or 0
-            if token_row
-            else 0,
-            total_conversations=token_row["total_sessions"] or 0
-            if token_row
-            else 0,
-            avg_duration_ms=int(token_row["avg_duration"] or 0)
-            if token_row and token_row["avg_duration"]
-            else 0,
-            top_tools=top_tools,
-            top_skills=top_skills,
-            top_mcp_tools=top_mcp_tools,
-            mcp_servers=mcp_servers,
-            daily_trend=[],
+        return self._build_overview_stats(
+            total_users,
+            online_users,
+            token_row,
+            model_distribution,
+            top_tools,
+            top_skills,
+            top_mcp_tools,
+            mcp_servers,
         )
 
     async def get_users(
@@ -482,6 +507,127 @@ class TraceStore:
         ]
         return users, total
 
+    async def _get_user_model_usage(
+        self,
+        user_id: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> list[ModelUsage]:
+        """Get model usage for a user."""
+        model_query = """
+            SELECT model_name, COUNT(*) as count,
+                   SUM(total_input_tokens) as input_tokens,
+                   SUM(total_output_tokens) as output_tokens,
+                   SUM(total_tokens) as total_tokens
+            FROM swe_tracing_traces
+            WHERE user_id = %s AND start_time >= %s AND start_time <= %s
+                  AND model_name IS NOT NULL
+            GROUP BY model_name
+            ORDER BY count DESC
+        """
+        model_rows = await self.db.fetch_all(
+            model_query,
+            (user_id, start_date, end_date),
+        )
+        return [
+            ModelUsage(
+                model_name=row["model_name"],
+                count=row["count"],
+                total_tokens=row["total_tokens"] or 0,
+                input_tokens=row["input_tokens"] or 0,
+                output_tokens=row["output_tokens"] or 0,
+            )
+            for row in model_rows
+        ]
+
+    async def _get_user_tool_usage(
+        self,
+        user_id: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> list[ToolUsage]:
+        """Get tool usage for a user."""
+        tool_query = """
+            SELECT tool_name, COUNT(*) as count,
+                   AVG(duration_ms) as avg_duration,
+                   SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) as error_count
+            FROM swe_tracing_spans
+            WHERE user_id = %s AND start_time >= %s AND start_time <= %s
+              AND event_type = 'tool_call_end'
+              AND tool_name IS NOT NULL
+            GROUP BY tool_name
+            ORDER BY count DESC
+        """
+        tool_rows = await self.db.fetch_all(
+            tool_query,
+            (user_id, start_date, end_date),
+        )
+        return [
+            ToolUsage(
+                tool_name=row["tool_name"],
+                count=row["count"],
+                avg_duration_ms=int(row["avg_duration"] or 0),
+                error_count=row["error_count"] or 0,
+            )
+            for row in tool_rows
+        ]
+
+    async def _get_user_skill_usage(
+        self,
+        user_id: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> list[SkillUsage]:
+        """Get skill usage for a user."""
+        skill_query = """
+            SELECT skill_name, COUNT(*) as count,
+                   AVG(duration_ms) as avg_duration
+            FROM swe_tracing_spans
+            WHERE user_id = %s AND start_time >= %s AND start_time <= %s
+              AND event_type = 'skill_invocation'
+              AND skill_name IS NOT NULL
+            GROUP BY skill_name
+            ORDER BY count DESC
+        """
+        skill_rows = await self.db.fetch_all(
+            skill_query,
+            (user_id, start_date, end_date),
+        )
+        return [
+            SkillUsage(
+                skill_name=row["skill_name"],
+                count=row["count"],
+                avg_duration_ms=int(row["avg_duration"] or 0),
+            )
+            for row in skill_rows
+        ]
+
+    def _build_user_stats(
+        self,
+        user_id: str,
+        stats_row: Optional[dict],
+        model_usage: list[ModelUsage],
+        tools_used: list[ToolUsage],
+        skills_used: list[SkillUsage],
+    ) -> UserStats:
+        """Build UserStats from collected data."""
+        return UserStats(
+            user_id=user_id,
+            model_usage=model_usage,
+            total_tokens=stats_row["total_tokens"] if stats_row else 0,
+            input_tokens=stats_row["input_tokens"] if stats_row else 0,
+            output_tokens=stats_row["output_tokens"] if stats_row else 0,
+            total_sessions=stats_row["total_sessions"] if stats_row else 0,
+            total_conversations=stats_row["total_conversations"]
+            if stats_row
+            else 0,
+            avg_duration_ms=int(stats_row["avg_duration"] or 0)
+            if stats_row
+            else 0,
+            tools_used=tools_used,
+            skills_used=skills_used,
+        )
+
     async def get_user_stats(
         self,
         user_id: str,
@@ -520,98 +666,29 @@ class TraceStore:
             (user_id, start_date, end_date),
         )
 
-        # Get model usage
-        model_query = """
-            SELECT model_name, COUNT(*) as count,
-                   SUM(total_input_tokens) as input_tokens,
-                   SUM(total_output_tokens) as output_tokens,
-                   SUM(total_tokens) as total_tokens
-            FROM swe_tracing_traces
-            WHERE user_id = %s AND start_time >= %s AND start_time <= %s
-                  AND model_name IS NOT NULL
-            GROUP BY model_name
-            ORDER BY count DESC
-        """
-        model_rows = await self.db.fetch_all(
-            model_query,
-            (user_id, start_date, end_date),
+        # Get usage data in parallel
+        model_usage = await self._get_user_model_usage(
+            user_id,
+            start_date,
+            end_date,
         )
-        model_usage = [
-            ModelUsage(
-                model_name=row["model_name"],
-                count=row["count"],
-                total_tokens=row["total_tokens"] or 0,
-                input_tokens=row["input_tokens"] or 0,
-                output_tokens=row["output_tokens"] or 0,
-            )
-            for row in model_rows
-        ]
-
-        # Get tool usage
-        tool_query = """
-            SELECT tool_name, COUNT(*) as count,
-                   AVG(duration_ms) as avg_duration,
-                   SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) as error_count
-            FROM swe_tracing_spans
-            WHERE user_id = %s AND start_time >= %s AND start_time <= %s
-              AND event_type = 'tool_call_end'
-              AND tool_name IS NOT NULL
-            GROUP BY tool_name
-            ORDER BY count DESC
-        """
-        tool_rows = await self.db.fetch_all(
-            tool_query,
-            (user_id, start_date, end_date),
+        tools_used = await self._get_user_tool_usage(
+            user_id,
+            start_date,
+            end_date,
         )
-        tools_used = [
-            ToolUsage(
-                tool_name=row["tool_name"],
-                count=row["count"],
-                avg_duration_ms=int(row["avg_duration"] or 0),
-                error_count=row["error_count"] or 0,
-            )
-            for row in tool_rows
-        ]
-
-        # Get skill usage
-        skill_query = """
-            SELECT skill_name, COUNT(*) as count,
-                   AVG(duration_ms) as avg_duration
-            FROM swe_tracing_spans
-            WHERE user_id = %s AND start_time >= %s AND start_time <= %s
-              AND event_type = 'skill_invocation'
-              AND skill_name IS NOT NULL
-            GROUP BY skill_name
-            ORDER BY count DESC
-        """
-        skill_rows = await self.db.fetch_all(
-            skill_query,
-            (user_id, start_date, end_date),
+        skills_used = await self._get_user_skill_usage(
+            user_id,
+            start_date,
+            end_date,
         )
-        skills_used = [
-            SkillUsage(
-                skill_name=row["skill_name"],
-                count=row["count"],
-                avg_duration_ms=int(row["avg_duration"] or 0),
-            )
-            for row in skill_rows
-        ]
 
-        return UserStats(
-            user_id=user_id,
-            model_usage=model_usage,
-            total_tokens=stats_row["total_tokens"] if stats_row else 0,
-            input_tokens=stats_row["input_tokens"] if stats_row else 0,
-            output_tokens=stats_row["output_tokens"] if stats_row else 0,
-            total_sessions=stats_row["total_sessions"] if stats_row else 0,
-            total_conversations=stats_row["total_conversations"]
-            if stats_row
-            else 0,
-            avg_duration_ms=int(stats_row["avg_duration"] or 0)
-            if stats_row
-            else 0,
-            tools_used=tools_used,
-            skills_used=skills_used,
+        return self._build_user_stats(
+            user_id,
+            stats_row,
+            model_usage,
+            tools_used,
+            skills_used,
         )
 
     async def get_traces(
