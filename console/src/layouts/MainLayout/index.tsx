@@ -34,10 +34,8 @@ import SecurityPage from "../../pages/Settings/Security";
 import TokenUsagePage from "../../pages/Settings/TokenUsage";
 import VoiceTranscriptionPage from "../../pages/Settings/VoiceTranscription";
 import AgentsPage from "../../pages/Settings/Agents";
-
-// ==================== iframe 集成 (Kun He) ====================
-// iframe 上下文存储，用于获取 hideMenu 状态
-// ==================== iframe 集成结束 ====================
+import AnalyticsPage from "../../pages/Analytics";
+import InstancePage from "../../pages/Instance";
 
 const { Content } = Layout;
 
@@ -59,6 +57,15 @@ const pathToKey: Record<string, string> = {
   "/security": "security",
   "/token-usage": "token-usage",
   "/voice-transcription": "voice-transcription",
+  "/analytics/overview": "analytics-overview",
+  "/analytics/users": "analytics-users",
+  "/analytics/sessions": "analytics-sessions",
+  "/analytics/messages": "analytics-messages",
+  "/analytics/traces": "analytics-traces",
+  "/instance/overview": "instance-overview",
+  "/instance/instances": "instance-instances",
+  "/instance/allocations": "instance-allocations",
+  "/instance/logs": "instance-logs",
 };
 
 export default function MainLayout() {
@@ -110,6 +117,8 @@ export default function MainLayout() {
                 path="/voice-transcription"
                 element={<VoiceTranscriptionPage />}
               />
+              <Route path="/analytics/*" element={<AnalyticsPage />} />
+              <Route path="/instance/*" element={<InstancePage />} />
             </Routes>
           </div>
         </Content>

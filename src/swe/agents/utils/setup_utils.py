@@ -214,3 +214,127 @@ def copy_builtin_qa_md_files(
     )
     _remove_bootstrap_from_workspace(workspace_dir)
     return copied_files
+
+
+def _get_tenant_directories(
+    tenant_id: str | None = None,
+) -> tuple[Path, Path]:
+    """Get working and secret directories for a tenant.
+
+    Args:
+        tenant_id: Tenant identifier. None uses current runtime tenant.
+
+    Returns:
+        Tuple of (working_dir, secret_dir).
+    """
+    from ...constant import SECRET_DIR, WORKING_DIR
+
+    if tenant_id is not None:
+        return WORKING_DIR / tenant_id, SECRET_DIR / tenant_id
+
+    from ...config.context import get_current_tenant_id
+
+    current_tenant = get_current_tenant_id()
+    if current_tenant:
+        return WORKING_DIR / current_tenant, SECRET_DIR / current_tenant
+    return WORKING_DIR, SECRET_DIR
+
+
+def _copy_single_file(
+    src: Path,
+    dst: Path,
+    skip_existing: bool,
+    force: bool,
+) -> bool:
+    """Copy a single file with skip/force logic.
+
+    Args:
+        src: Source file path.
+        dst: Destination file path.
+        skip_existing: Skip if destination exists.
+        force: Force overwrite.
+
+    Returns:
+        True if file was copied, False otherwise.
+    """
+    if not src.exists():
+        logger.warning("Source file not found: %s", src)
+        return False
+
+    if skip_existing and dst.exists():
+        logger.debug("Skipped existing file: %s", dst.name)
+        return False
+
+    if not force and dst.exists():
+        return False
+
+    try:
+        shutil.copy2(src, dst)
+        logger.info("Copied %s to %s", src.name, dst)
+        return True
+    except Exception as e:
+        logger.error("Failed to copy %s: %s", src.name, e)
+        return False
+
+
+def copy_init_config_files(
+    tenant_id: str | None = None,
+    force: bool = False,
+    skip_existing: bool = False,
+) -> tuple[bool, bool]:
+    """Copy config.json and providers.json from md_files to tenant directories.
+
+    This function copies the template configuration files to initialize
+    model, MCP, and channel settings for a tenant.
+
+    Args:
+        tenant_id: Tenant identifier for subdirectory isolation.
+                   None uses the current runtime tenant directory.
+        force: If True, overwrite existing files.
+        skip_existing: If True, skip files that already exist (takes precedence
+                       over force when both are True).
+
+    Returns:
+        Tuple of (config_copied, providers_copied) indicating which files
+        were copied.
+    """
+    import os
+
+    md_files_dir = Path(__file__).parent.parent / "md_files"
+    working_dir, secret_dir = _get_tenant_directories(tenant_id)
+
+    # Create directories if needed
+    working_dir.mkdir(parents=True, exist_ok=True)
+    secret_dir.mkdir(parents=True, exist_ok=True)
+
+    # Set secure permissions on secret directory
+    try:
+        os.chmod(secret_dir, 0o700)
+    except OSError:
+        pass
+
+    # Copy config.json
+    config_copied = _copy_single_file(
+        md_files_dir / "config.json",
+        working_dir / "config.json",
+        skip_existing,
+        force,
+    )
+
+    # Copy providers.json
+    dst_providers = secret_dir / "providers.json"
+    providers_copied = _copy_single_file(
+        md_files_dir / "providers.json",
+        dst_providers,
+        skip_existing,
+        force,
+    )
+
+    # Set secure permissions on providers.json
+    if providers_copied:
+        try:
+            os.chmod(dst_providers, 0o600)
+        except OSError:
+            pass
+
+    return config_copied, providers_copied

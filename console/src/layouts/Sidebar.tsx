@@ -37,6 +37,13 @@ import {
   SparkMenuExpandLine,
   SparkMenuFoldLine,
   SparkOtherLine,
+  SparkBarChartLine,
+  SparkMessageLine,
+  SparkSearchLine,
+  SparkFileTxtLine,
+  SparkDevicesLine,
+  SparkAdvancedMonitoringLine,
+  SparkAuditLogLine,
 } from "@agentscope-ai/icons";
 import { clearAuthToken } from "../api/config";
 import { authApi } from "../api/modules/auth";
@@ -236,6 +243,60 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       path: "/voice-transcription",
       label: t("nav.voiceTranscription"),
     },
+    {
+      key: "analytics-overview",
+      icon: <SparkBarChartLine size={18} />,
+      path: "/analytics/overview",
+      label: t("nav.analyticsOverview", "Overview"),
+    },
+    {
+      key: "analytics-users",
+      icon: <SparkUserGroupLine size={18} />,
+      path: "/analytics/users",
+      label: t("nav.analyticsUsers", "Users"),
+    },
+    {
+      key: "analytics-sessions",
+      icon: <SparkMessageLine size={18} />,
+      path: "/analytics/sessions",
+      label: t("nav.analyticsSessions", "Sessions"),
+    },
+    {
+      key: "analytics-messages",
+      icon: <SparkSearchLine size={18} />,
+      path: "/analytics/messages",
+      label: t("nav.analyticsMessages", "Messages"),
+    },
+    {
+      key: "analytics-traces",
+      icon: <SparkFileTxtLine size={18} />,
+      path: "/analytics/traces",
+      label: t("nav.analyticsTraces", "Traces"),
+    },
+    {
+      key: "instance-overview",
+      icon: <SparkAdvancedMonitoringLine size={18} />,
+      path: "/instance/overview",
+      label: t("nav.instanceOverview", "Overview"),
+    },
+    {
+      key: "instance-instances",
+      icon: <SparkDevicesLine size={18} />,
+      path: "/instance/instances",
+      label: t("nav.instanceInstances", "Instances"),
+    },
+    {
+      key: "instance-allocations",
+      icon: <SparkOtherLine size={18} />,
+      path: "/instance/allocations",
+      label: t("nav.instanceAllocations", "Allocations"),
+    },
+    {
+      key: "instance-logs",
+      icon: <SparkAuditLogLine size={18} />,
+      path: "/instance/logs",
+      label: t("nav.instanceLogs", "Logs"),
+    },
   ];
 
   // ── Menu items ────────────────────────────────────────────────────────────
@@ -341,6 +402,63 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
           key: "voice-transcription",
           label: collapsed ? null : t("nav.voiceTranscription"),
           icon: <SparkMicLine size={16} />,
+        },
+      ],
+    },
+    {
+      key: "analytics-group",
+      label: collapsed ? null : t("nav.analytics", "Analytics"),
+      children: [
+        {
+          key: "analytics-overview",
+          label: collapsed ? null : t("nav.analyticsOverview", "Overview"),
+          icon: <SparkBarChartLine size={16} />,
+        },
+        {
+          key: "analytics-users",
+          label: collapsed ? null : t("nav.analyticsUsers", "Users"),
+          icon: <SparkUserGroupLine size={16} />,
+        },
+        {
+          key: "analytics-sessions",
+          label: collapsed ? null : t("nav.analyticsSessions", "Sessions"),
+          icon: <SparkMessageLine size={16} />,
+        },
+        {
+          key: "analytics-messages",
+          label: collapsed ? null : t("nav.analyticsMessages", "Messages"),
+          icon: <SparkSearchLine size={16} />,
+        },
+        {
+          key: "analytics-traces",
+          label: collapsed ? null : t("nav.analyticsTraces", "Traces"),
+          icon: <SparkFileTxtLine size={16} />,
+        },
+      ],
+    },
+    {
+      key: "instance-group",
+      label: collapsed ? null : t("nav.instance", "Instance"),
+      children: [
+        {
+          key: "instance-overview",
+          label: collapsed ? null : t("nav.instanceOverview", "Overview"),
+          icon: <SparkAdvancedMonitoringLine size={16} />,
+        },
+        {
+          key: "instance-instances",
+          label: collapsed ? null : t("nav.instanceInstances", "Instances"),
+          icon: <SparkDevicesLine size={16} />,
+        },
+        {
+          key: "instance-allocations",
+          label: collapsed ? null : t("nav.instanceAllocations", "Allocations"),
+          icon: <SparkOtherLine size={16} />,
+        },
+        {
+          key: "instance-logs",
+          label: collapsed ? null : t("nav.instanceLogs", "Logs"),
+          icon: <SparkAuditLogLine size={16} />,
         },
       ],
     },
