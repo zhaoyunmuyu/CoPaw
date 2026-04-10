@@ -1123,6 +1123,7 @@ class ServiceHeartbeatConfig(BaseModel):
     - SWE_SERVICE_HEARTBEAT_INTERVAL: 心跳间隔秒数（默认30）
     - SWE_SERVICE_HEARTBEAT_INSTANCE_PORT: 实例端口（默认8088）
     - SWE_SERVICE_HEARTBEAT_WEIGHT: 权重（默认1）
+    - SWE_SERVICE_HEARTBEAT_SERVICE_NAME: 服务名称（默认swe）
 
     容器自带的环境变量（自动获取，无需配置）：
     - CMB_CAAS_SERVICEUNITID: 服务单元标识
@@ -1144,8 +1145,11 @@ class ServiceHeartbeatConfig(BaseModel):
 
     @property
     def service_name(self) -> str:
-        """服务名称，固定为 swe。"""
-        return "swe"
+        """从环境变量获取服务名称。"""
+        return EnvVarLoader.get_str(
+            "SWE_SERVICE_HEARTBEAT_SERVICE_NAME",
+            "swe",
+        )
 
     @property
     def url(self) -> str:

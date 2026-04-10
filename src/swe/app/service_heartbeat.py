@@ -15,13 +15,14 @@
 - SWE_SERVICE_HEARTBEAT_INTERVAL: 心跳间隔秒数（默认30）
 - SWE_SERVICE_HEARTBEAT_INSTANCE_PORT: 实例端口（默认8088）
 - SWE_SERVICE_HEARTBEAT_WEIGHT: 权重（默认1）
+- SWE_SERVICE_HEARTBEAT_SERVICE_NAME: 服务名称（默认swe）
 
 容器自带的环境变量（自动获取，无需配置）：
 - CMB_CAAS_SERVICEUNITID: 服务单元标识
 - CMB_CLUSTER: 可用区标识
 
 接口入参：
-- serviceName: String, 必填, 服务名称（固定为swe）
+- serviceName: String, 必填, 服务名称（默认swe）
 - serviceUnit: String, 可选, 服务单元标识（容器自带CMB_CAAS_SERVICEUNITID）
 - az: String, 可选, 可用区标识（容器自带CMB_CLUSTER）
 - instanceIp: String, 必填, 实例IP（从/etc/hosts读取）
