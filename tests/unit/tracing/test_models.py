@@ -3,7 +3,7 @@
 
 from datetime import datetime
 
-from copaw.tracing.models import (
+from swe.tracing.models import (
     EventType,
     Span,
     Trace,

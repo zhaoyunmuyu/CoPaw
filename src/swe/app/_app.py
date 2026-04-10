@@ -19,21 +19,6 @@ from ..constant import (
     LOG_LEVEL_ENV,
     CORS_ORIGINS,
     WORKING_DIR,
-    DB_HOST,
-    DB_PORT,
-    DB_USER,
-    DB_PASSWORD,
-    DB_NAME,
-    DB_MIN_CONN,
-    DB_MAX_CONN,
-    # Backward compatibility
-    TRACING_DB_HOST,
-    TRACING_DB_PORT,
-    TRACING_DB_USER,
-    TRACING_DB_PASSWORD,
-    TRACING_DB_NAME,
-    TRACING_DB_MIN_CONN,
-    TRACING_DB_MAX_CONN,
 )
 from ..__version__ import __version__
 from ..utils.logging import setup_logger, add_swe_file_handler
@@ -52,7 +37,7 @@ from .migration import (
 )
 from .channels.registry import register_custom_channel_routes
 from ..tracing import init_trace_manager, close_trace_manager
-from ..database import DatabaseConfig
+from ..database import get_database_config
 from .service_heartbeat import start_service_heartbeat, stop_service_heartbeat
 
 # Apply log level on load so reload child process gets same level as CLI.
@@ -221,60 +206,94 @@ async def lifespan(
     # are initialized on-demand via their respective feature entrypoints.
     # See design.md for lazy-loading architecture.
 
+    # --- Initialize database connection (required for tracing and instance modules) ---
+    db_connection = None
+    database_config = get_database_config()
+    logger.info(
+        "Database config: host=%s, port=%s, database=%s",
+        database_config.host,
+        database_config.port,
+        database_config.database,
+    )
+
+    if database_config.host and database_config.host != "localhost":
+        try:
+            from ..database import DatabaseConnection
+
+            db_connection = DatabaseConnection(database_config)
+            await db_connection.connect()
+            logger.info(
+                "Database connection established: %s",
+                database_config.host,
+            )
+        except Exception as e:
+            import traceback
+
+            logger.error(
+                "Failed to initialize database connection: %s\n%s",
+                e,
+                traceback.format_exc(),
+            )
+            raise RuntimeError(
+                "Database connection is required. Please check database configuration.",
+            ) from e
+    else:
+        raise RuntimeError(
+            "Database host is required. Please configure SWE_DB_HOST environment variable.",
+        )
+
     # --- Initialize tracing manager ---
     try:
-        from ..config.config import load_agent_config
         from ..tracing.config import TracingConfig
 
-        agent_config = load_agent_config("default")
-        tracing_config = agent_config.running.tracing
+        # Check tracing enabled from environment directly
+        tracing_enabled = os.environ.get(
+            "SWE_TRACING_ENABLED",
+            "false",
+        ).lower() in ("true", "1", "yes")
 
-        # Check if database is configured via environment variables
-        # Support both new DB_* and legacy TRACING_DB_* env vars
-        db_host = DB_HOST or TRACING_DB_HOST
-        if db_host:
-            database_config = DatabaseConfig(
-                host=db_host,
-                port=DB_PORT or TRACING_DB_PORT,
-                user=DB_USER or TRACING_DB_USER,
-                password=DB_PASSWORD or TRACING_DB_PASSWORD,
-                database=DB_NAME or TRACING_DB_NAME,
-                min_connections=DB_MIN_CONN or TRACING_DB_MIN_CONN,
-                max_connections=DB_MAX_CONN or TRACING_DB_MAX_CONN,
-            )
+        if tracing_enabled:
+            # Read tracing config from environment
+            def get_int(key: str, default: int) -> int:
+                try:
+                    return int(os.environ.get(key, str(default)))
+                except (TypeError, ValueError):
+                    return default
+
             tracing_config = TracingConfig(
-                enabled=tracing_config.enabled,
-                batch_size=tracing_config.batch_size,
-                flush_interval=tracing_config.flush_interval,
-                retention_days=tracing_config.retention_days,
-                sanitize_output=tracing_config.sanitize_output,
-                max_output_length=tracing_config.max_output_length,
-                storage_path=tracing_config.storage_path,
-                database=database_config,
+                enabled=True,
+                batch_size=get_int("SWE_TRACING_BATCH_SIZE", 100),
+                flush_interval=get_int("SWE_TRACING_FLUSH_INTERVAL", 5),
+                retention_days=get_int("SWE_TRACING_RETENTION_DAYS", 30),
+                sanitize_output=os.environ.get(
+                    "SWE_TRACING_SANITIZE_OUTPUT",
+                    "true",
+                ).lower()
+                in ("true", "1", "yes"),
+                max_output_length=get_int(
+                    "SWE_TRACING_MAX_OUTPUT_LENGTH",
+                    500,
+                ),
+                database=db_connection.config,
             )
-            storage_path = (
-                Path(tracing_config.storage_path)
-                if tracing_config.storage_path
-                else WORKING_DIR / "tracing"
-            )
-            await init_trace_manager(tracing_config, storage_path)
-            logger.info(
-                "Tracing manager initialized (database storage: %s)",
-                db_host,
-            )
+            await init_trace_manager(tracing_config, db_connection)
+            logger.info("Tracing manager initialized")
         else:
-            storage_path = (
-                Path(tracing_config.storage_path)
-                if tracing_config.storage_path
-                else WORKING_DIR / "tracing"
-            )
-            await init_trace_manager(tracing_config, storage_path)
-            logger.info(
-                "Tracing manager initialized (JSON file storage, enabled: %s)",
-                tracing_config.enabled,
-            )
+            logger.info("Tracing is disabled via SWE_TRACING_ENABLED")
     except Exception as e:
-        logger.warning("Failed to initialize tracing manager: %s", e)
+        import traceback
+
+        logger.warning(
+            "Failed to initialize tracing manager: %s\n%s",
+            e,
+            traceback.format_exc(),
+        )
+
+    # --- Initialize instance module ---
+    from .instance.router import init_instance_module
+
+    init_instance_module(db_connection)
+    logger.info("Instance module initialized")
 
     startup_elapsed = time.time() - startup_start_time
     logger.info(
@@ -294,6 +313,14 @@ async def lifespan(
             logger.info("Tracing manager closed")
         except Exception as e:
             logger.warning("Error closing tracing manager: %s", e)
+
+        # Close database connection
+        if db_connection:
+            try:
+                await db_connection.close()
+                logger.info("Database connection closed")
+            except Exception as e:
+                logger.warning("Error closing database connection: %s", e)
 
         # 停止服务心跳并发送关闭信号
         await stop_service_heartbeat()

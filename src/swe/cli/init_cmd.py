@@ -154,6 +154,13 @@ def init_cmd(
     default_workspace = tenant_dir / "workspaces" / "default"
     working_dir = tenant_dir
 
+    # --- Determine init mode ---
+    # default tenant: use md_files templates (like --defaults)
+    # non-default tenant: copy from default tenant, non-interactive
+    is_default_tenant = tenant_id == "default"
+    # Both default and non-default tenants are non-interactive
+    use_defaults = True
+
     click.echo(f"Working dir: {working_dir}")
 
     # --- Security warning: must accept to continue ---
@@ -198,26 +205,60 @@ def init_cmd(
                 mark_telemetry_collected(WORKING_DIR, opted_out=True)
 
     # --- Copy init config files (config.json and providers.json templates) ---
-    # Must be done BEFORE TenantInitializer.initialize_full() because that
-    # creates an empty config.json via ensure_default_agent()
-    from ..agents.utils import copy_init_config_files
+    # default tenant: use md_files templates
+    # non-default tenant: copy from default tenant directory
+    if is_default_tenant:
+        from ..agents.utils import copy_init_config_files
 
-    click.echo("\n=== Initial Configuration Files ===")
-    config_copied, providers_copied = copy_init_config_files(
-        tenant_id=tenant_id,
-        force=force,
-        skip_existing=False,  # Always copy templates, they will be merged later
-    )
-    if config_copied:
-        click.echo("✓ Copied config.json template (channels, MCP settings)")
-    else:
-        click.echo("✓ config.json already exists or not copied")
-    if providers_copied:
-        click.echo(
-            "✓ Copied providers.json template (model provider settings)",
+        click.echo("\n=== Initial Configuration Files ===")
+        config_copied, providers_copied = copy_init_config_files(
+            tenant_id=tenant_id,
+            force=force,
+            skip_existing=False,
         )
+        if config_copied:
+            click.echo(
+                "✓ Copied config.json template (channels, MCP settings)",
+            )
+        else:
+            click.echo("✓ config.json already exists or not copied")
+        if providers_copied:
+            click.echo(
+                "✓ Copied providers.json template (model provider settings)",
+            )
+        else:
+            click.echo("✓ providers.json already exists or not copied")
     else:
-        click.echo("✓ providers.json already exists or not copied")
+        # Non-default tenant: copy from default tenant
+        click.echo("\n=== Copying from default tenant ===")
+        temp_initializer = TenantInitializer(WORKING_DIR, tenant_id)
+        seed_result = temp_initializer.seed_tenant_config_from_default(
+            overwrite=True,
+        )
+        providers_result = temp_initializer.seed_providers_from_default(
+            overwrite=True,
+        )
+        if seed_result.get("seeded"):
+            click.echo("✓ Copied config.json from default tenant")
+        else:
+            click.echo(
+                "⚠ Failed to copy config.json from default tenant, "
+                "will use md_files template",
+            )
+            from ..agents.utils import copy_init_config_files
+
+            copy_init_config_files(
+                tenant_id=tenant_id,
+                force=True,
+                skip_existing=False,
+            )
+        if providers_result.get("seeded"):
+            click.echo("✓ Copied providers.json from default tenant")
+        else:
+            click.echo(
+                "⚠ Failed to copy providers.json from default tenant, "
+                "skipping",
+            )
 
     # --- Bootstrap tenant directory structure ---
     click.echo("\n=== Default Workspace Initialization ===")
@@ -242,124 +283,129 @@ def init_cmd(
     click.echo("✓ Builtin QA agent workspace ensured")
 
     # --- config.json ---
-    write_config = True
-    if config_path.is_file() and not force and not use_defaults:
-        prompt_text = (
-            f"{config_path} exists. Do you want to overwrite it? "
-            '("no" for skipping the configuration process)'
-        )
-        write_config = prompt_confirm(prompt_text, default=False)
-    if not write_config:
-        click.echo("Skipping configuration.")
+    # For non-default tenant, config is already copied from default tenant
+    # Skip the heartbeat and other config modifications
+    if not is_default_tenant:
+        click.echo("✓ Configuration copied from default tenant")
     else:
-        if use_defaults:
-            every = HEARTBEAT_DEFAULT_EVERY
-            target = "main"
-            active_hours = None
+        write_config = True
+        if config_path.is_file() and not force and not use_defaults:
+            prompt_text = (
+                f"{config_path} exists. Do you want to overwrite it? "
+                '("no" for skipping the configuration process)'
+            )
+            write_config = prompt_confirm(prompt_text, default=False)
+        if not write_config:
+            click.echo("Skipping configuration.")
         else:
-            click.echo("\n=== Heartbeat Configuration ===")
-            every = click.prompt(
-                "Heartbeat interval (e.g. 30m, 1h)",
-                default=HEARTBEAT_DEFAULT_EVERY,
-                type=str,
-            ).strip()
+            if use_defaults:
+                every = HEARTBEAT_DEFAULT_EVERY
+                target = "main"
+                active_hours = None
+            else:
+                click.echo("\n=== Heartbeat Configuration ===")
+                every = click.prompt(
+                    "Heartbeat interval (e.g. 30m, 1h)",
+                    default=HEARTBEAT_DEFAULT_EVERY,
+                    type=str,
+                ).strip()
 
-            target = prompt_choice(
-                "Heartbeat target:",
-                options=["main", "last"],
-                default="main",
-            ).lower()
+                target = prompt_choice(
+                    "Heartbeat target:",
+                    options=["main", "last"],
+                    default="main",
+                ).lower()
 
-            use_active = prompt_confirm(
-                "Set active hours for heartbeat? (skip = run 24h)",
+                use_active = prompt_confirm(
+                    "Set active hours for heartbeat? (skip = run 24h)",
+                    default=False,
+                )
+                active_hours = None
+                if use_active:
+                    start = click.prompt(
+                        "Active start (HH:MM)",
+                        default="08:00",
+                        type=str,
+                    )
+                    end = click.prompt(
+                        "Active end (HH:MM)",
+                        default="22:00",
+                        type=str,
+                    )
+                    active_hours = ActiveHoursConfig(
+                        start=start.strip(),
+                        end=end.strip(),
+                    )
+
+            hb = HeartbeatConfig(
+                every=every or HEARTBEAT_DEFAULT_EVERY,
+                target=target or "main",
+                active_hours=active_hours,
+            )
+            existing = (
+                load_config(config_path) if config_path.is_file() else Config()
+            )
+            # Ensure agents.defaults exists
+            if existing.agents.defaults is None:
+                from ..config.config import AgentsDefaultsConfig
+
+                existing.agents.defaults = AgentsDefaultsConfig()
+            existing.agents.defaults.heartbeat = hb
+
+            # --- show_tool_details ---
+            if use_defaults:
+                existing.show_tool_details = True
+            else:
+                existing.show_tool_details = prompt_confirm(
+                    "Show tool call/result details in channel messages?",
+                    default=True,
+                )
+
+            # --- language selection ---
+            if not use_defaults:
+                language = prompt_choice(
+                    "Select language for MD files:",
+                    options=["zh", "en", "ru"],
+                    default=existing.agents.language,
+                )
+                existing.agents.language = language
+
+            # --- audio mode selection ---
+            if not use_defaults:
+                audio_mode = prompt_choice(
+                    "Select audio mode for voice messages:\n"
+                    "  auto   - transcribe if provider available, else file placeholder\n"
+                    "  native - send audio directly to model (needs ffmpeg)\n"
+                    "Audio mode:",
+                    options=["auto", "native"],
+                    default=existing.agents.audio_mode,
+                )
+                existing.agents.audio_mode = audio_mode
+
+            # --- transcription provider type selection ---
+            if not use_defaults and audio_mode != "native":
+                provider_type = prompt_choice(
+                    "Select transcription provider:\n"
+                    "  disabled       - no transcription\n"
+                    "  whisper_api    - remote Whisper API endpoint\n"
+                    "  local_whisper  - locally installed openai-whisper\n"
+                    "                   (requires ffmpeg + openai-whisper)\n"
+                    "Provider:",
+                    options=["disabled", "whisper_api", "local_whisper"],
+                    default=existing.agents.transcription_provider_type,
+                )
+                existing.agents.transcription_provider_type = provider_type
+
+            # --- channels (interactive when not --defaults) ---
+            if not use_defaults and prompt_confirm(
+                "Configure channels? "
+                "(iMessage/Discord/DingTalk/Feishu/QQ/Console)",
                 default=False,
-            )
-            active_hours = None
-            if use_active:
-                start = click.prompt(
-                    "Active start (HH:MM)",
-                    default="08:00",
-                    type=str,
-                )
-                end = click.prompt(
-                    "Active end (HH:MM)",
-                    default="22:00",
-                    type=str,
-                )
-                active_hours = ActiveHoursConfig(
-                    start=start.strip(),
-                    end=end.strip(),
-                )
+            ):
+                configure_channels_interactive(existing)
 
-        hb = HeartbeatConfig(
-            every=every or HEARTBEAT_DEFAULT_EVERY,
-            target=target or "main",
-            active_hours=active_hours,
-        )
-        existing = (
-            load_config(config_path) if config_path.is_file() else Config()
-        )
-        # Ensure agents.defaults exists
-        if existing.agents.defaults is None:
-            from ..config.config import AgentsDefaultsConfig
-
-            existing.agents.defaults = AgentsDefaultsConfig()
-        existing.agents.defaults.heartbeat = hb
-
-        # --- show_tool_details ---
-        if use_defaults:
-            existing.show_tool_details = True
-        else:
-            existing.show_tool_details = prompt_confirm(
-                "Show tool call/result details in channel messages?",
-                default=True,
-            )
-
-        # --- language selection ---
-        if not use_defaults:
-            language = prompt_choice(
-                "Select language for MD files:",
-                options=["zh", "en", "ru"],
-                default=existing.agents.language,
-            )
-            existing.agents.language = language
-
-        # --- audio mode selection ---
-        if not use_defaults:
-            audio_mode = prompt_choice(
-                "Select audio mode for voice messages:\n"
-                "  auto   - transcribe if provider available, else file placeholder\n"
-                "  native - send audio directly to model (needs ffmpeg)\n"
-                "Audio mode:",
-                options=["auto", "native"],
-                default=existing.agents.audio_mode,
-            )
-            existing.agents.audio_mode = audio_mode
-
-        # --- transcription provider type selection ---
-        if not use_defaults and audio_mode != "native":
-            provider_type = prompt_choice(
-                "Select transcription provider:\n"
-                "  disabled       - no transcription\n"
-                "  whisper_api    - remote Whisper API endpoint\n"
-                "  local_whisper  - locally installed openai-whisper\n"
-                "                   (requires ffmpeg + openai-whisper)\n"
-                "Provider:",
-                options=["disabled", "whisper_api", "local_whisper"],
-                default=existing.agents.transcription_provider_type,
-            )
-            existing.agents.transcription_provider_type = provider_type
-
-        # --- channels (interactive when not --defaults) ---
-        if not use_defaults and prompt_confirm(
-            "Configure channels? "
-            "(iMessage/Discord/DingTalk/Feishu/QQ/Console)",
-            default=False,
-        ):
-            configure_channels_interactive(existing)
-
-        save_config(existing, config_path)
-        click.echo(f"\n✓ Configuration saved to {config_path}")
+            save_config(existing, config_path)
+            click.echo(f"\n✓ Configuration saved to {config_path}")
 
     # --- LLM provider and model configuration ---
     provider_manager = ProviderManager.get_instance()

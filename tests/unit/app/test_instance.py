@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from copaw.app.instance.models import (
+from swe.app.instance.models import (
     CreateInstanceRequest,
     DeleteAllocationRequest,
     Instance,
@@ -19,8 +19,8 @@ from copaw.app.instance.models import (
     UserAllocation,
     UserAllocationStatus,
 )
-from copaw.app.instance.service import InstanceService
-from copaw.app.instance.store import InstanceStore, calculate_warning_level
+from swe.app.instance.service import InstanceService
+from swe.app.instance.store import InstanceStore, calculate_warning_level
 
 
 class TestCalculateWarningLevel:
@@ -681,10 +681,10 @@ class TestRouter:
     @pytest.mark.asyncio
     async def test_get_overview(self, mock_service):
         """Test GET /instance/overview endpoint."""
-        from copaw.app.instance.router import get_overview
+        from swe.app.instance.router import get_overview
 
         with patch(
-            "copaw.app.instance.router.get_service",
+            "swe.app.instance.router.get_service",
             return_value=mock_service,
         ):
             result = await get_overview()
@@ -694,10 +694,10 @@ class TestRouter:
     @pytest.mark.asyncio
     async def test_list_sources(self, mock_service):
         """Test GET /instance/sources endpoint."""
-        from copaw.app.instance.router import list_sources
+        from swe.app.instance.router import list_sources
 
         with patch(
-            "copaw.app.instance.router.get_service",
+            "swe.app.instance.router.get_service",
             return_value=mock_service,
         ):
             result = await list_sources()
@@ -707,10 +707,10 @@ class TestRouter:
     @pytest.mark.asyncio
     async def test_list_instances(self, mock_service):
         """Test GET /instance/instances endpoint."""
-        from copaw.app.instance.router import list_instances
+        from swe.app.instance.router import list_instances
 
         with patch(
-            "copaw.app.instance.router.get_service",
+            "swe.app.instance.router.get_service",
             return_value=mock_service,
         ):
             result = await list_instances()
@@ -720,11 +720,11 @@ class TestRouter:
     @pytest.mark.asyncio
     async def test_get_instance_not_found(self, mock_service):
         """Test GET /instance/instances/{instance_id} returns 404."""
-        from copaw.app.instance.router import get_instance
+        from swe.app.instance.router import get_instance
         from fastapi import HTTPException
 
         with patch(
-            "copaw.app.instance.router.get_service",
+            "swe.app.instance.router.get_service",
             return_value=mock_service,
         ):
             with pytest.raises(HTTPException) as exc_info:
@@ -734,7 +734,7 @@ class TestRouter:
     @pytest.mark.asyncio
     async def test_create_instance_success(self, mock_service):
         """Test POST /instance/instances endpoint."""
-        from copaw.app.instance.router import create_instance
+        from swe.app.instance.router import create_instance
 
         mock_service.create_instance.return_value = Instance(
             instance_id="inst1",
@@ -749,7 +749,7 @@ class TestRouter:
             instance_url="http://localhost:8001",
         )
         with patch(
-            "copaw.app.instance.router.get_service",
+            "swe.app.instance.router.get_service",
             return_value=mock_service,
         ):
             result = await create_instance(request)
@@ -758,7 +758,7 @@ class TestRouter:
     @pytest.mark.asyncio
     async def test_create_instance_validation_error(self, mock_service):
         """Test POST /instance/instances with validation error."""
-        from copaw.app.instance.router import create_instance
+        from swe.app.instance.router import create_instance
         from fastapi import HTTPException
 
         mock_service.create_instance.side_effect = ValueError("实例已存在")
@@ -769,7 +769,7 @@ class TestRouter:
             instance_url="http://localhost:8001",
         )
         with patch(
-            "copaw.app.instance.router.get_service",
+            "swe.app.instance.router.get_service",
             return_value=mock_service,
         ):
             with pytest.raises(HTTPException) as exc_info:
