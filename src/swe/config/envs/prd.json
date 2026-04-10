@@ -27,5 +27,9 @@
   "SWE_TRACING_DB_MIN_CONN": "1",
   "SWE_TRACING_DB_MAX_CONN": "5",
   "SWE_SERVICE_HEARTBEAT_URL": "",
-  "SWE_SERVICE_HEARTBEAT_INTERVAL": "30"
+  "SWE_SERVICE_HEARTBEAT_INTERVAL": "30",
+  "SWE_ZHAOHU_PUSH_URL": "https://agentframework.paas.cmbchina.cn/exp-msg/push",
+  "SWE_ZHAOHU_ROBOT_OPEN_ID": "77D1CCFC2E210ED714ACC3093BFC9BAB",
+  "SWE_ZHAOHU_USER_QUERY_URL": "https://llm-evaluate.paas.cmbchina.cn/evaluate/getYstUserList",
+  "SWE_ZHAOHU_EXTRACT_URL": "http://wplus-slots.paas.cmbchina.cn/api/extract/slots"
 }

@@ -27,5 +27,9 @@
   "SWE_BACKUP_S3_REGION": "cn-north-1",
   "SWE_BACKUP_ENDPOINT_URL": "",
   "SWE_SERVICE_HEARTBEAT_URL": "",
-  "SWE_SERVICE_HEARTBEAT_INTERVAL": "30"
+  "SWE_SERVICE_HEARTBEAT_INTERVAL": "30",
+  "SWE_ZHAOHU_PUSH_URL": "https://agentframework.paasst.cmbchina.cn/exp-msg/push",
+  "SWE_ZHAOHU_ROBOT_OPEN_ID": "4BB6901683AE5BF632E5D00405B3F8AF",
+  "SWE_ZHAOHU_USER_QUERY_URL": "https://lq13gateway.paas.cmbchina.cn/agent-evaluate/evaluate/getYstUserList",
+  "SWE_ZHAOHU_EXTRACT_URL": "http://wplus-slots.paas.cmbchina.cn/api/extract/slots"
 }

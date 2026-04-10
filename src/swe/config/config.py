@@ -98,23 +98,33 @@ class FeishuConfig(BaseChannelConfig):
 
 class ZhaohuConfig(BaseChannelConfig):
     enabled: bool = True
-    # push_url: str = "https://agentframework.paasst.cmbchina.cn/exp-msg/push"  # dev
-    push_url: str = (
-        "https://agentframework.paas.cmbchina.cn/exp-msg/push"  # prd
+    push_url: str = Field(
+        default_factory=lambda: EnvVarLoader.get_str(
+            "SWE_ZHAOHU_PUSH_URL",
+            "https://agentframework.paas.cmbchina.cn/exp-msg/push",
+        ),
     )
     sys_id: str = "RMS"
     filter_thinking: bool = True
-    # robot_open_id: str = "4BB6901683AE5BF632E5D00405B3F8AF"  # dev
-    robot_open_id: str = "77D1CCFC2E210ED714ACC3093BFC9BAB"  # prd
+    robot_open_id: str = Field(
+        default_factory=lambda: EnvVarLoader.get_str(
+            "SWE_ZHAOHU_ROBOT_OPEN_ID",
+            "77D1CCFC2E210ED714ACC3093BFC9BAB",
+        ),
+    )
     channel: str = "ZH"
     net: str = "DMZ"
-    # user_query_url (dev):
-    # "https://lq13gateway.paas.cmbchina.cn/agent-evaluate/evaluate/getYstUserList"
-    user_query_url: str = (
-        "https://llm-evaluate.paas.cmbchina.cn/evaluate/getYstUserList"  # prd
+    user_query_url: str = Field(
+        default_factory=lambda: EnvVarLoader.get_str(
+            "SWE_ZHAOHU_USER_QUERY_URL",
+            "https://llm-evaluate.paas.cmbchina.cn/evaluate/getYstUserList",
+        ),
     )
-    extract_url: str = (
-        "http://wplus-slots.paas.cmbchina.cn/api/extract/slots"  # prd/st
+    extract_url: str = Field(
+        default_factory=lambda: EnvVarLoader.get_str(
+            "SWE_ZHAOHU_EXTRACT_URL",
+            "http://wplus-slots.paas.cmbchina.cn/api/extract/slots",
+        ),
     )
 
 
