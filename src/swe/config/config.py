@@ -1109,13 +1109,16 @@ class ServiceHeartbeatConfig(BaseModel):
     用于服务注册和健康检查，在服务启动时开启后台心跳任务，
     进程结束前发送关闭信号（enabled=false）。
 
-    注意：所有配置项从环境变量读取，支持 Kubernetes 部署场景：
+    需要配置的环境变量：
     - SWE_SERVICE_HEARTBEAT_ENABLED: 是否启用（默认true）
     - SWE_SERVICE_HEARTBEAT_URL: 心跳接口地址（必填）
     - SWE_SERVICE_HEARTBEAT_INTERVAL: 心跳间隔秒数（默认30）
     - SWE_SERVICE_HEARTBEAT_INSTANCE_PORT: 实例端口（默认8088）
     - SWE_SERVICE_HEARTBEAT_WEIGHT: 权重（默认1）
-    - CMB_CAAS_SERVICEUNITID: 服务单元标识（可选）
+
+    容器自带的环境变量（自动获取，无需配置）：
+    - CMB_CAAS_SERVICEUNITID: 服务单元标识
+    - CMB_CLUSTER: 可用区标识
 
     config.json 中无需配置，所有值通过 property 从环境变量动态获取。
     """
