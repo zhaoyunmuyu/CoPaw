@@ -643,8 +643,26 @@ def _do_ensure_default_agent(
     working_dir: Path | None = None,
 ) -> None:
     """Internal implementation of default agent initialization."""
+    from ..agents.utils import copy_init_config_files
+
     wd = Path(working_dir or WORKING_DIR).expanduser()
     config_path = wd / "config.json"
+
+    # Copy init config files from md_files if config doesn't exist
+    if not config_path.exists():
+        logger.info(
+            "Config file not found, copying from md_files templates...",
+        )
+        config_copied, providers_copied = copy_init_config_files(
+            tenant_id=None,  # Use default tenant
+            force=False,
+            skip_existing=False,
+        )
+        if config_copied:
+            logger.info("Copied config.json template")
+        if providers_copied:
+            logger.info("Copied providers.json template")
+
     config = load_config(config_path)
 
     # When an explicit working_dir is given and the loaded default

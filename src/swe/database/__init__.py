@@ -5,12 +5,13 @@ This module provides database configuration and async connection pool
 management for MySQL-compatible databases.
 """
 
-from .config import DatabaseConfig, TDSQLConfig
+from .config import DatabaseConfig, TDSQLConfig, get_database_config
 from .connection import DatabaseConnection, TDSQLConnection
 
 __all__ = [
     # Config
     "DatabaseConfig",
+    "get_database_config",
     "TDSQLConfig",  # Backward compatibility alias
     # Connection
     "DatabaseConnection",

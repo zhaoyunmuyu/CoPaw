@@ -24,34 +24,37 @@ logger = logging.getLogger(__name__)
 
 # Routes that are explicitly exempt from tenant identity requirements
 # These are either truly stateless or system-level endpoints
-TENANT_EXEMPT_ROUTES = frozenset([
-    # Health check endpoints
-    "/health",
-    "/healthz",
-    "/ready",
-    "/readyz",
-    "/alive",
-    # Version endpoint
-    "/api/version",
-    # OpenAPI docs (if enabled)
-    "/docs",
-    "/redoc",
-    "/openapi.json",
-    # Auth endpoints
-    "/api/auth/login",
-    "/api/auth/register",
-    "/api/auth/refresh",
-    "/api/auth/logout",
-    # Static assets
-    "/assets",
-    "/logo.png",
-    "/dark-logo.png",
-    "/swe-symbol.svg",
-    "/swe-dark.png",
-    # Console SPA routes (static files)
-    "/console",
-    "/console/",
-])
+TENANT_EXEMPT_ROUTES = frozenset(
+    [
+        # Health check endpoints
+        "/health",
+        "/healthz",
+        "/ready",
+        "/readyz",
+        "/alive",
+        # Version endpoint
+        "/api/version",
+        # OpenAPI docs (if enabled)
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        # Auth endpoints
+        "/api/auth/login",
+        "/api/auth/register",
+        "/api/auth/refresh",
+        "/api/auth/logout",
+        "/api/zhaohu/callback",
+        # Static assets
+        "/assets",
+        "/logo.png",
+        "/dark-logo.png",
+        "/swe-symbol.svg",
+        "/swe-dark.png",
+        # Console SPA routes (static files)
+        "/console",
+        "/console/",
+    ],
+)
 
 
 def is_tenant_exempt(path: str) -> bool:
@@ -81,12 +84,12 @@ def is_tenant_exempt(path: str) -> bool:
 class TenantIdentityMiddleware(BaseHTTPMiddleware):
     """Middleware to extract and validate tenant identity from headers.
 
-    Reads X-Tenant-Id and X-User-Id headers, validates them, and binds
-the tenant/user context for the duration of the request. Stateful
-    routes require a valid tenant ID; exempt routes skip validation.
+        Reads X-Tenant-Id and X-User-Id headers, validates them, and binds
+    the tenant/user context for the duration of the request. Stateful
+        routes require a valid tenant ID; exempt routes skip validation.
 
-    Middleware ordering: Should be placed early in the middleware stack,
-    before TenantWorkspaceMiddleware and AgentContextMiddleware.
+        Middleware ordering: Should be placed early in the middleware stack,
+        before TenantWorkspaceMiddleware and AgentContextMiddleware.
     """
 
     def __init__(
@@ -108,6 +111,46 @@ the tenant/user context for the duration of the request. Stateful
         self._require_tenant = require_tenant
         self._default_tenant_id = default_tenant_id
 
+    def _resolve_request_identity(
+        self,
+        request: Request,
+    ) -> tuple[str | None, str | None, bool]:
+        """Resolve tenant and user IDs from request headers."""
+        path = request.url.path
+        is_exempt = request.method == "OPTIONS" or is_tenant_exempt(path)
+        tenant_id = request.headers.get("X-Tenant-Id")
+        user_id = request.headers.get("X-User-Id")
+
+        if not is_exempt:
+            tenant_id = self._validate_tenant_id(path, tenant_id)
+
+        return tenant_id, user_id, is_exempt
+
+    def _validate_tenant_id(
+        self,
+        path: str,
+        tenant_id: str | None,
+    ) -> str | None:
+        """Validate tenant ID for non-exempt routes."""
+        if not tenant_id:
+            if self._require_tenant:
+                logger.warning(
+                    f"Missing X-Tenant-Id header for {path}",
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail="X-Tenant-Id header is required",
+                )
+            return self._default_tenant_id
+
+        if not self._is_valid_tenant_id(tenant_id):
+            logger.warning(f"Invalid tenant ID format: {tenant_id}")
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid X-Tenant-Id format",
+            )
+        return tenant_id
+
     async def dispatch(
         self,
         request: Request,
@@ -125,39 +168,15 @@ the tenant/user context for the duration of the request. Stateful
         Raises:
             HTTPException: If tenant ID is required but missing/invalid.
         """
-        path = request.url.path
         tenant_id: str | None = None
         user_id: str | None = None
         tokens = []
-
-        # Check if route is exempt
-        is_exempt = is_tenant_exempt(path)
+        is_exempt = False
 
         try:
-            # Extract headers
-            tenant_id = request.headers.get("X-Tenant-Id")
-            user_id = request.headers.get("X-User-Id")
-
-            # Validate tenant ID for non-exempt routes
-            if not is_exempt:
-                if not tenant_id:
-                    if self._require_tenant:
-                        logger.warning(
-                            f"Missing X-Tenant-Id header for {path}",
-                        )
-                        raise HTTPException(
-                            status_code=400,
-                            detail="X-Tenant-Id header is required",
-                        )
-                    tenant_id = self._default_tenant_id
-
-                # Validate tenant ID format (basic validation)
-                if tenant_id and not self._is_valid_tenant_id(tenant_id):
-                    logger.warning(f"Invalid tenant ID format: {tenant_id}")
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Invalid X-Tenant-Id format",
-                    )
+            tenant_id, user_id, is_exempt = self._resolve_request_identity(
+                request,
+            )
 
             # Store in request state for downstream use
             if tenant_id:
@@ -173,7 +192,7 @@ the tenant/user context for the duration of the request. Stateful
 
             logger.debug(
                 f"TenantIdentityMiddleware: tenant_id={tenant_id}, "
-                f"user_id={user_id}, path={path}, exempt={is_exempt}",
+                f"user_id={user_id}, path={request.url.path}, exempt={is_exempt}",
             )
 
             # Call next handler

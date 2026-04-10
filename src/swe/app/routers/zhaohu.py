@@ -37,15 +37,19 @@ class ZhaohuCallbackRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-def _get_zhaohu_channel(request: Request):
-    """Retrieve the ZhaohuChannel from app state, or None."""
-    app = getattr(request, "app", None)
-    if not app:
+async def _get_zhaohu_channel(request: Request):
+    """Retrieve the ZhaohuChannel from workspace, or None."""
+    from ..agent_context import get_agent_for_request
+
+    try:
+        workspace = get_agent_for_request(request)
+    except Exception:
         return None
-    cm = getattr(app.state, "channel_manager", None)
-    if not cm:
+
+    if not workspace or not workspace.channel_manager:
         return None
-    for ch in cm.channels:
+
+    for ch in workspace.channel_manager.channels:
         if ch.channel == "zhaohu":
             return ch
     return None
@@ -86,7 +90,7 @@ async def zhaohu_callback(
     Returns immediately with 'received' status, then processes the message
     in the background (query user info, call LLM, send response via push_url).
     """
-    zhaohu_ch = _get_zhaohu_channel(request)
+    zhaohu_ch = await _get_zhaohu_channel(request)
     if not zhaohu_ch:
         logger.warning("zhaohu callback received but channel not available")
         return Response(

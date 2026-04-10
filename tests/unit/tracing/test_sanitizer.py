@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Tests for data sanitization utilities."""
 
-from copaw.tracing.sanitizer import (
+from swe.tracing.sanitizer import (
     SENSITIVE_KEYS,
     sanitize_dict,
     sanitize_string,

@@ -116,21 +116,25 @@ class TenantInitializer:
         result: dict[str, Any] = {
             "minimal": False,
             "config_seed": {},
+            "providers_seed": {},
             "pool_seed": {},
             "workspace_seed": {},
             "workspace_scaffold": {},
         }
+        is_default_tenant = self.tenant_id == "default"
         config_existed = (self.tenant_dir / "config.json").exists()
 
         # Step 1: Minimal initialization
         self.initialize_minimal()
         result["minimal"] = True
 
-        # Step 1.5: Seed tenant root config from default template on
-        # first bootstrap or after external deletion.
-        result["config_seed"] = self.seed_tenant_config_from_default(
-            overwrite=not config_existed,
-        )
+        # Step 1.5: Seed tenant root config from default template
+        # For default tenant: only seed if config doesn't exist
+        # For non-default tenant: skip (config already copied from md_files)
+        if is_default_tenant:
+            result["config_seed"] = self.seed_tenant_config_from_default(
+                overwrite=not config_existed,
+            )
 
         # Step 2: Seed skill pool from default (or builtin fallback)
         # Note: This raises RuntimeError on complete failure (including builtin fallback)
@@ -138,7 +142,9 @@ class TenantInitializer:
 
         # Step 3: Seed default workspace skills from default tenant
         # Note: This raises RuntimeError on failure
-        result["workspace_seed"] = self.seed_default_workspace_skills_from_default()
+        result[
+            "workspace_seed"
+        ] = self.seed_default_workspace_skills_from_default()
 
         # Step 4: Ensure the default workspace scaffold is complete.
         result["workspace_scaffold"] = self.ensure_default_workspace_scaffold()
@@ -257,7 +263,6 @@ class TenantInitializer:
         Returns:
             List of copied skill names.
         """
-        import shutil
 
         copied: list[str] = []
 
@@ -276,13 +281,33 @@ class TenantInitializer:
 
         return copied
 
+    def _list_skill_directories(self, skills_dir: Path) -> list[str]:
+        """List skill directory names in a given directory.
+
+        Args:
+            skills_dir: Directory containing skill subdirectories.
+
+        Returns:
+            List of skill directory names that contain SKILL.md.
+        """
+        if not skills_dir.exists():
+            return []
+        return [
+            item.name
+            for item in skills_dir.iterdir()
+            if item.is_dir() and (item / "SKILL.md").exists()
+        ]
+
     def seed_tenant_config_from_default(
         self,
         *,
         overwrite: bool = False,
     ) -> dict[str, Any]:
-        """Seed tenant config.json from default tenant without copying refs."""
-        from ...config.utils import load_config, save_config
+        """Seed tenant config.json from default tenant.
+
+        Copies the config file directly and updates workspace paths
+        to point to the new tenant's directories.
+        """
 
         target_config_path = self.tenant_dir / "config.json"
         source_config_path = self.base_working_dir / "default" / "config.json"
@@ -293,21 +318,89 @@ class TenantInitializer:
         if target_config_path.exists() and not overwrite:
             return result
 
-        target_config = load_config(target_config_path)
-        source_config = load_config(source_config_path)
-        merged_config = source_config.model_copy(deep=True)
+        try:
+            # Read source config as raw JSON to preserve exact content
+            source_content = source_config_path.read_text(encoding="utf-8")
+            source_config = json.loads(source_content)
 
-        # Keep tenant-local workspace refs created during minimal bootstrap.
-        merged_config.agents.profiles = target_config.agents.profiles
-        merged_config.agents.active_agent = (
-            target_config.agents.active_agent
-            or source_config.agents.active_agent
-            or "default"
-        )
+            # Update workspace_dir paths to point to new tenant
+            default_workspace_prefix = str(
+                self.base_working_dir / "default" / "workspaces",
+            )
+            tenant_workspace_prefix = str(self.tenant_dir / "workspaces")
 
-        save_config(merged_config, target_config_path)
-        result["seeded"] = True
-        result["source"] = "default"
+            # Update profiles workspace_dir
+            if (
+                "agents" in source_config
+                and "profiles" in source_config["agents"]
+            ):
+                for profile in source_config["agents"]["profiles"].values():
+                    if "workspace_dir" in profile:
+                        old_path = profile["workspace_dir"]
+                        # Replace default tenant path with new tenant path
+                        if old_path.startswith(default_workspace_prefix):
+                            profile["workspace_dir"] = old_path.replace(
+                                default_workspace_prefix,
+                                tenant_workspace_prefix,
+                            )
+
+            # Write the modified config
+            target_config_path.parent.mkdir(parents=True, exist_ok=True)
+            target_config_path.write_text(
+                json.dumps(source_config, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            result["seeded"] = True
+            result["source"] = "default"
+        except Exception as e:
+            logger.warning(
+                f"Failed to seed config from default for tenant "
+                f"{self.tenant_id}: {e}",
+            )
+
+        return result
+
+    def seed_providers_from_default(
+        self,
+        *,
+        overwrite: bool = False,
+    ) -> dict[str, Any]:
+        """Seed tenant providers.json from default tenant.
+
+        Args:
+            overwrite: If True, overwrite existing providers.json.
+
+        Returns:
+            Dict with result status:
+            - "seeded": True if seeded, False otherwise
+            - "source": "default" or None
+        """
+        from ...constant import SECRET_DIR
+
+        target_secret_dir = SECRET_DIR / self.tenant_id
+        source_secret_dir = SECRET_DIR / "default"
+        target_providers_path = target_secret_dir / "providers.json"
+        source_providers_path = source_secret_dir / "providers.json"
+        result: dict[str, Any] = {"seeded": False, "source": None}
+
+        if not source_providers_path.exists():
+            return result
+        if target_providers_path.exists() and not overwrite:
+            return result
+
+        # Ensure target directory exists
+        target_secret_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            shutil.copy2(source_providers_path, target_providers_path)
+            result["seeded"] = True
+            result["source"] = "default"
+        except Exception as e:
+            logger.warning(
+                f"Failed to seed providers from default for tenant "
+                f"{self.tenant_id}: {e}",
+            )
+
         return result
 
     def ensure_default_workspace_scaffold(self) -> dict[str, Any]:
@@ -406,9 +499,14 @@ class TenantInitializer:
                     _default_pool_manifest(),
                 )
                 # Capture config for each skill to preserve after copy
-                for skill_name, skill_entry in source_manifest.get("skills", {}).items():
+                for skill_name, skill_entry in source_manifest.get(
+                    "skills",
+                    {},
+                ).items():
                     if "config" in skill_entry:
-                        source_skills_with_config[skill_name] = skill_entry["config"]
+                        source_skills_with_config[skill_name] = skill_entry[
+                            "config"
+                        ]
             except Exception as e:
                 logger.warning(f"Failed to read source manifest: {e}")
 
@@ -469,7 +567,10 @@ class TenantInitializer:
         )
 
         # Prepare source state (reconcile + collect config)
-        source_skill_names, source_skills_with_config = self._prepare_source_pool_state(
+        (
+            source_skill_names,
+            source_skills_with_config,
+        ) = self._prepare_source_pool_state(
             default_pool_dir,
             default_manifest_path,
         )
@@ -477,7 +578,9 @@ class TenantInitializer:
         # Try to seed from default tenant if template exists
         if source_skill_names:
             try:
-                target_pool_dir = get_skill_pool_dir(working_dir=self.tenant_dir)
+                target_pool_dir = get_skill_pool_dir(
+                    working_dir=self.tenant_dir,
+                )
                 copied = self._copy_skill_directories(
                     default_pool_dir,
                     target_pool_dir,
@@ -506,7 +609,8 @@ class TenantInitializer:
         target_pool_dir = get_skill_pool_dir(working_dir=self.tenant_dir)
         if target_pool_dir.exists():
             existing_skills = [
-                item.name for item in target_pool_dir.iterdir()
+                item.name
+                for item in target_pool_dir.iterdir()
                 if item.is_dir() and (item / "SKILL.md").exists()
             ]
             if existing_skills:
@@ -572,7 +676,9 @@ class TenantInitializer:
             return
 
         try:
-            manifest_path = get_pool_skill_manifest_path(working_dir=self.tenant_dir)
+            manifest_path = get_pool_skill_manifest_path(
+                working_dir=self.tenant_dir,
+            )
             manifest = _read_json_unlocked(
                 manifest_path,
                 _default_pool_manifest(),
@@ -589,6 +695,94 @@ class TenantInitializer:
             logger.warning(
                 f"Failed to merge pool config for tenant {self.tenant_id}: {e}",
             )
+
+    def _reconcile_existing_workspace_skills(
+        self,
+        target_workspace: Path,
+        existing_skills: list[str],
+    ) -> dict[str, Any]:
+        """Reconcile existing workspace skills and return result.
+
+        Args:
+            target_workspace: Target workspace directory.
+            existing_skills: List of existing skill names.
+
+        Returns:
+            Result dict with seeded=True and skills list.
+        """
+        from ...agents.skills_manager import reconcile_workspace_manifest
+
+        logger.info(
+            f"Found {len(existing_skills)} existing workspace skills for "
+            f"tenant {self.tenant_id}, reconciling: {existing_skills}",
+        )
+        try:
+            reconcile_workspace_manifest(target_workspace)
+            return {"seeded": True, "skills": existing_skills}
+        except Exception as e:
+            logger.warning(
+                f"Failed to reconcile existing workspace skills for "
+                f"tenant {self.tenant_id}: {e}",
+            )
+            return {"seeded": False, "skills": []}
+
+    def _prepare_source_workspace_state(
+        self,
+        default_workspace: Path,
+    ) -> dict[str, Any]:
+        """Prepare source workspace state for seeding.
+
+        Reconciles source workspace and captures durable skill state.
+
+        Args:
+            default_workspace: Default tenant's workspace directory.
+
+        Returns:
+            Dict with skill states (enabled, channels, config, source).
+        """
+        from ...agents.skills_manager import (
+            get_workspace_skills_dir,
+            get_workspace_skill_manifest_path,
+            reconcile_workspace_manifest,
+            _read_json_unlocked,
+            _default_workspace_manifest,
+        )
+
+        source_skills_state: dict[str, Any] = {}
+        default_skills_dir = get_workspace_skills_dir(default_workspace)
+        default_manifest_path = get_workspace_skill_manifest_path(
+            default_workspace,
+        )
+
+        if not default_skills_dir.exists():
+            return source_skills_state
+
+        try:
+            if default_manifest_path.exists():
+                source_manifest = _read_json_unlocked(
+                    default_manifest_path,
+                    _default_workspace_manifest(),
+                )
+                for skill_name, skill_entry in source_manifest.get(
+                    "skills",
+                    {},
+                ).items():
+                    source_skills_state[skill_name] = {
+                        field: skill_entry[field]
+                        for field in (
+                            "enabled",
+                            "channels",
+                            "config",
+                            "source",
+                        )
+                        if field in skill_entry
+                    }
+            reconcile_workspace_manifest(default_workspace)
+        except Exception as e:
+            logger.warning(
+                f"Failed to reconcile source workspace for tenant {self.tenant_id}: {e}",
+            )
+        return source_skills_state
 
     def seed_default_workspace_skills_from_default(self) -> dict[str, Any]:
         """Seed default workspace skills from default tenant (idempotent).
@@ -607,10 +801,7 @@ class TenantInitializer:
         """
         from ...agents.skills_manager import (
             get_workspace_skills_dir,
-            get_workspace_skill_manifest_path,
             reconcile_workspace_manifest,
-            _read_json_unlocked,
-            _default_workspace_manifest,
         )
 
         result: dict[str, Any] = {"seeded": False, "skills": []}
@@ -623,67 +814,25 @@ class TenantInitializer:
             self.base_working_dir / "default" / "workspaces" / "default"
         )
         default_skills_dir = get_workspace_skills_dir(default_workspace)
-        default_manifest_path = get_workspace_skill_manifest_path(
+
+        # Prepare source state and reconcile
+        source_skills_state = self._prepare_source_workspace_state(
             default_workspace,
         )
 
-        # First, reconcile source from disk to ensure we have latest state
-        # This allows seeding even when source manifest is absent/stale
-        source_skills_state: dict[str, Any] = {}
-        if default_skills_dir.exists():
-            try:
-                # Read source manifest for durable state before reconcile
-                if default_manifest_path.exists():
-                    source_manifest = _read_json_unlocked(
-                        default_manifest_path,
-                        _default_workspace_manifest(),
-                    )
-                    # Capture durable state for each skill
-                    for skill_name, skill_entry in source_manifest.get("skills", {}).items():
-                        source_skills_state[skill_name] = {
-                            field: skill_entry[field]
-                            for field in ("enabled", "channels", "config", "source")
-                            if field in skill_entry
-                        }
-
-                # Reconcile source to discover skills from disk
-                reconcile_workspace_manifest(default_workspace)
-            except Exception as e:
-                logger.warning(
-                    f"Failed to reconcile source workspace for tenant {self.tenant_id}: {e}",
-                )
-
         # Check if source has usable skills after reconciliation
-        source_skill_names: list[str] = []
-        if default_skills_dir.exists():
-            for item in default_skills_dir.iterdir():
-                if item.is_dir() and (item / "SKILL.md").exists():
-                    source_skill_names.append(item.name)
+        source_skill_names = self._list_skill_directories(default_skills_dir)
 
         if not source_skill_names:
-            # Source has no skills, but check if target has existing skills (partial copy)
+            # Source has no skills, check if target has existing skills
             target_workspace = self.tenant_dir / "workspaces" / "default"
             target_skills_dir = get_workspace_skills_dir(target_workspace)
-            if target_skills_dir.exists():
-                existing_skills = [
-                    item.name for item in target_skills_dir.iterdir()
-                    if item.is_dir() and (item / "SKILL.md").exists()
-                ]
-                if existing_skills:
-                    logger.info(
-                        f"Found {len(existing_skills)} existing workspace skills for "
-                        f"tenant {self.tenant_id}, reconciling: {existing_skills}",
-                    )
-                    try:
-                        reconcile_workspace_manifest(target_workspace)
-                        result["seeded"] = True
-                        result["skills"] = existing_skills
-                        return result
-                    except Exception as reconcile_error:
-                        logger.warning(
-                            f"Failed to reconcile existing workspace skills for "
-                            f"tenant {self.tenant_id}: {reconcile_error}",
-                        )
+            existing_skills = self._list_skill_directories(target_skills_dir)
+            if existing_skills:
+                return self._reconcile_existing_workspace_skills(
+                    target_workspace,
+                    existing_skills,
+                )
             return result
 
         try:

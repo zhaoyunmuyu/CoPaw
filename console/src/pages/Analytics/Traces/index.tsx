@@ -218,7 +218,7 @@ export default function TracesPage() {
         </div>
       </div>
 
-      <Card className={styles.tableCard}>
+      <Card>
         <Table
           dataSource={traces}
           columns={columns}

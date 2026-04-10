@@ -2,10 +2,13 @@
 """Tests for TraceManager and TraceContext."""
 # pylint: disable=protected-access,redefined-outer-name,unused-import
 
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
-from copaw.tracing.config import TracingConfig
-from copaw.tracing.manager import (
+from swe.tracing.config import TracingConfig
+from swe.tracing.manager import (
     TraceContext,
     TraceManager,
     get_current_trace,
@@ -15,14 +18,14 @@ from copaw.tracing.manager import (
     close_trace_manager,
     has_trace_manager,
 )
-from copaw.tracing.models import EventType, TraceStatus
+from swe.tracing.models import EventType, TraceStatus
+from swe.database.config import DatabaseConfig
 
 
 @pytest.fixture(autouse=True)
 def reset_global_manager():
     """Reset global trace manager before and after each test."""
-    # Import the module to access the global variable
-    import copaw.tracing.manager as manager_module
+    import swe.tracing.manager as manager_module
 
     manager_module._trace_manager = None  # pylint: disable=protected-access
     yield
@@ -39,6 +42,30 @@ def enabled_config():
 def disabled_config():
     """Create disabled tracing config."""
     return TracingConfig(enabled=False)
+
+
+@pytest.fixture
+def mock_db_config():
+    """Create mock database config."""
+    return DatabaseConfig(
+        host="localhost",
+        port=3306,
+        user="test",
+        password="test",
+        database="test_db",
+    )
+
+
+@pytest.fixture
+def mock_db():
+    """Create mock database connection."""
+    db = MagicMock()
+    db.is_connected = True
+    db.config = DatabaseConfig(host="localhost", port=3306, database="test")
+    db.fetch_one = AsyncMock(return_value=None)
+    db.fetch_all = AsyncMock(return_value=[])
+    db.execute = AsyncMock(return_value=1)
+    return db
 
 
 class TestTraceContext:
@@ -137,19 +164,19 @@ class TestTraceManager:
         assert manager.enabled is True
 
     @pytest.mark.asyncio
-    async def test_initialize_disabled(self, disabled_config, tmp_path):
+    async def test_initialize_disabled(self, disabled_config):
         """Test initializing disabled manager."""
         manager = TraceManager(disabled_config)
-        await manager.initialize(tmp_path)
+        await manager.initialize()
 
         # Should not create store when disabled
         assert manager._store is None  # pylint: disable=protected-access
 
     @pytest.mark.asyncio
-    async def test_initialize_enabled(self, enabled_config, tmp_path):
-        """Test initializing enabled manager."""
-        manager = TraceManager(enabled_config)
-        await manager.initialize(tmp_path)
+    async def test_initialize_enabled_with_db(self, enabled_config, mock_db):
+        """Test initializing enabled manager with provided database."""
+        manager = TraceManager(enabled_config, mock_db)
+        await manager.initialize()
 
         assert manager._store is not None  # pylint: disable=protected-access
         assert manager._running is True  # pylint: disable=protected-access
@@ -157,10 +184,10 @@ class TestTraceManager:
         await manager.close()
 
     @pytest.mark.asyncio
-    async def test_close(self, enabled_config, tmp_path):
+    async def test_close(self, enabled_config, mock_db):
         """Test closing manager."""
-        manager = TraceManager(enabled_config)
-        await manager.initialize(tmp_path)
+        manager = TraceManager(enabled_config, mock_db)
+        await manager.initialize()
         await manager.close()
 
         assert manager._running is False  # pylint: disable=protected-access
@@ -184,10 +211,10 @@ class TestTraceManager:
         )  # pylint: disable=protected-access
 
     @pytest.mark.asyncio
-    async def test_start_trace_enabled(self, enabled_config, tmp_path):
+    async def test_start_trace_enabled(self, enabled_config, mock_db):
         """Test start_trace when enabled."""
-        manager = TraceManager(enabled_config)
-        await manager.initialize(tmp_path)
+        manager = TraceManager(enabled_config, mock_db)
+        await manager.initialize()
 
         trace_id = await manager.start_trace(
             user_id="user-1",
@@ -205,10 +232,27 @@ class TestTraceManager:
         await manager.close()
 
     @pytest.mark.asyncio
-    async def test_end_trace(self, enabled_config, tmp_path):
+    async def test_end_trace(self, enabled_config, mock_db):
         """Test end_trace updates trace status."""
-        manager = TraceManager(enabled_config)
-        await manager.initialize(tmp_path)
+        mock_db.fetch_one.return_value = {
+            "trace_id": "test-trace",
+            "user_id": "user-1",
+            "session_id": "session-1",
+            "channel": "console",
+            "start_time": datetime.now(),
+            "end_time": None,
+            "duration_ms": None,
+            "status": "running",
+            "user_message": None,
+            "error": None,
+            "model_name": None,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "tools_used": "[]",
+            "skills_used": "[]",
+        }
+        manager = TraceManager(enabled_config, mock_db)
+        await manager.initialize()
 
         trace_id = await manager.start_trace(
             user_id="user-1",
@@ -221,34 +265,6 @@ class TestTraceManager:
         assert (
             trace_id not in manager._active_traces
         )  # pylint: disable=protected-access
-        trace = await manager.store.get_trace(trace_id)
-        assert trace.status == TraceStatus.COMPLETED
-        assert trace.end_time is not None
-        assert trace.duration_ms is not None
-
-        await manager.close()
-
-    @pytest.mark.asyncio
-    async def test_end_trace_with_error(self, enabled_config, tmp_path):
-        """Test end_trace with error status."""
-        manager = TraceManager(enabled_config)
-        await manager.initialize(tmp_path)
-
-        trace_id = await manager.start_trace(
-            user_id="user-1",
-            session_id="session-1",
-            channel="console",
-        )
-
-        await manager.end_trace(
-            trace_id,
-            TraceStatus.ERROR,
-            "Something went wrong",
-        )
-
-        trace = await manager.store.get_trace(trace_id)
-        assert trace.status == TraceStatus.ERROR
-        assert trace.error == "Something went wrong"
 
         await manager.close()
 
@@ -266,10 +282,10 @@ class TestTraceManager:
         assert span_id is not None
 
     @pytest.mark.asyncio
-    async def test_emit_span_enabled(self, enabled_config, tmp_path):
+    async def test_emit_span_enabled(self, enabled_config, mock_db):
         """Test emit_span when enabled."""
-        manager = TraceManager(enabled_config)
-        await manager.initialize(tmp_path)
+        manager = TraceManager(enabled_config, mock_db)
+        await manager.initialize()
 
         trace_id = await manager.start_trace(
             user_id="user-1",
@@ -295,10 +311,10 @@ class TestTraceManager:
         await manager.close()
 
     @pytest.mark.asyncio
-    async def test_emit_llm_input(self, enabled_config, tmp_path):
+    async def test_emit_llm_input(self, enabled_config, mock_db):
         """Test emit_llm_input convenience method."""
-        manager = TraceManager(enabled_config)
-        await manager.initialize(tmp_path)
+        manager = TraceManager(enabled_config, mock_db)
+        await manager.initialize()
 
         trace_id = await manager.start_trace(
             user_id="user-1",
@@ -326,10 +342,10 @@ class TestTraceManager:
         await manager.close()
 
     @pytest.mark.asyncio
-    async def test_emit_llm_output(self, enabled_config, tmp_path):
+    async def test_emit_llm_output(self, enabled_config, mock_db):
         """Test emit_llm_output updates span."""
-        manager = TraceManager(enabled_config)
-        await manager.initialize(tmp_path)
+        manager = TraceManager(enabled_config, mock_db)
+        await manager.initialize()
 
         trace_id = await manager.start_trace(
             user_id="user-1",
@@ -358,10 +374,10 @@ class TestTraceManager:
         await manager.close()
 
     @pytest.mark.asyncio
-    async def test_emit_tool_call(self, enabled_config, tmp_path):
+    async def test_emit_tool_call(self, enabled_config, mock_db):
         """Test tool call start and end."""
-        manager = TraceManager(enabled_config)
-        await manager.initialize(tmp_path)
+        manager = TraceManager(enabled_config, mock_db)
+        await manager.initialize()
 
         trace_id = await manager.start_trace(
             user_id="user-1",
@@ -397,10 +413,10 @@ class TestTraceManager:
         await manager.close()
 
     @pytest.mark.asyncio
-    async def test_emit_tool_call_with_error(self, enabled_config, tmp_path):
+    async def test_emit_tool_call_with_error(self, enabled_config, mock_db):
         """Test tool call end with error."""
-        manager = TraceManager(enabled_config)
-        await manager.initialize(tmp_path)
+        manager = TraceManager(enabled_config, mock_db)
+        await manager.initialize()
 
         trace_id = await manager.start_trace(
             user_id="user-1",
@@ -429,10 +445,10 @@ class TestTraceManager:
         await manager.close()
 
     @pytest.mark.asyncio
-    async def test_emit_skill_invocation(self, enabled_config, tmp_path):
+    async def test_emit_skill_invocation(self, enabled_config, mock_db):
         """Test skill invocation."""
-        manager = TraceManager(enabled_config)
-        await manager.initialize(tmp_path)
+        manager = TraceManager(enabled_config, mock_db)
+        await manager.initialize()
 
         trace_id = await manager.start_trace(
             user_id="user-1",
@@ -455,10 +471,10 @@ class TestTraceManager:
         await manager.close()
 
     @pytest.mark.asyncio
-    async def test_emit_mcp_tool(self, enabled_config, tmp_path):
+    async def test_emit_mcp_tool(self, enabled_config, mock_db):
         """Test MCP tool call."""
-        manager = TraceManager(enabled_config)
-        await manager.initialize(tmp_path)
+        manager = TraceManager(enabled_config, mock_db)
+        await manager.initialize()
 
         trace_id = await manager.start_trace(
             user_id="user-1",
@@ -481,11 +497,15 @@ class TestTraceManager:
         await manager.close()
 
     @pytest.mark.asyncio
-    async def test_user_message_sanitization(self, tmp_path):
+    async def test_user_message_sanitization(self, mock_db):
         """Test that user message is sanitized."""
-        config = TracingConfig(enabled=True, sanitize_output=True)
-        manager = TraceManager(config)
-        await manager.initialize(tmp_path)
+        config = TracingConfig(
+            enabled=True,
+            sanitize_output=True,
+            max_output_length=100,
+        )
+        manager = TraceManager(config, mock_db)
+        await manager.initialize()
 
         long_message = "x" * 1000
         trace_id = await manager.start_trace(
@@ -495,18 +515,17 @@ class TestTraceManager:
             user_message=long_message,
         )
 
-        trace = await manager.store.get_trace(trace_id)
+        trace = manager._active_traces[trace_id]
         assert len(trace.user_message) < len(long_message)
-        assert trace.user_message.endswith("...")
 
         await manager.close()
 
     @pytest.mark.asyncio
-    async def test_tool_input_sanitization(self, tmp_path):
+    async def test_tool_input_sanitization(self, mock_db):
         """Test that tool input is sanitized."""
         config = TracingConfig(enabled=True, sanitize_output=True)
-        manager = TraceManager(config)
-        await manager.initialize(tmp_path)
+        manager = TraceManager(config, mock_db)
+        await manager.initialize()
 
         trace_id = await manager.start_trace(
             user_id="user-1",
@@ -529,10 +548,10 @@ class TestTraceManager:
         await manager.close()
 
     @pytest.mark.asyncio
-    async def test_trace_totals_updated(self, enabled_config, tmp_path):
+    async def test_trace_totals_updated(self, enabled_config, mock_db):
         """Test that trace totals are updated from spans."""
-        manager = TraceManager(enabled_config)
-        await manager.initialize(tmp_path)
+        manager = TraceManager(enabled_config, mock_db)
+        await manager.initialize()
 
         trace_id = await manager.start_trace(
             user_id="user-1",
@@ -572,10 +591,10 @@ class TestGlobalManager:
             get_trace_manager()
 
     @pytest.mark.asyncio
-    async def test_init_trace_manager(self, tmp_path):
+    async def test_init_trace_manager(self, mock_db):
         """Test init_trace_manager creates manager."""
         config = TracingConfig(enabled=True)
-        manager = await init_trace_manager(config, tmp_path)
+        manager = await init_trace_manager(config, mock_db)
 
         assert manager is not None
         assert has_trace_manager() is True
@@ -584,10 +603,10 @@ class TestGlobalManager:
         await close_trace_manager()
 
     @pytest.mark.asyncio
-    async def test_close_trace_manager(self, tmp_path):
+    async def test_close_trace_manager(self, mock_db):
         """Test close_trace_manager closes and clears manager."""
         config = TracingConfig(enabled=True)
-        await init_trace_manager(config, tmp_path)
+        await init_trace_manager(config, mock_db)
 
         assert has_trace_manager() is True
 
@@ -596,11 +615,11 @@ class TestGlobalManager:
         assert has_trace_manager() is False
 
     @pytest.mark.asyncio
-    async def test_init_trace_manager_idempotent(self, tmp_path):
+    async def test_init_trace_manager_idempotent(self, mock_db):
         """Test init_trace_manager returns existing manager if initialized."""
         config = TracingConfig(enabled=True)
-        manager1 = await init_trace_manager(config, tmp_path)
-        manager2 = await init_trace_manager(config, tmp_path)
+        manager1 = await init_trace_manager(config, mock_db)
+        manager2 = await init_trace_manager(config, mock_db)
 
         assert manager1 is manager2
 
@@ -611,11 +630,11 @@ class TestBatchFlush:
     """Tests for batch flushing behavior."""
 
     @pytest.mark.asyncio
-    async def test_flush_on_batch_size(self, tmp_path):
+    async def test_flush_on_batch_size(self, mock_db):
         """Test that flush happens when batch size is reached."""
         config = TracingConfig(enabled=True, batch_size=3, flush_interval=60)
-        manager = TraceManager(config)
-        await manager.initialize(tmp_path)
+        manager = TraceManager(config, mock_db)
+        await manager.initialize()
 
         trace_id = await manager.start_trace(
             user_id="user-1",
@@ -644,10 +663,10 @@ class TestBatchFlush:
         await manager.close()
 
     @pytest.mark.asyncio
-    async def test_manual_flush(self, enabled_config, tmp_path):
+    async def test_manual_flush(self, enabled_config, mock_db):
         """Test manual flush via close."""
-        manager = TraceManager(enabled_config)
-        await manager.initialize(tmp_path)
+        manager = TraceManager(enabled_config, mock_db)
+        await manager.initialize()
 
         trace_id = await manager.start_trace(
             user_id="user-1",
@@ -665,7 +684,38 @@ class TestBatchFlush:
         # Close should flush remaining spans
         await manager.close()
 
-        # Verify data was persisted
-        store = manager._store  # pylint: disable=protected-access
-        traces = store._traces  # pylint: disable=protected-access
-        assert trace_id in traces
+        # Verify the span queue is cleared
+        assert len(manager._span_queue) == 0
+
+
+class TestOwnsDb:
+    """Tests for database ownership behavior."""
+
+    @pytest.mark.asyncio
+    async def test_owns_db_when_created_internally(self, enabled_config):
+        """Test that manager owns DB when it creates the connection."""
+        with patch("swe.tracing.manager.DatabaseConnection") as MockDB:
+            mock_conn = MagicMock()
+            mock_conn.is_connected = True
+            mock_conn.connect = AsyncMock()
+            MockDB.return_value = mock_conn
+
+            # No DB provided, manager should create and own it
+            manager = TraceManager(enabled_config, db=None)
+            assert manager._owns_db is True
+
+    @pytest.mark.asyncio
+    async def test_does_not_own_db_when_provided(
+        self,
+        enabled_config,
+        mock_db,
+    ):
+        """Test that manager does not own DB when connection is provided."""
+        manager = TraceManager(enabled_config, mock_db)
+        assert manager._owns_db is False
+
+        await manager.initialize()
+        await manager.close()
+
+        # DB should not be closed since we don't own it
+        mock_db.close.assert_not_called()

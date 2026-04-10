@@ -8,7 +8,6 @@ import logging
 import uuid
 from contextvars import ContextVar
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any, Optional
 
 from .config import TracingConfig
@@ -81,17 +80,20 @@ class TraceManager:
     def __init__(
         self,
         config: TracingConfig,
-        storage_path: Optional[Path] = None,
+        db: Optional[DatabaseConnection] = None,
     ):
         """Initialize trace manager.
 
         Args:
             config: Tracing configuration
-            storage_path: Optional custom storage path
+            db: Optional database connection (can also be set during initialize).
+                If provided, the connection is considered shared and will not be
+                closed by this manager.
         """
         self.config = config
         self._store: Optional[TraceStore] = None
-        self._storage_path = storage_path
+        self._db = db
+        self._owns_db = db is None  # Only owns DB if we create it ourselves
 
         # Batch queue for spans
         self._span_queue: list[Span] = []
@@ -126,42 +128,44 @@ class TraceManager:
         """Check if the trace manager is running."""
         return self._running
 
-    async def initialize(self, storage_path: Optional[Path] = None) -> None:
+    async def initialize(self) -> None:
         """Initialize the trace manager.
 
-        Args:
-            storage_path: Optional storage path override
+        Requires a database connection to be configured.
         """
         if not self.config.enabled:
             logger.info("Tracing is disabled")
             return
 
-        # Use provided path or configured path or default
-        if storage_path:
-            self._storage_path = storage_path
-        elif self._storage_path is None:
-            # Will be set by caller with workspace context
-            self._storage_path = Path("tracing")
-
-        # Create database connection if configured
-        db: Optional[DatabaseConnection] = None
-        if self.config.database:
-            try:
-                db = DatabaseConnection(self.config.database)
-                await db.connect()
-                logger.info(
-                    "Database connection established: %s",
-                    self.config.database.host,
+        # Create database connection if not provided
+        if self._db is None:
+            if self.config.database:
+                try:
+                    self._db = DatabaseConnection(self.config.database)
+                    await self._db.connect()
+                    self._owns_db = True  # We created it, so we own it
+                    logger.info(
+                        "Database connection established: %s",
+                        self.config.database.host,
+                    )
+                except Exception as e:
+                    logger.error(
+                        "Failed to connect to database: %s",
+                        e,
+                    )
+                    raise RuntimeError(
+                        "Database connection is required for tracing. "
+                        "Please configure database in tracing config.",
+                    ) from e
+            else:
+                raise RuntimeError(
+                    "Database configuration is required for tracing. "
+                    "Please set tracing.database in config.",
                 )
-            except Exception as e:
-                logger.warning(
-                    "Failed to connect to database, falling back to JSON: %s",
-                    e,
-                )
-                db = None
 
-        # Create store (with database or JSON file)
-        self._store = TraceStore(self.config, self._storage_path, db)
+        # Create store (owns_db=False means shared connection, won't close it)
+        self._store = TraceStore(self.config, self._db, owns_db=self._owns_db)
+        await self._store.initialize()
 
         # Start flush task
         self._running = True
@@ -172,16 +176,10 @@ class TraceManager:
         if self.config.retention_days > 0:
             self._cleanup_task = asyncio.create_task(self._cleanup_loop())
 
-        if db and db.is_connected:
-            logger.info(
-                "TraceManager initialized (database storage: %s)",
-                self.config.database.host,
-            )
-        else:
-            logger.info(
-                "TraceManager initialized (JSON file storage: %s)",
-                self._storage_path,
-            )
+        logger.info(
+            "TraceManager initialized (database storage: %s)",
+            self.config.database.host if self.config.database else "N/A",
+        )
 
     async def close(self) -> None:
         """Close the trace manager."""
@@ -730,7 +728,6 @@ class TraceManager:
         if spans:
             try:
                 await self.store.batch_create_spans(spans)
-                await self.store.flush()
                 logger.debug("Flushed %d spans", len(spans))
             except Exception as e:
                 logger.error("Failed to flush spans: %s", e)
@@ -767,30 +764,7 @@ class TraceManager:
                 self.config.retention_days,
             )
 
-            # Clean up JSON files older than retention period
-            if self._storage_path:
-                deleted_count = 0
-                for file_path in self._storage_path.glob("traces_*.json"):
-                    try:
-                        # Extract date from filename
-                        filename = file_path.stem  # traces_2024-01-15
-                        date_str = filename.replace("traces_", "")
-                        file_date = datetime.strptime(date_str, "%Y-%m-%d")
-
-                        if file_date < cutoff_date:
-                            file_path.unlink()
-                            deleted_count += 1
-                    except (ValueError, OSError) as e:
-                        logger.warning(
-                            "Failed to process file %s: %s",
-                            file_path,
-                            e,
-                        )
-
-                if deleted_count > 0:
-                    logger.info("Deleted %d old trace files", deleted_count)
-
-            # Clean up in-memory data older than retention period
+            # Clean up database data older than retention period
             await self.store.cleanup_old_data(cutoff_date)
 
         except Exception as e:
@@ -824,13 +798,13 @@ def has_trace_manager() -> bool:
 
 async def init_trace_manager(
     config: Optional[TracingConfig] = None,
-    storage_path: Optional[Path] = None,
+    db: Optional[DatabaseConnection] = None,
 ) -> TraceManager:
     """Initialize the global trace manager.
 
     Args:
         config: Optional tracing configuration (uses defaults if not provided)
-        storage_path: Optional storage path
+        db: Optional database connection
 
     Returns:
         TraceManager instance
@@ -841,9 +815,9 @@ async def init_trace_manager(
         return _trace_manager
 
     config = config or TracingConfig()
-    manager = TraceManager(config)
+    manager = TraceManager(config, db)
     try:
-        await manager.initialize(storage_path)
+        await manager.initialize()
         _trace_manager = manager
     except Exception as e:
         # Clean up on failure - don't leave partially initialized manager

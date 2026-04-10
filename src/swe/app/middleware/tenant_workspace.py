@@ -98,6 +98,9 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
         workspace_token = None
 
         try:
+            if request.method == "OPTIONS":
+                return await call_next(request)
+
             # Load workspace if tenant_id is available
             if tenant_id:
                 workspace = await self._get_workspace(request, tenant_id)
@@ -229,6 +232,7 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
                 "/api/auth/register",
                 "/api/auth/refresh",
                 "/api/auth/logout",
+                "/api/zhaohu/callback",
                 "/logo.png",
                 "/dark-logo.png",
                 "/swe-symbol.svg",
