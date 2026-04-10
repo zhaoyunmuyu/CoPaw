@@ -16,7 +16,7 @@ if _base_env_path.exists():
 
 _ENV_VAR_OVERRIDES: ContextVar[dict[str, str]] = ContextVar(
     "swe_env_var_overrides",
-    default={},
+    default=None,  # type: ignore[arg-type]
 )
 
 
@@ -174,73 +174,6 @@ TRACING_MAX_OUTPUT_LENGTH = EnvVarLoader.get_int(
     500,
     min_value=100,
 )
-TRACING_STORAGE_PATH = EnvVarLoader.get_str("SWE_TRACING_STORAGE_PATH", "")
-
-# Database configuration (shared by tracing, instance, etc.)
-# New environment variable names (recommended)
-DB_HOST = EnvVarLoader.get_str("SWE_DB_HOST", "")
-DB_PORT = EnvVarLoader.get_int(
-    "SWE_DB_PORT",
-    3306,
-    min_value=1,
-    max_value=65535,
-)
-DB_USER = EnvVarLoader.get_str("SWE_DB_USER", "root")
-DB_PASSWORD = EnvVarLoader.get_str("SWE_DB_PASSWORD", "")
-DB_NAME = EnvVarLoader.get_str(
-    "SWE_DB_NAME",
-    "swe",
-)
-DB_MIN_CONN = EnvVarLoader.get_int(
-    "SWE_DB_MIN_CONN",
-    2,
-    min_value=1,
-)
-DB_MAX_CONN = EnvVarLoader.get_int(
-    "SWE_DB_MAX_CONN",
-    10,
-    min_value=1,
-)
-
-# Backward compatibility: TRACING_DB_* aliases
-# These will be removed in a future version
-TRACING_DB_HOST = DB_HOST or EnvVarLoader.get_str("SWE_TRACING_DB_HOST", "")
-TRACING_DB_PORT = (
-    EnvVarLoader.get_int(
-        "SWE_TRACING_DB_PORT",
-        DB_PORT,
-        min_value=1,
-        max_value=65535,
-    )
-    if not DB_HOST
-    else DB_PORT
-)
-TRACING_DB_USER = (
-    DB_USER
-    if DB_HOST
-    else EnvVarLoader.get_str(
-        "SWE_TRACING_DB_USER",
-        "root",
-    )
-)
-TRACING_DB_PASSWORD = (
-    DB_PASSWORD
-    if DB_HOST
-    else EnvVarLoader.get_str(
-        "SWE_TRACING_DB_PASSWORD",
-        "",
-    )
-)
-TRACING_DB_NAME = (
-    DB_NAME
-    if DB_HOST
-    else EnvVarLoader.get_str(
-        "SWE_TRACING_DB_NAME",
-        "swe_tracing",
-    )
-)
-TRACING_DB_MIN_CONN = DB_MIN_CONN
-TRACING_DB_MAX_CONN = DB_MAX_CONN
 
 CONFIG_FILE = EnvVarLoader.get_str("SWE_CONFIG_FILE", "config.json")
 

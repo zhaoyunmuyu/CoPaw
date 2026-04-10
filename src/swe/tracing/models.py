@@ -273,7 +273,7 @@ class TraceDetail(BaseModel):
     spans: list[Span] = Field(default_factory=list)
     llm_duration_ms: int = 0
     tool_duration_ms: int = 0
-    tools_called: list[ToolCall] = Field(default_factory=list)
+    tools_called: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class UserListItem(BaseModel):

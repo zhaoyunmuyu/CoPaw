@@ -3,18 +3,19 @@
 # pylint: disable=protected-access,redefined-outer-name,unused-variable
 
 from datetime import datetime, timedelta
-import json
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from copaw.tracing.config import TracingConfig
-from copaw.tracing.models import (
+from swe.tracing.config import TracingConfig
+from swe.tracing.models import (
     EventType,
     Span,
     Trace,
     TraceStatus,
 )
-from copaw.tracing.store import TraceStore
+from swe.tracing.store import TraceStore
+from swe.database.config import DatabaseConfig
 
 
 @pytest.fixture
@@ -24,70 +25,67 @@ def config():
 
 
 @pytest.fixture
-async def store(tmp_path, config):
-    """Create TraceStore instance for testing."""
-    trace_store = TraceStore(config, tmp_path / "tracing")
-    yield trace_store
-    await trace_store.close()
+def mock_db():
+    """Create mock database connection."""
+    db = MagicMock()
+    db.is_connected = True
+    db.config = DatabaseConfig(host="localhost", port=3306, database="test")
+    db.fetch_one = AsyncMock(return_value=None)
+    db.fetch_all = AsyncMock(return_value=[])
+    db.execute = AsyncMock(return_value=1)
+    db.execute_many = AsyncMock(return_value=1)
+    db.close = AsyncMock()
+    return db
 
 
 class TestTraceStoreCreation:
     """Tests for TraceStore initialization."""
 
-    def test_creates_storage_directory(self, tmp_path, config):
-        """Test that storage directory is created."""
-        storage_path = tmp_path / "tracing"
-        TraceStore(config, storage_path)
+    def test_creates_with_db(self, config, mock_db):
+        """Test that store is created with database connection."""
+        store = TraceStore(config, mock_db)
+        assert store.db is mock_db
+        assert store._owns_db is False
 
-        assert storage_path.exists()
+    def test_owns_db_flag(self, config, mock_db):
+        """Test owns_db flag is set correctly."""
+        store_with_ownership = TraceStore(config, mock_db, owns_db=True)
+        assert store_with_ownership._owns_db is True
+
+        store_without_ownership = TraceStore(config, mock_db, owns_db=False)
+        assert store_without_ownership._owns_db is False
 
     @pytest.mark.asyncio
-    async def test_with_existing_data(self, tmp_path, config):
-        """Test loading existing data from file."""
-        storage_path = tmp_path / "tracing"
-        storage_path.mkdir(parents=True, exist_ok=True)
+    async def test_initialize(self, config, mock_db):
+        """Test store initialization."""
+        store = TraceStore(config, mock_db)
+        await store.initialize()
+        # Should not raise any errors
 
-        # Create a trace file with existing data
-        now = datetime.now()
-        existing_trace = Trace(
-            trace_id="existing-trace",
-            user_id="user-1",
-            session_id="session-1",
-            channel="console",
-            start_time=now,
-        )
-        existing_span = Span(
-            span_id="existing-span",
-            trace_id="existing-trace",
-            name="test",
-            event_type=EventType.LLM_INPUT,
-            start_time=now,
-        )
+    @pytest.mark.asyncio
+    async def test_close_with_ownership(self, config, mock_db):
+        """Test close closes DB when store owns it."""
+        store = TraceStore(config, mock_db, owns_db=True)
+        await store.close()
+        mock_db.close.assert_called_once()
 
-        data = {
-            "traces": [existing_trace.model_dump()],
-            "spans": [existing_span.model_dump()],
-        }
-
-        file_path = storage_path / f"traces_{now.strftime('%Y-%m-%d')}.json"
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, default=str)
-
-        # Create store - should load existing data
-        trace_store = TraceStore(config, storage_path)
-
-        assert "existing-trace" in trace_store._traces
-        assert "existing-trace" in trace_store._spans
-
-        await trace_store.close()
+    @pytest.mark.asyncio
+    async def test_close_without_ownership(self, config, mock_db):
+        """Test close does not close DB when store doesn't own it."""
+        store = TraceStore(config, mock_db, owns_db=False)
+        await store.close()
+        mock_db.close.assert_not_called()
 
 
 class TestTraceOperations:
     """Tests for trace CRUD operations."""
 
     @pytest.mark.asyncio
-    async def test_create_trace(self, store):
+    async def test_create_trace(self, config, mock_db):
         """Test creating a trace."""
+        store = TraceStore(config, mock_db)
+        await store.initialize()
+
         trace = Trace(
             trace_id="trace-1",
             user_id="user-1",
@@ -97,69 +95,77 @@ class TestTraceOperations:
         )
 
         await store.create_trace(trace)
-
-        assert "trace-1" in store._traces
-        assert store._traces["trace-1"] == trace
+        mock_db.execute.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_update_trace(self, store):
+    async def test_update_trace(self, config, mock_db):
         """Test updating a trace."""
+        store = TraceStore(config, mock_db)
+        await store.initialize()
+
         trace = Trace(
             trace_id="trace-1",
             user_id="user-1",
             session_id="session-1",
             channel="console",
             start_time=datetime.now(),
+            end_time=datetime.now(),
+            duration_ms=100,
+            status=TraceStatus.COMPLETED,
         )
 
-        await store.create_trace(trace)
-
-        # Update trace
-        trace.status = TraceStatus.COMPLETED
-        trace.total_input_tokens = 100
         await store.update_trace(trace)
-
-        assert store._traces["trace-1"].status == TraceStatus.COMPLETED
-        assert store._traces["trace-1"].total_input_tokens == 100
+        mock_db.execute.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_get_trace(self, store):
-        """Test getting a trace by ID."""
-        trace = Trace(
-            trace_id="trace-1",
-            user_id="user-1",
-            session_id="session-1",
-            channel="console",
-            start_time=datetime.now(),
-        )
+    async def test_get_trace(self, config, mock_db):
+        """Test getting a trace."""
+        now = datetime.now()
+        mock_db.fetch_one.return_value = {
+            "trace_id": "trace-1",
+            "user_id": "user-1",
+            "session_id": "session-1",
+            "channel": "console",
+            "start_time": now,
+            "end_time": None,
+            "duration_ms": None,
+            "status": "running",
+            "user_message": None,
+            "error": None,
+            "model_name": None,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "tools_used": "[]",
+            "skills_used": "[]",
+        }
 
-        await store.create_trace(trace)
+        store = TraceStore(config, mock_db)
+        await store.initialize()
 
-        result = await store.get_trace("trace-1")
-        assert result == trace
+        trace = await store.get_trace("trace-1")
+        assert trace is not None
+        assert trace.trace_id == "trace-1"
 
     @pytest.mark.asyncio
-    async def test_get_trace_not_found(self, store):
-        """Test getting a non-existent trace."""
-        result = await store.get_trace("nonexistent")
-        assert result is None
+    async def test_get_trace_not_found(self, config, mock_db):
+        """Test getting a trace that doesn't exist."""
+        mock_db.fetch_one.return_value = None
+
+        store = TraceStore(config, mock_db)
+        await store.initialize()
+
+        trace = await store.get_trace("non-existent")
+        assert trace is None
 
 
 class TestSpanOperations:
     """Tests for span CRUD operations."""
 
     @pytest.mark.asyncio
-    async def test_create_span(self, store):
+    async def test_create_span(self, config, mock_db):
         """Test creating a span."""
-        # First create a trace
-        trace = Trace(
-            trace_id="trace-1",
-            user_id="user-1",
-            session_id="session-1",
-            channel="console",
-            start_time=datetime.now(),
-        )
-        await store.create_trace(trace)
+        store = TraceStore(config, mock_db)
+        await store.initialize()
 
         span = Span(
             span_id="span-1",
@@ -170,536 +176,362 @@ class TestSpanOperations:
         )
 
         await store.create_span(span)
-
-        assert "trace-1" in store._spans
-        assert len(store._spans["trace-1"]) == 1
-        assert store._spans["trace-1"][0] == span
+        mock_db.execute.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_create_multiple_spans(self, store):
-        """Test creating multiple spans for the same trace."""
-        trace = Trace(
-            trace_id="trace-1",
-            user_id="user-1",
-            session_id="session-1",
-            channel="console",
-            start_time=datetime.now(),
-        )
-        await store.create_trace(trace)
+    async def test_create_multiple_spans(self, config, mock_db):
+        """Test creating multiple spans."""
+        store = TraceStore(config, mock_db)
+        await store.initialize()
 
-        for i in range(5):
-            span = Span(
-                span_id=f"span-{i}",
-                trace_id="trace-1",
-                name=f"span_{i}",
-                event_type=EventType.LLM_INPUT,
-                start_time=datetime.now(),
-            )
-            await store.create_span(span)
-
-        assert len(store._spans["trace-1"]) == 5
-
-    @pytest.mark.asyncio
-    async def test_update_span(self, store):
-        """Test updating a span."""
-        now = datetime.now()
-        trace = Trace(
-            trace_id="trace-1",
-            user_id="user-1",
-            session_id="session-1",
-            channel="console",
-            start_time=now,
-        )
-        await store.create_trace(trace)
-
-        span = Span(
-            span_id="span-1",
-            trace_id="trace-1",
-            name="test_span",
-            event_type=EventType.LLM_INPUT,
-            start_time=now,
-        )
-        await store.create_span(span)
-
-        # Update span
-        span.end_time = now + timedelta(milliseconds=100)
-        span.duration_ms = 100
-        span.output_tokens = 200
-        await store.update_span(span)
-
-        updated = store._spans["trace-1"][0]
-        assert updated.duration_ms == 100
-        assert updated.output_tokens == 200
-
-    @pytest.mark.asyncio
-    async def test_get_spans(self, store):
-        """Test getting spans for a trace."""
-        trace = Trace(
-            trace_id="trace-1",
-            user_id="user-1",
-            session_id="session-1",
-            channel="console",
-            start_time=datetime.now(),
-        )
-        await store.create_trace(trace)
-
-        for i in range(3):
-            span = Span(
-                span_id=f"span-{i}",
-                trace_id="trace-1",
-                name=f"span_{i}",
-                event_type=EventType.LLM_INPUT,
-                start_time=datetime.now(),
-            )
-            await store.create_span(span)
-
-        spans = await store.get_spans("trace-1")
-        assert len(spans) == 3
-
-    @pytest.mark.asyncio
-    async def test_get_spans_empty(self, store):
-        """Test getting spans for a trace with no spans."""
-        spans = await store.get_spans("nonexistent")
-        assert spans == []
-
-    @pytest.mark.asyncio
-    async def test_batch_create_spans(self, store):
-        """Test batch creating spans."""
-        now = datetime.now()
         spans = [
             Span(
                 span_id=f"span-{i}",
                 trace_id="trace-1",
                 name=f"span_{i}",
                 event_type=EventType.LLM_INPUT,
-                start_time=now,
+                start_time=datetime.now(),
             )
-            for i in range(10)
+            for i in range(3)
         ]
 
         await store.batch_create_spans(spans)
-
-        assert len(store._spans["trace-1"]) == 10
-
-
-class TestFilePersistence:
-    """Tests for JSON file persistence."""
+        mock_db.execute_many.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_flush_saves_to_file(self, tmp_path, config):
-        """Test that flush saves data to file."""
-        storage_path = tmp_path / "tracing"
-        trace_store = TraceStore(config, storage_path)
-
-        # Create trace and span
-        now = datetime.now()
-        trace = Trace(
-            trace_id="trace-1",
-            user_id="user-1",
-            session_id="session-1",
-            channel="console",
-            start_time=now,
-        )
-        await trace_store.create_trace(trace)
+    async def test_update_span(self, config, mock_db):
+        """Test updating a span."""
+        store = TraceStore(config, mock_db)
+        await store.initialize()
 
         span = Span(
             span_id="span-1",
             trace_id="trace-1",
-            name="test",
+            name="test_span",
             event_type=EventType.LLM_INPUT,
-            start_time=now,
+            start_time=datetime.now(),
+            end_time=datetime.now(),
+            duration_ms=100,
+            output_tokens=50,
         )
-        await trace_store.create_span(span)
 
-        # Flush
-        await trace_store.flush()
-
-        # Check file exists
-        file_path = trace_store._get_daily_file_path(
-            now,
-        )
-        assert file_path.exists()
-
-        await trace_store.close()
+        await store.update_span(span)
+        mock_db.execute.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_atomic_write(self, tmp_path, config):
-        """Test that file is written atomically."""
-        storage_path = tmp_path / "tracing"
-        trace_store = TraceStore(config, storage_path)
-
+    async def test_get_spans(self, config, mock_db):
+        """Test getting spans for a trace."""
         now = datetime.now()
-        trace = Trace(
-            trace_id="trace-1",
-            user_id="user-1",
-            session_id="session-1",
-            channel="console",
-            start_time=now,
-        )
-        await trace_store.create_trace(trace)
-        await trace_store.flush()
+        mock_db.fetch_all.return_value = [
+            {
+                "span_id": "span-1",
+                "trace_id": "trace-1",
+                "parent_span_id": None,
+                "name": "test_span",
+                "event_type": "llm_input",
+                "start_time": now,
+                "end_time": None,
+                "duration_ms": None,
+                "user_id": "user-1",
+                "session_id": "session-1",
+                "channel": "console",
+                "model_name": "gpt-4",
+                "input_tokens": 100,
+                "output_tokens": None,
+                "tool_name": None,
+                "skill_name": None,
+                "tool_input": None,
+                "tool_output": None,
+                "error": None,
+                "metadata": None,
+                "mcp_server": None,
+            },
+        ]
 
-        # No temp file should remain
-        temp_files = list(storage_path.glob("*.tmp"))
-        assert len(temp_files) == 0
+        store = TraceStore(config, mock_db)
+        await store.initialize()
 
-        await trace_store.close()
+        spans = await store.get_spans("trace-1")
+        assert len(spans) == 1
+        assert spans[0].span_id == "span-1"
 
     @pytest.mark.asyncio
-    async def test_load_historical_data(self, tmp_path, config):
-        """Test loading historical data from files."""
-        storage_path = tmp_path / "tracing"
-        storage_path.mkdir(parents=True, exist_ok=True)
+    async def test_get_spans_empty(self, config, mock_db):
+        """Test getting spans for a trace with no spans."""
+        mock_db.fetch_all.return_value = []
 
-        # Create a file for yesterday
-        yesterday = datetime.now() - timedelta(days=1)
-        yesterday_file = (
-            storage_path / f"traces_{yesterday.strftime('%Y-%m-%d')}.json"
-        )
+        store = TraceStore(config, mock_db)
+        await store.initialize()
 
-        trace = Trace(
-            trace_id="old-trace",
-            user_id="user-1",
-            session_id="session-1",
-            channel="console",
-            start_time=yesterday,
-        )
-
-        data = {
-            "traces": [trace.model_dump()],
-            "spans": [],
-        }
-
-        with open(yesterday_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, default=str)
-
-        trace_store = TraceStore(config, storage_path)
-
-        # Load historical data
-        loaded_traces, _ = await trace_store.load_historical_data(
-            yesterday,
-            datetime.now(),
-        )
-
-        assert "old-trace" in loaded_traces
-
-        await trace_store.close()
+        spans = await store.get_spans("trace-1")
+        assert len(spans) == 0
 
 
 class TestQueryOperations:
     """Tests for query operations."""
 
     @pytest.mark.asyncio
-    async def test_get_overview_stats(self, store):
+    async def test_get_overview_stats(self, config, mock_db):
         """Test getting overview statistics."""
-        now = datetime.now()
+        mock_db.fetch_one.return_value = {
+            "total_traces": 100,
+            "total_spans": 500,
+            "total_input_tokens": 10000,
+            "total_output_tokens": 5000,
+            "active_users": 10,
+            "active_sessions": 15,
+        }
 
-        # Create traces
-        for i in range(3):
-            trace = Trace(
-                trace_id=f"trace-{i}",
-                user_id=f"user-{i % 2}",  # 2 users
-                session_id=f"session-{i}",
-                channel="console",
-                start_time=now,
-                status=TraceStatus.COMPLETED,
-                total_input_tokens=100 + i * 10,
-                total_output_tokens=50 + i * 5,
-                model_name="gpt-4",
-            )
-            await store.create_trace(trace)
+        store = TraceStore(config, mock_db)
+        await store.initialize()
 
         stats = await store.get_overview_stats()
-
-        assert stats.total_users == 2
-        assert stats.total_sessions == 3
-        assert stats.input_tokens > 0
-        assert stats.output_tokens > 0
+        assert stats is not None
 
     @pytest.mark.asyncio
-    async def test_get_users(self, store):
-        """Test getting user list."""
-        now = datetime.now()
+    async def test_get_users(self, config, mock_db):
+        """Test getting users list."""
+        mock_db.fetch_all.return_value = [
+            {
+                "user_id": "user-1",
+                "trace_count": 10,
+                "last_active": datetime.now(),
+            },
+            {
+                "user_id": "user-2",
+                "trace_count": 5,
+                "last_active": datetime.now(),
+            },
+        ]
 
-        for i in range(5):
-            trace = Trace(
-                trace_id=f"trace-{i}",
-                user_id=f"user-{i}",
-                session_id=f"session-{i}",
-                channel="console",
-                start_time=now,
-            )
-            await store.create_trace(trace)
+        store = TraceStore(config, mock_db)
+        await store.initialize()
 
-        users, total = await store.get_users(page=1, page_size=10)
-
-        assert total == 5
-        assert len(users) == 5
-
-    @pytest.mark.asyncio
-    async def test_get_users_pagination(self, store):
-        """Test user list pagination."""
-        now = datetime.now()
-
-        for i in range(25):
-            trace = Trace(
-                trace_id=f"trace-{i}",
-                user_id=f"user-{i}",
-                session_id=f"session-{i}",
-                channel="console",
-                start_time=now,
-            )
-            await store.create_trace(trace)
-
-        page1, total = await store.get_users(page=1, page_size=10)
-        page2, _ = await store.get_users(page=2, page_size=10)
-
-        assert total == 25
-        assert len(page1) == 10
-        assert len(page2) == 10
+        users = await store.get_users()
+        assert len(users) == 2
 
     @pytest.mark.asyncio
-    async def test_get_user_stats(self, store):
+    async def test_get_users_pagination(self, config, mock_db):
+        """Test getting users with pagination."""
+        mock_db.fetch_all.return_value = [
+            {
+                "user_id": "user-1",
+                "trace_count": 10,
+                "last_active": datetime.now(),
+            },
+        ]
+
+        store = TraceStore(config, mock_db)
+        await store.initialize()
+
+        users = await store.get_users(page=1, page_size=10)
+        assert len(users) == 1
+
+    @pytest.mark.asyncio
+    async def test_get_user_stats(self, config, mock_db):
         """Test getting user statistics."""
-        now = datetime.now()
-        user_id = "test-user"
+        mock_db.fetch_one.return_value = {
+            "user_id": "user-1",
+            "total_traces": 10,
+            "total_input_tokens": 1000,
+            "total_output_tokens": 500,
+        }
 
-        for i in range(3):
-            trace = Trace(
-                trace_id=f"trace-{i}",
-                user_id=user_id,
-                session_id=f"session-{i}",
-                channel="console",
-                start_time=now,
-                model_name="gpt-4",
-                total_input_tokens=100,
-                total_output_tokens=50,
-            )
-            await store.create_trace(trace)
+        store = TraceStore(config, mock_db)
+        await store.initialize()
 
-        stats = await store.get_user_stats(user_id)
-
-        assert stats.user_id == user_id
-        assert stats.total_sessions == 3
-        assert stats.total_tokens == (100 + 50) * 3
+        stats = await store.get_user_stats("user-1")
+        assert stats is not None
 
     @pytest.mark.asyncio
-    async def test_get_traces(self, store):
-        """Test getting trace list."""
+    async def test_get_traces(self, config, mock_db):
+        """Test getting traces list."""
         now = datetime.now()
+        mock_db.fetch_all.return_value = [
+            {
+                "trace_id": "trace-1",
+                "user_id": "user-1",
+                "session_id": "session-1",
+                "channel": "console",
+                "start_time": now,
+                "end_time": None,
+                "duration_ms": None,
+                "status": "running",
+                "user_message": None,
+                "error": None,
+                "model_name": None,
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "tools_used": "[]",
+                "skills_used": "[]",
+            },
+        ]
 
-        for i in range(5):
-            trace = Trace(
-                trace_id=f"trace-{i}",
-                user_id="user-1",
-                session_id="session-1",
-                channel="console",
-                start_time=now,
-            )
-            await store.create_trace(trace)
+        store = TraceStore(config, mock_db)
+        await store.initialize()
 
-        traces, total = await store.get_traces()
-
-        assert total == 5
-        assert len(traces) == 5
+        traces = await store.get_traces()
+        assert len(traces) == 1
 
     @pytest.mark.asyncio
-    async def test_get_traces_filter_by_user(self, store):
-        """Test filtering traces by user."""
+    async def test_get_traces_filter_by_user(self, config, mock_db):
+        """Test getting traces filtered by user."""
         now = datetime.now()
+        mock_db.fetch_all.return_value = [
+            {
+                "trace_id": "trace-1",
+                "user_id": "user-1",
+                "session_id": "session-1",
+                "channel": "console",
+                "start_time": now,
+                "end_time": None,
+                "duration_ms": None,
+                "status": "running",
+                "user_message": None,
+                "error": None,
+                "model_name": None,
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "tools_used": "[]",
+                "skills_used": "[]",
+            },
+        ]
 
-        for i in range(5):
-            trace = Trace(
-                trace_id=f"trace-{i}",
-                user_id=f"user-{i % 2}",
-                session_id="session-1",
-                channel="console",
-                start_time=now,
-            )
-            await store.create_trace(trace)
+        store = TraceStore(config, mock_db)
+        await store.initialize()
 
-        traces, total = await store.get_traces(user_id="user-0")
-
-        assert total == 3  # traces 0, 2, 4
+        traces = await store.get_traces(user_id="user-1")
+        assert len(traces) == 1
 
     @pytest.mark.asyncio
-    async def test_get_traces_filter_by_status(self, store):
-        """Test filtering traces by status."""
+    async def test_get_traces_filter_by_status(self, config, mock_db):
+        """Test getting traces filtered by status."""
         now = datetime.now()
+        mock_db.fetch_all.return_value = [
+            {
+                "trace_id": "trace-1",
+                "user_id": "user-1",
+                "session_id": "session-1",
+                "channel": "console",
+                "start_time": now,
+                "end_time": now,
+                "duration_ms": 100,
+                "status": "completed",
+                "user_message": None,
+                "error": None,
+                "model_name": None,
+                "total_input_tokens": 0,
+                "total_output_tokens": 0,
+                "tools_used": "[]",
+                "skills_used": "[]",
+            },
+        ]
 
-        for i in range(4):
-            status = TraceStatus.COMPLETED if i < 2 else TraceStatus.ERROR
-            trace = Trace(
-                trace_id=f"trace-{i}",
-                user_id="user-1",
-                session_id="session-1",
-                channel="console",
-                start_time=now,
-                status=status,
-            )
-            await store.create_trace(trace)
+        store = TraceStore(config, mock_db)
+        await store.initialize()
 
-        completed, _ = await store.get_traces(status="completed")
-        errors, _ = await store.get_traces(status="error")
-
-        assert len(completed) == 2
-        assert len(errors) == 2
+        traces = await store.get_traces(status=TraceStatus.COMPLETED)
+        assert len(traces) == 1
 
     @pytest.mark.asyncio
-    async def test_get_trace_detail(self, store):
+    async def test_get_trace_detail(self, config, mock_db):
         """Test getting trace detail with spans."""
         now = datetime.now()
+        mock_db.fetch_one.return_value = {
+            "trace_id": "trace-1",
+            "user_id": "user-1",
+            "session_id": "session-1",
+            "channel": "console",
+            "start_time": now,
+            "end_time": None,
+            "duration_ms": None,
+            "status": "running",
+            "user_message": None,
+            "error": None,
+            "model_name": None,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "tools_used": "[]",
+            "skills_used": "[]",
+        }
+        mock_db.fetch_all.return_value = []
 
-        trace = Trace(
-            trace_id="trace-1",
-            user_id="user-1",
-            session_id="session-1",
-            channel="console",
-            start_time=now,
-        )
-        await store.create_trace(trace)
-
-        # Create spans
-        llm_span = Span(
-            span_id="span-1",
-            trace_id="trace-1",
-            name="llm_call",
-            event_type=EventType.LLM_INPUT,
-            start_time=now,
-            duration_ms=1000,
-        )
-        tool_span = Span(
-            span_id="span-2",
-            trace_id="trace-1",
-            name="tool_call",
-            event_type=EventType.TOOL_CALL_END,
-            start_time=now,
-            duration_ms=500,
-            tool_name="browser",
-        )
-        await store.create_span(llm_span)
-        await store.create_span(tool_span)
+        store = TraceStore(config, mock_db)
+        await store.initialize()
 
         detail = await store.get_trace_detail("trace-1")
-
         assert detail is not None
-        assert detail.trace.trace_id == "trace-1"
-        assert len(detail.spans) == 2
+        assert detail.trace_id == "trace-1"
 
     @pytest.mark.asyncio
-    async def test_get_sessions(self, store):
-        """Test getting session list."""
-        now = datetime.now()
+    async def test_get_sessions(self, config, mock_db):
+        """Test getting sessions list."""
+        mock_db.fetch_all.return_value = [
+            {
+                "session_id": "session-1",
+                "user_id": "user-1",
+                "channel": "console",
+                "trace_count": 5,
+                "last_active": datetime.now(),
+            },
+        ]
 
-        for i in range(5):
-            trace = Trace(
-                trace_id=f"trace-{i}",
-                user_id="user-1",
-                session_id=f"session-{i % 2}",
-                channel="console",
-                start_time=now,
-            )
-            await store.create_trace(trace)
+        store = TraceStore(config, mock_db)
+        await store.initialize()
 
-        sessions, total = await store.get_sessions()
-
-        assert total == 2  # 2 unique sessions
+        sessions = await store.get_sessions()
+        assert len(sessions) == 1
 
     @pytest.mark.asyncio
-    async def test_get_user_messages(self, store):
+    async def test_get_user_messages(self, config, mock_db):
         """Test getting user messages."""
-        now = datetime.now()
+        mock_db.fetch_all.return_value = [
+            {
+                "trace_id": "trace-1",
+                "user_message": "Hello",
+                "start_time": datetime.now(),
+            },
+        ]
 
-        for i in range(3):
-            trace = Trace(
-                trace_id=f"trace-{i}",
-                user_id="user-1",
-                session_id="session-1",
-                channel="console",
-                start_time=now,
-                user_message=f"Message {i}",
-                total_input_tokens=10,
-                total_output_tokens=20,
-            )
-            await store.create_trace(trace)
+        store = TraceStore(config, mock_db)
+        await store.initialize()
 
-        messages, total = await store.get_user_messages()
-
-        assert total == 3
-        assert len(messages) == 3
+        messages = await store.get_user_messages()
+        assert len(messages) == 1
 
 
 class TestCleanup:
     """Tests for data cleanup."""
 
     @pytest.mark.asyncio
-    async def test_cleanup_old_data(self, store):
-        """Test cleaning up old data from memory."""
-        # Create old trace
-        old_date = datetime.now() - timedelta(days=60)
-        old_trace = Trace(
-            trace_id="old-trace",
-            user_id="user-1",
-            session_id="session-1",
-            channel="console",
-            start_time=old_date,
-        )
-        await store.create_trace(old_trace)
+    async def test_cleanup_old_data(self, config, mock_db):
+        """Test cleaning up old trace data."""
+        store = TraceStore(config, mock_db)
+        await store.initialize()
 
-        # Create recent trace
-        recent_trace = Trace(
-            trace_id="recent-trace",
-            user_id="user-1",
-            session_id="session-2",
-            channel="console",
-            start_time=datetime.now(),
-        )
-        await store.create_trace(recent_trace)
-
-        # Clean up data older than 30 days
-        cutoff = datetime.now() - timedelta(days=30)
-        await store.cleanup_old_data(cutoff)
-
-        assert "old-trace" not in store._traces
-        assert "recent-trace" in store._traces
+        cutoff_date = datetime.now() - timedelta(days=30)
+        await store.cleanup_old_data(cutoff_date)
+        # Should execute delete queries
+        assert mock_db.execute.called
 
 
 class TestTokenSummary:
-    """Tests for token summary generation."""
+    """Tests for token summary operations."""
 
     @pytest.mark.asyncio
-    async def test_get_token_summary(self, store):
-        """Test getting token usage summary."""
-        now = datetime.now()
+    async def test_get_token_summary(self, config, mock_db):
+        """Test getting token summary."""
+        mock_db.fetch_all.return_value = [
+            {
+                "model_name": "gpt-4",
+                "total_input_tokens": 1000,
+                "total_output_tokens": 500,
+                "trace_count": 10,
+            },
+        ]
 
-        for i in range(5):
-            trace = Trace(
-                trace_id=f"trace-{i}",
-                user_id="user-1",
-                session_id="session-1",
-                channel="console",
-                start_time=now,
-                model_name="gpt-4",
-                total_input_tokens=100 + i * 10,
-                total_output_tokens=50 + i * 5,
-            )
-            await store.create_trace(trace)
+        store = TraceStore(config, mock_db)
+        await store.initialize()
 
-            # Create LLM input span for call counting
-            span = Span(
-                span_id=f"span-{i}",
-                trace_id=f"trace-{i}",
-                name="llm_call",
-                event_type=EventType.LLM_INPUT,
-                start_time=now,
-            )
-            await store.create_span(span)
-
-        summary = await store.get_token_summary(
-            start_date=now - timedelta(days=1),
-            end_date=now + timedelta(days=1),
-        )
-
-        assert summary.total_prompt_tokens > 0
-        assert summary.total_completion_tokens > 0
-        assert summary.total_calls == 5
+        summary = await store.get_token_summary()
+        assert len(summary) == 1

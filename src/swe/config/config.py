@@ -26,7 +26,6 @@ from ..constant import (
     TRACING_RETENTION_DAYS,
     TRACING_SANITIZE_OUTPUT,
     TRACING_MAX_OUTPUT_LENGTH,
-    TRACING_STORAGE_PATH,
 )
 from ..providers.models import ModelSlotConfig
 from ..tracing.config import TracingConfig
@@ -605,7 +604,6 @@ class AgentsRunningConfig(BaseModel):
             retention_days=TRACING_RETENTION_DAYS,
             sanitize_output=TRACING_SANITIZE_OUTPUT,
             max_output_length=TRACING_MAX_OUTPUT_LENGTH,
-            storage_path=TRACING_STORAGE_PATH or None,
         ),
         description="Tracing configuration for request tracking and analytics",
     )
@@ -1119,31 +1117,32 @@ class ServiceHeartbeatConfig(BaseModel):
     用于服务注册和健康检查，在服务启动时开启后台心跳任务，
     进程结束前发送关闭信号（enabled=false）。
 
-    注意：心跳URL和间隔时间从环境变量读取，支持dev/prd环境区分：
-    - SWE_SERVICE_HEARTBEAT_URL: 心跳接口地址
-    - SWE_SERVICE_HEARTBEAT_INTERVAL: 心跳间隔秒数
+    注意：所有配置项从环境变量读取，支持 Kubernetes 部署场景：
+    - SWE_SERVICE_HEARTBEAT_ENABLED: 是否启用（默认true）
+    - SWE_SERVICE_HEARTBEAT_URL: 心跳接口地址（必填）
+    - SWE_SERVICE_HEARTBEAT_INTERVAL: 心跳间隔秒数（默认30）
+    - SWE_SERVICE_HEARTBEAT_INSTANCE_PORT: 实例端口（默认8088）
+    - SWE_SERVICE_HEARTBEAT_WEIGHT: 权重（默认1）
+    - CMB_CAAS_SERVICEUNITID: 服务单元标识（可选）
+
+    config.json 中无需配置，所有值通过 property 从环境变量动态获取。
     """
 
-    enabled: bool = Field(
-        default=False,
-        description="是否启用服务心跳",
-    )
-    service_name: str = Field(
-        default="swe",
-        description="服务名称，固定为swe",
-    )
-    instance_port: int = Field(
-        default=8088,
-        ge=1,
-        le=65535,
-        description="实例端口，默认8088",
-    )
-    weight: int = Field(
-        default=1,
-        ge=1,
-        le=100,
-        description="权重，默认1",
-    )
+    # Pydantic 模型配置：允许额外字段以兼容旧配置文件
+    model_config = ConfigDict(extra="ignore")
+
+    @property
+    def enabled(self) -> bool:
+        """从环境变量获取是否启用。"""
+        return EnvVarLoader.get_bool(
+            "SWE_SERVICE_HEARTBEAT_ENABLED",
+            default=True,
+        )
+
+    @property
+    def service_name(self) -> str:
+        """服务名称，固定为 swe。"""
+        return "swe"
 
     @property
     def url(self) -> str:
@@ -1158,6 +1157,26 @@ class ServiceHeartbeatConfig(BaseModel):
             default=30,
             min_value=5,
             max_value=300,
+        )
+
+    @property
+    def instance_port(self) -> int:
+        """从环境变量获取实例端口。"""
+        return EnvVarLoader.get_int(
+            "SWE_SERVICE_HEARTBEAT_INSTANCE_PORT",
+            default=8088,
+            min_value=1,
+            max_value=65535,
+        )
+
+    @property
+    def weight(self) -> int:
+        """从环境变量获取权重。"""
+        return EnvVarLoader.get_int(
+            "SWE_SERVICE_HEARTBEAT_WEIGHT",
+            default=1,
+            min_value=1,
+            max_value=100,
         )
 
 

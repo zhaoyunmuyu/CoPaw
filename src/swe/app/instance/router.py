@@ -36,33 +36,22 @@ def init_instance_module(db=None):
     """Initialize instance module with database connection.
 
     Args:
-        db: TDSQLConnection instance. If None, will try to get from trace manager.
+        db: DatabaseConnection instance (required for database operations).
+
+    Raises:
+        RuntimeError: If db is None or not connected.
     """
     global _store, _service
 
-    # If no db provided, try to get from trace manager
-    if db is None:
-        try:
-            from ...tracing import get_trace_manager
-
-            trace_manager = get_trace_manager()
-            # pylint: disable=protected-access
-            if (
-                trace_manager._store
-                and trace_manager._store._db
-                and trace_manager._store._db.is_connected
-            ):
-                db = trace_manager._store._db
-                logger.info(
-                    "Instance module using database from trace manager",
-                )
-        except RuntimeError:
-            logger.info(
-                "Trace manager not available, instance module running without database",
-            )
+    if db is None or not getattr(db, "is_connected", False):
+        raise RuntimeError(
+            "Instance module requires a connected database. "
+            "Please ensure database is initialized before calling this function.",
+        )
 
     _store = InstanceStore(db)
     _service = InstanceService(_store)
+    logger.info("Instance module initialized with database connection")
 
 
 def get_service() -> InstanceService:
