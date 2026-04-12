@@ -72,6 +72,11 @@ class _FakeCoordination:
         self.events.append(f"bump:{self.version}")
         return self.version
 
+    async def ensure_definition_version(self, version):
+        self.version = max(self.version, version)
+        self.events.append(f"sync:{self.version}")
+        return self.version
+
     async def publish_reload(self, version=None):
         self.events.append(f"publish:{version}")
         return True
@@ -603,14 +608,14 @@ class TestCronManagerState:
 class TestCronDefinitionMutationCoordination:
     """Tests for serialized jobs.json mutation and reload convergence."""
 
-    async def test_mutation_reserves_definition_version_before_saving_jobs_file(
+    async def test_mutation_saves_jobs_file_before_advancing_definition_version(
         self,
         temp_jobs_file,
         mock_runner,
         mock_channel_manager,
         sample_job_spec,
     ):
-        """Successful writes should reserve version before jobs.json save."""
+        """Successful writes should only advance version after save succeeds."""
         repo = JsonJobRepository(temp_jobs_file)
         coord = _FakeCoordination()
         manager = CronManager(
@@ -636,8 +641,8 @@ class TestCronDefinitionMutationCoordination:
 
         assert events == [
             "acquire",
-            "bump:1",
             "save",
+            "sync:1",
             "release",
             "publish:1",
         ]
@@ -667,11 +672,7 @@ class TestCronDefinitionMutationCoordination:
         with pytest.raises(RuntimeError, match="disk full"):
             await manager.create_or_replace_job(sample_job_spec)
 
-        assert coord.events == [
-            "acquire",
-            "bump:1",
-            "release",
-        ]
+        assert coord.events == ["acquire", "release"]
         assert manager._definition_version == 0
 
     async def test_concurrent_create_operations_preserve_both_jobs(
@@ -725,11 +726,11 @@ class TestCronDefinitionMutationCoordination:
         assert {job.id for job in jobs} == {"job-1", "job-2"}
         assert coord.events == [
             "acquire",
-            "bump:1",
+            "sync:1",
             "release",
             "publish:1",
             "acquire",
-            "bump:2",
+            "sync:2",
             "release",
             "publish:2",
         ]
@@ -751,6 +752,7 @@ class TestCronDefinitionMutationCoordination:
         )
         manager._coordination = MagicMock()
         manager._coordination.get_definition_version = AsyncMock(return_value=3)
+        manager._coordination.ensure_definition_version = AsyncMock(return_value=3)
         manager._coordination.is_leader = True
         manager._definition_version = 1
         manager._started = True
@@ -758,6 +760,44 @@ class TestCronDefinitionMutationCoordination:
 
         await manager._reconcile_definition_version_once()
 
+        manager.reload.assert_awaited_once()
+
+    async def test_reconcile_repairs_redis_version_from_jobs_file_before_reloading(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+    ):
+        """A durable jobs.json change should still converge if Redis version lags."""
+        temp_jobs_file.write_text(
+            """
+{
+  "version": 1,
+  "definition_version": 2,
+  "jobs": []
+}
+""".strip(),
+            encoding="utf-8",
+        )
+        manager = CronManager(
+            repo=JsonJobRepository(temp_jobs_file),
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        manager._coordination = MagicMock()
+        manager._coordination.get_definition_version = AsyncMock(return_value=1)
+        manager._coordination.ensure_definition_version = AsyncMock(return_value=2)
+        manager._coordination.is_leader = True
+        manager._definition_version = 1
+        manager._started = True
+        manager.reload = AsyncMock()
+
+        await manager._reconcile_definition_version_once()
+
+        manager._coordination.ensure_definition_version.assert_awaited_once_with(2)
         manager.reload.assert_awaited_once()
 
     async def test_delete_job_keeps_local_scheduler_state_when_persistence_fails(

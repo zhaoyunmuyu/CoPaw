@@ -446,18 +446,22 @@ class TestCronCoordination:
         coord._redis = AsyncMock()
         coord._redis.get = AsyncMock(return_value=b"2")
         coord._redis.incr = AsyncMock(return_value=3)
+        coord._redis.eval = AsyncMock(return_value=4)
 
         current = await coord.get_definition_version()
         bumped = await coord.bump_definition_version()
+        ensured = await coord.ensure_definition_version(4)
 
         assert current == 2
         assert bumped == 3
+        assert ensured == 4
         coord._redis.get.assert_awaited_once_with(
             "swe:cron:defver:test-tenant:test-agent",
         )
         coord._redis.incr.assert_awaited_once_with(
             "swe:cron:defver:test-tenant:test-agent",
         )
+        coord._redis.eval.assert_awaited_once()
 
     async def test_acquire_definition_lock_times_out_when_lock_never_frees(
         self,

@@ -1013,6 +1013,22 @@ class CronCoordination:
         key = f"swe:cron:defver:{self._tenant_id or 'default'}:{self._agent_id}"
         return int(await self._redis.incr(key))
 
+    async def ensure_definition_version(self, version: int) -> int:
+        """Ensure the shared definition version is at least ``version``."""
+        if self._redis is None:
+            raise RedisNotAvailableError("Not connected to Redis")
+
+        key = f"swe:cron:defver:{self._tenant_id or 'default'}:{self._agent_id}"
+        script = """
+local current = redis.call('GET', KEYS[1])
+if (not current) or (tonumber(current) < tonumber(ARGV[1])) then
+    redis.call('SET', KEYS[1], ARGV[1])
+    return tonumber(ARGV[1])
+end
+return tonumber(current)
+"""
+        return int(await self._redis.eval(script, 1, key, version))
+
     async def acquire_definition_lock(self) -> DefinitionLock:
         """Acquire the tenant+agent definition mutation lock."""
         if self._redis is None:

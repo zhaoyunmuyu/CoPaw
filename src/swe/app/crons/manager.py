@@ -271,7 +271,7 @@ class CronManager:
 
             # Reload heartbeat
             await self._update_heartbeat()
-            await self._refresh_definition_version_locked()
+            await self._refresh_definition_version_locked(jobs_file=jobs_file)
 
             logger.info(
                 "Cron schedule reloaded: agent=%s jobs=%d",
@@ -314,7 +314,7 @@ class CronManager:
 
             # Heartbeat: scheduled job when enabled in config
             await self._update_heartbeat()
-            await self._refresh_definition_version_locked()
+            await self._refresh_definition_version_locked(jobs_file=jobs_file)
 
             self._started = True
             self._start_definition_reconcile_loop()
@@ -737,7 +737,7 @@ class CronManager:
         definition_lock = None
         changed = False
         should_publish = False
-        version_reserved = False
+        save_succeeded = False
         result: _T
         version = self._definition_version
 
@@ -746,22 +746,33 @@ class CronManager:
 
         try:
             jobs_file = await self._repo.load()
+            version = max(
+                version,
+                self._get_jobs_file_definition_version(jobs_file),
+            )
+            if self._coordination is not None:
+                version = max(
+                    version,
+                    await self._coordination.get_definition_version(),
+                )
             changed, result = mutator(jobs_file)
             if not changed:
                 return False, result, version
 
-            if self._coordination is not None:
-                version = await self._coordination.bump_definition_version()
-                version_reserved = True
+            version += 1
+            jobs_file.definition_version = version
             await self._repo.save(jobs_file)
-            if version_reserved:
-                self._definition_version = version
-                should_publish = True
+            save_succeeded = True
+            if self._coordination is not None:
+                version = await self._coordination.ensure_definition_version(version)
+            self._definition_version = version
+            should_publish = True
             return True, result, version
         except Exception:
-            if version_reserved and not should_publish:
+            if save_succeeded and not should_publish:
                 logger.warning(
-                    "Cron definition mutation failed after reserving version: "
+                    "Cron definition mutation saved jobs.json but failed to sync "
+                    "definition version: "
                     "agent=%s version=%s",
                     self._agent_id,
                     version,
@@ -788,19 +799,45 @@ class CronManager:
             for job_id in disabled_ids:
                 logger.warning("Auto-disabled invalid cron job: job_id=%s", job_id)
 
-    async def _refresh_definition_version_locked(self) -> None:
-        if self._coordination is None:
-            return
-        try:
-            self._definition_version = (
-                await self._coordination.get_definition_version()
-            )
-        except Exception:  # pylint: disable=broad-except
-            logger.warning(
-                "Failed to refresh cron definition version: agent=%s",
-                self._agent_id,
-                exc_info=True,
-            )
+    @staticmethod
+    def _get_jobs_file_definition_version(jobs_file: JobsFile) -> int:
+        return max(int(getattr(jobs_file, "definition_version", 0) or 0), 0)
+
+    async def _refresh_definition_version_locked(
+        self,
+        *,
+        jobs_file: Optional[JobsFile] = None,
+    ) -> None:
+        file_version = (
+            self._get_jobs_file_definition_version(jobs_file)
+            if jobs_file is not None
+            else None
+        )
+        remote_version: Optional[int] = None
+
+        if self._coordination is not None:
+            try:
+                remote_version = await self._coordination.get_definition_version()
+                if (
+                    file_version is not None
+                    and file_version > remote_version
+                ):
+                    remote_version = await self._coordination.ensure_definition_version(
+                        file_version,
+                    )
+            except Exception:  # pylint: disable=broad-except
+                logger.warning(
+                    "Failed to refresh cron definition version: agent=%s",
+                    self._agent_id,
+                    exc_info=True,
+                )
+
+        versions = [self._definition_version]
+        if file_version is not None:
+            versions.append(file_version)
+        if remote_version is not None:
+            versions.append(remote_version)
+        self._definition_version = max(versions)
 
     def _start_definition_reconcile_loop(self) -> None:
         if self._coordination is None or self._definition_reconcile_task is not None:
@@ -853,13 +890,32 @@ class CronManager:
         if self._coordination is None or not self._started or not self.is_leader:
             return
 
-        remote_version = await self._coordination.get_definition_version()
-        if remote_version > self._definition_version:
+        jobs_file = await self._repo.load()
+        file_version = self._get_jobs_file_definition_version(jobs_file)
+
+        remote_version = self._definition_version
+        try:
+            remote_version = await self._coordination.get_definition_version()
+            if file_version > remote_version:
+                remote_version = await self._coordination.ensure_definition_version(
+                    file_version,
+                )
+        except Exception:  # pylint: disable=broad-except
+            logger.warning(
+                "Failed to read or repair cron definition version during "
+                "reconcile: agent=%s",
+                self._agent_id,
+                exc_info=True,
+            )
+
+        observed_version = max(file_version, remote_version)
+        if observed_version > self._definition_version:
             logger.info(
                 "Reconciling cron definitions after missed reload: "
-                "agent=%s local_version=%s remote_version=%s",
+                "agent=%s local_version=%s file_version=%s remote_version=%s",
                 self._agent_id,
                 self._definition_version,
+                file_version,
                 remote_version,
             )
             await self.reload()
