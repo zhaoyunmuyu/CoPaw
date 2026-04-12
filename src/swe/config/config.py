@@ -1111,6 +1111,12 @@ class CronCoordinationConfig(BaseModel):
         le=300,
         description="Additional time added to job timeout for legacy execution-lock paths",
     )
+    definition_lock_timeout_seconds: float = Field(
+        default=10.0,
+        ge=0.05,
+        le=300,
+        description="How long to wait for the shared jobs.json definition lock",
+    )
     # Reload pub/sub configuration
     reload_channel_prefix: str = Field(
         default="swe:cron:reload",

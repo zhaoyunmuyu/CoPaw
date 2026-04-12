@@ -57,6 +57,8 @@ class CoordinationConfig:
     # Execution lock configuration
     lock_ttl_seconds: int = 120  # Default, should be derived from job timeout
     lock_safety_margin_seconds: int = 30
+    # Definition mutation lock configuration
+    definition_lock_timeout_seconds: float = 10.0
     # Reload pub/sub configuration
     reload_channel_prefix: str = "swe:cron:reload"
 
@@ -75,6 +77,12 @@ class LeaseLostError(CronCoordinationError):
 
 class RedisNotAvailableError(CronCoordinationError):
     """Raised when Redis is not available but coordination is requested."""
+
+    pass
+
+
+class DefinitionLockTimeoutError(CronCoordinationError):
+    """Raised when the definition mutation lock cannot be acquired in time."""
 
     pass
 
@@ -367,8 +375,9 @@ class DefinitionLock:
             )
             return bool(acquired)
         except Exception as e:
-            logger.warning("Failed to acquire definition lock: %s", e)
-            return False
+            raise CronCoordinationError(
+                f"Failed to acquire definition lock: {e}",
+            ) from e
 
     async def release(self) -> None:
         """Release the definition lock if still held by this lock token."""
@@ -1009,17 +1018,33 @@ class CronCoordination:
         if self._redis is None:
             raise RedisNotAvailableError("Not connected to Redis")
 
+        ttl_seconds = max(self._config.lease_ttl_seconds, 30)
         lock = DefinitionLock(
             redis_client=self._redis,
             tenant_id=self._tenant_id,
             agent_id=self._agent_id,
-            ttl_seconds=max(self._config.lease_ttl_seconds, 30),
+            ttl_seconds=ttl_seconds,
         )
+        timeout_seconds = max(
+            float(self._config.definition_lock_timeout_seconds),
+            0.05,
+        )
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_seconds
         while True:
             acquired = await lock.acquire()
             if acquired:
                 return lock
-            await asyncio.sleep(0.05)
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise DefinitionLockTimeoutError(
+                    "Timed out acquiring cron definition lock: "
+                    f"tenant={self._tenant_id or 'default'} "
+                    f"agent={self._agent_id} "
+                    f"lock_ttl_seconds={ttl_seconds} "
+                    f"wait_timeout_seconds={timeout_seconds}",
+                )
+            await asyncio.sleep(min(0.05, remaining))
 
     def set_reload_callback(self, callback: Callable[[], None]) -> None:
         """Set the callback to invoke when a reload signal is received."""

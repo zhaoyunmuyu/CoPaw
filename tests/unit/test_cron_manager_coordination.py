@@ -34,11 +34,13 @@ from swe.app.crons.manager import CronManager, HEARTBEAT_JOB_ID
 from swe.app.crons.coordination import CoordinationConfig
 from swe.app.crons.models import (
     CronJobSpec,
+    CronJobState,
     ScheduleSpec,
     DispatchSpec,
     DispatchTarget,
     JobRuntimeSpec,
     CronJobRequest,
+    JobsFile,
 )
 from swe.app.crons.repo.json_repo import JsonJobRepository
 
@@ -601,6 +603,77 @@ class TestCronManagerState:
 class TestCronDefinitionMutationCoordination:
     """Tests for serialized jobs.json mutation and reload convergence."""
 
+    async def test_mutation_reserves_definition_version_before_saving_jobs_file(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+        sample_job_spec,
+    ):
+        """Successful writes should reserve version before jobs.json save."""
+        repo = JsonJobRepository(temp_jobs_file)
+        coord = _FakeCoordination()
+        manager = CronManager(
+            repo=repo,
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        manager._coordination = coord
+
+        events = coord.events
+        original_save = repo.save
+
+        async def recording_save(jobs_file):
+            events.append("save")
+            await original_save(jobs_file)
+
+        repo.save = recording_save
+
+        await manager.create_or_replace_job(sample_job_spec)
+
+        assert events == [
+            "acquire",
+            "bump:1",
+            "save",
+            "release",
+            "publish:1",
+        ]
+        assert manager._definition_version == 1
+
+    async def test_mutation_does_not_publish_or_advance_local_version_if_save_fails(
+        self,
+        mock_runner,
+        mock_channel_manager,
+        sample_job_spec,
+    ):
+        """A failed save must not publish reload or mark local convergence."""
+        repo = AsyncMock()
+        repo.load = AsyncMock(return_value=JobsFile(version=1, jobs=[]))
+        repo.save = AsyncMock(side_effect=RuntimeError("disk full"))
+        coord = _FakeCoordination()
+        manager = CronManager(
+            repo=repo,
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        manager._coordination = coord
+
+        with pytest.raises(RuntimeError, match="disk full"):
+            await manager.create_or_replace_job(sample_job_spec)
+
+        assert coord.events == [
+            "acquire",
+            "bump:1",
+            "release",
+        ]
+        assert manager._definition_version == 0
+
     async def test_concurrent_create_operations_preserve_both_jobs(
         self,
         temp_jobs_file,
@@ -686,6 +759,39 @@ class TestCronDefinitionMutationCoordination:
         await manager._reconcile_definition_version_once()
 
         manager.reload.assert_awaited_once()
+
+    async def test_delete_job_keeps_local_scheduler_state_when_persistence_fails(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+    ):
+        """delete_job should not mutate in-memory state before persistence succeeds."""
+        manager = CronManager(
+            repo=JsonJobRepository(temp_jobs_file),
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        manager._started = True
+        manager._scheduler = MagicMock()
+        manager._scheduler.get_job.return_value = object()
+        manager._active_jobs.add("job-1")
+        manager._states["job-1"] = CronJobState()
+        manager._rt["job-1"] = object()
+        manager._mutate_jobs_file_locked = AsyncMock(
+            side_effect=RuntimeError("persist failed"),
+        )
+
+        with pytest.raises(RuntimeError, match="persist failed"):
+            await manager.delete_job("job-1")
+
+        manager._scheduler.remove_job.assert_not_called()
+        assert "job-1" in manager._active_jobs
+        assert "job-1" in manager._states
+        assert "job-1" in manager._rt
 
 
 @pytest.mark.skipif(not REDIS_AVAILABLE, reason="Redis not available")

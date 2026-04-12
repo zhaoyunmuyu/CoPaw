@@ -40,6 +40,8 @@ from swe.app.crons.coordination import (
     AgentLease,
     CoordinationConfig,
     CronCoordination,
+    CronCoordinationError,
+    DefinitionLockTimeoutError,
     ExecutionLock,
     RedisNotAvailableError,
 )
@@ -456,6 +458,39 @@ class TestCronCoordination:
         coord._redis.incr.assert_awaited_once_with(
             "swe:cron:defver:test-tenant:test-agent",
         )
+
+    async def test_acquire_definition_lock_times_out_when_lock_never_frees(
+        self,
+    ):
+        """Definition lock acquisition should fail instead of waiting forever."""
+        coord = CronCoordination(
+            tenant_id="test-tenant",
+            agent_id="test-agent",
+            config=CoordinationConfig(
+                enabled=True,
+                definition_lock_timeout_seconds=0.01,
+            ),
+        )
+        coord._redis = AsyncMock()
+        coord._redis.set = AsyncMock(return_value=False)
+
+        with pytest.raises(DefinitionLockTimeoutError):
+            await coord.acquire_definition_lock()
+
+    async def test_acquire_definition_lock_raises_on_redis_error(
+        self,
+    ):
+        """Redis errors during definition lock acquisition should surface."""
+        coord = CronCoordination(
+            tenant_id="test-tenant",
+            agent_id="test-agent",
+            config=CoordinationConfig(enabled=True),
+        )
+        coord._redis = AsyncMock()
+        coord._redis.set = AsyncMock(side_effect=RuntimeError("redis down"))
+
+        with pytest.raises(CronCoordinationError, match="redis down"):
+            await coord.acquire_definition_lock()
 
 
 class TestCronCoordinationWithRedis:

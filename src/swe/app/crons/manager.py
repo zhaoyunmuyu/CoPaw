@@ -574,18 +574,21 @@ class CronManager:
 
     async def delete_job(self, job_id: str) -> bool:
         async with self._lock:
-            if self._started and self._scheduler is not None:
-                if self._scheduler.get_job(job_id):
-                    self._scheduler.remove_job(job_id)
-                self._active_jobs.discard(job_id)
-            self._states.pop(job_id, None)
-            self._rt.pop(job_id, None)
             changed, found, _ = await self._mutate_jobs_file_locked(
                 lambda jobs_file: self._delete_job_in_jobs_file(
                     jobs_file,
                     job_id,
                 ),
             )
+            if not found:
+                return False
+
+            if self._started and self._scheduler is not None:
+                if self._scheduler.get_job(job_id):
+                    self._scheduler.remove_job(job_id)
+                self._active_jobs.discard(job_id)
+            self._states.pop(job_id, None)
+            self._rt.pop(job_id, None)
             return found if changed else found
 
     async def pause_job(self, job_id: str) -> bool:
@@ -734,6 +737,7 @@ class CronManager:
         definition_lock = None
         changed = False
         should_publish = False
+        version_reserved = False
         result: _T
         version = self._definition_version
 
@@ -746,12 +750,24 @@ class CronManager:
             if not changed:
                 return False, result, version
 
-            await self._repo.save(jobs_file)
             if self._coordination is not None:
                 version = await self._coordination.bump_definition_version()
+                version_reserved = True
+            await self._repo.save(jobs_file)
+            if version_reserved:
                 self._definition_version = version
                 should_publish = True
             return True, result, version
+        except Exception:
+            if version_reserved and not should_publish:
+                logger.warning(
+                    "Cron definition mutation failed after reserving version: "
+                    "agent=%s version=%s",
+                    self._agent_id,
+                    version,
+                    exc_info=True,
+                )
+            raise
         finally:
             if definition_lock is not None:
                 await definition_lock.release()
