@@ -51,7 +51,7 @@ export const DEFAULT_THEME: BrandThemeConfig = {
   brandName: "金葵花RM小助Claw版",
   logo: "/logo.png",
   darkLogo: "/logo.png",
-  primaryColor: "#FF7F16",
+  primaryColor: "#3769FC",
   favicon: "/swe-symbol.png",
   avatar: "/logo-center.png",
 };
@@ -72,7 +72,7 @@ export const BRAND_THEMES: Record<string, BrandThemeConfig> = {
     // TODO: 合并代码后修改为: /logo-ruice.png
     logo: "/logo.png",
     darkLogo: "/logo.png",
-    primaryColor: "#FF7F16", //睿策
+    primaryColor: "#3769FC", //睿策
     favicon: "/swe-symbol.png",
     avatar: "/logo-center.png",
   },
@@ -83,7 +83,7 @@ export const BRAND_THEMES: Record<string, BrandThemeConfig> = {
     // TODO: 合并代码后修改为: /logo-cms.png
     logo: "/logo.png",
     darkLogo: "/logo.png",
-    primaryColor: "#FF7F16", // 远程RM
+    primaryColor: "#3769FC", // 远程RM
     favicon: "/swe-symbol.png",
     avatar: "/logo-center.png",
   },
@@ -94,7 +94,7 @@ export const BRAND_THEMES: Record<string, BrandThemeConfig> = {
     // TODO: 合并代码后修改为: /logo-zx.png
     logo: "/logo.png",
     darkLogo: "/logo.png",
-    primaryColor: "#FF7F16", // 智像
+    primaryColor: "#3769FC", // 智像
     favicon: "/swe-symbol.png",
     avatar: "/logo-center.png",
   },
@@ -105,7 +105,7 @@ export const BRAND_THEMES: Record<string, BrandThemeConfig> = {
     // TODO: 合并代码后修改为: /logo-copilot.png
     logo: "/logo.png",
     darkLogo: "/logo.png",
-    primaryColor: "#FF7F16", // 数据赋能
+    primaryColor: "#3769FC", // 数据赋能
     favicon: "/swe-symbol.png",
     avatar: "/logo-center.png",
   },

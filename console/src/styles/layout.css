@@ -5,12 +5,12 @@ body {
   margin: 0;
   padding: 0;
   /* background: #fff; */
-  background: #f9f8f4;
+  background: #FFFFFF;
 }
 
 .swe-layout {
   /* background: #fff; */
-  background: #f9f8f4;
+  background: #FFFFFF;
 }
 
 /* ─── Dark mode global token overrides ─────────────────────────────────────── */
@@ -139,8 +139,8 @@ html.dark-mode .ant-pagination .ant-pagination-item a {
 
 html.dark-mode .swe-pagination .swe-pagination-item-active,
 html.dark-mode .ant-pagination .ant-pagination-item-active {
-  background: #ff7f16 !important;
-  border-color: #ff7f16 !important;
+  background: #3769FC !important;
+  border-color: #3769FC !important;
 }
 
 html.dark-mode .swe-pagination .swe-pagination-item-active a,
@@ -167,7 +167,7 @@ html.dark-mode .swe-table-column-sorter-up.active,
 html.dark-mode .swe-table-column-sorter-down.active,
 html.dark-mode .ant-table-column-sorter-up.active,
 html.dark-mode .ant-table-column-sorter-down.active {
-  color: #ff7f16 !important;
+  color: #3769FC !important;
 }
 
 /* Checkbox in table */
@@ -179,8 +179,8 @@ html.dark-mode .ant-checkbox-inner {
 
 html.dark-mode .swe-checkbox-checked .swe-checkbox-inner,
 html.dark-mode .ant-checkbox-checked .ant-checkbox-inner {
-  background: #ff7f16 !important;
-  border-color: #ff7f16 !important;
+  background: #3769FC !important;
+  border-color: #3769FC !important;
 }
 
 /* Page titles (h1) */
@@ -268,7 +268,7 @@ html.dark-mode .ant-select-item-option-active {
 html.dark-mode .swe-select-item-option-selected,
 html.dark-mode .ant-select-item-option-selected {
   background: rgba(97, 92, 237, 0.2) !important;
-  color: #ff7f16 !important;
+  color: #3769FC !important;
 }
 
 /* Form labels */
@@ -349,7 +349,7 @@ html.dark-mode
   .ant-picker-time-panel-cell-selected
   .ant-picker-time-panel-cell-inner {
   background: rgba(97, 92, 237, 0.2) !important;
-  color: #ff7f16 !important;
+  color: #3769FC !important;
 }
 
 /* DatePicker / RangePicker calendar panel */
@@ -419,7 +419,7 @@ html.dark-mode .ant-picker-cell-disabled {
 /* Today marker */
 html.dark-mode .swe-picker-cell-today .swe-picker-cell-inner::before,
 html.dark-mode .ant-picker-cell-today .ant-picker-cell-inner::before {
-  border-color: #ff7f16 !important;
+  border-color: #3769FC !important;
 }
 
 /* Selected start/end cell */
@@ -429,7 +429,7 @@ html.dark-mode .swe-picker-cell-range-start .swe-picker-cell-inner,
 html.dark-mode .ant-picker-cell-range-start .ant-picker-cell-inner,
 html.dark-mode .swe-picker-cell-range-end .swe-picker-cell-inner,
 html.dark-mode .ant-picker-cell-range-end .ant-picker-cell-inner {
-  background: #ff7f16 !important;
+  background: #3769FC !important;
   color: #fff !important;
 }
 
@@ -454,7 +454,7 @@ html.dark-mode
 html.dark-mode
   .swe-picker-cell-in-view.swe-picker-cell-range-hover-end::after,
 html.dark-mode .ant-picker-cell-in-view.ant-picker-cell-range-hover-end::after {
-  border-color: #ff7f16 !important;
+  border-color: #3769FC !important;
 }
 
 /* Panel footer (OK button area) */
@@ -466,7 +466,7 @@ html.dark-mode .ant-picker-footer {
 
 html.dark-mode .swe-picker-today-btn,
 html.dark-mode .ant-picker-today-btn {
-  color: #ff7f16 !important;
+  color: #3769FC !important;
 }
 
 /* Divider between two panels in RangePicker */
@@ -613,12 +613,12 @@ html.dark-mode .ant-slider-rail {
 
 html.dark-mode .swe-slider-track,
 html.dark-mode .ant-slider-track {
-  background-color: #ff7f16 !important;
+  background-color: #3769FC !important;
 }
 
 html.dark-mode .swe-slider-mark-text,
 html.dark-mode .ant-slider-mark-text {
-  color: #ff7f16 !important;
+  color: #3769FC !important;
 }
 
 html.dark-mode .swe-form-item-label > label .swe-form-item-tooltip,
@@ -628,7 +628,7 @@ html.dark-mode .ant-form-item-label > label .ant-form-item-tooltip {
 
 html.dark-mode .swe-slider-handle::after,
 html.dark-mode .ant-slider-handle::after {
-  box-shadow: 0 0 0 2px #ff7f16 !important;
+  box-shadow: 0 0 0 2px #3769FC !important;
   background-color: #1f1f1f !important;
 }
 
@@ -737,7 +737,7 @@ html.dark-mode [class*="chat-anywhere"] [class*="message"] code {
 }
 
 html.dark-mode [class*="chat-anywhere"] [class*="message"] a {
-  color: #ff7f16 !important;
+  color: #3769FC !important;
 }
 
 #root {
@@ -749,12 +749,12 @@ html.dark-mode [class*="chat-anywhere"] [class*="message"] a {
   min-height: 100vh;
   max-height: 100vh;
   overflow: hidden;
-  background: #f9f8f4;
+  background: #FFFFFF;
 }
 
 .ant-layout-content {
   overflow: hidden;
-  background: #f9f8f4;
+  background: #FFFFFF;
 }
 
 .swe-bubble-list-wrapper {
@@ -798,7 +798,7 @@ html.dark-mode .swe-sender-content {
 /* Menu selected item in light mode */
 .swe-menu-item-selected,
 .ant-menu-item-selected {
-  background: rgba(43, 18, 0, 0.08) !important;
+  background: rgba(55, 105, 252, 0.08) !important;
   color: inherit !important;
 }
 
@@ -852,6 +852,7 @@ html.dark-mode .swe-sender-content {
   /* 8px */
   box-sizing: border-box;
   border: 1px solid #eae9e7;
+  border-top: none;
   /* #EAE9E7 */
 }
 

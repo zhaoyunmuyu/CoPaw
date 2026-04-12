@@ -1,16 +1,18 @@
-import React, { useState } from "react";
+import React from "react";
 import { IconButton } from "@agentscope-ai/design";
-import { SparkHistoryLine, SparkNewChatFill } from "@agentscope-ai/icons";
+import { SparkNewChatFill } from "@agentscope-ai/icons";
 // ==================== 组件引入方式变更 (Kun He) ====================
 import { useChatAnywhereSessions } from '@/components/agentscope-chat';
 // ==================== 组件引入方式变更结束 ====================
 import { useTranslation } from "react-i18next";
 import { Flex, Tooltip } from "antd";
-import ChatSessionDrawer from "../ChatSessionDrawer";
+// ==================== 首页改版 (Kun He) ====================
+// 历史记录已迁移到左侧 ChatSidebar，不再需要右侧 Drawer 和历史按钮
+// import ChatSessionDrawer from "../ChatSessionDrawer";
+// ==================== 首页改版结束 ====================
 
 const ChatActionGroup: React.FC = () => {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
   const { createSession } = useChatAnywhereSessions();
 
   return (
@@ -22,14 +24,9 @@ const ChatActionGroup: React.FC = () => {
           onClick={() => createSession()}
         />
       </Tooltip>
-      <Tooltip title={t("chat.chatHistoryTooltip")} mouseEnterDelay={0.5}>
-        <IconButton
-          bordered={false}
-          icon={<SparkHistoryLine />}
-          onClick={() => setOpen(true)}
-        />
-      </Tooltip>
-      <ChatSessionDrawer open={open} onClose={() => setOpen(false)} />
+      {/* ==================== 首页改版 (Kun He) ==================== */}
+      {/* 历史按钮已移除，历史记录在左侧 ChatSidebar 中展示 */}
+      {/* ==================== 首页改版结束 ==================== */}
     </Flex>
   );
 };

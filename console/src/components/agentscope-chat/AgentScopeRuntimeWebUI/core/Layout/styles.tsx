@@ -39,7 +39,7 @@ export default createGlobalStyle`
     display: flex;
     align-items: center;
     padding: 0 20px;
-    backdrop-filter: blur(8px);
+    backdrop-filter: blur(12px);
     // background:#fff;
   }
 }

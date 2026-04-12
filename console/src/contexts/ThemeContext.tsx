@@ -38,7 +38,8 @@ function getInitialMode(): ThemeMode {
   } catch {
     // ignore storage errors
   }
-  return "system";
+  // ==================== 默认主题改为浅色 (Kun He) ====================
+  return "light";
 }
 
 function resolveIsDark(mode: ThemeMode): boolean {

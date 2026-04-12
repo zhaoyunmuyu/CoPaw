@@ -4,11 +4,13 @@ import { ChatAnywhereMessagesContext, useChatAnywhereMessages } from '../Context
 import { ChatAnywhereInputContext, useChatAnywhereInput } from '../Context/ChatAnywhereInputContext';
 import { emit } from '../Context/useChatAnywhereEventEmitter';
 import { IAgentScopeRuntimeWebUIInputData } from '../types';
+import { useChatAnywhereSessions } from '../Context/ChatAnywhereSessionsContext';
 
 // 逐步放开
 function Ref(_, ref) {
   const messages = useChatAnywhereMessages()
   const setDisabled = useContextSelector(ChatAnywhereInputContext, v => v.setDisabled);
+  const { createSession } = useChatAnywhereSessions();
 
   React.useImperativeHandle(ref, () => {
     return {
@@ -20,9 +22,10 @@ function Ref(_, ref) {
           emit({ type: 'handleSubmit', data: { query, fileList, biz_params } });
         }
       },
+      createSession,
 
     }
-  }, []);
+  }, [messages, createSession]);
 
 
   return null;
