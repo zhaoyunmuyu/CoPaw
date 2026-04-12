@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 from pathlib import Path
-from typing import Any, Optional, Union, Dict, List, Literal
+from typing import Any, Optional, Dict, List, Literal
 
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 import shortuuid
@@ -752,7 +752,10 @@ class BuiltinToolConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     name: str = Field(..., description="Tool function name")
-    enabled: bool = Field(default=True, description="Whether the tool is enabled")
+    enabled: bool = Field(
+        default=True,
+        description="Whether the tool is enabled",
+    )
     description: str = Field(default="", description="Tool description")
     display_to_user: bool = Field(
         default=True,
@@ -1044,7 +1047,8 @@ class CronCoordinationConfig(BaseModel):
 
     Controls multi-instance cron leadership election and execution locking.
     Supports both standalone Redis and Redis Cluster modes.
-    Configuration can be set via config.json or environment variables.
+    Defaults are derived from environment-backed cron constants and code
+    fallbacks rather than root config.json.
     """
 
     model_config = ConfigDict(extra="ignore")

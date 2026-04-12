@@ -15,6 +15,13 @@ import pytest
 
 from swe.config.config import Config, CronCoordinationConfig
 from swe.config.utils import load_config, save_config
+from swe.constant import (
+    CRON_CLUSTER_MODE,
+    CRON_COORDINATION_ENABLED,
+    CRON_LEASE_RENEW_INTERVAL_SECONDS,
+    CRON_LEASE_TTL_SECONDS,
+    CRON_REDIS_URL,
+)
 
 
 class TestCronCoordinationConfigPersistence:
@@ -103,11 +110,14 @@ class TestCronCoordinationModel:
         """CronCoordinationConfig should still work with defaults."""
         cc = CronCoordinationConfig()
 
-        assert cc.enabled is False
-        assert cc.cluster_mode is False
-        assert cc.redis_url == "redis://localhost:6379/0"
-        assert cc.lease_ttl_seconds == 30
-        assert cc.lease_renew_interval_seconds == 10
+        assert cc.enabled is CRON_COORDINATION_ENABLED
+        assert cc.cluster_mode is CRON_CLUSTER_MODE
+        assert cc.redis_url == CRON_REDIS_URL
+        assert cc.lease_ttl_seconds == CRON_LEASE_TTL_SECONDS
+        assert (
+            cc.lease_renew_interval_seconds
+            == CRON_LEASE_RENEW_INTERVAL_SECONDS
+        )
 
     def test_cron_coordination_config_custom_values(self) -> None:
         """CronCoordinationConfig should accept custom values."""
@@ -126,7 +136,10 @@ class TestCronCoordinationModel:
     def test_cron_coordination_config_validation(self) -> None:
         """CronCoordinationConfig should validate lease configuration."""
         # Invalid: ttl <= renew_interval
-        with pytest.raises(ValueError, match="lease_ttl_seconds must be greater"):
+        with pytest.raises(
+            ValueError,
+            match="lease_ttl_seconds must be greater",
+        ):
             CronCoordinationConfig(
                 enabled=True,
                 lease_ttl_seconds=10,

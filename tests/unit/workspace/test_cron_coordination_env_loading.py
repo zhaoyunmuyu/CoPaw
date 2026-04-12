@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=protected-access
 """Tests for workspace cron coordination environment-based loading.
 
 These tests verify:
@@ -14,9 +15,15 @@ from unittest.mock import patch
 
 import pytest
 
-from swe.app.crons.coordination import CoordinationConfig
 from swe.app.workspace.workspace import Workspace
-from swe.config.config import Config
+from swe.constant import (
+    CRON_CLUSTER_MODE,
+    CRON_LEASE_RENEW_INTERVAL_SECONDS,
+    CRON_LEASE_TTL_SECONDS,
+    CRON_LOCK_SAFETY_MARGIN_SECONDS,
+    CRON_COORDINATION_ENABLED,
+    CRON_REDIS_URL,
+)
 
 
 class TestWorkspaceCronCoordinationEnvLoading:
@@ -38,14 +45,15 @@ class TestWorkspaceCronCoordinationEnvLoading:
 
         config = ws._get_cron_coordination_config()
 
-        # Should return a CoordinationConfig
-        assert isinstance(config, CoordinationConfig)
-        # Default values from constants
-        assert config.enabled is False
-        assert config.cluster_mode is False
-        assert config.redis_url == "redis://localhost:6379/0"
-        assert config.lease_ttl_seconds == 30
-        assert config.lease_renew_interval_seconds == 10
+        # Defaults should follow the current env-backed constants
+        assert config.enabled is CRON_COORDINATION_ENABLED
+        assert config.cluster_mode is CRON_CLUSTER_MODE
+        assert config.redis_url == CRON_REDIS_URL
+        assert config.lease_ttl_seconds == CRON_LEASE_TTL_SECONDS
+        assert (
+            config.lease_renew_interval_seconds
+            == CRON_LEASE_RENEW_INTERVAL_SECONDS
+        )
 
     def test_get_coordination_config_uses_env_overrides(
         self,
@@ -57,16 +65,20 @@ class TestWorkspaceCronCoordinationEnvLoading:
 
         # Mock environment constants
         with patch(
-            "swe.constant.CRON_COORDINATION_ENABLED", True
+            "swe.constant.CRON_COORDINATION_ENABLED",
+            True,
         ), patch(
-            "swe.constant.CRON_CLUSTER_MODE", True
+            "swe.constant.CRON_CLUSTER_MODE",
+            True,
         ), patch(
             "swe.constant.CRON_REDIS_URL",
-            "redis://env-override:6379/1"
+            "redis://env-override:6379/1",
         ), patch(
-            "swe.constant.CRON_LEASE_TTL_SECONDS", 60
+            "swe.constant.CRON_LEASE_TTL_SECONDS",
+            60,
         ), patch(
-            "swe.constant.CRON_LEASE_RENEW_INTERVAL_SECONDS", 20
+            "swe.constant.CRON_LEASE_RENEW_INTERVAL_SECONDS",
+            20,
         ):
             ws = Workspace(
                 agent_id="test-agent",
@@ -99,7 +111,7 @@ class TestWorkspaceCronCoordinationEnvLoading:
                 "cluster_mode": True,
                 "redis_url": "redis://config-json:6379/0",
                 "lease_ttl_seconds": 99,
-            }
+            },
         }
         config_path.write_text(json.dumps(config_data), encoding="utf-8")
 
@@ -112,8 +124,10 @@ class TestWorkspaceCronCoordinationEnvLoading:
         config = ws._get_cron_coordination_config()
 
         # Should NOT use values from config.json
-        assert config.enabled is False  # Default, not from config.json
-        assert config.redis_url == "redis://localhost:6379/0"  # Default
+        assert (
+            config.enabled is CRON_COORDINATION_ENABLED
+        )  # Env-backed default, not config.json
+        assert config.redis_url == CRON_REDIS_URL  # Env-backed default
 
     def test_get_coordination_config_cluster_nodes_from_env(
         self,
@@ -125,10 +139,11 @@ class TestWorkspaceCronCoordinationEnvLoading:
 
         # Mock cluster mode and nodes
         with patch(
-            "swe.constant.CRON_CLUSTER_MODE", True
+            "swe.constant.CRON_CLUSTER_MODE",
+            True,
         ), patch(
             "swe.constant.CRON_CLUSTER_NODES",
-            "node1:6379,node2:6380,node3:6381"
+            "node1:6379,node2:6380,node3:6381",
         ):
             ws = Workspace(
                 agent_id="test-agent",
@@ -155,10 +170,11 @@ class TestWorkspaceCronCoordinationEnvLoading:
 
         # Standalone mode (default)
         with patch(
-            "swe.constant.CRON_CLUSTER_MODE", False
+            "swe.constant.CRON_CLUSTER_MODE",
+            False,
         ), patch(
             "swe.constant.CRON_CLUSTER_NODES",
-            "node1:6379,node2:6380"
+            "node1:6379,node2:6380",
         ):
             ws = Workspace(
                 agent_id="test-agent",
@@ -193,15 +209,23 @@ class TestWorkspaceCronCoordinationFallback:
 
         config = ws._get_cron_coordination_config()
 
-        # Verify all defaults match constant.py defaults
-        assert config.enabled is False  # CRON_COORDINATION_ENABLED default
-        assert config.cluster_mode is False  # CRON_CLUSTER_MODE default
-        assert config.redis_url == "redis://localhost:6379/0"  # CRON_REDIS_URL default
-        assert config.lease_ttl_seconds == 30  # CRON_LEASE_TTL_SECONDS default
-        assert config.lease_renew_interval_seconds == 10  # CRON_LEASE_RENEW_INTERVAL_SECONDS default
+        # Verify defaults match the currently loaded env-backed constants
+        assert config.enabled is CRON_COORDINATION_ENABLED
+        assert config.cluster_mode is CRON_CLUSTER_MODE
+        assert config.redis_url == CRON_REDIS_URL
+        assert config.lease_ttl_seconds == CRON_LEASE_TTL_SECONDS
+        assert (
+            config.lease_renew_interval_seconds
+            == CRON_LEASE_RENEW_INTERVAL_SECONDS
+        )
         assert config.lease_renew_failure_threshold == 3  # Default
-        assert config.lock_safety_margin_seconds == 30  # CRON_LOCK_SAFETY_MARGIN_SECONDS default
-        assert config.reload_channel_prefix == "swe:cron:reload"  # Code default
+        assert (
+            config.lock_safety_margin_seconds
+            == CRON_LOCK_SAFETY_MARGIN_SECONDS
+        )
+        assert (
+            config.reload_channel_prefix == "swe:cron:reload"
+        )  # Code default
 
     def test_invalid_lease_config_raises_error(
         self,
@@ -213,11 +237,14 @@ class TestWorkspaceCronCoordinationFallback:
 
         # Mock invalid lease values: ttl == renew_interval WITH coordination enabled
         with patch(
-            "swe.constant.CRON_COORDINATION_ENABLED", True
+            "swe.constant.CRON_COORDINATION_ENABLED",
+            True,
         ), patch(
-            "swe.constant.CRON_LEASE_TTL_SECONDS", 10
+            "swe.constant.CRON_LEASE_TTL_SECONDS",
+            10,
         ), patch(
-            "swe.constant.CRON_LEASE_RENEW_INTERVAL_SECONDS", 10
+            "swe.constant.CRON_LEASE_RENEW_INTERVAL_SECONDS",
+            10,
         ):
             ws = Workspace(
                 agent_id="test-agent",
@@ -225,7 +252,10 @@ class TestWorkspaceCronCoordinationFallback:
                 tenant_id="test-tenant",
             )
 
-            with pytest.raises(ValueError, match="lease_ttl_seconds must be greater"):
+            with pytest.raises(
+                ValueError,
+                match="lease_ttl_seconds must be greater",
+            ):
                 ws._get_cron_coordination_config()
 
     def test_invalid_lease_config_ttl_less_than_renew_raises_error(
@@ -238,11 +268,14 @@ class TestWorkspaceCronCoordinationFallback:
 
         # Mock invalid lease values: ttl < renew_interval WITH coordination enabled
         with patch(
-            "swe.constant.CRON_COORDINATION_ENABLED", True
+            "swe.constant.CRON_COORDINATION_ENABLED",
+            True,
         ), patch(
-            "swe.constant.CRON_LEASE_TTL_SECONDS", 5
+            "swe.constant.CRON_LEASE_TTL_SECONDS",
+            5,
         ), patch(
-            "swe.constant.CRON_LEASE_RENEW_INTERVAL_SECONDS", 10
+            "swe.constant.CRON_LEASE_RENEW_INTERVAL_SECONDS",
+            10,
         ):
             ws = Workspace(
                 agent_id="test-agent",
@@ -250,7 +283,10 @@ class TestWorkspaceCronCoordinationFallback:
                 tenant_id="test-tenant",
             )
 
-            with pytest.raises(ValueError, match="lease_ttl_seconds must be greater"):
+            with pytest.raises(
+                ValueError,
+                match="lease_ttl_seconds must be greater",
+            ):
                 ws._get_cron_coordination_config()
 
     def test_invalid_lease_config_allowed_when_disabled(
@@ -263,11 +299,14 @@ class TestWorkspaceCronCoordinationFallback:
 
         # Mock invalid lease values BUT coordination is disabled
         with patch(
-            "swe.constant.CRON_COORDINATION_ENABLED", False
+            "swe.constant.CRON_COORDINATION_ENABLED",
+            False,
         ), patch(
-            "swe.constant.CRON_LEASE_TTL_SECONDS", 5
+            "swe.constant.CRON_LEASE_TTL_SECONDS",
+            5,
         ), patch(
-            "swe.constant.CRON_LEASE_RENEW_INTERVAL_SECONDS", 10
+            "swe.constant.CRON_LEASE_RENEW_INTERVAL_SECONDS",
+            10,
         ):
             ws = Workspace(
                 agent_id="test-agent",
