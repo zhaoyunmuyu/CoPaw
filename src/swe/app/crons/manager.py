@@ -5,7 +5,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, TypeVar, Union
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -18,7 +18,6 @@ from ..console_push_store import append as push_store_append
 from .coordination import (
     CoordinationConfig,
     CronCoordination,
-    execution_lock_context,
 )
 from .executor import CronExecutor
 from .heartbeat import (
@@ -27,12 +26,13 @@ from .heartbeat import (
     parse_heartbeat_every,
     run_heartbeat_once,
 )
-from .models import CronJobSpec, CronJobState
+from .models import CronJobSpec, CronJobState, JobsFile
 from .repo.base import BaseJobRepository
 
 HEARTBEAT_JOB_ID = "_heartbeat"
 
 logger = logging.getLogger(__name__)
+_T = TypeVar("_T")
 
 
 @dataclass
@@ -67,6 +67,7 @@ class CronManager:
         self._agent_id = agent_id
         self._tenant_id = tenant_id
         self._timezone = timezone
+        self._coordination_config = coordination_config
 
         # Scheduler is created but NOT started in __init__
         self._scheduler: Optional[AsyncIOScheduler] = None
@@ -79,6 +80,9 @@ class CronManager:
         self._states: Dict[str, CronJobState] = {}
         self._rt: Dict[str, _Runtime] = {}
         self._started = False
+        self._definition_version = 0
+        self._definition_reconcile_task: Optional[asyncio.Task] = None
+        self._stop_definition_reconcile = asyncio.Event()
 
         # Coordination for multi-instance leadership
         self._coordination: Optional[CronCoordination] = None
@@ -241,6 +245,7 @@ class CronManager:
                 self._active_jobs.discard(job_id)
 
             # Load jobs from repo
+            invalid_enabled_jobs: set[str] = set()
             try:
                 jobs_file = await self._repo.load()
                 for job in jobs_file.jobs:
@@ -254,11 +259,19 @@ class CronManager:
                             job.name,
                             repr(e),
                         )
+                        if job.enabled:
+                            invalid_enabled_jobs.add(job.id)
             except Exception as e:  # pylint: disable=broad-except
                 logger.error("Failed to reload jobs from repository: %s", e)
 
+            if invalid_enabled_jobs:
+                await self._auto_disable_invalid_jobs_locked(
+                    invalid_enabled_jobs,
+                )
+
             # Reload heartbeat
             await self._update_heartbeat()
+            await self._refresh_definition_version_locked()
 
             logger.info(
                 "Cron schedule reloaded: agent=%s jobs=%d",
@@ -276,6 +289,7 @@ class CronManager:
                 raise RuntimeError("CronManager not initialized")
 
             jobs_file = await self._repo.load()
+            invalid_enabled_jobs: set[str] = set()
 
             self._scheduler.start()
             for job in jobs_file.jobs:
@@ -291,21 +305,19 @@ class CronManager:
                         repr(e),
                     )
                     if job.enabled:
-                        disabled_job = job.model_copy(
-                            update={"enabled": False},
-                        )
-                        await self._repo.upsert_job(disabled_job)
-                        logger.warning(
-                            "Auto-disabled invalid cron job: "
-                            "job_id=%s name=%s",
-                            job.id,
-                            job.name,
-                        )
+                        invalid_enabled_jobs.add(job.id)
+
+            if invalid_enabled_jobs:
+                await self._auto_disable_invalid_jobs_locked(
+                    invalid_enabled_jobs,
+                )
 
             # Heartbeat: scheduled job when enabled in config
             await self._update_heartbeat()
+            await self._refresh_definition_version_locked()
 
             self._started = True
+            self._start_definition_reconcile_loop()
             logger.info(
                 "CronManager started: agent=%s jobs=%d",
                 self._agent_id,
@@ -321,6 +333,7 @@ class CronManager:
                 self._scheduler.shutdown(wait=False)
             self._started = False
             self._active_jobs.clear()
+            await self._stop_definition_reconcile_loop()
             logger.info("CronManager stopped: agent=%s", self._agent_id)
 
     def _on_reload_signal(self) -> None:
@@ -416,7 +429,7 @@ class CronManager:
         # _do_start() can fail after starting APScheduler but before _started=True.
         # Roll back scheduler runtime state before manager-level cleanup.
         had_running_scheduler = self._scheduler is not None and getattr(
-            self._scheduler, "running", False
+            self._scheduler, "running", False,
         )
         safe_to_release = True
         if had_running_scheduler:
@@ -549,9 +562,15 @@ class CronManager:
 
     async def create_or_replace_job(self, spec: CronJobSpec) -> None:
         async with self._lock:
-            await self._repo.upsert_job(spec)
+            changed, _, _ = await self._mutate_jobs_file_locked(
+                lambda jobs_file: self._upsert_job_in_jobs_file(
+                    jobs_file,
+                    spec,
+                ),
+            )
             if self._started and self._scheduler is not None:
-                await self._register_or_update(spec)
+                if changed or self._scheduler.get_job(spec.id) is None:
+                    await self._register_or_update(spec)
 
     async def delete_job(self, job_id: str) -> bool:
         async with self._lock:
@@ -561,7 +580,13 @@ class CronManager:
                 self._active_jobs.discard(job_id)
             self._states.pop(job_id, None)
             self._rt.pop(job_id, None)
-            return await self._repo.delete_job(job_id)
+            changed, found, _ = await self._mutate_jobs_file_locked(
+                lambda jobs_file: self._delete_job_in_jobs_file(
+                    jobs_file,
+                    job_id,
+                ),
+            )
+            return found if changed else found
 
     async def pause_job(self, job_id: str) -> bool:
         """Pause a job - disables execution and persists to repository.
@@ -573,15 +598,15 @@ class CronManager:
             True if job was found and paused, False otherwise.
         """
         async with self._lock:
-            # Get current job from repo
-            job = await self._repo.get_job(job_id)
-            if not job:
+            changed, job, _ = await self._mutate_jobs_file_locked(
+                lambda jobs_file: self._set_job_enabled_in_jobs_file(
+                    jobs_file,
+                    job_id,
+                    enabled=False,
+                ),
+            )
+            if job is None:
                 return False
-
-            # Update the job to disabled
-            if job.enabled:
-                disabled_job = job.model_copy(update={"enabled": False})
-                await self._repo.upsert_job(disabled_job)
 
             # Pause in scheduler if started
             if self._started and self._scheduler is not None:
@@ -600,15 +625,15 @@ class CronManager:
             True if job was found and resumed, False otherwise.
         """
         async with self._lock:
-            # Get current job from repo
-            job = await self._repo.get_job(job_id)
-            if not job:
+            changed, job, _ = await self._mutate_jobs_file_locked(
+                lambda jobs_file: self._set_job_enabled_in_jobs_file(
+                    jobs_file,
+                    job_id,
+                    enabled=True,
+                ),
+            )
+            if job is None:
                 return False
-
-            # Update the job to enabled
-            if not job.enabled:
-                enabled_job = job.model_copy(update={"enabled": True})
-                await self._repo.upsert_job(enabled_job)
 
             # Resume in scheduler if started
             if self._started and self._scheduler is not None:
@@ -621,6 +646,9 @@ class CronManager:
         """Reload heartbeat config and update or remove the heartbeat job.
 
         Note: This should be called after activate() when the manager is leader.
+        Heartbeat config lives in agent config rather than jobs.json, so these
+        changes converge through the config watcher + reschedule flow, not
+        through the cron definition version/reconcile path.
         """
         async with self._lock:
             if not self._started:
@@ -635,8 +663,8 @@ class CronManager:
     async def run_job(self, job_id: str) -> None:
         """Trigger a job to run in the background (fire-and-forget).
 
-        This is a MANUAL execution - it bypasses the execution lock and
-        does NOT participate in timed de-duplication.
+        This is a MANUAL execution outside scheduler ownership semantics.
+        It does not use scheduler-originated lease preflight.
 
         Raises KeyError if the job does not exist.
         The actual execution happens asynchronously; errors are logged
@@ -646,7 +674,7 @@ class CronManager:
         if not job:
             raise KeyError(f"Job not found: {job_id}")
         logger.info(
-            "cron run_job (manual, bypasses execution lock): "
+            "cron run_job (manual, outside scheduler ownership semantics): "
             "job_id=%s channel=%s task_type=%s "
             "target_user_id=%s target_session_id=%s",
             job_id,
@@ -698,6 +726,182 @@ class CronManager:
                     loop.create_task(_push_error())
 
     # ----- internal -----
+
+    async def _mutate_jobs_file_locked(
+        self,
+        mutator: Callable[[JobsFile], tuple[bool, _T]],
+    ) -> tuple[bool, _T, int]:
+        definition_lock = None
+        changed = False
+        should_publish = False
+        result: _T
+        version = self._definition_version
+
+        if self._coordination is not None:
+            definition_lock = await self._coordination.acquire_definition_lock()
+
+        try:
+            jobs_file = await self._repo.load()
+            changed, result = mutator(jobs_file)
+            if not changed:
+                return False, result, version
+
+            await self._repo.save(jobs_file)
+            if self._coordination is not None:
+                version = await self._coordination.bump_definition_version()
+                self._definition_version = version
+                should_publish = True
+            return True, result, version
+        finally:
+            if definition_lock is not None:
+                await definition_lock.release()
+                if should_publish:
+                    await self._coordination.publish_reload(version=version)
+
+    async def _auto_disable_invalid_jobs_locked(
+        self,
+        job_ids: set[str],
+    ) -> None:
+        changed, disabled_ids, _ = await self._mutate_jobs_file_locked(
+            lambda jobs_file: self._disable_invalid_jobs_in_jobs_file(
+                jobs_file,
+                job_ids,
+            ),
+        )
+        if changed:
+            for job_id in disabled_ids:
+                logger.warning("Auto-disabled invalid cron job: job_id=%s", job_id)
+
+    async def _refresh_definition_version_locked(self) -> None:
+        if self._coordination is None:
+            return
+        try:
+            self._definition_version = (
+                await self._coordination.get_definition_version()
+            )
+        except Exception:  # pylint: disable=broad-except
+            logger.warning(
+                "Failed to refresh cron definition version: agent=%s",
+                self._agent_id,
+                exc_info=True,
+            )
+
+    def _start_definition_reconcile_loop(self) -> None:
+        if self._coordination is None or self._definition_reconcile_task is not None:
+            return
+        self._stop_definition_reconcile.clear()
+        self._definition_reconcile_task = asyncio.create_task(
+            self._definition_reconcile_loop(),
+            name=f"cron-def-reconcile-{self._tenant_id or 'default'}-{self._agent_id}",
+        )
+
+    async def _stop_definition_reconcile_loop(self) -> None:
+        if self._definition_reconcile_task is None:
+            return
+        self._stop_definition_reconcile.set()
+        try:
+            await asyncio.wait_for(self._definition_reconcile_task, timeout=5.0)
+        except asyncio.TimeoutError:
+            self._definition_reconcile_task.cancel()
+            try:
+                await self._definition_reconcile_task
+            except asyncio.CancelledError:
+                pass
+        self._definition_reconcile_task = None
+
+    async def _definition_reconcile_loop(self) -> None:
+        interval = 10
+        if self._coordination_config is not None:
+            interval = self._coordination_config.lease_renew_interval_seconds
+
+        while not self._stop_definition_reconcile.is_set():
+            try:
+                await asyncio.wait_for(
+                    self._stop_definition_reconcile.wait(),
+                    timeout=interval,
+                )
+                return
+            except asyncio.TimeoutError:
+                pass
+
+            try:
+                await self._reconcile_definition_version_once()
+            except Exception:  # pylint: disable=broad-except
+                logger.warning(
+                    "Cron definition reconcile failed: agent=%s",
+                    self._agent_id,
+                    exc_info=True,
+                )
+
+    async def _reconcile_definition_version_once(self) -> None:
+        if self._coordination is None or not self._started or not self.is_leader:
+            return
+
+        remote_version = await self._coordination.get_definition_version()
+        if remote_version > self._definition_version:
+            logger.info(
+                "Reconciling cron definitions after missed reload: "
+                "agent=%s local_version=%s remote_version=%s",
+                self._agent_id,
+                self._definition_version,
+                remote_version,
+            )
+            await self.reload()
+
+    def _upsert_job_in_jobs_file(
+        self,
+        jobs_file: JobsFile,
+        spec: CronJobSpec,
+    ) -> tuple[bool, CronJobSpec]:
+        for index, job in enumerate(jobs_file.jobs):
+            if job.id == spec.id:
+                if job == spec:
+                    return False, spec
+                jobs_file.jobs[index] = spec
+                return True, spec
+        jobs_file.jobs.append(spec)
+        return True, spec
+
+    def _delete_job_in_jobs_file(
+        self,
+        jobs_file: JobsFile,
+        job_id: str,
+    ) -> tuple[bool, bool]:
+        before = len(jobs_file.jobs)
+        jobs_file.jobs = [job for job in jobs_file.jobs if job.id != job_id]
+        return before != len(jobs_file.jobs), before != len(jobs_file.jobs)
+
+    def _set_job_enabled_in_jobs_file(
+        self,
+        jobs_file: JobsFile,
+        job_id: str,
+        *,
+        enabled: bool,
+    ) -> tuple[bool, Optional[CronJobSpec]]:
+        for index, job in enumerate(jobs_file.jobs):
+            if job.id != job_id:
+                continue
+            if job.enabled == enabled:
+                return False, job
+            updated = job.model_copy(update={"enabled": enabled})
+            jobs_file.jobs[index] = updated
+            return True, updated
+        return False, None
+
+    def _disable_invalid_jobs_in_jobs_file(
+        self,
+        jobs_file: JobsFile,
+        job_ids: set[str],
+    ) -> tuple[bool, list[str]]:
+        changed = False
+        disabled_ids: list[str] = []
+        for index, job in enumerate(jobs_file.jobs):
+            if job.id not in job_ids or not job.enabled:
+                continue
+            jobs_file.jobs[index] = job.model_copy(update={"enabled": False})
+            disabled_ids.append(job.id)
+            changed = True
+        return changed, disabled_ids
 
     async def _register_or_update(self, spec: CronJobSpec) -> None:
         if self._scheduler is None:
@@ -778,8 +982,9 @@ class CronManager:
     async def _scheduled_callback(self, job_id: str) -> None:
         """Callback invoked by APScheduler for timed execution.
 
-        This uses the execution lock to prevent duplicate runs during
-        leadership transitions.
+        Scheduler-originated cron runs use lease preflight immediately before
+        work starts. This reduces stale-leader execution, but failover remains
+        at-least-once and handlers must therefore be idempotent.
         """
         # Check if we're still the leader
         if self._coordination is not None and not self._coordination.is_leader:
@@ -794,26 +999,26 @@ class CronManager:
         if not job:
             return
 
-        # Use execution lock for timed execution
         if self._coordination is not None:
-            async with execution_lock_context(
-                self._coordination,
-                job_id,
-                job.runtime.timeout_seconds,
-            ) as acquired:
-                if not acquired:
-                    logger.info(
-                        "Skipping duplicate timed execution: "
-                        "job_id=%s (another instance holds the lock)",
-                        job_id,
-                    )
-                    st = self._states.get(job_id, CronJobState())
-                    st.last_status = "skipped"
-                    st.last_run_at = datetime.now(timezone.utc)
-                    self._states[job_id] = st
-                    return
+            still_owner = await self._coordination.preflight_scheduler_execution(
+                job_id=job_id,
+                schedule_type="cron",
+            )
+            if not still_owner:
+                logger.info(
+                    "Skipping scheduled cron after lease preflight: "
+                    "agent=%s job_id=%s",
+                    self._agent_id,
+                    job_id,
+                )
+                st = self._states.get(job_id, CronJobState())
+                st.last_status = "skipped"
+                st.last_error = "stale leader preflight rejected execution"
+                st.last_run_at = datetime.now(timezone.utc)
+                self._states[job_id] = st
+                return
 
-                await self._execute_once(job)
+            await self._execute_once(job)
         else:
             # No coordination - execute directly
             await self._execute_once(job)
@@ -826,7 +1031,7 @@ class CronManager:
             self._states[job_id] = st
 
     async def _heartbeat_callback(self) -> None:
-        """Run one heartbeat (HEARTBEAT.md as query, optional dispatch)."""
+        """Run one heartbeat under the same preflight as ordinary cron jobs."""
         # Check if we're still the leader
         if self._coordination is not None and not self._coordination.is_leader:
             logger.debug(
@@ -834,6 +1039,23 @@ class CronManager:
                 self._agent_id,
             )
             return
+
+        if self._coordination is not None:
+            still_owner = await self._coordination.preflight_scheduler_execution(
+                job_id=HEARTBEAT_JOB_ID,
+                schedule_type="heartbeat",
+            )
+            if not still_owner:
+                logger.info(
+                    "Skipping heartbeat after lease preflight: agent=%s",
+                    self._agent_id,
+                )
+                st = self._states.get(HEARTBEAT_JOB_ID, CronJobState())
+                st.last_status = "skipped"
+                st.last_error = "stale leader preflight rejected execution"
+                st.last_run_at = datetime.now(timezone.utc)
+                self._states[HEARTBEAT_JOB_ID] = st
+                return
 
         try:
             # Get workspace_dir from runner if available
@@ -852,17 +1074,20 @@ class CronManager:
                 tenant_id=tenant_id,
                 workspace_dir=workspace_dir,
             ):
-                await run_heartbeat_once(
-                    runner=self._runner,
-                    channel_manager=self._channel_manager,
-                    agent_id=self._agent_id,
-                    workspace_dir=workspace_dir,
-                )
+                await self._run_heartbeat_once(workspace_dir)
         except asyncio.CancelledError:
             logger.info("heartbeat cancelled")
             raise
         except Exception:  # pylint: disable=broad-except
             logger.exception("heartbeat run failed")
+
+    async def _run_heartbeat_once(self, workspace_dir: Any) -> None:
+        await run_heartbeat_once(
+            runner=self._runner,
+            channel_manager=self._channel_manager,
+            agent_id=self._agent_id,
+            workspace_dir=workspace_dir,
+        )
 
     async def _execute_once(self, job: CronJobSpec) -> None:
         rt = self._rt.get(job.id)

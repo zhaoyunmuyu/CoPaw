@@ -1045,10 +1045,12 @@ def _parse_cluster_nodes(env_value: str) -> List[Dict[str, Any]]:
 class CronCoordinationConfig(BaseModel):
     """Redis-based cron coordination configuration.
 
-    Controls multi-instance cron leadership election and execution locking.
-    Supports both standalone Redis and Redis Cluster modes.
-    Defaults are derived from environment-backed cron constants and code
-    fallbacks rather than root config.json.
+    Controls multi-instance cron leadership election, scheduler preflight,
+    and jobs.json definition convergence. Execution-lock settings remain for
+    explicit legacy paths and are not the default timed execution contract.
+    Supports both standalone Redis and Redis Cluster modes. Defaults are
+    derived from environment-backed cron constants and code fallbacks rather
+    than root config.json.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -1107,7 +1109,7 @@ class CronCoordinationConfig(BaseModel):
         default=CRON_LOCK_SAFETY_MARGIN_SECONDS,
         ge=5,
         le=300,
-        description="Additional time added to job timeout for execution lock",
+        description="Additional time added to job timeout for legacy execution-lock paths",
     )
     # Reload pub/sub configuration
     reload_channel_prefix: str = Field(

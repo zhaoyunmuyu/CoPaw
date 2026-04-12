@@ -153,8 +153,9 @@ class Workspace:
         """Get coordination config from environment-backed constants.
 
         Returns:
-            CoordinationConfig for cron leadership election built from
-            environment-derived values and hardcoded defaults.
+            CoordinationConfig for cron leadership election, scheduler
+            preflight, and definition convergence built from environment-
+            derived values and hardcoded defaults.
         """
         from ...constant import (
             CRON_COORDINATION_ENABLED,
@@ -176,7 +177,7 @@ class Workspace:
                 raise ValueError(
                     "lease_ttl_seconds must be greater than "
                     f"lease_renew_interval_seconds (got {CRON_LEASE_TTL_SECONDS} <= "
-                    f"{CRON_LEASE_RENEW_INTERVAL_SECONDS})"
+                    f"{CRON_LEASE_RENEW_INTERVAL_SECONDS})",
                 )
 
         return CoordinationConfig(

@@ -3,9 +3,9 @@
 
 These tests verify:
 - CronManager activation/deactivation with coordination
-- Manual run_job bypasses execution lock
-- Timed execution uses execution lock
-- Reload behavior
+- Manual run_job stays outside scheduler ownership semantics
+- Timed execution uses lease preflight by default
+- Reload and definition convergence behavior
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ except ImportError:
     REDIS_AVAILABLE = False
 
 
-from swe.app.crons.manager import CronManager
+from swe.app.crons.manager import CronManager, HEARTBEAT_JOB_ID
 from swe.app.crons.coordination import CoordinationConfig
 from swe.app.crons.models import (
     CronJobSpec,
@@ -41,6 +41,47 @@ from swe.app.crons.models import (
     CronJobRequest,
 )
 from swe.app.crons.repo.json_repo import JsonJobRepository
+
+
+class _FakeDefinitionLock:
+    def __init__(self, lock: asyncio.Lock, events: list[str]):
+        self._lock = lock
+        self._events = events
+
+    async def release(self) -> None:
+        self._events.append("release")
+        self._lock.release()
+
+
+class _FakeCoordination:
+    def __init__(self):
+        self._lock = asyncio.Lock()
+        self.events: list[str] = []
+        self.version = 0
+        self.is_leader = True
+
+    async def acquire_definition_lock(self):
+        await self._lock.acquire()
+        self.events.append("acquire")
+        return _FakeDefinitionLock(self._lock, self.events)
+
+    async def bump_definition_version(self):
+        self.version += 1
+        self.events.append(f"bump:{self.version}")
+        return self.version
+
+    async def publish_reload(self, version=None):
+        self.events.append(f"publish:{version}")
+        return True
+
+    async def get_definition_version(self):
+        return self.version
+
+    async def preflight_scheduler_execution(self, *, job_id: str, schedule_type: str):
+        return True
+
+    async def deactivate(self):
+        return None
 
 
 @pytest.fixture
@@ -308,7 +349,7 @@ class TestCronManagerWithRedis:
 
 
 class TestCronManagerManualRun:
-    """Tests for manual run_job bypassing execution lock."""
+    """Tests for manual run_job outside scheduler ownership semantics."""
 
     async def test_run_job_bypasses_execution_lock(
         self,
@@ -316,7 +357,7 @@ class TestCronManagerManualRun:
         mock_runner,
         mock_channel_manager,
     ):
-        """Test that manual run_job does not use execution lock."""
+        """Test that manual run_job does not use scheduler preflight."""
         config = CoordinationConfig(enabled=False)
         repo = JsonJobRepository(temp_jobs_file)
         manager = CronManager(
@@ -352,7 +393,7 @@ class TestCronManagerManualRun:
         )
         await manager.create_or_replace_job(job)
 
-        # Run job manually - should not require execution lock
+        # Run job manually - should not require scheduler preflight
         # This just schedules the execution (fire-and-forget)
         await manager.run_job("test-job")
 
@@ -383,6 +424,124 @@ class TestCronManagerManualRun:
 
         with pytest.raises(KeyError):
             await manager.run_job("nonexistent-job")
+
+        await manager.deactivate()
+
+
+class TestCronManagerTimedPreflight:
+    """Tests for scheduler-originated lease preflight behavior."""
+
+    async def test_scheduled_callback_skips_when_lease_preflight_fails(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+        sample_job_spec,
+    ):
+        """Timed callbacks should skip stale leaders before work starts."""
+        manager = CronManager(
+            repo=JsonJobRepository(temp_jobs_file),
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        await manager.activate()
+        await manager.create_or_replace_job(sample_job_spec)
+
+        manager._coordination = MagicMock()
+        manager._coordination.is_leader = True
+        manager._coordination.deactivate = AsyncMock()
+        manager._coordination.preflight_scheduler_execution = AsyncMock(
+            return_value=False,
+        )
+        manager._execute_once = AsyncMock()
+
+        await manager._scheduled_callback(sample_job_spec.id)
+
+        manager._coordination.preflight_scheduler_execution.assert_awaited_once_with(
+            job_id=sample_job_spec.id,
+            schedule_type="cron",
+        )
+        manager._execute_once.assert_not_awaited()
+        assert manager.get_state(sample_job_spec.id).last_status == "skipped"
+
+        await manager.deactivate()
+
+    async def test_scheduled_callback_no_longer_uses_execution_lock_by_default(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+        sample_job_spec,
+    ):
+        """Default timed execution should rely on lease preflight, not locks."""
+        manager = CronManager(
+            repo=JsonJobRepository(temp_jobs_file),
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        await manager.activate()
+        await manager.create_or_replace_job(sample_job_spec)
+
+        manager._coordination = MagicMock()
+        manager._coordination.is_leader = True
+        manager._coordination.deactivate = AsyncMock()
+        manager._coordination.create_execution_lock = MagicMock(
+            side_effect=AssertionError(
+                "default timed path should not use execution lock",
+            ),
+        )
+        manager._coordination.preflight_scheduler_execution = AsyncMock(
+            return_value=True,
+        )
+        manager._execute_once = AsyncMock()
+
+        await manager._scheduled_callback(sample_job_spec.id)
+
+        manager._execute_once.assert_awaited_once_with(sample_job_spec)
+        manager._coordination.create_execution_lock.assert_not_called()
+
+        await manager.deactivate()
+
+    async def test_heartbeat_skips_when_lease_preflight_fails(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+    ):
+        """Heartbeat should use the same preflight gate as ordinary cron jobs."""
+        manager = CronManager(
+            repo=JsonJobRepository(temp_jobs_file),
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        await manager.activate()
+
+        manager._coordination = MagicMock()
+        manager._coordination.is_leader = True
+        manager._coordination.deactivate = AsyncMock()
+        manager._coordination.preflight_scheduler_execution = AsyncMock(
+            return_value=False,
+        )
+
+        heartbeat_mock = AsyncMock()
+        manager._run_heartbeat_once = heartbeat_mock
+        await manager._heartbeat_callback()
+
+        manager._coordination.preflight_scheduler_execution.assert_awaited_once_with(
+            job_id=HEARTBEAT_JOB_ID,
+            schedule_type="heartbeat",
+        )
+        heartbeat_mock.assert_not_awaited()
+        assert manager.get_state(HEARTBEAT_JOB_ID).last_status == "skipped"
 
         await manager.deactivate()
 
@@ -437,6 +596,96 @@ class TestCronManagerState:
         assert state.last_run_at is None
 
         await manager.deactivate()
+
+
+class TestCronDefinitionMutationCoordination:
+    """Tests for serialized jobs.json mutation and reload convergence."""
+
+    async def test_concurrent_create_operations_preserve_both_jobs(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+        sample_job_spec,
+    ):
+        """Concurrent writes should serialize through definition lock."""
+        repo1 = JsonJobRepository(temp_jobs_file)
+        repo2 = JsonJobRepository(temp_jobs_file)
+        coord = _FakeCoordination()
+
+        manager1 = CronManager(
+            repo=repo1,
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        manager2 = CronManager(
+            repo=repo2,
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        manager1._coordination = coord
+        manager2._coordination = coord
+
+        original_save = repo1.save
+
+        async def delayed_save(jobs_file):
+            await asyncio.sleep(0.05)
+            await original_save(jobs_file)
+
+        repo1.save = delayed_save
+
+        job1 = sample_job_spec.model_copy(update={"id": "job-1", "name": "job-1"})
+        job2 = sample_job_spec.model_copy(update={"id": "job-2", "name": "job-2"})
+
+        await asyncio.gather(
+            manager1.create_or_replace_job(job1),
+            manager2.create_or_replace_job(job2),
+        )
+
+        jobs = await repo1.list_jobs()
+        assert {job.id for job in jobs} == {"job-1", "job-2"}
+        assert coord.events == [
+            "acquire",
+            "bump:1",
+            "release",
+            "publish:1",
+            "acquire",
+            "bump:2",
+            "release",
+            "publish:2",
+        ]
+
+    async def test_reconcile_reloads_when_definition_version_advances(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+    ):
+        """Missed reload pub/sub should still converge via periodic reconcile."""
+        manager = CronManager(
+            repo=JsonJobRepository(temp_jobs_file),
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        manager._coordination = MagicMock()
+        manager._coordination.get_definition_version = AsyncMock(return_value=3)
+        manager._coordination.is_leader = True
+        manager._definition_version = 1
+        manager._started = True
+        manager.reload = AsyncMock()
+
+        await manager._reconcile_definition_version_once()
+
+        manager.reload.assert_awaited_once()
 
 
 @pytest.mark.skipif(not REDIS_AVAILABLE, reason="Redis not available")
@@ -512,7 +761,7 @@ class TestCronManagerFailoverIntegration:
                     type="channel",
                     channel="console",
                     target=DispatchTarget(
-                        user_id="user1", session_id="session1"
+                        user_id="user1", session_id="session1",
                     ),
                 ),
             )
@@ -552,7 +801,7 @@ class TestCronManagerLeaderStartupCallback:
         # Use a repo that will fail to load.
         failing_repo = AsyncMock()
         failing_repo.load = AsyncMock(
-            side_effect=RuntimeError("Simulated repo load failure")
+            side_effect=RuntimeError("Simulated repo load failure"),
         )
 
         manager = CronManager(
@@ -601,7 +850,7 @@ class TestCronManagerLeaderStartupCallback:
         """Test callback path swallows cleanup failures too."""
         failing_repo = AsyncMock()
         failing_repo.load = AsyncMock(
-            side_effect=RuntimeError("Simulated repo load failure")
+            side_effect=RuntimeError("Simulated repo load failure"),
         )
 
         manager = CronManager(
@@ -614,7 +863,7 @@ class TestCronManagerLeaderStartupCallback:
         )
         manager._coordination = AsyncMock()
         manager.deactivate = AsyncMock(
-            side_effect=RuntimeError("Simulated cleanup failure")
+            side_effect=RuntimeError("Simulated cleanup failure"),
         )
 
         await manager.initialize()
@@ -656,7 +905,7 @@ class TestCronManagerLeaderStartupCallback:
         manager._coordination.activate = AsyncMock(return_value=True)
         manager._coordination.instance_id = "i-1"
         manager._do_start = AsyncMock(
-            side_effect=RuntimeError("Simulated startup failure")
+            side_effect=RuntimeError("Simulated startup failure"),
         )
         manager._cleanup_failed_leader_startup = AsyncMock()
 
@@ -695,8 +944,8 @@ class TestCronManagerLeaderStartupCallback:
         ) as shutdown_mock:
             manager._update_heartbeat = AsyncMock(
                 side_effect=RuntimeError(
-                    "Simulated failure after scheduler start"
-                )
+                    "Simulated failure after scheduler start",
+                ),
             )
 
             await manager._become_leader_and_start()
@@ -773,7 +1022,7 @@ class TestCronManagerLeaderStartupCallback:
         assert original_scheduler is not None
 
         manager._update_heartbeat = AsyncMock(
-            side_effect=RuntimeError("Simulated failure after scheduler start")
+            side_effect=RuntimeError("Simulated failure after scheduler start"),
         )
 
         with patch.object(

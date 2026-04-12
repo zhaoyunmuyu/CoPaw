@@ -3,7 +3,8 @@
 
 These tests verify:
 - Lease election and renewal
-- Execution lock semantics
+- Scheduler preflight and definition version helpers
+- Legacy execution lock semantics
 - Activation/deactivation behavior
 - Reload debounce behavior
 """
@@ -217,7 +218,7 @@ class TestAgentLease:
 
         # Wait for renewal cycle to detect loss
         await asyncio.sleep(
-            coordination_config.lease_renew_interval_seconds + 1
+            coordination_config.lease_renew_interval_seconds + 1,
         )
 
         # Lease should be lost
@@ -225,7 +226,7 @@ class TestAgentLease:
 
 
 class TestExecutionLock:
-    """Tests for ExecutionLock - timed job de-duplication."""
+    """Tests for the legacy ExecutionLock compatibility surface."""
 
     async def test_execution_lock_acquire_and_release(
         self,
@@ -266,7 +267,7 @@ class TestExecutionLock:
         await lock2.release()
 
     async def test_execution_lock_expires(
-        self, redis_client, coordination_config
+        self, redis_client, coordination_config,
     ):
         """Test that lock expires after TTL."""
         lock = ExecutionLock(
@@ -334,7 +335,7 @@ class TestCronCoordination:
     async def test_connect_without_redis_raises_error(self):
         """Test that connection fails gracefully if Redis unavailable."""
         config = CoordinationConfig(
-            enabled=True, redis_url="redis://invalid:6379"
+            enabled=True, redis_url="redis://invalid:6379",
         )
         coord = CronCoordination(
             tenant_id="test",
@@ -375,7 +376,7 @@ class TestCronCoordination:
             await coord.activate()
 
     async def test_publish_reload_without_connection(
-        self, coordination_config
+        self, coordination_config,
     ):
         """Test that publish_reload returns False if not connected."""
         coord = CronCoordination(
@@ -404,6 +405,57 @@ class TestCronCoordination:
 
         coord.set_reload_callback(callback)
         assert coord._on_reload is callback
+
+    async def test_preflight_scheduler_execution_checks_current_lease_owner(
+        self,
+        coordination_config,
+    ):
+        """Scheduler preflight should verify current Redis lease ownership."""
+        coord = CronCoordination(
+            tenant_id="test",
+            agent_id="test-agent",
+            config=coordination_config,
+        )
+        coord._instance_id = "instance-1"
+        coord._redis = AsyncMock()
+        coord._redis.get = AsyncMock(return_value=b"instance-1")
+        coord._lease = MagicMock()
+        coord._lease.is_owned = True
+        coord._lease._key = "lease-key"
+
+        allowed = await coord.preflight_scheduler_execution(
+            job_id="job-1",
+            schedule_type="cron",
+        )
+
+        assert allowed is True
+        coord._redis.get.assert_awaited_once_with("lease-key")
+
+    async def test_definition_version_helpers_use_tenant_agent_scope(
+        self,
+        coordination_config,
+    ):
+        """Definition version helpers should read and bump the shared key."""
+        coord = CronCoordination(
+            tenant_id="test-tenant",
+            agent_id="test-agent",
+            config=coordination_config,
+        )
+        coord._redis = AsyncMock()
+        coord._redis.get = AsyncMock(return_value=b"2")
+        coord._redis.incr = AsyncMock(return_value=3)
+
+        current = await coord.get_definition_version()
+        bumped = await coord.bump_definition_version()
+
+        assert current == 2
+        assert bumped == 3
+        coord._redis.get.assert_awaited_once_with(
+            "swe:cron:defver:test-tenant:test-agent",
+        )
+        coord._redis.incr.assert_awaited_once_with(
+            "swe:cron:defver:test-tenant:test-agent",
+        )
 
 
 class TestCronCoordinationWithRedis:
@@ -495,7 +547,7 @@ class TestCronCoordinationWithRedis:
         await coord.disconnect()
 
     async def test_create_execution_lock(
-        self, redis_client, coordination_config
+        self, redis_client, coordination_config,
     ):
         """Test creating execution lock through coordination."""
         coord = CronCoordination(
@@ -519,7 +571,7 @@ class TestCronCoordinationWithRedis:
         await coord.disconnect()
 
     async def test_create_execution_lock_without_connection(
-        self, coordination_config
+        self, coordination_config,
     ):
         """Test that creating execution lock without connection raises error."""
         coord = CronCoordination(
@@ -732,7 +784,7 @@ class TestCronCoordinationCandidateLoop:
 
     @pytest.mark.skipif(not REDIS_AVAILABLE, reason="Redis not available")
     async def test_candidate_loop_becomes_leader(
-        self, redis_client, coordination_config
+        self, redis_client, coordination_config,
     ):
         """Test that candidate loop can acquire leadership when lease is free."""
         coord = CronCoordination(
@@ -768,7 +820,7 @@ class TestCronCoordinationCandidateLoop:
 
     @pytest.mark.skipif(not REDIS_AVAILABLE, reason="Redis not available")
     async def test_candidate_loop_with_existing_leader(
-        self, redis_client, coordination_config
+        self, redis_client, coordination_config,
     ):
         """Test that candidate loop doesn't steal existing lease."""
         coord1 = CronCoordination(

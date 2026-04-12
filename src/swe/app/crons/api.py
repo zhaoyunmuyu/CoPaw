@@ -31,25 +31,6 @@ def _inject_request_tenant(spec: CronJobSpec, request: Request) -> CronJobSpec:
     return spec.model_copy(update={"tenant_id": tenant_id})
 
 
-async def _publish_reload_after(mgr: CronManager) -> None:
-    """Publish reload signal after successful mutation.
-
-    This notifies all instances that cron configuration has changed.
-    The current leader will reload its schedule from the repository.
-    """
-    if mgr._coordination is not None:
-        try:
-            await mgr._coordination.publish_reload()
-        except Exception:  # pylint: disable=broad-except
-            # Log but don't fail the mutation if publish fails
-            import logging
-
-            logging.getLogger(__name__).warning(
-                "Failed to publish reload signal after mutation",
-                exc_info=True,
-            )
-
-
 @router.get("/jobs", response_model=list[CronJobSpec])
 async def list_jobs(mgr: CronManager = Depends(get_cron_manager)):
     return await mgr.list_jobs()
@@ -76,8 +57,6 @@ async def create_job(
         request,
     )
     await mgr.create_or_replace_job(created)
-    # Publish reload signal after successful write
-    await _publish_reload_after(mgr)
     return created
 
 
@@ -92,8 +71,6 @@ async def replace_job(
         raise HTTPException(status_code=400, detail="job_id mismatch")
     spec = _inject_request_tenant(spec, request)
     await mgr.create_or_replace_job(spec)
-    # Publish reload signal after successful write
-    await _publish_reload_after(mgr)
     return spec
 
 
@@ -105,8 +82,6 @@ async def delete_job(
     ok = await mgr.delete_job(job_id)
     if not ok:
         raise HTTPException(status_code=404, detail="job not found")
-    # Publish reload signal after successful write
-    await _publish_reload_after(mgr)
     return {"deleted": True}
 
 
@@ -115,8 +90,6 @@ async def pause_job(job_id: str, mgr: CronManager = Depends(get_cron_manager)):
     ok = await mgr.pause_job(job_id)
     if not ok:
         raise HTTPException(status_code=404, detail="job not found")
-    # Publish reload signal after successful mutation
-    await _publish_reload_after(mgr)
     return {"paused": True}
 
 
@@ -128,8 +101,6 @@ async def resume_job(
     ok = await mgr.resume_job(job_id)
     if not ok:
         raise HTTPException(status_code=404, detail="job not found")
-    # Publish reload signal after successful mutation
-    await _publish_reload_after(mgr)
     return {"resumed": True}
 
 
