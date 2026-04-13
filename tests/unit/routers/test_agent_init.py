@@ -24,6 +24,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         default_tenant_id=None,
     )
     app.include_router(router, prefix="/api")
+    app.include_router(router, prefix="/api/agents/{agentId}")
 
     async def fake_get_agent_for_request(
         request: Request,
@@ -307,6 +308,82 @@ def test_init_openapi_schema_marks_fields_required_and_non_nullable(
     assert "anyOf" not in body_schema["properties"]["filename"]
     assert "anyOf" not in body_schema["properties"]["text"]
     assert "anyOf" not in body_schema["properties"]["agentId"]
+
+
+def test_init_rejects_agent_scoped_path_and_does_not_write(
+    client: TestClient,
+    tmp_path: Path,
+):
+    response = client.post(
+        "/api/agents/path-agent/agent/init",
+        headers={"X-Tenant-Id": "tenant-a"},
+        json={
+            "filename": "PROFILE.md",
+            "text": "x",
+            "agentId": "body-agent",
+        },
+    )
+    assert response.status_code == 404
+    assert (
+        tmp_path / "tenant-a" / "agents" / "body-agent" / "PROFILE.md"
+    ).exists() is False
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_detail"),
+    [
+        (
+            {"filename": None, "text": "x", "agentId": "agent-1"},
+            "filename is required",
+        ),
+        (
+            {"filename": 123, "text": "x", "agentId": "agent-1"},
+            "filename is required",
+        ),
+        (
+            {"filename": "PROFILE.md", "text": None, "agentId": "agent-1"},
+            "text is required",
+        ),
+        (
+            {"filename": "PROFILE.md", "text": 123, "agentId": "agent-1"},
+            "text is required",
+        ),
+        (
+            {"filename": "PROFILE.md", "text": "x", "agentId": None},
+            "agentId is required",
+        ),
+        (
+            {"filename": "PROFILE.md", "text": "x", "agentId": {"k": "v"}},
+            "agentId is required",
+        ),
+    ],
+)
+def test_init_rejects_null_or_wrong_types_with_400(
+    client: TestClient,
+    payload: dict,
+    expected_detail: str,
+):
+    response = client.post(
+        "/api/agent/init",
+        headers={"X-Tenant-Id": "tenant-a"},
+        json=payload,
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == expected_detail
+
+
+def test_init_does_not_accept_snake_case_agent_id(client: TestClient):
+    response = client.post(
+        "/api/agent/init",
+        headers={"X-Tenant-Id": "tenant-a"},
+        json={
+            "filename": "PROFILE.md",
+            "text": "x",
+            "agent_id": "agent-1",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "agentId is required"
 
 
 @pytest.mark.parametrize(

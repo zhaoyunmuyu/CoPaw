@@ -40,13 +40,40 @@ class AgentInitRequest(BaseModel):
     """Request model for appending initialization text to a working md."""
 
     model_config = ConfigDict(
-        populate_by_name=True,
-        json_schema_extra={"required": ["filename", "text", "agentId"]},
+        populate_by_name=False,
+        json_schema_extra={
+            "type": "object",
+            "required": ["filename", "text", "agentId"],
+            "properties": {
+                "filename": {
+                    "type": "string",
+                    "title": "Filename",
+                    "description": "Top-level markdown file name",
+                },
+                "text": {
+                    "type": "string",
+                    "title": "Text",
+                    "description": "Text to append",
+                },
+                "agentId": {
+                    "type": "string",
+                    "title": "Agentid",
+                    "description": "Agent ID",
+                },
+            },
+        },
     )
 
-    filename: str = Field(None, description="Top-level markdown file name")
-    text: str = Field(None, description="Text to append")
-    agent_id: str = Field(None, alias="agentId", description="Agent ID")
+    filename: object = Field(None, description="Top-level markdown file name")
+    text: object = Field(None, description="Text to append")
+    agent_id: object = Field(None, alias="agentId", description="Agent ID")
+
+
+def _require_string(value: object, detail: str) -> str:
+    """Require a field value to be a string for endpoint-local validation."""
+    if not isinstance(value, str):
+        raise HTTPException(status_code=400, detail=detail)
+    return value
 
 
 def _normalize_top_level_md_filename(filename: str | None) -> str:
@@ -94,17 +121,21 @@ async def append_init_text(
 ) -> dict:
     """Append initialization text to a working markdown file."""
     try:
-        filename = _normalize_top_level_md_filename(body.filename)
-        if body.text is None:
-            raise HTTPException(status_code=400, detail="text is required")
+        if "agentId" in request.path_params:
+            raise HTTPException(status_code=404, detail="Not Found")
 
-        agent_id = (body.agent_id or "").strip()
+        raw_filename = _require_string(body.filename, "filename is required")
+        filename = _normalize_top_level_md_filename(raw_filename)
+        text = _require_string(body.text, "text is required")
+
+        raw_agent_id = _require_string(body.agent_id, "agentId is required")
+        agent_id = raw_agent_id.strip()
         if not agent_id:
             raise HTTPException(status_code=400, detail="agentId is required")
 
         workspace = await get_agent_for_request(request, agent_id=agent_id)
         workspace_manager = AgentMdManager(str(workspace.workspace_dir))
-        workspace_manager.append_working_md(filename, body.text)
+        workspace_manager.append_working_md(filename, text)
         return {
             "appended": True,
             "filename": filename,
