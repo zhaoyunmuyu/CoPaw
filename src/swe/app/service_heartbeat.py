@@ -9,17 +9,22 @@
 2. 捕获 SIGTERM/SIGINT 信号，确保 Kubernetes 优雅关闭时发送关闭心跳
 3. 使用 atexit 作为最后的兜底方案
 
-配置项：
-- url: 心跳接口地址（POST请求）
-- interval_seconds: 心跳间隔秒数，默认30秒
-- service_name: 服务名称，固定为swe
-- instance_port: 实例端口，默认8088
-- weight: 权重，默认1
+需要配置的环境变量：
+- SWE_SERVICE_HEARTBEAT_ENABLED: 是否启用（默认true）
+- SWE_SERVICE_HEARTBEAT_URL: 心跳接口地址（必填）
+- SWE_SERVICE_HEARTBEAT_INTERVAL: 心跳间隔秒数（默认30）
+- SWE_SERVICE_HEARTBEAT_INSTANCE_PORT: 实例端口（默认8088）
+- SWE_SERVICE_HEARTBEAT_WEIGHT: 权重（默认1）
+- SWE_SERVICE_HEARTBEAT_SERVICE_NAME: 服务名称（默认swe）
+
+容器自带的环境变量（自动获取，无需配置）：
+- CMB_CAAS_SERVICEUNITID: 服务单元标识
+- CMB_CLUSTER: 可用区标识
 
 接口入参：
-- serviceName: String, 必填, 服务名称（固定为swe）
-- serviceUnit: String, 可选, 服务单元标识（从环境变量CMB_CAAS_SERVICEUNITID读取）
-- az: String, 可选, 可用区标识
+- serviceName: String, 必填, 服务名称（默认swe）
+- serviceUnit: String, 可选, 服务单元标识（容器自带CMB_CAAS_SERVICEUNITID）
+- az: String, 可选, 可用区标识（容器自带CMB_CLUSTER）
 - instanceIp: String, 必填, 实例IP（从/etc/hosts读取）
 - instancePort: Integer, 必填, 实例端口（默认8088）
 - enabled: Boolean, 可选, 是否启用（正常true，关闭时false）
@@ -45,6 +50,8 @@ logger = logging.getLogger(__name__)
 
 # 环境变量名：服务单元标识
 SERVICE_UNIT_ENV_VAR = "CMB_CAAS_SERVICEUNITID"
+# 环境变量名：可用区标识
+AZ_ENV_VAR = "CMB_CLUSTER"
 
 # 关闭信号标志
 _shutdown_requested = False
@@ -116,6 +123,11 @@ def get_service_unit() -> Optional[str]:
     return os.environ.get(SERVICE_UNIT_ENV_VAR)
 
 
+def get_az() -> Optional[str]:
+    """从环境变量获取可用区标识。"""
+    return os.environ.get(AZ_ENV_VAR)
+
+
 def send_sync_shutdown_heartbeat(url: str, payload: dict) -> bool:
     """同步发送关闭心跳（用于信号处理和atexit）。
 
@@ -164,6 +176,7 @@ class ServiceHeartbeatManager:
         self._config = config
         self._instance_ip: Optional[str] = None
         self._service_unit: Optional[str] = None
+        self._az: Optional[str] = None
         self._task: Optional[asyncio.Task] = None
         self._running = False
         self._client: Optional[httpx.AsyncClient] = None
@@ -193,6 +206,8 @@ class ServiceHeartbeatManager:
             self._instance_ip = get_instance_ip()
         if self._service_unit is None:
             self._service_unit = get_service_unit()
+        if self._az is None:
+            self._az = get_az()
 
         payload = {
             "serviceName": cfg.service_name,
@@ -205,6 +220,8 @@ class ServiceHeartbeatManager:
         # 可选字段
         if self._service_unit:
             payload["serviceUnit"] = self._service_unit
+        if self._az:
+            payload["az"] = self._az
 
         return payload
 
