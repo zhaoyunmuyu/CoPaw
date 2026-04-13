@@ -12,7 +12,6 @@ description: AI输入框
 
 <Install>import { ChatInput } from '@agentscope-ai/chat'</Install>
 
-
 #### 对话输入框示例
 
 以下是此组件的示例和变体
@@ -24,7 +23,6 @@ description: AI输入框
 <code src="./demo/suggestions.tsx" center height="350">输入建议</code>
 <code src="./demo/morePrefixAction.tsx" center height="350">自定义功能</code>
 <code src="./demo/asr.tsx" center height="350">语音发送</code>
-
 
 #### API
 

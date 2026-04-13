@@ -36,8 +36,8 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       // ==================== 代理配置 (Kun He) ====================
       proxy: {
-        '/api': {
-          target: 'http://127.0.0.1:8088',
+        "/api": {
+          target: "http://127.0.0.1:8088",
           changeOrigin: true,
         },
       },

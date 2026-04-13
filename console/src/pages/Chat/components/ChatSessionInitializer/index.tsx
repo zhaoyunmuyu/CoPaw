@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { useLocation } from "react-router-dom";
 // ==================== 组件引入方式变更 (Kun He) ====================
-import { useChatAnywhereSessionsState } from '@/components/agentscope-chat';
+import { useChatAnywhereSessionsState } from "@/components/agentscope-chat";
 // ==================== 组件引入方式变更结束 ====================
 
 /**

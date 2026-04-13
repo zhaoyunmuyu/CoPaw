@@ -1,29 +1,43 @@
-import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
-import { Flex, Popover, UploadFile, Upload as AntdUpload  } from 'antd';
-import { useProviderContext, ChatInput, uuid, Sender, Attachments } from '@/components/agentscope-chat';
-import cls from 'classnames';
-import { useChatAnywhere } from '../hooks/ChatAnywhereProvider';
-import { useInput } from '../hooks/useInput';
-import { GetProp, Space, Upload } from 'antd';
-import Style from './style';
-import { IconButton, Button } from '@agentscope-ai/design';
-import { AIGC } from '@/components/agentscope-chat';
-import UploadPopover from './UploadPopover';
+import React, {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Flex, Popover, UploadFile, Upload as AntdUpload } from "antd";
+import {
+  useProviderContext,
+  ChatInput,
+  uuid,
+  Sender,
+  Attachments,
+} from "@/components/agentscope-chat";
+import cls from "classnames";
+import { useChatAnywhere } from "../hooks/ChatAnywhereProvider";
+import { useInput } from "../hooks/useInput";
+import { GetProp, Space, Upload } from "antd";
+import Style from "./style";
+import { IconButton, Button } from "@agentscope-ai/design";
+import { AIGC } from "@/components/agentscope-chat";
+import UploadPopover from "./UploadPopover";
 
-type AttachedFiles = GetProp<typeof Attachments, 'items'>;
+type AttachedFiles = GetProp<typeof Attachments, "items">;
 
 export default forwardRef(function (_, ref) {
-  const [content, setContent] = React.useState('');
+  const [content, setContent] = React.useState("");
   const inputContext = useInput();
-  const onUpload = useChatAnywhere(v => {
-    return v.onUpload.map(d => ({
+  const onUpload = useChatAnywhere((v) => {
+    return v.onUpload.map((d) => ({
       ...d,
       disabled: d.disabled || inputContext.disabled,
-    }))
+    }));
   });
   const resetData = new Array(onUpload?.length || 0).fill([]);
   const [focus, setFocus] = useState(false);
-  const [attachedFiles, setAttachedFiles] = React.useState<AttachedFiles[]>(resetData);
+  const [attachedFiles, setAttachedFiles] =
+    React.useState<AttachedFiles[]>(resetData);
   const attachedFilesRef = useRef<AttachedFiles[]>(resetData);
   useEffect(() => {
     setAttachedFiles(resetData);
@@ -33,11 +47,11 @@ export default forwardRef(function (_, ref) {
     attachedFilesRef.current = attachedFiles;
   }, [attachedFiles]);
 
-  const uiConfig = useChatAnywhere(v => v.uiConfig);
+  const uiConfig = useChatAnywhere((v) => v.uiConfig);
   const { getPrefixCls } = useProviderContext();
-  const prefixCls = getPrefixCls('chat-anywhere-sender');
-  const onStop = useChatAnywhere(v => v.onStop);
-  const onInput = useChatAnywhere(v => {
+  const prefixCls = getPrefixCls("chat-anywhere-sender");
+  const onStop = useChatAnywhere((v) => v.onStop);
+  const onInput = useChatAnywhere((v) => {
     const defaultValue = {
       beforeUI: undefined,
       afterUI: undefined,
@@ -47,65 +61,69 @@ export default forwardRef(function (_, ref) {
       beforeSubmit: () => Promise.resolve(true),
       header: [],
       enableFocusExpand: false,
-      variant: 'default',
+      variant: "default",
       hide: false,
     };
 
     return {
       ...defaultValue,
       ...v.onInput,
-    }
+    };
   });
 
-  React.useImperativeHandle(ref, () => {
-    return {
-      setInputContent: (content: string, fileList?: UploadFile[][]) => {
-        setContent(content);
-        setAttachedFiles(fileList || [[]]);
-      },
-      getAttachedFiles: () => attachedFilesRef.current,
-
-    };
-  }, []);
+  React.useImperativeHandle(
+    ref,
+    () => {
+      return {
+        setInputContent: (content: string, fileList?: UploadFile[][]) => {
+          setContent(content);
+          setAttachedFiles(fileList || [[]]);
+        },
+        getAttachedFiles: () => attachedFilesRef.current,
+      };
+    },
+    [],
+  );
 
   useEffect(() => {
     inputContext.setDisabled(onInput.disabled);
-  }, [onInput.disabled])
-
+  }, [onInput.disabled]);
 
   if (onInput.hide) return null;
 
   const handleFileChange = async (index, fileList) => {
-    setAttachedFiles(attachedFiles => {
+    setAttachedFiles((attachedFiles) => {
       return attachedFiles.map((item, i) => {
         if (i === index) {
           return fileList;
         }
         return item;
-      })
-    })
-  }
+      });
+    });
+  };
 
   const uploadPrefixNodes = useMemo(() => {
-    if (onInput.variant === 'aigc' || !onUpload?.length) {
+    if (onInput.variant === "aigc" || !onUpload?.length) {
       return [];
     }
     const uploadPropsList = onUpload.map((item, index) => {
-
       let trigger;
 
       if (item.trigger) {
         trigger = item.trigger;
       } else if ((item.title || item.description) && onUpload.length > 1) {
-        trigger = <Button type='text' icon={item.icon} >
-          {item.title && <span>{item.title}</span>}
-          {item.description && <span style={{ fontSize: '0.8em', opacity: 0.8 }}>{item.description}</span>}
-        </Button>
+        trigger = (
+          <Button type="text" icon={item.icon}>
+            {item.title && <span>{item.title}</span>}
+            {item.description && (
+              <span style={{ fontSize: "0.8em", opacity: 0.8 }}>
+                {item.description}
+              </span>
+            )}
+          </Button>
+        );
       } else {
-        trigger = <IconButton
-          icon={item.icon}
-          bordered={false}
-        />
+        trigger = <IconButton icon={item.icon} bordered={false} />;
       }
 
       return {
@@ -114,29 +132,24 @@ export default forwardRef(function (_, ref) {
         key: index,
         onChange: (info) => {
           if (item.beforeUpload && info.file.status) {
-            handleFileChange(index, info.fileList)
+            handleFileChange(index, info.fileList);
           }
 
           if (!item.beforeUpload) {
-            handleFileChange(index, info.fileList)
+            handleFileChange(index, info.fileList);
           }
         },
         showUploadList: false,
         trigger,
-      }
+      };
     });
 
-    if (uploadPropsList.length === 1) return (
-      <Upload {...uploadPropsList[0]}>{uploadPropsList[0].trigger}</Upload>
-    );
-    return <UploadPopover uploadPropsList={uploadPropsList} />
-
-
-
+    if (uploadPropsList.length === 1)
+      return (
+        <Upload {...uploadPropsList[0]}>{uploadPropsList[0].trigger}</Upload>
+      );
+    return <UploadPopover uploadPropsList={uploadPropsList} />;
   }, [onInput.variant, onUpload, attachedFiles]);
-
-
-
 
   // aigc 模式下的 header
   const aigcSenderHeader = (
@@ -151,53 +164,58 @@ export default forwardRef(function (_, ref) {
   const defaultSenderHeader = (
     <Sender.Header
       closable={false}
-      open={attachedFiles?.some(item => item.length)}
+      open={attachedFiles?.some((item) => item.length)}
     >
-      {
-        attachedFiles.map((files, index) => {
-          if (!files.length) return null;
-          return <Attachments
+      {attachedFiles.map((files, index) => {
+        if (!files.length) return null;
+        return (
+          <Attachments
             key={index}
             items={files}
             replaceable={true}
             onChange={(info) => handleFileChange(index, info.fileList)}
           />
-        })
-      }
+        );
+      })}
     </Sender.Header>
   );
 
   // 根据 variant 选择 header
-  const senderHeader = onInput.variant === 'aigc' ? aigcSenderHeader : defaultSenderHeader;
+  const senderHeader =
+    onInput.variant === "aigc" ? aigcSenderHeader : defaultSenderHeader;
 
-  const submitFileList = attachedFiles.map(files => files.filter(file => file.status === 'done'));
-  const fileLoading = attachedFiles.some(files => files.some(file => file.status === 'uploading'));
-  const hasSubmittableFiles = submitFileList.some(files => files.length > 0);
+  const submitFileList = attachedFiles.map((files) =>
+    files.filter((file) => file.status === "done"),
+  );
+  const fileLoading = attachedFiles.some((files) =>
+    files.some((file) => file.status === "uploading"),
+  );
+  const hasSubmittableFiles = submitFileList.some((files) => files.length > 0);
 
   const handlePasteFile = (file: File) => {
     if (!onUpload?.length) return;
 
-    const fileType = file.type || '';
-    const fileName = file.name || '';
+    const fileType = file.type || "";
+    const fileName = file.name || "";
 
     // Match file type with accept pattern
     const matchAcceptType = (accept?: string) => {
       if (!accept) return true;
 
-      return accept.split(',').some(type => {
+      return accept.split(",").some((type) => {
         const trimmed = type.trim();
         if (!trimmed) return false;
 
         // Extension: .jpg, .png
-        if (trimmed.startsWith('.')) {
+        if (trimmed.startsWith(".")) {
           return fileName.toLowerCase().endsWith(trimmed.toLowerCase());
         }
 
         // Wildcard: image/*, */*
-        if (trimmed.includes('*')) {
-          if (trimmed === '*/*') return true;
-          const [acceptMain] = trimmed.split('/');
-          const [fileMain] = fileType.split('/');
+        if (trimmed.includes("*")) {
+          if (trimmed === "*/*") return true;
+          const [acceptMain] = trimmed.split("/");
+          const [fileMain] = fileType.split("/");
           return acceptMain === fileMain;
         }
 
@@ -207,7 +225,9 @@ export default forwardRef(function (_, ref) {
     };
 
     // Find matching upload config
-    const uploadIndex = onUpload.findIndex(config => matchAcceptType(config.accept));
+    const uploadIndex = onUpload.findIndex((config) =>
+      matchAcceptType(config.accept),
+    );
     if (uploadIndex === -1) {
       return;
     }
@@ -234,26 +254,34 @@ export default forwardRef(function (_, ref) {
       if (result === AntdUpload.LIST_IGNORE) {
         return;
       }
-      
+
       // Handle Promise return from beforeUpload
       if (result instanceof Promise) {
-        result.then((processedFile) => {
-          // If promise resolves to false or LIST_IGNORE, stop upload
-          if (processedFile === false || processedFile === AntdUpload.LIST_IGNORE) {
-            return;
-          }
-          // Continue with processed file or original file
-          // processedFile could be File, Blob, or true
-          const fileToProcess = (processedFile && typeof processedFile === 'object') ? processedFile as File : file;
-          continueUpload(fileToProcess);
-        }).catch((error) => {
-          console.error('beforeUpload promise rejected:', error);
-        });
+        result
+          .then((processedFile) => {
+            // If promise resolves to false or LIST_IGNORE, stop upload
+            if (
+              processedFile === false ||
+              processedFile === AntdUpload.LIST_IGNORE
+            ) {
+              return;
+            }
+            // Continue with processed file or original file
+            // processedFile could be File, Blob, or true
+            const fileToProcess =
+              processedFile && typeof processedFile === "object"
+                ? (processedFile as File)
+                : file;
+            continueUpload(fileToProcess);
+          })
+          .catch((error) => {
+            console.error("beforeUpload promise rejected:", error);
+          });
         return;
       }
-      
+
       // If beforeUpload returns a File or Blob, use it
-      if (result && typeof result === 'object') {
+      if (result && typeof result === "object") {
         continueUpload(result as File);
         return;
       }
@@ -268,7 +296,7 @@ export default forwardRef(function (_, ref) {
         if (nameMatch) return nameMatch[1].toLowerCase();
 
         const typeMatch = fileType.match(/\/([^/+]+)/);
-        return typeMatch ? typeMatch[1].toLowerCase() : 'bin';
+        return typeMatch ? typeMatch[1].toLowerCase() : "bin";
       };
 
       // Create upload file object
@@ -278,24 +306,24 @@ export default forwardRef(function (_, ref) {
         name: fileName || `pasted-${timestamp}.${getExtension()}`,
         size: fileToUpload.size,
         type: fileType,
-        status: 'uploading',
+        status: "uploading",
         percent: 0,
         originFileObj: fileToUpload,
       };
 
       // Update file in list
       const updateFile = (updates: any) => {
-        setAttachedFiles(prev => {
+        setAttachedFiles((prev) => {
           const updated = [...prev];
-          updated[uploadIndex] = (updated[uploadIndex] || []).map(f =>
-            f.uid === uploadFile.uid ? { ...f, ...updates } as any : f
+          updated[uploadIndex] = (updated[uploadIndex] || []).map((f) =>
+            f.uid === uploadFile.uid ? ({ ...f, ...updates } as any) : f,
           );
           return updated;
         });
       };
 
       // Add file to list first
-      setAttachedFiles(prev => {
+      setAttachedFiles((prev) => {
         const updated = [...prev];
         const currentList = updated[uploadIndex] || [];
 
@@ -304,7 +332,10 @@ export default forwardRef(function (_, ref) {
           updated[uploadIndex] = [uploadFile];
         } else {
           // If multiple, check maxCount
-          if (uploadConfig.maxCount && currentList.length >= uploadConfig.maxCount) {
+          if (
+            uploadConfig.maxCount &&
+            currentList.length >= uploadConfig.maxCount
+          ) {
             return prev;
           }
           updated[uploadIndex] = [...currentList, uploadFile];
@@ -313,11 +344,11 @@ export default forwardRef(function (_, ref) {
       });
 
       // Handle image preview (async, don't block upload)
-      if (fileType && fileType.startsWith('image/')) {
+      if (fileType && fileType.startsWith("image/")) {
         const reader = new FileReader();
         reader.onload = (e) => {
           const result = e.target?.result;
-          if (typeof result === 'string') {
+          if (typeof result === "string") {
             updateFile({ thumbUrl: result, url: result });
           }
         };
@@ -325,85 +356,97 @@ export default forwardRef(function (_, ref) {
       }
 
       // Trigger upload via customRequest
-      uploadConfig.customRequest({
-        file: fileToUpload as any,
-        onSuccess: (response: any) => {
-          updateFile({ status: 'done', response, percent: 100 });
+      uploadConfig.customRequest(
+        {
+          file: fileToUpload as any,
+          onSuccess: (response: any) => {
+            updateFile({ status: "done", response, percent: 100 });
+          },
+          onError: (error: any) => {
+            updateFile({ status: "error", error });
+          },
+          onProgress: (event: any) => {
+            updateFile({ percent: event.percent });
+          },
+        } as any,
+        {
+          defaultRequest: () => {},
         },
-        onError: (error: any) => {
-          updateFile({ status: 'error', error });
-        },
-        onProgress: (event: any) => {
-          updateFile({ percent: event.percent });
-        },
-      } as any, {
-        defaultRequest: () => { }
-      });
+      );
     }
   };
 
   // 检查是否有必需的上传项没有文件
   const requiredFileMissing = useMemo(() => {
-    return onUpload?.some((item, index) => {
-      if (item.required) {
-        const files = attachedFiles[index] || [];
-        return files.length === 0;
-      }
-      return false;
-    }) ?? false;
+    return (
+      onUpload?.some((item, index) => {
+        if (item.required) {
+          const files = attachedFiles[index] || [];
+          return files.length === 0;
+        }
+        return false;
+      }) ?? false
+    );
   }, [onUpload, attachedFiles]);
 
   const sendDisabled = requiredFileMissing;
 
-  return <>
-    <Style />
-    <div
-      className={cls(`${prefixCls}-wrapper`, {
-        [`${prefixCls}-wrapper-focus`]: focus && onInput.enableFocusExpand,
-        [`${prefixCls}-wrapper-blur`]: !focus && onInput.enableFocusExpand,
-      })}
-    >
-      {
-        uiConfig.quickInput && <div className={cls(`${prefixCls}-wrapper-header`)}>{uiConfig.quickInput}</div>
-      }
+  return (
+    <>
+      <Style />
+      <div
+        className={cls(`${prefixCls}-wrapper`, {
+          [`${prefixCls}-wrapper-focus`]: focus && onInput.enableFocusExpand,
+          [`${prefixCls}-wrapper-blur`]: !focus && onInput.enableFocusExpand,
+        })}
+      >
+        {uiConfig.quickInput && (
+          <div className={cls(`${prefixCls}-wrapper-header`)}>
+            {uiConfig.quickInput}
+          </div>
+        )}
 
-      {
-        onInput.beforeUI
-      }
-      <ChatInput
-        suggestions={onInput.suggestions}
-        placeholder={onInput.placeholder}
-        enableFocusExpand={onInput.enableFocusExpand}
-        value={content}
-        onChange={setContent}
-        maxLength={onInput.maxLength}
-        disabled={fileLoading || inputContext.disabled}
-        sendDisabled={sendDisabled}
-        allowEmptySubmit={(onInput.allowEmptySubmit ?? true) && hasSubmittableFiles}
-        header={senderHeader}
-        prefix={<>
-          {uploadPrefixNodes}
-          {onInput?.morePrefixActions}
-        </>}
-        onSubmit={async () => {
-          const next = await (onInput.beforeSubmit || (() => Promise.resolve(true)))();
-          if (!next) return;
-          // @ts-ignore
-          onInput.onSubmit({ query: content, fileList: submitFileList });
-          setContent('');
-          setAttachedFiles(resetData);
-        }}
-        onCancel={() => {
-          onStop?.();
-          inputContext.setLoading(false);
-        }}
-        onFocus={() => setFocus(true)}
-        onBlur={() => setFocus(false)}
-        onPasteFile={handlePasteFile}
-        loading={inputContext.loading}
-      />
-      {
-        onInput.afterUI
-      }
-    </div></>
-})
+        {onInput.beforeUI}
+        <ChatInput
+          suggestions={onInput.suggestions}
+          placeholder={onInput.placeholder}
+          enableFocusExpand={onInput.enableFocusExpand}
+          value={content}
+          onChange={setContent}
+          maxLength={onInput.maxLength}
+          disabled={fileLoading || inputContext.disabled}
+          sendDisabled={sendDisabled}
+          allowEmptySubmit={
+            (onInput.allowEmptySubmit ?? true) && hasSubmittableFiles
+          }
+          header={senderHeader}
+          prefix={
+            <>
+              {uploadPrefixNodes}
+              {onInput?.morePrefixActions}
+            </>
+          }
+          onSubmit={async () => {
+            const next = await (
+              onInput.beforeSubmit || (() => Promise.resolve(true))
+            )();
+            if (!next) return;
+            // @ts-ignore
+            onInput.onSubmit({ query: content, fileList: submitFileList });
+            setContent("");
+            setAttachedFiles(resetData);
+          }}
+          onCancel={() => {
+            onStop?.();
+            inputContext.setLoading(false);
+          }}
+          onFocus={() => setFocus(true)}
+          onBlur={() => setFocus(false)}
+          onPasteFile={handlePasteFile}
+          loading={inputContext.loading}
+        />
+        {onInput.afterUI}
+      </div>
+    </>
+  );
+});

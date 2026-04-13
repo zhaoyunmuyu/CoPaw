@@ -1,22 +1,22 @@
 /**
  * @description default separator for {@link splitStream}
  */
-const DEFAULT_STREAM_SEPARATOR = '\n\n';
+const DEFAULT_STREAM_SEPARATOR = "\n\n";
 /**
  * @description Default separator for {@link splitPart}
  * @example "event: delta\ndata: {\"key\": \"value\"}"
  */
-const DEFAULT_PART_SEPARATOR = '\n';
+const DEFAULT_PART_SEPARATOR = "\n";
 /**
  * @description Default separator for key value, A colon (`:`) is used to separate keys from values
  * @example "event: delta"
  */
-const DEFAULT_KV_SEPARATOR = ':';
+const DEFAULT_KV_SEPARATOR = ":";
 
 /**
  * Check if a string is not empty or only contains whitespace characters
  */
-const isValidString = (str: string) => (str ?? '').trim() !== '';
+const isValidString = (str: string) => (str ?? "").trim() !== "";
 
 /**
  * @description A TransformStream inst that splits a stream into parts based on {@link DEFAULT_STREAM_SEPARATOR}
@@ -32,7 +32,7 @@ const isValidString = (str: string) => (str ?? '').trim() !== '';
  */
 function splitStream() {
   // Buffer to store incomplete data chunks between transformations
-  let buffer = '';
+  let buffer = "";
 
   return new TransformStream<string, string>({
     transform(streamChunk, controller) {
@@ -64,7 +64,7 @@ function splitStream() {
 /**
  * @link https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events#fields
  */
-export type SSEFields = 'data' | 'event' | 'id' | 'retry';
+export type SSEFields = "data" | "event" | "id" | "retry";
 
 /**
  * @example
@@ -155,7 +155,7 @@ function Stream<Output = SSEOutput>(
 
   if (!(readableStream instanceof ReadableStream)) {
     throw new Error(
-      'The options.readableStream must be an instance of ReadableStream.',
+      "The options.readableStream must be an instance of ReadableStream.",
     );
   }
 
@@ -191,7 +191,10 @@ function Stream<Output = SSEOutput>(
       yield config?.openaiCompatible
         ? {
             ...value,
-            data: typeof (value as SSEOutput).data === 'string' ? (value as SSEOutput).data.slice(1) : (value as SSEOutput).data,
+            data:
+              typeof (value as SSEOutput).data === "string"
+                ? (value as SSEOutput).data.slice(1)
+                : (value as SSEOutput).data,
           }
         : value;
     }

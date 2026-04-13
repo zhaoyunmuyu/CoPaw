@@ -84,4 +84,8 @@ export function getChannel(sessionChannel?: string): string {
 }
 
 // Re-export constants for convenience
-export { DEFAULT_USER_ID, DEFAULT_CHANNEL, DEFAULT_TENANT_ID } from "../constants/identity";
+export {
+  DEFAULT_USER_ID,
+  DEFAULT_CHANNEL,
+  DEFAULT_TENANT_ID,
+} from "../constants/identity";

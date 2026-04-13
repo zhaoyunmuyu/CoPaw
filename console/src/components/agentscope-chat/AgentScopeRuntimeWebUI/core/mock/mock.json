@@ -270,7 +270,6 @@
     "type": "plugin_call",
     "role": "assistant",
     "content": [
-      
       {
         "sequence_number": null,
         "object": "content",

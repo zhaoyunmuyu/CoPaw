@@ -1,6 +1,6 @@
-import type React from 'react';
-import type { AnyObject } from '../Util/type';
-import type { GroupTitleProps } from './GroupTitle';
+import type React from "react";
+import type { AnyObject } from "../Util/type";
+import type { GroupTitleProps } from "./GroupTitle";
 
 type GroupType = string;
 
@@ -22,7 +22,6 @@ export interface Conversation extends AnyObject {
    * @descriptionEn Timestamp of conversation creation or last activity for sorting and display
    */
   timestamp?: number;
-  
 
   /**
    * @description 会话的图标元素，用于视觉识别
@@ -55,10 +54,13 @@ export interface Conversation extends AnyObject {
    * @description 选择会话的回调函数，用于选择会话
    * @descriptionEn Callback function for selecting conversation, for selecting conversation
    */
-  onSelect?: (key: Conversation['key'], selected: Conversation['selected']) => void;
+  onSelect?: (
+    key: Conversation["key"],
+    selected: Conversation["selected"],
+  ) => void;
 }
 
-export type GroupSorter = Parameters<GroupType[]['sort']>[0];
+export type GroupSorter = Parameters<GroupType[]["sort"]>[0];
 
 export type GroupTitleRenderComponents = {
   components: {

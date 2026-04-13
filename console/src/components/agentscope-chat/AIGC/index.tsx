@@ -6,4 +6,4 @@ export default {
   SenderHeader,
   Info,
   Upload,
-}
+};

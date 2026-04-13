@@ -47,5 +47,3 @@ description: A card that displays AI actions in a conversation flow
 ##### IWebSearchProps
 
 <ApiParser source="./preset/WebSearch.tsx" id="IWebSearchProps"></ApiParser>
-
-

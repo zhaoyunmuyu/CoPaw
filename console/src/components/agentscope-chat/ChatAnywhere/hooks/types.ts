@@ -1,6 +1,6 @@
-import { GetProp, Upload, UploadFile } from 'antd';
-import { ScrollToBottomOptions } from 'use-stick-to-bottom';
-import { IChatAnywhereContext } from './ChatAnywhereProvider';
+import { GetProp, Upload, UploadFile } from "antd";
+import { ScrollToBottomOptions } from "use-stick-to-bottom";
+import { IChatAnywhereContext } from "./ChatAnywhereProvider";
 
 export interface TSession {
   /**
@@ -63,12 +63,12 @@ export interface TMessage {
    * @description 消息的角色类型，区分用户、助手和系统消息
    * @descriptionEn Role type of the message to distinguish user, assistant, and system messages
    */
-  role: 'user' | 'assistant' | 'system';
+  role: "user" | "assistant" | "system";
   /**
    * @description 消息的处理状态，影响显示效果
    * @descriptionEn Processing status of the message, affects display effects
    */
-  msgStatus?: 'finished' | 'interrupted' | 'generating' | 'error';
+  msgStatus?: "finished" | "interrupted" | "generating" | "error";
 }
 
 export interface IChatAnywhereConfigUIConfig {
@@ -125,7 +125,7 @@ export interface IChatAnywhereConfigOnInput {
    * @description 设置输入框的变体
    * @descriptionEn Set the variant of the input field
    */
-  variant?: 'default' | 'aigc';
+  variant?: "default" | "aigc";
   /**
    * @description 输入框前的UI组件
    * @descriptionEn UI component before the input field
@@ -204,17 +204,17 @@ export interface IChatAnywhereConfigOnUpload {
    * @description 上传组件的渲染类型，影响上传附件样式
    * @descriptionEn Render type for the upload component, affects the style of the uploaded attachment
    */
-  renderType?: 'simple' | 'default';
+  renderType?: "simple" | "default";
   /**
    * @description 最大上传文件数量
    * @descriptionEn Maximum number of files to upload
    */
-  maxCount?: GetProp<typeof Upload, 'maxCount'>;
+  maxCount?: GetProp<typeof Upload, "maxCount">;
   /**
    * @description 上传前的处理函数
    * @descriptionEn Pre-upload processing function
    */
-  beforeUpload?: GetProp<typeof Upload, 'beforeUpload'>;
+  beforeUpload?: GetProp<typeof Upload, "beforeUpload">;
   /**
    * @description 是否必传
    * @descriptionEn Whether to required
@@ -224,7 +224,7 @@ export interface IChatAnywhereConfigOnUpload {
    * @description 自定义上传请求函数
    * @descriptionEn Custom upload request function
    */
-  customRequest: GetProp<typeof Upload, 'customRequest'>;
+  customRequest: GetProp<typeof Upload, "customRequest">;
   /**
    * @description 是否支持多文件上传
    * @descriptionEn Whether to support multiple file uploads

@@ -1,4 +1,4 @@
-import { createGlobalStyle } from 'antd-style';
+import { createGlobalStyle } from "antd-style";
 
 export default createGlobalStyle`
 .${(p) => p.theme.prefixCls}-chat-anywhere-session-list {
@@ -12,7 +12,7 @@ export default createGlobalStyle`
     height: 100%;
   }
 
-  &-session { 
+  &-session {
     height: 0;
     flex: 1;
     padding: 8px 20px;

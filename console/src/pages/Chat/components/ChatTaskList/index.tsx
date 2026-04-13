@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { cronJobApi } from '@/api/modules/cronjob';
-import type { CronJobSpecOutput } from '@/api/types';
-import Style from './style';
-import { DESIGN_TOKENS } from '@/config/designTokens';
+import React, { useState, useEffect, useCallback } from "react";
+import { cronJobApi } from "@/api/modules/cronjob";
+import type { CronJobSpecOutput } from "@/api/types";
+import Style from "./style";
+import { DESIGN_TOKENS } from "@/config/designTokens";
 
 function TaskIcon() {
   return (
@@ -24,7 +24,9 @@ function ToggleIcon({ collapsed }: { collapsed: boolean }) {
       height="6"
       viewBox="0 0 10 6"
       fill="none"
-      className={`chat-task-list-toggle${collapsed ? ' chat-task-list-toggle--collapsed' : ''}`}
+      className={`chat-task-list-toggle${
+        collapsed ? " chat-task-list-toggle--collapsed" : ""
+      }`}
     >
       <path
         d="M1 1L5 5L9 1"

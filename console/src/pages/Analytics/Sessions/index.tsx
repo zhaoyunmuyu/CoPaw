@@ -43,11 +43,14 @@ export default function SessionsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(
+    null,
+  );
 
   // 详情抽屉状态
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [selectedSession, setSelectedSession] = useState<SessionListItem | null>(null);
+  const [selectedSession, setSelectedSession] =
+    useState<SessionListItem | null>(null);
   const [sessionStats, setSessionStats] = useState<SessionStats | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
 
@@ -57,12 +60,17 @@ export default function SessionsPage() {
   const [tracesLoading, setTracesLoading] = useState(false);
 
   // 对话详情状态
-  const [selectedTrace, setSelectedTrace] = useState<TraceListItem | null>(null);
+  const [selectedTrace, setSelectedTrace] = useState<TraceListItem | null>(
+    null,
+  );
   const [traceDetail, setTraceDetail] = useState<TraceDetail | null>(null);
   const [traceLoading, setTraceLoading] = useState(false);
 
   // 用于追踪筛选条件变化，避免 useEffect 重复触发
-  const filtersRef = useRef({ searchQuery: "", dateRange: null as [dayjs.Dayjs, dayjs.Dayjs] | null });
+  const filtersRef = useRef({
+    searchQuery: "",
+    dateRange: null as [dayjs.Dayjs, dayjs.Dayjs] | null,
+  });
 
   useEffect(() => {
     // 检查筛选条件是否变化
@@ -186,9 +194,7 @@ export default function SessionsPage() {
       width: 160,
       ellipsis: true,
       render: (v) => (
-        <span style={{ cursor: "pointer", color: "#1890ff" }}>
-          {v}
-        </span>
+        <span style={{ cursor: "pointer", color: "#1890ff" }}>{v}</span>
       ),
     },
     {
@@ -239,7 +245,9 @@ export default function SessionsPage() {
         <div className={styles.filters}>
           <RangePicker
             value={dateRange}
-            onChange={(dates) => setDateRange(dates as [dayjs.Dayjs, dayjs.Dayjs] | null)}
+            onChange={(dates) =>
+              setDateRange(dates as [dayjs.Dayjs, dayjs.Dayjs] | null)
+            }
             allowClear
           />
           <Input
@@ -282,7 +290,8 @@ export default function SessionsPage() {
         title={
           <span>
             <MessageSquare size={18} style={{ marginRight: 8 }} />
-            {selectedSession?.session_id || t("analytics.sessionDetails", "Session Details")}
+            {selectedSession?.session_id ||
+              t("analytics.sessionDetails", "Session Details")}
           </span>
         }
         placement="right"
@@ -300,21 +309,34 @@ export default function SessionsPage() {
             <div className={styles.statsRow}>
               <div className={styles.statItem}>
                 <div className={styles.value}>{sessionStats.total_traces}</div>
-                <div className={styles.label}>{t("analytics.traces", "Traces")}</div>
+                <div className={styles.label}>
+                  {t("analytics.traces", "Traces")}
+                </div>
               </div>
               <div className={styles.statItem}>
-                <div className={styles.value}>{formatTokens(sessionStats.total_tokens)}</div>
-                <div className={styles.label}>{t("analytics.tokens", "Tokens")}</div>
+                <div className={styles.value}>
+                  {formatTokens(sessionStats.total_tokens)}
+                </div>
+                <div className={styles.label}>
+                  {t("analytics.tokens", "Tokens")}
+                </div>
               </div>
               <div className={styles.statItem}>
-                <div className={styles.value}>{formatDuration(sessionStats.avg_duration_ms)}</div>
-                <div className={styles.label}>{t("analytics.avgDuration", "Avg Duration")}</div>
+                <div className={styles.value}>
+                  {formatDuration(sessionStats.avg_duration_ms)}
+                </div>
+                <div className={styles.label}>
+                  {t("analytics.avgDuration", "Avg Duration")}
+                </div>
               </div>
             </div>
 
             {/* 基本信息 */}
             <Descriptions column={2} size="small" bordered>
-              <Descriptions.Item label={t("analytics.userId", "User ID")} span={2}>
+              <Descriptions.Item
+                label={t("analytics.userId", "User ID")}
+                span={2}
+              >
                 {sessionStats.user_id}
               </Descriptions.Item>
               <Descriptions.Item label={t("analytics.channel", "Channel")}>
@@ -323,11 +345,21 @@ export default function SessionsPage() {
               <Descriptions.Item label={t("analytics.skills", "Skills")}>
                 {sessionStats.skills_used.length}
               </Descriptions.Item>
-              <Descriptions.Item label={t("analytics.firstActive", "First Active")} span={1}>
-                {sessionStats.first_active ? dayjs(sessionStats.first_active).format("YYYY-MM-DD HH:mm") : "-"}
+              <Descriptions.Item
+                label={t("analytics.firstActive", "First Active")}
+                span={1}
+              >
+                {sessionStats.first_active
+                  ? dayjs(sessionStats.first_active).format("YYYY-MM-DD HH:mm")
+                  : "-"}
               </Descriptions.Item>
-              <Descriptions.Item label={t("analytics.lastActive", "Last Active")} span={1}>
-                {sessionStats.last_active ? dayjs(sessionStats.last_active).format("YYYY-MM-DD HH:mm") : "-"}
+              <Descriptions.Item
+                label={t("analytics.lastActive", "Last Active")}
+                span={1}
+              >
+                {sessionStats.last_active
+                  ? dayjs(sessionStats.last_active).format("YYYY-MM-DD HH:mm")
+                  : "-"}
               </Descriptions.Item>
             </Descriptions>
 
@@ -366,21 +398,26 @@ export default function SessionsPage() {
             )}
 
             {/* MCP 工具使用 */}
-            {sessionStats.mcp_tools_used && sessionStats.mcp_tools_used.length > 0 && (
-              <div className={styles.section}>
-                <h4>
-                  <Plug size={14} />
-                  {t("analytics.mcpToolsUsed", "MCP Tools Used")}
-                </h4>
-                <div className={styles.tagList}>
-                  {sessionStats.mcp_tools_used.map((mcpTool) => (
-                    <Tag key={`${mcpTool.mcp_server}-${mcpTool.tool_name}`} color="geekblue">
-                      {mcpTool.mcp_server}/{mcpTool.tool_name}: {mcpTool.count}
-                    </Tag>
-                  ))}
+            {sessionStats.mcp_tools_used &&
+              sessionStats.mcp_tools_used.length > 0 && (
+                <div className={styles.section}>
+                  <h4>
+                    <Plug size={14} />
+                    {t("analytics.mcpToolsUsed", "MCP Tools Used")}
+                  </h4>
+                  <div className={styles.tagList}>
+                    {sessionStats.mcp_tools_used.map((mcpTool) => (
+                      <Tag
+                        key={`${mcpTool.mcp_server}-${mcpTool.tool_name}`}
+                        color="geekblue"
+                      >
+                        {mcpTool.mcp_server}/{mcpTool.tool_name}:{" "}
+                        {mcpTool.count}
+                      </Tag>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
             {/* 对话列表 */}
             <div className={styles.section}>
@@ -399,7 +436,9 @@ export default function SessionsPage() {
                     <div
                       key={trace.trace_id}
                       className={`${styles.traceItem} ${
-                        selectedTrace?.trace_id === trace.trace_id ? styles.active : ""
+                        selectedTrace?.trace_id === trace.trace_id
+                          ? styles.active
+                          : ""
                       }`}
                       onClick={() => fetchTraceDetail(trace)}
                     >
@@ -407,10 +446,14 @@ export default function SessionsPage() {
                         <span className={styles.traceId}>
                           {trace.trace_id.slice(0, 8)}...
                         </span>
-                        <Tag color={getStatusColor(trace.status)}>{trace.status}</Tag>
+                        <Tag color={getStatusColor(trace.status)}>
+                          {trace.status}
+                        </Tag>
                       </div>
                       <div className={styles.traceMeta}>
-                        <span>{dayjs(trace.start_time).format("HH:mm:ss")}</span>
+                        <span>
+                          {dayjs(trace.start_time).format("HH:mm:ss")}
+                        </span>
                         <span>{formatDuration(trace.duration_ms)}</span>
                         <span>{formatTokens(trace.total_tokens)} tokens</span>
                       </div>
@@ -455,7 +498,13 @@ export default function SessionsPage() {
                           <Tag>{span.event_type}</Tag>
                           <span style={{ marginLeft: 8 }}>{span.name}</span>
                           {span.duration_ms && (
-                            <span style={{ marginLeft: 8, color: "#999", fontSize: 12 }}>
+                            <span
+                              style={{
+                                marginLeft: 8,
+                                color: "#999",
+                                fontSize: 12,
+                              }}
+                            >
                               {formatDuration(span.duration_ms)}
                             </span>
                           )}

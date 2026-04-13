@@ -1,5 +1,5 @@
-import React from 'react';
-import { DeepThinking } from '@/components/agentscope-chat';
+import React from "react";
+import { DeepThinking } from "@/components/agentscope-chat";
 
 interface IProps {
   data: {
@@ -13,21 +13,22 @@ interface IProps {
     open?: boolean;
     autoCloseOnFinish?: boolean;
     maxHeight?: number;
-  }
+  };
 }
 
 export default function (props: IProps) {
-
-  return <DeepThinking
-    defaultOpen={props.data.defaultOpen !== undefined ? props.data.defaultOpen : true}
-    title={props.data.title}
-    loading={props.data.loading}
-    content={props.data.content}
-    className={props.data.className}
-    open={props.data.open}
-    autoCloseOnFinish={props.data.autoCloseOnFinish}
-    maxHeight={props.data.maxHeight}
-  />
-
-
+  return (
+    <DeepThinking
+      defaultOpen={
+        props.data.defaultOpen !== undefined ? props.data.defaultOpen : true
+      }
+      title={props.data.title}
+      loading={props.data.loading}
+      content={props.data.content}
+      className={props.data.className}
+      open={props.data.open}
+      autoCloseOnFinish={props.data.autoCloseOnFinish}
+      maxHeight={props.data.maxHeight}
+    />
+  );
 }

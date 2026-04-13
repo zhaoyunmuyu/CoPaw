@@ -19,7 +19,10 @@ dayjs.extend(relativeTime);
 import MainLayout from "./layouts/MainLayout";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 // ==================== 品牌主题 (Kun He) ====================
-import { BrandThemeProvider, useBrandTheme } from "./contexts/BrandThemeContext";
+import {
+  BrandThemeProvider,
+  useBrandTheme,
+} from "./contexts/BrandThemeContext";
 // ==================== 品牌主题结束 ====================
 import LoginPage from "./pages/Login";
 import { authApi } from "./api/modules/auth";
@@ -182,7 +185,7 @@ function AppInner() {
             // 使用动态品牌主题色
             colorPrimary: brandTheme.primaryColor,
             // 确保浅色主题下 primary button 字体为白色
-            colorTextOnPrimary: '#ffffff',
+            colorTextOnPrimary: "#ffffff",
             // ==================== 品牌主题结束 ====================
           },
         }}

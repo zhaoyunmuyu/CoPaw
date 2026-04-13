@@ -1,5 +1,5 @@
-import React from 'react';
-import Style from './style';
+import React from "react";
+import Style from "./style";
 
 export interface DragUploadOverlayProps {
   visible: boolean;
@@ -47,11 +47,7 @@ export default function DragUploadOverlay({
       <Style />
       <div className="drag-upload-overlay">
         <div className="drag-upload-card">
-          <button
-            className="drag-upload-close"
-            onClick={onClose}
-            type="button"
-          >
+          <button className="drag-upload-close" onClick={onClose} type="button">
             <CloseIcon />
           </button>
           <div className="drag-upload-icon">

@@ -1,17 +1,22 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { Input, Upload } from 'antd';
-import { SparkAttachmentLine } from '@agentscope-ai/icons';
-import { IconButton } from '@agentscope-ai/design';
-import { Tooltip } from 'antd';
-import Style from './style';
-import KnowledgeTabs from '../KnowledgeTabs';
-import FeaturedCases, { type FeaturedCase } from '../FeaturedCases';
-import CaseDetailDrawer, { type CaseDetailData } from '../CaseDetailDrawer';
-import { DESIGN_TOKENS } from '@/config/designTokens';
+import React, { useState, useCallback, useRef } from "react";
+import { Input, Upload } from "antd";
+import { SparkAttachmentLine } from "@agentscope-ai/icons";
+import { IconButton } from "@agentscope-ai/design";
+import { Tooltip } from "antd";
+import Style from "./style";
+import KnowledgeTabs from "../KnowledgeTabs";
+import FeaturedCases, { type FeaturedCase } from "../FeaturedCases";
+import CaseDetailDrawer, { type CaseDetailData } from "../CaseDetailDrawer";
+import { DESIGN_TOKENS } from "@/config/designTokens";
 
 interface WelcomeCenterLayoutProps {
   greeting?: string;
-  prompts?: { label?: string; value: string; icon?: React.ReactElement; image?: string }[];
+  prompts?: {
+    label?: string;
+    value: string;
+    icon?: React.ReactElement;
+    image?: string;
+  }[];
   onSubmit: (data: { query: string }) => void;
 }
 
@@ -30,8 +35,12 @@ function SendIcon() {
 }
 
 export default function WelcomeCenterLayout(props: WelcomeCenterLayoutProps) {
-  const { greeting = '你好，你的专属小龙虾，前来报到！', prompts, onSubmit } = props;
-  const [inputValue, setInputValue] = useState('');
+  const {
+    greeting = "你好，你的专属小龙虾，前来报到！",
+    prompts,
+    onSubmit,
+  } = props;
+  const [inputValue, setInputValue] = useState("");
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [selectedCase, setSelectedCase] = useState<CaseDetailData | null>(null);
   const uploadRef = useRef<any>(null);
@@ -40,12 +49,12 @@ export default function WelcomeCenterLayout(props: WelcomeCenterLayoutProps) {
     const trimmed = inputValue.trim();
     if (!trimmed) return;
     onSubmit({ query: trimmed });
-    setInputValue('');
+    setInputValue("");
   }, [inputValue, onSubmit]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
         handleSend();
       }
@@ -98,9 +107,11 @@ export default function WelcomeCenterLayout(props: WelcomeCenterLayoutProps) {
                     showUploadList={false}
                     accept="*/*"
                     beforeUpload={(file) => {
-                      document.dispatchEvent(new CustomEvent('pasteFile', {
-                        detail: { file },
-                      }));
+                      document.dispatchEvent(
+                        new CustomEvent("pasteFile", {
+                          detail: { file },
+                        }),
+                      );
                       return false;
                     }}
                   >
@@ -130,7 +141,11 @@ export default function WelcomeCenterLayout(props: WelcomeCenterLayoutProps) {
 
         {/* Featured Cases */}
         <div className="welcome-cases-area">
-          <FeaturedCases cases={cases} onFillInput={handleFillInput} onViewCase={handleViewCase} />
+          <FeaturedCases
+            cases={cases}
+            onFillInput={handleFillInput}
+            onViewCase={handleViewCase}
+          />
         </div>
       </div>
 

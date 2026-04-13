@@ -35,7 +35,10 @@ export default function OverviewPage() {
   return (
     <div className={styles.overviewPage}>
       <PageHeader
-        items={[{ title: t("nav.instance") }, { title: t("instance.overview") }]}
+        items={[
+          { title: t("nav.instance") },
+          { title: t("instance.overview") },
+        ]}
       />
 
       <Spin spinning={loading}>

@@ -1,8 +1,8 @@
-import React from 'react';
-import { useChatAnywhere } from './ChatAnywhereProvider';
-import { v4 as uuid } from 'uuid';
-import { TMessage, TSession } from './types';
-import ReactDOM from 'react-dom';
+import React from "react";
+import { useChatAnywhere } from "./ChatAnywhereProvider";
+import { v4 as uuid } from "uuid";
+import { TMessage, TSession } from "./types";
+import ReactDOM from "react-dom";
 
 export function useSessionList() {
   const {
@@ -17,7 +17,7 @@ export function useSessionList() {
     setCurrentRegenerateIndex,
     getCurrentRegenerateIndex,
     getSessionList,
-  } = useChatAnywhere(v => ({
+  } = useChatAnywhere((v) => ({
     getCurrentSessionKey: v.getCurrentSessionKey,
     currentRegenerateIndex: v.currentRegenerateIndex,
     setCurrentRegenerateIndex: v.setCurrentRegenerateIndex,
@@ -30,7 +30,6 @@ export function useSessionList() {
     setCurrentSessionKey: v.setCurrentSessionKey,
     getSessionList: v.getSessionList,
   }));
-
 
   const createSession = React.useCallback(() => {
     const newKey = uuid();
@@ -58,7 +57,6 @@ export function useSessionList() {
     });
   }, []);
 
-
   const updateSessionMessages = React.useCallback((messages: TMessage[]) => {
     const currentSessionKey = getCurrentSessionKey();
     const currentRegenerateIndex = getCurrentRegenerateIndex();
@@ -74,33 +72,30 @@ export function useSessionList() {
     });
   }, []);
 
-
-  const getMessagesBySession = React.useCallback((currentSessionKey, currentRegenerateIndex) => {
-    return getSessionList().find((session) => session.key === currentSessionKey)?.messages[currentRegenerateIndex];
-  }, []);
+  const getMessagesBySession = React.useCallback(
+    (currentSessionKey, currentRegenerateIndex) => {
+      return getSessionList().find(
+        (session) => session.key === currentSessionKey,
+      )?.messages[currentRegenerateIndex];
+    },
+    [],
+  );
 
   const getSession = React.useCallback(() => {
     return {
       sessionList: getSessionList(),
       currentSessionKey: getCurrentSessionKey(),
       currentRegenerateIndex: getCurrentRegenerateIndex(),
-    }
+    };
   }, []);
 
-
   const updateSession = React.useCallback((data) => {
-    const {
-      sessionList,
-      currentSessionKey,
-      currentRegenerateIndex,
-    } = data;
+    const { sessionList, currentSessionKey, currentRegenerateIndex } = data;
 
     setSessionList(sessionList);
     setCurrentSessionKey(currentSessionKey);
     setCurrentRegenerateIndex(currentRegenerateIndex);
-
   }, []);
-
 
   return {
     currentRegenerateIndex,

@@ -205,7 +205,10 @@ export function useSkills() {
             Array.isArray(status.result?.conflicts) &&
             status.result.conflicts.length > 0
           ) {
-            return { success: false, conflict: status.result as SkillConflictDetail };
+            return {
+              success: false,
+              conflict: status.result as SkillConflictDetail,
+            };
           }
           const hubResult = status.result as unknown as
             | SecurityScanErrorResponse

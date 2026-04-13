@@ -87,7 +87,10 @@ export const instanceApi = {
   },
 
   // Sources
-  getSources: async (): Promise<{ sources: SourceWithStats[]; total: number }> => {
+  getSources: async (): Promise<{
+    sources: SourceWithStats[];
+    total: number;
+  }> => {
     return request("/instance/sources");
   },
 
@@ -131,7 +134,7 @@ export const instanceApi = {
       instance_url?: string;
       max_users?: number;
       status?: string;
-    }
+    },
   ): Promise<{ success: boolean; data: Instance }> => {
     return request(`/instance/instances/${instanceId}`, {
       method: "PUT",
@@ -158,21 +161,27 @@ export const instanceApi = {
     const searchParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) searchParams.append(key, String(value));
+        if (value !== undefined && value !== null)
+          searchParams.append(key, String(value));
       });
     }
     const query = searchParams.toString() ? `?${searchParams.toString()}` : "";
     return request(`/instance/allocations${query}`);
   },
 
-  getUserInstanceUrl: async (userId: string, sourceId: string): Promise<AllocateUserResponse> => {
+  getUserInstanceUrl: async (
+    userId: string,
+    sourceId: string,
+  ): Promise<AllocateUserResponse> => {
     const params = new URLSearchParams();
     params.append("user_id", userId);
     params.append("source_id", sourceId);
     return request(`/instance/allocations/url?${params.toString()}`);
   },
 
-  allocateUser: async (data: AllocateUserRequest): Promise<AllocateUserResponse> => {
+  allocateUser: async (
+    data: AllocateUserRequest,
+  ): Promise<AllocateUserResponse> => {
     return request("/instance/allocations", {
       method: "POST",
       body: JSON.stringify(data),
@@ -190,11 +199,16 @@ export const instanceApi = {
     });
   },
 
-  deleteAllocation: async (userId: string, sourceId: string): Promise<{ success: boolean }> => {
+  deleteAllocation: async (
+    userId: string,
+    sourceId: string,
+  ): Promise<{ success: boolean }> => {
     const params = new URLSearchParams();
     params.append("user_id", userId);
     params.append("source_id", sourceId);
-    return request(`/instance/allocations?${params.toString()}`, { method: "DELETE" });
+    return request(`/instance/allocations?${params.toString()}`, {
+      method: "DELETE",
+    });
   },
 
   // Logs
@@ -208,7 +222,8 @@ export const instanceApi = {
     const searchParams = new URLSearchParams();
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) searchParams.append(key, String(value));
+        if (value !== undefined && value !== null)
+          searchParams.append(key, String(value));
       });
     }
     const query = searchParams.toString() ? `?${searchParams.toString()}` : "";

@@ -37,12 +37,12 @@ export interface IAgentScopeRuntimeWebUIMessage<T = string | any> {
    * @description 消息的角色类型，区分用户、助手和系统消息
    * @descriptionEn Role type of the message to distinguish user, assistant, and system messages
    */
-  role: 'user' | 'assistant' | 'system';
+  role: "user" | "assistant" | "system";
   /**
    * @description 消息的处理状态，影响显示效果
    * @descriptionEn Processing status of the message, affects display effects
    */
-  msgStatus?: 'finished' | 'interrupted' | 'generating' | 'error';
+  msgStatus?: "finished" | "interrupted" | "generating" | "error";
 }
 
 export interface IAgentScopeRuntimeWebUIMessagesContext {

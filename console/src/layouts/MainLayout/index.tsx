@@ -1,10 +1,5 @@
 import { Layout } from "antd";
-import {
-  Routes,
-  Route,
-  useLocation,
-  Navigate,
-} from "react-router-dom";
+import { Routes, Route, useLocation, Navigate } from "react-router-dom";
 
 // ==================== iframe 集成 (Kun He) ====================
 // useSearchParams: 获取 URL 参数，用于判断 origin 参数是否为 "Y"

@@ -23,10 +23,7 @@
  */
 
 import { createContext, useContext, useEffect, useState } from "react";
-import {
-  getBrandTheme,
-  type BrandThemeConfig,
-} from "../config/brandThemes";
+import { getBrandTheme, type BrandThemeConfig } from "../config/brandThemes";
 import { useIframeStore } from "../stores/iframeStore";
 
 /**
@@ -53,7 +50,9 @@ export function BrandThemeProvider({
   children: React.ReactNode;
 }) {
   const source = useIframeStore((state) => state.source);
-  const [theme, setTheme] = useState<BrandThemeConfig>(() => getBrandTheme(source));
+  const [theme, setTheme] = useState<BrandThemeConfig>(() =>
+    getBrandTheme(source),
+  );
 
   // 监听 source 变化，更新主题
   useEffect(() => {
@@ -67,7 +66,7 @@ export function BrandThemeProvider({
     // 更新 favicon
     if (newTheme.favicon) {
       const faviconLink = document.querySelector(
-        'link[rel="icon"]'
+        'link[rel="icon"]',
       ) as HTMLLinkElement;
       if (faviconLink) {
         faviconLink.href = newTheme.favicon;

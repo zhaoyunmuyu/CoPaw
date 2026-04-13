@@ -14,10 +14,7 @@ import {
 import { Search, Download } from "lucide-react";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
-import {
-  tracingApi,
-  UserMessageItem,
-} from "../../../api/modules/tracing";
+import { tracingApi, UserMessageItem } from "../../../api/modules/tracing";
 import styles from "./index.module.less";
 
 const { RangePicker } = DatePicker;
@@ -39,14 +36,18 @@ export default function MessagesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [userIdFilter, setUserIdFilter] = useState("");
   const [sessionIdFilter, setSessionIdFilter] = useState("");
-  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>([
-    dayjs().subtract(7, "day"),
-    dayjs(),
-  ]);
+  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(
+    [dayjs().subtract(7, "day"), dayjs()],
+  );
   const [exporting, setExporting] = useState(false);
 
   // 用于追踪筛选条件变化，避免 useEffect 重复触发
-  const filtersRef = useRef({ searchQuery: "", userIdFilter: "", sessionIdFilter: "", dateRange: null as [dayjs.Dayjs, dayjs.Dayjs] | null });
+  const filtersRef = useRef({
+    searchQuery: "",
+    userIdFilter: "",
+    sessionIdFilter: "",
+    dateRange: null as [dayjs.Dayjs, dayjs.Dayjs] | null,
+  });
 
   useEffect(() => {
     // 检查筛选条件是否变化
@@ -57,7 +58,12 @@ export default function MessagesPage() {
       filtersRef.current.dateRange !== dateRange;
 
     // 更新 ref
-    filtersRef.current = { searchQuery, userIdFilter, sessionIdFilter, dateRange };
+    filtersRef.current = {
+      searchQuery,
+      userIdFilter,
+      sessionIdFilter,
+      dateRange,
+    };
 
     // 如果筛选条件变化且不是第一页，只重置页码不查询（等待 page 变化触发查询）
     if (filtersChanged && page !== 1) {
@@ -98,7 +104,7 @@ export default function MessagesPage() {
           end_date: dateRange?.[1]?.format("YYYY-MM-DD"),
           query: searchQuery || undefined,
         },
-        "xlsx"
+        "xlsx",
       );
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -228,7 +234,9 @@ export default function MessagesPage() {
         <h2>{t("analytics.userMessages", "User Messages")}</h2>
         <RangePicker
           value={dateRange}
-          onChange={(dates) => setDateRange(dates as [dayjs.Dayjs, dayjs.Dayjs] | null)}
+          onChange={(dates) =>
+            setDateRange(dates as [dayjs.Dayjs, dayjs.Dayjs] | null)
+          }
           allowClear
         />
       </div>

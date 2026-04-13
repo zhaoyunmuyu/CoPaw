@@ -1,13 +1,13 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import Style from './style';
-import ChatTaskList from '../ChatTaskList';
-import sessionApi from '../../sessionApi';
-import { cronJobApi } from '@/api/modules/cronjob';
-import type { IAgentScopeRuntimeWebUISession } from '@/components/agentscope-chat';
-import { DESIGN_TOKENS } from '@/config/designTokens';
-import CollapsedToolbar, { type PanelType } from './CollapsedToolbar';
-import ExpandablePanel from './ExpandablePanel';
+import React, { useState, useCallback, useEffect, useRef } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import Style from "./style";
+import ChatTaskList from "../ChatTaskList";
+import sessionApi from "../../sessionApi";
+import { cronJobApi } from "@/api/modules/cronjob";
+import type { IAgentScopeRuntimeWebUISession } from "@/components/agentscope-chat";
+import { DESIGN_TOKENS } from "@/config/designTokens";
+import CollapsedToolbar, { type PanelType } from "./CollapsedToolbar";
+import ExpandablePanel from "./ExpandablePanel";
 
 function HistoryIcon() {
   return (
@@ -32,7 +32,12 @@ function HistoryIcon() {
 function NewTopicIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-      <path d="M6 1V11M1 6H11" stroke="white" strokeWidth="2" strokeLinecap="round" />
+      <path
+        d="M6 1V11M1 6H11"
+        stroke="white"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
@@ -97,7 +102,9 @@ function ToggleIcon({ collapsed }: { collapsed: boolean }) {
       height="6"
       viewBox="0 0 10 6"
       fill="none"
-      className={`chat-sidebar-history-toggle${collapsed ? ' chat-sidebar-history-toggle--collapsed' : ''}`}
+      className={`chat-sidebar-history-toggle${
+        collapsed ? " chat-sidebar-history-toggle--collapsed" : ""
+      }`}
     >
       <path
         d="M1 1L5 5L9 1"
@@ -117,10 +124,10 @@ export interface ChatSidebarProps {
 
 /** Format ISO timestamp to YYYY-MM-DD HH:mm */
 function formatTime(raw: string | null | undefined): string {
-  if (!raw) return '';
+  if (!raw) return "";
   const date = new Date(raw);
-  if (isNaN(date.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
+  if (isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
     date.getDate(),
   )} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -131,7 +138,9 @@ export default function ChatSidebar(props: ChatSidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [historyCollapsed, setHistoryCollapsed] = useState(false);
-  const [sessions, setSessions] = useState<IAgentScopeRuntimeWebUISession[]>([]);
+  const [sessions, setSessions] = useState<IAgentScopeRuntimeWebUISession[]>(
+    [],
+  );
   const [taskCount, setTaskCount] = useState(0);
 
   // Collapsed mode state — managed internally
@@ -144,20 +153,26 @@ export default function ChatSidebar(props: ChatSidebarProps) {
 
   // Fetch session list from sessionApi directly
   useEffect(() => {
-    sessionApi.getSessionList().then((list) => {
-      setSessions(Array.isArray(list) ? list : []);
-    }).catch(() => {
-      setSessions([]);
-    });
+    sessionApi
+      .getSessionList()
+      .then((list) => {
+        setSessions(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {
+        setSessions([]);
+      });
   }, []);
 
   // Fetch task count for badge
   useEffect(() => {
-    cronJobApi.listCronJobs().then((jobs) => {
-      setTaskCount(Array.isArray(jobs) ? jobs.length : 0);
-    }).catch(() => {
-      setTaskCount(0);
-    });
+    cronJobApi
+      .listCronJobs()
+      .then((jobs) => {
+        setTaskCount(Array.isArray(jobs) ? jobs.length : 0);
+      })
+      .catch(() => {
+        setTaskCount(0);
+      });
   }, []);
 
   const handleToggleHistory = useCallback(() => {
@@ -209,13 +224,13 @@ export default function ChatSidebar(props: ChatSidebarProps) {
             />
           </div>
           <ExpandablePanel
-            visible={activePanel === 'tasks'}
+            visible={activePanel === "tasks"}
             type="tasks"
             onClose={handleClosePanel}
             toolbarRef={toolbarRef}
           />
           <ExpandablePanel
-            visible={activePanel === 'history'}
+            visible={activePanel === "history"}
             type="history"
             onClose={handleClosePanel}
             toolbarRef={toolbarRef}
@@ -228,7 +243,13 @@ export default function ChatSidebar(props: ChatSidebarProps) {
             aria-label="展开侧栏"
           >
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <path d="M4 2L7 5L4 8" stroke="rgba(0,0,0,0.35)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path
+                d="M4 2L7 5L4 8"
+                stroke="rgba(0,0,0,0.35)"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
           </button>
         </div>
@@ -270,12 +291,12 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                     tabIndex={0}
                     style={
                       session.id === currentChatId
-                        ? { backgroundColor: 'rgba(55, 105, 252, 0.06)' }
+                        ? { backgroundColor: "rgba(55, 105, 252, 0.06)" }
                         : undefined
                     }
                   >
                     <div className="chat-sidebar-history-item-title">
-                      {session.name || '新会话'}
+                      {session.name || "新会话"}
                     </div>
                     <div className="chat-sidebar-history-item-time">
                       {formatTime((session as any).createdAt)}
@@ -318,7 +339,13 @@ export default function ChatSidebar(props: ChatSidebarProps) {
           aria-label="收起侧栏"
         >
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-            <path d="M6 2L3 5L6 8" stroke="rgba(0,0,0,0.35)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            <path
+              d="M6 2L3 5L6 8"
+              stroke="rgba(0,0,0,0.35)"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
         </button>
       </div>

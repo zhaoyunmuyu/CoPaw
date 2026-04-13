@@ -1,16 +1,16 @@
-import React, { useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { cronJobApi } from '@/api/modules/cronjob';
-import type { CronJobSpecOutput } from '@/api/types';
-import type { IAgentScopeRuntimeWebUISession } from '@/components/agentscope-chat';
-import sessionApi from '../../../sessionApi';
-import { TasksIconSmall, HistoryIconSmall } from '../CollapsedToolbar/icons';
-import { DESIGN_TOKENS } from '@/config/designTokens';
-import Style from './style';
+import React, { useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { cronJobApi } from "@/api/modules/cronjob";
+import type { CronJobSpecOutput } from "@/api/types";
+import type { IAgentScopeRuntimeWebUISession } from "@/components/agentscope-chat";
+import sessionApi from "../../../sessionApi";
+import { TasksIconSmall, HistoryIconSmall } from "../CollapsedToolbar/icons";
+import { DESIGN_TOKENS } from "@/config/designTokens";
+import Style from "./style";
 
 export interface ExpandablePanelProps {
   visible: boolean;
-  type: 'tasks' | 'history';
+  type: "tasks" | "history";
   onClose: () => void;
   /** For click-outside detection — the toolbar element ref */
   toolbarRef: React.RefObject<HTMLElement | null>;
@@ -18,10 +18,10 @@ export interface ExpandablePanelProps {
 
 /** Format ISO timestamp to YYYY-MM-DD HH:mm */
 function formatTime(raw: string | null | undefined): string {
-  if (!raw) return '';
+  if (!raw) return "";
   const date = new Date(raw);
-  if (isNaN(date.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
+  if (isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
     date.getDate(),
   )} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -53,12 +53,12 @@ export default function ExpandablePanel({
 
     // Use mousedown for immediate response, delay to avoid same-click closing
     const timer = setTimeout(() => {
-      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener("mousedown", handleClickOutside);
     }, 0);
 
     return () => {
       clearTimeout(timer);
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [visible, onClose, toolbarRef]);
 
@@ -66,10 +66,10 @@ export default function ExpandablePanel({
   useEffect(() => {
     if (!visible) return;
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === "Escape") onClose();
     };
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
   }, [visible, onClose]);
 
   if (!visible) return null;
@@ -78,7 +78,11 @@ export default function ExpandablePanel({
     <>
       <Style />
       <div className="expandable-panel" ref={panelRef}>
-        {type === 'tasks' ? <TasksContent /> : <HistoryContent onClose={onClose} />}
+        {type === "tasks" ? (
+          <TasksContent />
+        ) : (
+          <HistoryContent onClose={onClose} />
+        )}
       </div>
     </>
   );
@@ -143,7 +147,9 @@ function TasksContent() {
 
 function HistoryContent({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
-  const [sessions, setSessions] = React.useState<IAgentScopeRuntimeWebUISession[]>([]);
+  const [sessions, setSessions] = React.useState<
+    IAgentScopeRuntimeWebUISession[]
+  >([]);
 
   useEffect(() => {
     sessionApi
@@ -182,7 +188,7 @@ function HistoryContent({ onClose }: { onClose: () => void }) {
               tabIndex={0}
             >
               <div className="expandable-panel-history-title">
-                {session.name || '新会话'}
+                {session.name || "新会话"}
               </div>
               <div className="expandable-panel-history-time">
                 {formatTime((session as any).createdAt)}

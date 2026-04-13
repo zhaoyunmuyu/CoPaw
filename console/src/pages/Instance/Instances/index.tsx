@@ -54,7 +54,8 @@ export default function InstancesPage() {
 
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [editingInstance, setEditingInstance] = useState<InstanceWithUsage | null>(null);
+  const [editingInstance, setEditingInstance] =
+    useState<InstanceWithUsage | null>(null);
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
 
@@ -79,7 +80,8 @@ export default function InstancesPage() {
           SOURCES.find((s) => s.source_id === inst.source_id)?.source_name ||
           inst.source_id,
         bbk_name:
-          BRANCHES.find((b) => b.bbk_id === inst.bbk_id)?.bbk_name || inst.bbk_id,
+          BRANCHES.find((b) => b.bbk_id === inst.bbk_id)?.bbk_name ||
+          inst.bbk_id,
       }));
       setInstances(instancesWithNames);
     } catch (error) {
@@ -123,9 +125,7 @@ export default function InstancesPage() {
           message.success(t("instance.deleteSuccess"));
           fetchInstances();
         } catch (error: unknown) {
-          message.error(
-            (error as Error).message || t("instance.deleteFailed")
-          );
+          message.error((error as Error).message || t("instance.deleteFailed"));
         }
       },
     });
@@ -255,7 +255,10 @@ export default function InstancesPage() {
   return (
     <div className={styles.instancesPage}>
       <PageHeader
-        items={[{ title: t("nav.instance") }, { title: t("instance.instances") }]}
+        items={[
+          { title: t("nav.instance") },
+          { title: t("instance.instances") },
+        ]}
         extra={
           <Space>
             <Select
@@ -271,10 +274,17 @@ export default function InstancesPage() {
                 </Select.Option>
               ))}
             </Select>
-            <Button icon={<ReloadOutlined spin={loading} />} onClick={fetchInstances}>
+            <Button
+              icon={<ReloadOutlined spin={loading} />}
+              onClick={fetchInstances}
+            >
               {t("common.refresh")}
             </Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={handleCreate}
+            >
               {t("instance.addInstance")}
             </Button>
           </Space>
@@ -292,7 +302,11 @@ export default function InstancesPage() {
       </Card>
 
       <Drawer
-        title={editingInstance ? t("instance.editInstance") : t("instance.addInstance")}
+        title={
+          editingInstance
+            ? t("instance.editInstance")
+            : t("instance.addInstance")
+        }
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         width={500}

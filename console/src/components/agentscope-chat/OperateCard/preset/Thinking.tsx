@@ -1,5 +1,5 @@
-import { OperateCard, useProviderContext } from '@/components/agentscope-chat';
-import { SparkLoadingLine, SparkMemoryLine } from '@agentscope-ai/icons';
+import { OperateCard, useProviderContext } from "@/components/agentscope-chat";
+import { SparkLoadingLine, SparkMemoryLine } from "@agentscope-ai/icons";
 
 export interface IThinkingProps {
   /**
@@ -36,24 +36,24 @@ export interface IThinkingProps {
 export default function (props: IThinkingProps) {
   const { getPrefixCls } = useProviderContext();
   const { defaultOpen = true, loading = false } = props;
-  const prefixCls = getPrefixCls('operate-card');
+  const prefixCls = getPrefixCls("operate-card");
 
-
-
-  return <OperateCard
-    key={loading.toString()}
-    header={{
-      icon: loading ? <SparkLoadingLine spin /> : <SparkMemoryLine />,
-      title: props.title,
-      description: props.subTitle,
-    }}
-    body={{
-      defaultOpen: loading ? defaultOpen : false,
-      children: <OperateCard.LineBody>
-        <div className={`${prefixCls}-thinking`}>
-          {props.content}
-        </div>
-      </OperateCard.LineBody>
-    }}
-  />
+  return (
+    <OperateCard
+      key={loading.toString()}
+      header={{
+        icon: loading ? <SparkLoadingLine spin /> : <SparkMemoryLine />,
+        title: props.title,
+        description: props.subTitle,
+      }}
+      body={{
+        defaultOpen: loading ? defaultOpen : false,
+        children: (
+          <OperateCard.LineBody>
+            <div className={`${prefixCls}-thinking`}>{props.content}</div>
+          </OperateCard.LineBody>
+        ),
+      }}
+    />
+  );
 }

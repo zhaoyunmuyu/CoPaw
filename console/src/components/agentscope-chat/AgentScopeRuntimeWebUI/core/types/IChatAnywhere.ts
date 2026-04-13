@@ -1,10 +1,10 @@
-import { UploadProps } from 'antd';
+import { UploadProps } from "antd";
 import {
   IAgentScopeRuntimeMessage,
   IAgentScopeRuntimeResponse,
   IContent,
-} from '../AgentScopeRuntime/types';
-import { IAgentScopeRuntimeWebUISession } from './ISessions';
+} from "../AgentScopeRuntime/types";
+import { IAgentScopeRuntimeWebUISession } from "./ISessions";
 
 /**
  * @description API 配置选项
@@ -29,7 +29,7 @@ export interface IAgentScopeRuntimeWebUIAPIOptions {
    */
   fetch?: (data: {
     input: any[];
-    biz_params?: IAgentScopeRuntimeWebUIInputData['biz_params'];
+    biz_params?: IAgentScopeRuntimeWebUIInputData["biz_params"];
     signal?: AbortSignal;
   }) => Promise<Response>;
 
@@ -140,7 +140,7 @@ export interface IAgentScopeRuntimeWebUIThemeOptions {
    * @descriptionEn Language
    * @default 'en'
    */
-  locale?: 'en' | 'cn';
+  locale?: "en" | "cn";
 }
 
 export interface IAgentScopeRuntimeWebUITypography {
@@ -209,7 +209,7 @@ export interface IAgentScopeRuntimeWebUIWelcomeOptions {
   render?: (
     props: Pick<
       IAgentScopeRuntimeWebUIWelcomeOptions,
-      'greeting' | 'description' | 'avatar' | 'prompts'
+      "greeting" | "description" | "avatar" | "prompts"
     > & { onSubmit: (data: { query: string; fileList?: any[] }) => void },
   ) => React.ReactElement;
 }
@@ -493,7 +493,7 @@ export interface IAgentScopeRuntimeWebUIInputData {
    * @description 文件列表
    * @descriptionEn File list
    */
-  fileList?: (UploadProps['fileList'][number] & { file_id?: string })[];
+  fileList?: (UploadProps["fileList"][number] & { file_id?: string })[];
   /**
    * @description 业务参数
    * @descriptionEn Business parameters

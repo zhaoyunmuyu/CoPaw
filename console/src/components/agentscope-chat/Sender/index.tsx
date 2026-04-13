@@ -1,30 +1,34 @@
-import { Button, Flex, Input } from 'antd';
-import { Suggestion } from '@ant-design/x';
-import classnames from 'classnames';
-import { useMergedState } from 'rc-util';
-import pickAttrs from 'rc-util/lib/pickAttrs';
-import getValue from 'rc-util/lib/utils/get';
-import React, { useState } from 'react';
-import { useFocusWithin, useEventListener } from 'ahooks';
-import useProxyImperativeHandle from '../Util/hooks/use-proxy-imperative-handle';
-import { useProviderContext } from '@/components/agentscope-chat';
-import SenderHeader, { SendHeaderContext } from './SenderHeader';
-import { ActionButtonContext } from './components/ActionButton';
-import ClearButton from './components/ClearButton';
-import LoadingButton from './components/LoadingButton';
-import SendButton from './components/SendButton';
-import SpeechButton from './components/SpeechButton';
-import Style from './style';
-import useSpeech, { type AllowSpeech } from './useSpeech';
-import ModeSelect from './ModeSelect';
-import type { InputRef as AntdInputRef, ButtonProps, GetProp, GetProps } from 'antd';
-import BeforeUIContainer from './BeforeUIContainer';
+import { Button, Flex, Input } from "antd";
+import { Suggestion } from "@ant-design/x";
+import classnames from "classnames";
+import { useMergedState } from "rc-util";
+import pickAttrs from "rc-util/lib/pickAttrs";
+import getValue from "rc-util/lib/utils/get";
+import React, { useState } from "react";
+import { useFocusWithin, useEventListener } from "ahooks";
+import useProxyImperativeHandle from "../Util/hooks/use-proxy-imperative-handle";
+import { useProviderContext } from "@/components/agentscope-chat";
+import SenderHeader, { SendHeaderContext } from "./SenderHeader";
+import { ActionButtonContext } from "./components/ActionButton";
+import ClearButton from "./components/ClearButton";
+import LoadingButton from "./components/LoadingButton";
+import SendButton from "./components/SendButton";
+import SpeechButton from "./components/SpeechButton";
+import Style from "./style";
+import useSpeech, { type AllowSpeech } from "./useSpeech";
+import ModeSelect from "./ModeSelect";
+import type {
+  InputRef as AntdInputRef,
+  ButtonProps,
+  GetProp,
+  GetProps,
+} from "antd";
+import BeforeUIContainer from "./BeforeUIContainer";
 
-
-export type SubmitType = 'enter' | 'shiftEnter' | false;
+export type SubmitType = "enter" | "shiftEnter" | false;
 
 type TextareaProps = GetProps<typeof Input.TextArea>;
-type SuggestionItems = Exclude<GetProp<typeof Suggestion, 'items'>, () => void>;
+type SuggestionItems = Exclude<GetProp<typeof Suggestion, "items">, () => void>;
 
 export interface SenderComponents {
   input?: React.ComponentType<TextareaProps>;
@@ -41,7 +45,8 @@ export type ActionsRender = (
   },
 ) => React.ReactNode;
 
-export interface SenderProps extends Pick<TextareaProps, 'placeholder' | 'onKeyPress'> {
+export interface SenderProps
+  extends Pick<TextareaProps, "placeholder" | "onKeyPress"> {
   /**
    * @description 建议列表
    * @descriptionEn Suggestions list
@@ -51,7 +56,6 @@ export interface SenderProps extends Pick<TextareaProps, 'placeholder' | 'onKeyP
    * ]
    */
   suggestions?: { label?: string | React.ReactNode; value: string }[];
-
 
   /**
    * @description 输入框的默认初始值，仅在非受控模式下生效
@@ -118,7 +122,9 @@ export interface SenderProps extends Pick<TextareaProps, 'placeholder' | 'onKeyP
    */
   onChange?: (
     value: string,
-    event?: React.FormEvent<HTMLTextAreaElement> | React.ChangeEvent<HTMLTextAreaElement>,
+    event?:
+      | React.FormEvent<HTMLTextAreaElement>
+      | React.ChangeEvent<HTMLTextAreaElement>,
   ) => void;
   /**
    * @description 用户取消操作时的回调函数，通常用于清空输入或重置状态
@@ -211,7 +217,7 @@ export interface SenderProps extends Pick<TextareaProps, 'placeholder' | 'onKeyP
 
 export type SenderRef = {
   nativeElement: HTMLDivElement;
-} & Pick<AntdInputRef, 'focus' | 'blur'>;
+} & Pick<AntdInputRef, "focus" | "blur">;
 
 function getComponent<T>(
   components: SenderComponents | undefined,
@@ -222,13 +228,13 @@ function getComponent<T>(
 }
 
 function getSlashCommandKeyword(inputValue: string): string | null {
-  if (!inputValue.startsWith('/')) {
+  if (!inputValue.startsWith("/")) {
     return null;
   }
 
   const contentAfterSlash = inputValue.slice(1);
   if (!contentAfterSlash) {
-    return '';
+    return "";
   }
 
   // Only keep suggestion mode before the first whitespace.
@@ -240,23 +246,24 @@ function getSlashCommandKeyword(inputValue: string): string | null {
 }
 
 function filterSuggestionsByKeyword(
-  suggestions: SenderProps['suggestions'] | undefined,
+  suggestions: SenderProps["suggestions"] | undefined,
   keyword: string | null,
 ): SuggestionItems | undefined {
   if (!Array.isArray(suggestions) || suggestions.length === 0) {
     return suggestions as SuggestionItems | undefined;
   }
 
-  if (keyword === null || keyword === '') {
+  if (keyword === null || keyword === "") {
     return suggestions as SuggestionItems;
   }
 
   return suggestions.filter((item) => {
-    const valueText = typeof item.value === 'string' ? item.value.toLowerCase() : '';
+    const valueText =
+      typeof item.value === "string" ? item.value.toLowerCase() : "";
     const labelText =
-      typeof item.label === 'string' || typeof item.label === 'number'
+      typeof item.label === "string" || typeof item.label === "number"
         ? String(item.label).toLowerCase()
-        : '';
+        : "";
 
     return valueText.includes(keyword) || labelText.includes(keyword);
   }) as SuggestionItems;
@@ -275,7 +282,7 @@ const ForwardSender = React.forwardRef<SenderRef, SenderProps>((props, ref) => {
     enableFocusExpand = false,
     sendDisabled = false,
     allowEmptySubmit = false,
-    submitType = 'enter',
+    submitType = "enter",
     onSubmit,
     loading,
     onCancel,
@@ -304,7 +311,7 @@ const ForwardSender = React.forwardRef<SenderRef, SenderProps>((props, ref) => {
   const autoSize = React.useMemo(() => ({ maxRows: 5, minRows: 2 }), []);
 
   const { direction, getPrefixCls } = useProviderContext();
-  const prefixCls = getPrefixCls('sender');
+  const prefixCls = getPrefixCls("sender");
 
   const containerRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<AntdInputRef>(null);
@@ -321,42 +328,44 @@ const ForwardSender = React.forwardRef<SenderRef, SenderProps>((props, ref) => {
       onFocus?.();
     },
     onBlur: () => {
-      if (containerRef.current && !containerRef.current.contains(document.activeElement)) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(document.activeElement)
+      ) {
         setFocus(false);
         onBlur?.();
       }
-    }
+    },
   });
 
-  useEventListener('click', (e) => {
-    setFocus(true);
-    onFocus?.();
-  }, {
-    target: containerRef,
-  });
+  useEventListener(
+    "click",
+    (e) => {
+      setFocus(true);
+      onFocus?.();
+    },
+    {
+      target: containerRef,
+    },
+  );
 
   const inputCls = `${prefixCls}-input`;
 
-  const mergedCls = classnames(
-    prefixCls,
-    className,
-    rootClassName,
-    {
-      [`${prefixCls}-rtl`]: direction === 'rtl',
-      [`${prefixCls}-disabled`]: disabled,
-      [`${prefixCls}-focus`]: focus && enableFocusExpand,
-      [`${prefixCls}-blur`]: !focus && enableFocusExpand,
-    },
-  );
+  const mergedCls = classnames(prefixCls, className, rootClassName, {
+    [`${prefixCls}-rtl`]: direction === "rtl",
+    [`${prefixCls}-disabled`]: disabled,
+    [`${prefixCls}-focus`]: focus && enableFocusExpand,
+    [`${prefixCls}-blur`]: !focus && enableFocusExpand,
+  });
 
   const actionBtnCls = `${prefixCls}-actions-btn`;
   const actionListCls = `${prefixCls}-actions-list`;
 
-  const [innerValue, setInnerValue] = useMergedState(defaultValue || '', {
+  const [innerValue, setInnerValue] = useMergedState(defaultValue || "", {
     value,
   });
 
-  const triggerValueChange: SenderProps['onChange'] = (nextValue, event) => {
+  const triggerValueChange: SenderProps["onChange"] = (nextValue, event) => {
     setInnerValue(nextValue);
 
     if (onChange) {
@@ -364,41 +373,51 @@ const ForwardSender = React.forwardRef<SenderRef, SenderProps>((props, ref) => {
     }
   };
 
-  const [speechPermission, triggerSpeech, speechRecording] = useSpeech((transcript) => {
-    triggerValueChange(`${innerValue} ${transcript}`);
-  }, allowSpeech);
+  const [speechPermission, triggerSpeech, speechRecording] = useSpeech(
+    (transcript) => {
+      triggerValueChange(`${innerValue} ${transcript}`);
+    },
+    allowSpeech,
+  );
   const hasSuggestions = Array.isArray(suggestions) && suggestions.length > 0;
-  const slashCommandKeyword = React.useMemo(() => getSlashCommandKeyword(innerValue), [innerValue]);
+  const slashCommandKeyword = React.useMemo(
+    () => getSlashCommandKeyword(innerValue),
+    [innerValue],
+  );
 
   const filteredSuggestions = React.useMemo(() => {
     return filterSuggestionsByKeyword(suggestions, slashCommandKeyword);
   }, [suggestions, slashCommandKeyword]);
-  const hasFilteredSuggestions = Array.isArray(filteredSuggestions) && filteredSuggestions.length > 0;
+  const hasFilteredSuggestions =
+    Array.isArray(filteredSuggestions) && filteredSuggestions.length > 0;
 
-  const findSuggestionValueByLabel = React.useCallback((items: SuggestionItems | undefined, label: string): string | undefined => {
-    if (!items?.length) {
+  const findSuggestionValueByLabel = React.useCallback(
+    (items: SuggestionItems | undefined, label: string): string | undefined => {
+      if (!items?.length) {
+        return undefined;
+      }
+
+      for (const item of items as any[]) {
+        if (!item || typeof item !== "object") {
+          continue;
+        }
+
+        if (item.label === label && typeof item.value === "string") {
+          return item.value;
+        }
+
+        const childValue = findSuggestionValueByLabel(item.children, label);
+        if (childValue) {
+          return childValue;
+        }
+      }
+
       return undefined;
-    }
+    },
+    [],
+  );
 
-    for (const item of items as any[]) {
-      if (!item || typeof item !== 'object') {
-        continue;
-      }
-
-      if (item.label === label && typeof item.value === 'string') {
-        return item.value;
-      }
-
-      const childValue = findSuggestionValueByLabel(item.children, label);
-      if (childValue) {
-        return childValue;
-      }
-    }
-
-    return undefined;
-  }, []);
-
-  const InputTextArea = getComponent(components, ['input'], Input.TextArea);
+  const InputTextArea = getComponent(components, ["input"], Input.TextArea);
 
   const domProps = pickAttrs(rest, {
     attr: true,
@@ -419,7 +438,7 @@ const ForwardSender = React.forwardRef<SenderRef, SenderProps>((props, ref) => {
   };
 
   const triggerClear = () => {
-    triggerValueChange('');
+    triggerValueChange("");
   };
 
   // ============================ Submit ============================
@@ -430,7 +449,9 @@ const ForwardSender = React.forwardRef<SenderRef, SenderProps>((props, ref) => {
     isCompositionRef.current = true;
   };
 
-  const onInternalCompositionEnd = (e: React.CompositionEvent<HTMLTextAreaElement>) => {
+  const onInternalCompositionEnd = (
+    e: React.CompositionEvent<HTMLTextAreaElement>,
+  ) => {
     isCompositionRef.current = false;
     if (props.maxLength) {
       const currentValue = (e.target as HTMLTextAreaElement).value;
@@ -440,19 +461,19 @@ const ForwardSender = React.forwardRef<SenderRef, SenderProps>((props, ref) => {
     }
   };
 
-  const onInternalPressEnter: TextareaProps['onPressEnter'] = (e) => {
+  const onInternalPressEnter: TextareaProps["onPressEnter"] = (e) => {
     const canSubmit = !isCompositionRef.current && !suggestionOpenRef.current;
 
     // Check for `submitType` to submit
     switch (submitType) {
-      case 'enter':
+      case "enter":
         if (canSubmit && !e.shiftKey) {
           e.preventDefault();
           triggerSend();
         }
         break;
 
-      case 'shiftEnter':
+      case "shiftEnter":
         if (canSubmit && e.shiftKey) {
           e.preventDefault();
           triggerSend();
@@ -471,12 +492,12 @@ const ForwardSender = React.forwardRef<SenderRef, SenderProps>((props, ref) => {
     if (files.length === 0) {
       const items = Array.from(e.clipboardData?.items || []);
       files = items
-        .filter(item => item.kind === 'file')
-        .map(item => item.getAsFile())
+        .filter((item) => item.kind === "file")
+        .map((item) => item.getAsFile())
         .filter((file): file is File => file !== null);
     }
     if (files.length > 0) {
-      files.forEach(file => onPasteFile(file));
+      files.forEach((file) => onPasteFile(file));
       e.preventDefault();
     } else {
       onPaste?.(e);
@@ -484,17 +505,25 @@ const ForwardSender = React.forwardRef<SenderRef, SenderProps>((props, ref) => {
   };
 
   const prefix = React.useMemo(() => {
-    const nodes = Array.isArray(props.prefix) ? [...props.prefix] : [props.prefix];
-    return nodes.filter((node): node is React.ReactNode => node !== undefined && node !== null);
-  }, [props.prefix])
+    const nodes = Array.isArray(props.prefix)
+      ? [...props.prefix]
+      : [props.prefix];
+    return nodes.filter(
+      (node): node is React.ReactNode => node !== undefined && node !== null,
+    );
+  }, [props.prefix]);
 
   let actionNode: React.ReactNode = (
     <Flex className={`${actionListCls}-presets`}>
-      {loading ? <LoadingButton loading={loading} disabled={!!disabled} /> : <SendButton disabled={!!disabled} />}
+      {loading ? (
+        <LoadingButton loading={loading} disabled={!!disabled} />
+      ) : (
+        <SendButton disabled={!!disabled} />
+      )}
     </Flex>
   );
 
-  if (typeof actions === 'function') {
+  if (typeof actions === "function") {
     actionNode = actions(actionNode, {
       components: {
         SendButton,
@@ -509,7 +538,9 @@ const ForwardSender = React.forwardRef<SenderRef, SenderProps>((props, ref) => {
   const contextValue = {
     prefixCls: actionBtnCls,
     onSend: triggerSend,
-    onSendDisabled: ((!innerValue || !innerValue.trim()) && !allowEmptySubmit) || sendDisabled,
+    onSendDisabled:
+      ((!innerValue || !innerValue.trim()) && !allowEmptySubmit) ||
+      sendDisabled,
     onClear: triggerClear,
     onClearDisabled: !innerValue,
     onCancel,
@@ -518,16 +549,13 @@ const ForwardSender = React.forwardRef<SenderRef, SenderProps>((props, ref) => {
     onSpeechDisabled: !speechPermission,
     speechRecording,
     disabled: !!disabled,
+  };
 
-  }
-
-  const renderInput = (
-    suggestionProps?: {
-      onTrigger?: (open?: boolean) => void;
-      onKeyDown?: React.KeyboardEventHandler<HTMLTextAreaElement>;
-      open?: boolean;
-    },
-  ) => {
+  const renderInput = (suggestionProps?: {
+    onTrigger?: (open?: boolean) => void;
+    onKeyDown?: React.KeyboardEventHandler<HTMLTextAreaElement>;
+    open?: boolean;
+  }) => {
     suggestionOpenRef.current = !!suggestionProps?.open;
 
     return (
@@ -540,7 +568,11 @@ const ForwardSender = React.forwardRef<SenderRef, SenderProps>((props, ref) => {
         value={innerValue.slice(0, props.maxLength || Number.MAX_SAFE_INTEGER)}
         onChange={(event) => {
           let nextValue = (event.target as HTMLTextAreaElement).value;
-          if (props.maxLength && !isCompositionRef.current && nextValue.length > props.maxLength) {
+          if (
+            props.maxLength &&
+            !isCompositionRef.current &&
+            nextValue.length > props.maxLength
+          ) {
             nextValue = nextValue.slice(0, props.maxLength);
           }
           triggerValueChange(
@@ -550,11 +582,18 @@ const ForwardSender = React.forwardRef<SenderRef, SenderProps>((props, ref) => {
 
           if (hasSuggestions) {
             const nextSlashCommandKeyword = getSlashCommandKeyword(nextValue);
-            const nextFilteredSuggestions = filterSuggestionsByKeyword(suggestions, nextSlashCommandKeyword);
+            const nextFilteredSuggestions = filterSuggestionsByKeyword(
+              suggestions,
+              nextSlashCommandKeyword,
+            );
             const nextHasFilteredSuggestions =
-              Array.isArray(nextFilteredSuggestions) && nextFilteredSuggestions.length > 0;
+              Array.isArray(nextFilteredSuggestions) &&
+              nextFilteredSuggestions.length > 0;
 
-            if (nextSlashCommandKeyword !== null && nextHasFilteredSuggestions) {
+            if (
+              nextSlashCommandKeyword !== null &&
+              nextHasFilteredSuggestions
+            ) {
               suggestionProps?.onTrigger?.(true);
             } else {
               suggestionProps?.onTrigger?.(false);
@@ -568,17 +607,30 @@ const ForwardSender = React.forwardRef<SenderRef, SenderProps>((props, ref) => {
         onCompositionStart={onInternalCompositionStart}
         onCompositionEnd={onInternalCompositionEnd}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' && suggestionProps?.open && hasSuggestions) {
+          if (
+            event.key === "Enter" &&
+            suggestionProps?.open &&
+            hasSuggestions
+          ) {
             const root = containerRef.current?.ownerDocument;
-            const selectedMenuItem = root?.querySelector('[role="menuitemcheckbox"][aria-checked="true"]');
-            const activeMenuItem = root?.querySelector('[role="menuitem"][aria-current="true"]');
+            const selectedMenuItem = root?.querySelector(
+              '[role="menuitemcheckbox"][aria-checked="true"]',
+            );
+            const activeMenuItem = root?.querySelector(
+              '[role="menuitem"][aria-current="true"]',
+            );
             const menuItem =
               (selectedMenuItem instanceof HTMLElement && selectedMenuItem) ||
               (activeMenuItem instanceof HTMLElement && activeMenuItem) ||
               null;
-            const itemValueByPath = menuItem?.getAttribute('data-path-key');
-            const itemLabel = menuItem?.getAttribute('title')?.trim();
-            const itemValueByLabel = itemLabel ? findSuggestionValueByLabel(suggestions as SuggestionItems, itemLabel) : undefined;
+            const itemValueByPath = menuItem?.getAttribute("data-path-key");
+            const itemLabel = menuItem?.getAttribute("title")?.trim();
+            const itemValueByLabel = itemLabel
+              ? findSuggestionValueByLabel(
+                  suggestions as SuggestionItems,
+                  itemLabel,
+                )
+              : undefined;
             const selectedValue = itemValueByLabel || itemValueByPath;
 
             if (selectedValue) {
@@ -600,67 +652,68 @@ const ForwardSender = React.forwardRef<SenderRef, SenderProps>((props, ref) => {
     );
   };
 
-  return <>
-    <Style />
+  return (
+    <>
+      <Style />
 
-    <div ref={containerRef} className={mergedCls} style={style}>
-      {header && (
-        <SendHeaderContext.Provider value={{ prefixCls, focus, enableFocusExpand }}>{header}</SendHeaderContext.Provider>
-      )}
-
-      <div className={`${prefixCls}-content`}>
-        {hasSuggestions ? (
-          <Suggestion
-            items={filteredSuggestions}
-            onSelect={(itemValue) => {
-              triggerValueChange(`/${itemValue} `);
-            }}
+      <div ref={containerRef} className={mergedCls} style={style}>
+        {header && (
+          <SendHeaderContext.Provider
+            value={{ prefixCls, focus, enableFocusExpand }}
           >
-            {(suggestionProps) => renderInput(suggestionProps)}
-          </Suggestion>
-        ) : renderInput()}
+            {header}
+          </SendHeaderContext.Provider>
+        )}
 
-        <div className={`${prefixCls}-content-bottom`}>
-          {prefix.length > 0 && (
-            <div
-              className={classnames(
-                `${prefixCls}-prefix`,
-                classNames.prefix,
-              )}
-              style={styles.prefix}
+        <div className={`${prefixCls}-content`}>
+          {hasSuggestions ? (
+            <Suggestion
+              items={filteredSuggestions}
+              onSelect={(itemValue) => {
+                triggerValueChange(`/${itemValue} `);
+              }}
             >
-              <Flex gap={8}>
-                {allowSpeech && <ActionButtonContext.Provider
-                  value={contextValue}
-                >
-                  <SpeechButton />
-                </ActionButtonContext.Provider>}
-                {prefix}
-              </Flex>
-            </div>
+              {(suggestionProps) => renderInput(suggestionProps)}
+            </Suggestion>
+          ) : (
+            renderInput()
           )}
-          <div
-            className={classnames(
-              actionListCls,
-              classNames.actions,
+
+          <div className={`${prefixCls}-content-bottom`}>
+            {prefix.length > 0 && (
+              <div
+                className={classnames(`${prefixCls}-prefix`, classNames.prefix)}
+                style={styles.prefix}
+              >
+                <Flex gap={8}>
+                  {allowSpeech && (
+                    <ActionButtonContext.Provider value={contextValue}>
+                      <SpeechButton />
+                    </ActionButtonContext.Provider>
+                  )}
+                  {prefix}
+                </Flex>
+              </div>
             )}
-            style={styles.actions}
-          >
-            {
-              props.maxLength ? <div className={`${actionListCls}-length`}>
-                {Math.min(innerValue.length, props.maxLength)}/{props.maxLength}
-              </div> : null
-            }
-            <ActionButtonContext.Provider
-              value={contextValue}
+            <div
+              className={classnames(actionListCls, classNames.actions)}
+              style={styles.actions}
             >
-              {actionNode}
-            </ActionButtonContext.Provider>
+              {props.maxLength ? (
+                <div className={`${actionListCls}-length`}>
+                  {Math.min(innerValue.length, props.maxLength)}/
+                  {props.maxLength}
+                </div>
+              ) : null}
+              <ActionButtonContext.Provider value={contextValue}>
+                {actionNode}
+              </ActionButtonContext.Provider>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </>
+    </>
+  );
 });
 
 type CompoundedSender = typeof ForwardSender & {

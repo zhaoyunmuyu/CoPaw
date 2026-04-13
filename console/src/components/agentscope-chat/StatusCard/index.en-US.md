@@ -10,10 +10,7 @@ description: Express the execution status of LLM or Agent
 
 <code src="./demo/index.tsx" height="auto">Example</code>
 
-
 <Install>import { StatusCard } from '@agentscope-ai/chat'</Install>
-
-
 
 #### API
 

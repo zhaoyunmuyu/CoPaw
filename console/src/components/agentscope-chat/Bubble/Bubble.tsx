@@ -1,12 +1,12 @@
-import classnames from 'classnames';
-import React from 'react';
-import type { BubbleProps } from './interface';
-import Style from './style/index';
-import { Markdown, useProviderContext } from '@/components/agentscope-chat';
-import Cards from './Cards';
-import Spin from './Spin';
-import Avatar from './Avatar';
-import AvatarStyle from './style/avatar';
+import classnames from "classnames";
+import React from "react";
+import type { BubbleProps } from "./interface";
+import Style from "./style/index";
+import { Markdown, useProviderContext } from "@/components/agentscope-chat";
+import Cards from "./Cards";
+import Spin from "./Spin";
+import Avatar from "./Avatar";
+import AvatarStyle from "./style/avatar";
 
 export interface BubbleRef {
   /**
@@ -27,7 +27,6 @@ export interface BubbleContextProps {
 export const BubbleContext = React.createContext<BubbleContextProps>({});
 
 const Bubble: React.FC<BubbleProps> = (props) => {
-
   const {
     isLast,
     className,
@@ -36,7 +35,7 @@ const Bubble: React.FC<BubbleProps> = (props) => {
     classNames = {},
     styles = {},
     avatar,
-    content = '',
+    content = "",
     cards,
     msgStatus,
     id,
@@ -45,12 +44,13 @@ const Bubble: React.FC<BubbleProps> = (props) => {
     variant,
   } = props;
 
-  const placement = {
-    'assistant': 'start',
-    'user': 'end',
-  }[role] || 'start'
+  const placement =
+    {
+      assistant: "start",
+      user: "end",
+    }[role] || "start";
   const { getPrefixCls } = useProviderContext();
-  const prefixCls = getPrefixCls('bubble');
+  const prefixCls = getPrefixCls("bubble");
 
   const mergedCls = classnames(
     prefixCls,
@@ -62,26 +62,30 @@ const Bubble: React.FC<BubbleProps> = (props) => {
   let contentNode;
   // @ts-ignore
   const isEmpty = !content?.length && !cards?.length;
-  if (props.msgStatus === 'generating' && (isEmpty)) {
-    contentNode = <Spin />
+  if (props.msgStatus === "generating" && isEmpty) {
+    contentNode = <Spin />;
   } else {
     contentNode = content ? (
       <Markdown
         content={content as string}
-        cursor={props.msgStatus === 'generating'}
+        cursor={props.msgStatus === "generating"}
       />
-    ) : null
+    ) : null;
   }
 
-  const isAssistant = placement === 'assistant' || placement === 'start';
-  const variantClassname = `${prefixCls}-content-${variant || (isAssistant ? 'borderless' : 'filled')}`;
+  const isAssistant = placement === "assistant" || placement === "start";
+  const variantClassname = `${prefixCls}-content-${
+    variant || (isAssistant ? "borderless" : "filled")
+  }`;
   let fullContent: React.ReactNode = (
     <div
-      style={!isAssistant && contentNode ? { flexDirection: 'column-reverse' } : {}}
+      style={
+        !isAssistant && contentNode ? { flexDirection: "column-reverse" } : {}
+      }
       className={`${prefixCls}-content-wrapper`}
     >
-      {
-        avatar && <Avatar
+      {avatar && (
+        <Avatar
           avatar={avatar}
           msgStatus={msgStatus}
           isAssistant={isAssistant}
@@ -89,16 +93,21 @@ const Bubble: React.FC<BubbleProps> = (props) => {
           className={classNames.avatar}
           style={styles.avatar}
         />
-      }
-      <Cards cards={cards} id={id} isLast={isLast} className={classnames(
-        `${prefixCls}-content`,
-        `${prefixCls}-content-wrapper-card`,
-        variantClassname,
-        classNames.content,
-      )} />
+      )}
+      <Cards
+        cards={cards}
+        id={id}
+        isLast={isLast}
+        className={classnames(
+          `${prefixCls}-content`,
+          `${prefixCls}-content-wrapper-card`,
+          variantClassname,
+          classNames.content,
+        )}
+      />
 
-      {
-        contentNode && <div
+      {contentNode && (
+        <div
           style={{
             ...styles.content,
           }}
@@ -111,22 +120,19 @@ const Bubble: React.FC<BubbleProps> = (props) => {
         >
           {contentNode}
         </div>
-      }
-    </div>);
-
-  return <>
-    <Style />
-    <AvatarStyle />
-    <div
-      style={style}
-      className={mergedCls}
-      id={id}
-      data-role={role}
-    >
-      {fullContent}
+      )}
     </div>
-  </>
-};
+  );
 
+  return (
+    <>
+      <Style />
+      <AvatarStyle />
+      <div style={style} className={mergedCls} id={id} data-role={role}>
+        {fullContent}
+      </div>
+    </>
+  );
+};
 
 export default React.memo(Bubble);

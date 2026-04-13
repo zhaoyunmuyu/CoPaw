@@ -1,10 +1,24 @@
 import { useEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Table, Card, Input, Drawer, Descriptions, Spin, Empty, Tag, DatePicker } from "antd";
+import {
+  Table,
+  Card,
+  Input,
+  Drawer,
+  Descriptions,
+  Spin,
+  Empty,
+  Tag,
+  DatePicker,
+} from "antd";
 import { Search, User } from "lucide-react";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
-import { tracingApi, UserStats, UserListItem } from "../../../api/modules/tracing";
+import {
+  tracingApi,
+  UserStats,
+  UserListItem,
+} from "../../../api/modules/tracing";
 import styles from "./index.module.less";
 
 const { RangePicker } = DatePicker;
@@ -17,13 +31,18 @@ export default function UsersPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(
+    null,
+  );
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserStats | null>(null);
   const [userLoading, setUserLoading] = useState(false);
 
   // 用于追踪筛选条件变化，避免 useEffect 重复触发
-  const filtersRef = useRef({ searchQuery: "", dateRange: null as [dayjs.Dayjs, dayjs.Dayjs] | null });
+  const filtersRef = useRef({
+    searchQuery: "",
+    dateRange: null as [dayjs.Dayjs, dayjs.Dayjs] | null,
+  });
 
   useEffect(() => {
     // 检查筛选条件是否变化
@@ -132,7 +151,9 @@ export default function UsersPage() {
         <div style={{ display: "flex", gap: 12 }}>
           <RangePicker
             value={dateRange}
-            onChange={(dates) => setDateRange(dates as [dayjs.Dayjs, dayjs.Dayjs] | null)}
+            onChange={(dates) =>
+              setDateRange(dates as [dayjs.Dayjs, dayjs.Dayjs] | null)
+            }
             allowClear
           />
           <Input
@@ -175,7 +196,8 @@ export default function UsersPage() {
         title={
           <span>
             <User size={18} style={{ marginRight: 8 }} />
-            {selectedUser?.user_id || t("analytics.userDetails", "User Details")}
+            {selectedUser?.user_id ||
+              t("analytics.userDetails", "User Details")}
           </span>
         }
         placement="right"
@@ -193,22 +215,40 @@ export default function UsersPage() {
         ) : selectedUser ? (
           <div className={styles.drawerContent}>
             <Descriptions column={2} bordered size="small">
-              <Descriptions.Item label={t("analytics.totalSessions", "Total Sessions")} span={1}>
+              <Descriptions.Item
+                label={t("analytics.totalSessions", "Total Sessions")}
+                span={1}
+              >
                 {selectedUser.total_sessions}
               </Descriptions.Item>
-              <Descriptions.Item label={t("analytics.conversations", "Conversations")} span={1}>
+              <Descriptions.Item
+                label={t("analytics.conversations", "Conversations")}
+                span={1}
+              >
                 {selectedUser.total_conversations}
               </Descriptions.Item>
-              <Descriptions.Item label={t("analytics.totalTokens", "Total Tokens")} span={1}>
+              <Descriptions.Item
+                label={t("analytics.totalTokens", "Total Tokens")}
+                span={1}
+              >
                 {formatTokens(selectedUser.total_tokens)}
               </Descriptions.Item>
-              <Descriptions.Item label={t("analytics.avgDuration", "Avg Duration")} span={1}>
+              <Descriptions.Item
+                label={t("analytics.avgDuration", "Avg Duration")}
+                span={1}
+              >
                 {formatDuration(selectedUser.avg_duration_ms)}
               </Descriptions.Item>
-              <Descriptions.Item label={t("analytics.inputTokens", "Input Tokens")} span={1}>
+              <Descriptions.Item
+                label={t("analytics.inputTokens", "Input Tokens")}
+                span={1}
+              >
                 {formatTokens(selectedUser.input_tokens)}
               </Descriptions.Item>
-              <Descriptions.Item label={t("analytics.outputTokens", "Output Tokens")} span={1}>
+              <Descriptions.Item
+                label={t("analytics.outputTokens", "Output Tokens")}
+                span={1}
+              >
                 {formatTokens(selectedUser.output_tokens)}
               </Descriptions.Item>
             </Descriptions>
@@ -231,7 +271,10 @@ export default function UsersPage() {
                 <h4>{t("analytics.toolsUsed", "Tools Used")}</h4>
                 <div className={styles.tagList}>
                   {selectedUser.tools_used.map((tool) => (
-                    <Tag key={tool.tool_name} color={tool.error_count > 0 ? "error" : "default"}>
+                    <Tag
+                      key={tool.tool_name}
+                      color={tool.error_count > 0 ? "error" : "default"}
+                    >
                       {tool.tool_name}: {tool.count} calls
                     </Tag>
                   ))}

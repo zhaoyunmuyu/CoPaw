@@ -1,5 +1,5 @@
-import rcWarning, { resetWarned as rcResetWarned } from 'rc-util/lib/warning';
-import * as React from 'react';
+import rcWarning, { resetWarned as rcResetWarned } from "rc-util/lib/warning";
+import * as React from "react";
 
 /* istanbul ignore next */
 export function noop() {}
@@ -14,12 +14,12 @@ export function resetWarned() {
 type Warning = (valid: boolean, component: string, message?: string) => void;
 
 let warning: Warning = noop;
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== "production") {
   warning = (valid, component, message) => {
     rcWarning(valid, `[antd: ${component}] ${message}`);
 
     // StrictMode will inject console which will not throw warning in React 17.
-    if (process.env.NODE_ENV === 'test') {
+    if (process.env.NODE_ENV === "test") {
       resetWarned();
     }
   };
@@ -32,7 +32,7 @@ type BaseTypeWarning = (
    * - usage: Some API usage is not correct.
    * - breaking: Breaking change like API is removed.
    */
-  type: 'deprecated' | 'usage' | 'breaking',
+  type: "deprecated" | "usage" | "breaking",
   message?: string,
 ) => void;
 
@@ -61,13 +61,13 @@ export const WarningContext = React.createContext<WarningContextProps>({});
  * We should always wrap this in `if (process.env.NODE_ENV !== 'production')` condition
  */
 export const devUseWarning: (component: string) => TypeWarning =
-  process.env.NODE_ENV !== 'production'
+  process.env.NODE_ENV !== "production"
     ? (component) => {
         const { strict } = React.useContext(WarningContext);
 
         const typeWarning: TypeWarning = (valid, type, message) => {
           if (!valid) {
-            if (strict === false && type === 'deprecated') {
+            if (strict === false && type === "deprecated") {
               const existWarning = deprecatedWarnList;
 
               if (!deprecatedWarnList) {
@@ -77,15 +77,15 @@ export const devUseWarning: (component: string) => TypeWarning =
               deprecatedWarnList[component] =
                 deprecatedWarnList[component] || [];
 
-              if (!deprecatedWarnList[component].includes(message || '')) {
-                deprecatedWarnList[component].push(message || '');
+              if (!deprecatedWarnList[component].includes(message || "")) {
+                deprecatedWarnList[component].push(message || "");
               }
 
               // Warning for the first time
               if (!existWarning) {
                 // eslint-disable-next-line no-console
                 console.warn(
-                  '[antd] There exists deprecated usage in your code:',
+                  "[antd] There exists deprecated usage in your code:",
                   deprecatedWarnList,
                 );
               }
@@ -98,9 +98,9 @@ export const devUseWarning: (component: string) => TypeWarning =
         typeWarning.deprecated = (valid, oldProp, newProp, message) => {
           typeWarning(
             valid,
-            'deprecated',
+            "deprecated",
             `\`${oldProp}\` is deprecated. Please use \`${newProp}\` instead.${
-              message ? ` ${message}` : ''
+              message ? ` ${message}` : ""
             }`,
           );
         };

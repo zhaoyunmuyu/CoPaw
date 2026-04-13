@@ -1,12 +1,12 @@
-import type { AvatarProps } from 'antd';
-import type { AnyObject } from '../Util/type';
+import type { AvatarProps } from "antd";
+import type { AnyObject } from "../Util/type";
 
-type SemanticType = 'avatar' | 'content' | 'header' | 'footer';
+type SemanticType = "avatar" | "content" | "header" | "footer";
 
 export type BubbleContentType = React.ReactNode | AnyObject;
 
 export interface BubbleProps<ContentType extends BubbleContentType = string>
-  extends Omit<React.HTMLAttributes<HTMLDivElement>, 'content'> {
+  extends Omit<React.HTMLAttributes<HTMLDivElement>, "content"> {
   /**
    * @description 自定义CSS类名前缀，用于样式隔离和主题定制
    * @descriptionEn Custom CSS class name prefix for style isolation and theme customization
@@ -55,7 +55,7 @@ export interface BubbleProps<ContentType extends BubbleContentType = string>
    * @description 消息处理状态，影响显示样式和交互行为
    * @descriptionEn Message processing status that affects display style and interaction behavior
    */
-  msgStatus?: 'finished' | 'generating' | 'interrupted' | 'error';
+  msgStatus?: "finished" | "generating" | "interrupted" | "error";
 
   /**
    * @description 消息的唯一标识符，用于状态管理和事件处理

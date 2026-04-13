@@ -22,7 +22,6 @@ description: 对话的落地欢迎页
 <code src="./demo/demo2.tsx">附带品牌 - B</code>
 <code src="./demo/demo3.tsx" height="400">自定义</code>
 
-
 #### API
 
 <ApiParser source="./index.tsx" id="IWelcomeProps"></ApiParser>

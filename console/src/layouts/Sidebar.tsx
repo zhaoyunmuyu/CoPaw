@@ -457,7 +457,9 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
         },
         {
           key: "instance-operation-logs",
-          label: collapsed ? null : t("nav.instanceOperationLogs", "Operation Logs"),
+          label: collapsed
+            ? null
+            : t("nav.instanceOperationLogs", "Operation Logs"),
           icon: <SparkAuditLogLine size={16} />,
         },
       ],

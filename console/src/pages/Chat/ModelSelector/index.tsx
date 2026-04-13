@@ -108,24 +108,21 @@ export default function ModelSelector() {
     return activeModelId;
   })();
 
-  const handleOpenChange = useCallback(
-    async (next: boolean) => {
-      setOpen(next);
-      if (next) {
-        // Re-fetch active model every time the dropdown opens
-        // Use tenant-level scope (agent scope deprecated)
-        try {
-          const activeData = await providerApi.getActiveModels({
-            scope: "effective",
-          });
-          if (activeData) setActiveModels(activeData);
-        } catch {
-          // ignore
-        }
+  const handleOpenChange = useCallback(async (next: boolean) => {
+    setOpen(next);
+    if (next) {
+      // Re-fetch active model every time the dropdown opens
+      // Use tenant-level scope (agent scope deprecated)
+      try {
+        const activeData = await providerApi.getActiveModels({
+          scope: "effective",
+        });
+        if (activeData) setActiveModels(activeData);
+      } catch {
+        // ignore
       }
-    },
-    [],
-  );
+    }
+  }, []);
 
   const handleSelect = async (providerId: string, modelId: string) => {
     if (savingRef.current) return;

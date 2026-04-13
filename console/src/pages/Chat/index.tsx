@@ -561,7 +561,7 @@ export default function ChatPage() {
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.dataTransfer.types.includes('Files')) {
+    if (e.dataTransfer.types.includes("Files")) {
       dragCounterRef.current += 1;
       if (dragCounterRef.current === 1) {
         setIsDragging(true);
@@ -583,22 +583,21 @@ export default function ChatPage() {
     e.stopPropagation();
   }, []);
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      dragCounterRef.current = 0;
-      setIsDragging(false);
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDragging(false);
 
-      const files = Array.from(e.dataTransfer.files);
-      for (const file of files) {
-        document.dispatchEvent(new CustomEvent('pasteFile', {
+    const files = Array.from(e.dataTransfer.files);
+    for (const file of files) {
+      document.dispatchEvent(
+        new CustomEvent("pasteFile", {
           detail: { file },
-        }));
-      }
-    },
-    [],
-  );
+        }),
+      );
+    }
+  }, []);
 
   const handleDragOverlayClose = useCallback(() => {
     dragCounterRef.current = 0;
@@ -669,12 +668,12 @@ export default function ChatPage() {
         render: ({ greeting, prompts, onSubmit }) => (
           <WelcomeCenterLayout
             greeting={
-              typeof greeting === 'string'
+              typeof greeting === "string"
                 ? greeting
-                : '你好，你的专属小龙虾，前来报到！'
+                : "你好，你的专属小龙虾，前来报到！"
             }
             prompts={prompts?.map((p) =>
-              typeof p === 'string'
+              typeof p === "string"
                 ? { label: p, value: p }
                 : { label: p.label || p.value, value: p.value },
             )}
@@ -780,7 +779,7 @@ export default function ChatPage() {
     if (newId) {
       navigate(`/chat/${newId}`, { replace: true });
     } else {
-      navigate('/chat', { replace: true });
+      navigate("/chat", { replace: true });
     }
   }, [navigate]);
   // ==================== 首页改版结束 ====================
@@ -796,13 +795,11 @@ export default function ChatPage() {
     >
       {/* ==================== 首页改版 (Kun He) ==================== */}
       {/* 聊天专用侧栏：支持折叠为64px工具条 */}
-      <ChatSidebar
-        onCreateSession={handleCreateSessionFromSidebar}
-      />
+      <ChatSidebar onCreateSession={handleCreateSessionFromSidebar} />
       {/* ==================== 首页改版结束 ==================== */}
       <div
         className={styles.chatMessagesArea}
-        style={{ flex: 1, minWidth: 0, position: 'relative' }}
+        style={{ flex: 1, minWidth: 0, position: "relative" }}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
@@ -813,7 +810,10 @@ export default function ChatPage() {
           key={refreshKey}
           options={options}
         />
-        <DragUploadOverlay visible={isDragging} onClose={handleDragOverlayClose} />
+        <DragUploadOverlay
+          visible={isDragging}
+          onClose={handleDragOverlayClose}
+        />
       </div>
 
       <Modal

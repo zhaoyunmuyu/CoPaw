@@ -1,13 +1,18 @@
-import classnames from 'classnames';
-import React from 'react';
-import { Image } from 'antd';
-import type { Attachment } from '..';
-import { AttachmentContext } from '../context';
-import { previewImage } from '../util';
-import Progress from './Progress';
-import Style from '../style/fileCard';
-import { useProviderContext } from '@/components/agentscope-chat';
-import { SparkFalseLine, SparkVisibleLine, SparkRefreshLine, SparkReplaceLine } from '@agentscope-ai/icons';
+import classnames from "classnames";
+import React from "react";
+import { Image } from "antd";
+import type { Attachment } from "..";
+import { AttachmentContext } from "../context";
+import { previewImage } from "../util";
+import Progress from "./Progress";
+import Style from "../style/fileCard";
+import { useProviderContext } from "@/components/agentscope-chat";
+import {
+  SparkFalseLine,
+  SparkVisibleLine,
+  SparkRefreshLine,
+  SparkReplaceLine,
+} from "@agentscope-ai/icons";
 
 export interface ImageCardProps {
   /**
@@ -37,37 +42,41 @@ export interface ImageCardProps {
   style?: React.CSSProperties;
 }
 
-const EMPTY = '\u00A0';
+const EMPTY = "\u00A0";
 
-const IMG_ACCEPT = 'image/png,image/jpeg,image/jpg,image/gif,image/bmp,image/webp,image/svg+xml';
+const IMG_ACCEPT =
+  "image/png,image/jpeg,image/jpg,image/gif,image/bmp,image/webp,image/svg+xml";
 
 function ImageCard(props: ImageCardProps, ref: React.Ref<HTMLDivElement>) {
   const { getPrefixCls } = useProviderContext();
   const { item, onRemove, onReplace, className, style } = props;
   const context = React.useContext(AttachmentContext);
   const { disabled } = context || {};
-  const { percent, status = 'done', description } = item;
-  const prefixCls = getPrefixCls('attachment');
+  const { percent, status = "done", description } = item;
+  const prefixCls = getPrefixCls("attachment");
   const cardCls = `${prefixCls}-list-card`;
 
   const [previewVisible, setPreviewVisible] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  const previewConfig = React.useMemo(() => ({
-    visible: previewVisible,
-    onVisibleChange: setPreviewVisible,
-  }), [previewVisible]);
+  const previewConfig = React.useMemo(
+    () => ({
+      visible: previewVisible,
+      onVisibleChange: setPreviewVisible,
+    }),
+    [previewVisible],
+  );
 
   const desc = React.useMemo(() => {
     if (description) {
       return description;
     }
 
-    if (status === 'uploading') {
+    if (status === "uploading") {
       return `${percent || 0}%`;
     }
 
-    if (status === 'error') {
+    if (status === "error") {
       return item.response || EMPTY;
     }
 
@@ -105,7 +114,7 @@ function ImageCard(props: ImageCardProps, ref: React.Ref<HTMLDivElement>) {
       onReplace(item, file);
     }
     if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      fileInputRef.current.value = "";
     }
   };
 
@@ -129,16 +138,16 @@ function ImageCard(props: ImageCardProps, ref: React.Ref<HTMLDivElement>) {
 
         <Image
           src={previewUrl}
-          style={{ display: 'none' }}
+          style={{ display: "none" }}
           preview={previewConfig}
         />
 
-        {status !== 'done' && (
+        {status !== "done" && (
           <div className={`${cardCls}-img-mask`}>
-            {status === 'uploading' && percent !== undefined && (
+            {status === "uploading" && percent !== undefined && (
               <Progress percent={percent} prefixCls={cardCls} />
             )}
-            {status === 'error' && (
+            {status === "error" && (
               <div className={`${cardCls}-desc`}>
                 <div className={`${cardCls}-ellipsis-prefix`}>{desc}</div>
               </div>
@@ -146,7 +155,7 @@ function ImageCard(props: ImageCardProps, ref: React.Ref<HTMLDivElement>) {
           </div>
         )}
 
-        {status === 'done' && (
+        {status === "done" && (
           <div className={`${cardCls}-img-hover-mask`}>
             <button
               className={`${cardCls}-img-action`}
@@ -172,7 +181,7 @@ function ImageCard(props: ImageCardProps, ref: React.Ref<HTMLDivElement>) {
           ref={fileInputRef}
           type="file"
           accept={IMG_ACCEPT}
-          style={{ display: 'none' }}
+          style={{ display: "none" }}
           onChange={handleFileChange}
         />
 

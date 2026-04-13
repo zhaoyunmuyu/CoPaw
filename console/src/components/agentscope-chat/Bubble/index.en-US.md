@@ -19,6 +19,7 @@ The following are examples and variations of this component
 <code src="./demo/userWithFile.tsx" height="auto">With File</code>
 
 #### Model Bubble Examples
+
 The following are examples and variations of this component
 
 <code src="./demo/assistantWithCode.tsx" height="auto">With Code</code>

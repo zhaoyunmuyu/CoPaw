@@ -1,6 +1,18 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Table, Card, Input, Select, Tag, Drawer, Descriptions, Timeline, Spin, Empty, DatePicker } from "antd";
+import {
+  Table,
+  Card,
+  Input,
+  Select,
+  Tag,
+  Drawer,
+  Descriptions,
+  Timeline,
+  Spin,
+  Empty,
+  DatePicker,
+} from "antd";
 import { FileText, Clock, Zap } from "lucide-react";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
@@ -38,7 +50,9 @@ export default function TracesPage() {
   const [pageSize, setPageSize] = useState(20);
   const [userIdFilter, setUserIdFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
-  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
+  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(
+    null,
+  );
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedTrace, setSelectedTrace] = useState<TraceDetail | null>(null);
   const [traceLoading, setTraceLoading] = useState(false);
@@ -127,7 +141,13 @@ export default function TracesPage() {
       key: "trace_id",
       width: 100,
       render: (v) => (
-        <span style={{ cursor: "pointer", color: "#1890ff", fontFamily: "monospace" }}>
+        <span
+          style={{
+            cursor: "pointer",
+            color: "#1890ff",
+            fontFamily: "monospace",
+          }}
+        >
           {v.slice(0, 8)}...
         </span>
       ),
@@ -188,7 +208,9 @@ export default function TracesPage() {
         <div className={styles.filters}>
           <RangePicker
             value={dateRange}
-            onChange={(dates) => handleDateChange(dates as [dayjs.Dayjs, dayjs.Dayjs] | null)}
+            onChange={(dates) =>
+              handleDateChange(dates as [dayjs.Dayjs, dayjs.Dayjs] | null)
+            }
             allowClear
           />
           <Input
@@ -259,8 +281,8 @@ export default function TracesPage() {
         }}
         styles={{
           body: {
-            overflowX: 'hidden',
-            padding: '16px',
+            overflowX: "hidden",
+            padding: "16px",
           },
         }}
       >
@@ -271,7 +293,10 @@ export default function TracesPage() {
         ) : selectedTrace ? (
           <div className={styles.drawerContent}>
             <Descriptions column={2} bordered size="small">
-              <Descriptions.Item label={t("analytics.traceId", "Trace ID")} span={2}>
+              <Descriptions.Item
+                label={t("analytics.traceId", "Trace ID")}
+                span={2}
+              >
                 <code>{selectedTrace.trace.trace_id}</code>
               </Descriptions.Item>
               <Descriptions.Item label={t("analytics.userId", "User ID")}>
@@ -281,15 +306,23 @@ export default function TracesPage() {
                 {selectedTrace.trace.channel}
               </Descriptions.Item>
               <Descriptions.Item label={t("analytics.startTime", "Start Time")}>
-                {dayjs(selectedTrace.trace.start_time).format("YYYY-MM-DD HH:mm:ss")}
+                {dayjs(selectedTrace.trace.start_time).format(
+                  "YYYY-MM-DD HH:mm:ss",
+                )}
               </Descriptions.Item>
               <Descriptions.Item label={t("analytics.duration", "Duration")}>
                 {formatDuration(selectedTrace.trace.duration_ms)}
               </Descriptions.Item>
-              <Descriptions.Item label={t("analytics.totalTokens", "Total Tokens")}>
-                {formatTokens(selectedTrace.trace.total_input_tokens + selectedTrace.trace.total_output_tokens)}
+              <Descriptions.Item
+                label={t("analytics.totalTokens", "Total Tokens")}
+              >
+                {formatTokens(
+                  selectedTrace.trace.total_input_tokens +
+                    selectedTrace.trace.total_output_tokens,
+                )}
                 <span style={{ color: "#999", marginLeft: 8 }}>
-                  (in: {formatTokens(selectedTrace.trace.total_input_tokens)}, out: {formatTokens(selectedTrace.trace.total_output_tokens)})
+                  (in: {formatTokens(selectedTrace.trace.total_input_tokens)},
+                  out: {formatTokens(selectedTrace.trace.total_output_tokens)})
                 </span>
               </Descriptions.Item>
               <Descriptions.Item label={t("analytics.status", "Status")}>
@@ -302,7 +335,9 @@ export default function TracesPage() {
             {selectedTrace.trace.error && (
               <div className={styles.errorSection}>
                 <h4>{t("analytics.error", "Error")}</h4>
-                <pre className={styles.errorText}>{selectedTrace.trace.error}</pre>
+                <pre className={styles.errorText}>
+                  {selectedTrace.trace.error}
+                </pre>
               </div>
             )}
 
@@ -364,12 +399,16 @@ export default function TracesPage() {
                         {tool.tool_name}
                       </Descriptions.Item>
                       {tool.duration_ms && (
-                        <Descriptions.Item label={t("analytics.duration", "Duration")}>
+                        <Descriptions.Item
+                          label={t("analytics.duration", "Duration")}
+                        >
                           {formatDuration(tool.duration_ms)}
                         </Descriptions.Item>
                       )}
                       {tool.error && (
-                        <Descriptions.Item label={t("analytics.error", "Error")}>
+                        <Descriptions.Item
+                          label={t("analytics.error", "Error")}
+                        >
                           <span style={{ color: "#ff4d4f" }}>{tool.error}</span>
                         </Descriptions.Item>
                       )}
