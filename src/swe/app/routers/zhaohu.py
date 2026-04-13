@@ -42,7 +42,7 @@ async def _get_zhaohu_channel(request: Request):
     from ..agent_context import get_agent_for_request
 
     try:
-        workspace = get_agent_for_request(request)
+        workspace = await get_agent_for_request(request)
     except Exception:
         return None
 
