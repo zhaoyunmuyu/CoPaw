@@ -16,8 +16,9 @@ try:
 
     load_envs_into_environ()
 
-    # Load environment-specific defaults (dev/prd) based on SWE_ENV.
-    from .config.envs import load_env_defaults
+    # Load environment-specific defaults (dev/prd) before importing
+    # heavier config modules that depend on env-backed constants.
+    from .env_defaults import load_env_defaults
 
     load_env_defaults()
 except Exception as exc:
