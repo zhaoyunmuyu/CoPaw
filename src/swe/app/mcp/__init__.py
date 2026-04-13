@@ -1,14 +1,7 @@
 # -*- coding: utf-8 -*-
-"""MCP (Model Context Protocol) client management module.
+"""MCP (Model Context Protocol) related module.
 
-This module provides hot-reloadable MCP client management,
-completely independent from other app components.
+This module provides MCP client configuration management.
+MCP clients are now created per-request directly from agent config,
+so no manager or watcher is needed.
 """
-
-from .manager import MCPClientManager
-from .watcher import MCPConfigWatcher
-
-__all__ = [
-    "MCPClientManager",
-    "MCPConfigWatcher",
-]
