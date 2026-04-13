@@ -15,6 +15,23 @@ from swe.app.routers.agent import router
 from swe.app.routers.agent_scoped import create_agent_scoped_router
 
 
+class FakeMultiAgentManager:
+    """Fake tenant-aware manager used to exercise real resolver path."""
+
+    def __init__(self, base_dir: Path):
+        self.base_dir = base_dir
+        self.calls: list[tuple[str, str | None]] = []
+
+    async def get_agent(self, agent_id: str, tenant_id: str | None = None):
+        self.calls.append((agent_id, tenant_id))
+        workspace_dir = self.base_dir / (tenant_id or "default") / "agents" / agent_id
+        workspace_dir.mkdir(parents=True, exist_ok=True)
+        return SimpleNamespace(
+            workspace_dir=workspace_dir,
+            agent_id=agent_id,
+        )
+
+
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     """Build a focused app with tenant middleware and patched resolver."""
@@ -49,6 +66,41 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         fake_get_agent_for_request,
     )
     return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.fixture
+def client_real_resolver(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[TestClient, FakeMultiAgentManager]:
+    """Build app that exercises real get_agent_for_request resolution path."""
+    app = FastAPI()
+    app.add_middleware(
+        TenantIdentityMiddleware,
+        require_tenant=True,
+        default_tenant_id=None,
+    )
+    app.include_router(router, prefix="/api")
+    app.include_router(create_agent_scoped_router(), prefix="/api")
+
+    manager = FakeMultiAgentManager(tmp_path)
+    app.state.multi_agent_manager = manager
+
+    fake_config = SimpleNamespace(
+        agents=SimpleNamespace(
+            active_agent="agent-1",
+            profiles={
+                "agent-1": SimpleNamespace(enabled=True),
+                "agent-2": SimpleNamespace(enabled=True),
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        "swe.app.agent_context._get_tenant_aware_config",
+        lambda tenant_id=None: fake_config,
+    )
+
+    return TestClient(app, raise_server_exceptions=False), manager
 
 
 def test_init_happy_path_appends_existing_top_level_md(client: TestClient, tmp_path: Path):
@@ -94,9 +146,10 @@ def test_init_creates_file_when_missing(client: TestClient, tmp_path: Path):
 
 
 def test_init_isolates_different_agents_within_same_tenant(
-    client: TestClient,
+    client_real_resolver: tuple[TestClient, FakeMultiAgentManager],
     tmp_path: Path,
 ):
+    client, manager = client_real_resolver
     agent_1_file = tmp_path / "tenant-a" / "agents" / "agent-1" / "PROFILE.md"
     agent_2_file = tmp_path / "tenant-a" / "agents" / "agent-2" / "PROFILE.md"
     agent_1_file.parent.mkdir(parents=True, exist_ok=True)
@@ -117,12 +170,14 @@ def test_init_isolates_different_agents_within_same_tenant(
     assert response.status_code == 200
     assert agent_1_file.read_text(encoding="utf-8") == "agent-1\nappend"
     assert agent_2_file.read_text(encoding="utf-8") == "agent-2\n"
+    assert manager.calls == [("agent-1", "tenant-a")]
 
 
 def test_init_isolates_same_agent_id_across_tenants(
-    client: TestClient,
+    client_real_resolver: tuple[TestClient, FakeMultiAgentManager],
     tmp_path: Path,
 ):
+    client, manager = client_real_resolver
     tenant_a_file = tmp_path / "tenant-a" / "agents" / "agent-1" / "PROFILE.md"
     tenant_b_file = tmp_path / "tenant-b" / "agents" / "agent-1" / "PROFILE.md"
     tenant_a_file.parent.mkdir(parents=True, exist_ok=True)
@@ -143,6 +198,7 @@ def test_init_isolates_same_agent_id_across_tenants(
     assert response.status_code == 200
     assert tenant_a_file.read_text(encoding="utf-8") == "tenant-a\nappend"
     assert tenant_b_file.read_text(encoding="utf-8") == "tenant-b\n"
+    assert manager.calls == [("agent-1", "tenant-a")]
 
 
 def test_init_normalizes_filename_with_md_suffix(client: TestClient, tmp_path: Path):
