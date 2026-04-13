@@ -93,6 +93,58 @@ def test_init_creates_file_when_missing(client: TestClient, tmp_path: Path):
     assert created.read_text(encoding="utf-8") == "new-content"
 
 
+def test_init_isolates_different_agents_within_same_tenant(
+    client: TestClient,
+    tmp_path: Path,
+):
+    agent_1_file = tmp_path / "tenant-a" / "agents" / "agent-1" / "PROFILE.md"
+    agent_2_file = tmp_path / "tenant-a" / "agents" / "agent-2" / "PROFILE.md"
+    agent_1_file.parent.mkdir(parents=True, exist_ok=True)
+    agent_2_file.parent.mkdir(parents=True, exist_ok=True)
+    agent_1_file.write_text("agent-1\n", encoding="utf-8")
+    agent_2_file.write_text("agent-2\n", encoding="utf-8")
+
+    response = client.post(
+        "/api/agent/init",
+        headers={"X-Tenant-Id": "tenant-a"},
+        json={
+            "filename": "PROFILE.md",
+            "text": "append",
+            "agentId": "agent-1",
+        },
+    )
+
+    assert response.status_code == 200
+    assert agent_1_file.read_text(encoding="utf-8") == "agent-1\nappend"
+    assert agent_2_file.read_text(encoding="utf-8") == "agent-2\n"
+
+
+def test_init_isolates_same_agent_id_across_tenants(
+    client: TestClient,
+    tmp_path: Path,
+):
+    tenant_a_file = tmp_path / "tenant-a" / "agents" / "agent-1" / "PROFILE.md"
+    tenant_b_file = tmp_path / "tenant-b" / "agents" / "agent-1" / "PROFILE.md"
+    tenant_a_file.parent.mkdir(parents=True, exist_ok=True)
+    tenant_b_file.parent.mkdir(parents=True, exist_ok=True)
+    tenant_a_file.write_text("tenant-a\n", encoding="utf-8")
+    tenant_b_file.write_text("tenant-b\n", encoding="utf-8")
+
+    response = client.post(
+        "/api/agent/init",
+        headers={"X-Tenant-Id": "tenant-a"},
+        json={
+            "filename": "PROFILE.md",
+            "text": "append",
+            "agentId": "agent-1",
+        },
+    )
+
+    assert response.status_code == 200
+    assert tenant_a_file.read_text(encoding="utf-8") == "tenant-a\nappend"
+    assert tenant_b_file.read_text(encoding="utf-8") == "tenant-b\n"
+
+
 def test_init_normalizes_filename_with_md_suffix(client: TestClient, tmp_path: Path):
     response = client.post(
         "/api/agent/init",
