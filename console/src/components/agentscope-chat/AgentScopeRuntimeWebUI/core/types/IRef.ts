@@ -7,4 +7,5 @@ export interface IAgentScopeRuntimeWebUIRef {
     setDisabled: (disabled: boolean) => void;
     submit: (data: IAgentScopeRuntimeWebUIInputData) => void;
   };
+  createSession: (data?: { name?: string }) => Promise<string | undefined>;
 }

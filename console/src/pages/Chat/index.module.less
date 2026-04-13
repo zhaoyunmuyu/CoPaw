@@ -30,6 +30,7 @@
   width: 100%;
   overflow-y: auto;
   overflow-x: hidden;
+  background: linear-gradient(180deg, #E8EEFF 0%, #F1F2F7 40%, #F5F5FA 100%);
 
   :global {
     [class*="chat-anywhere-default-header-right"] {
@@ -39,9 +40,9 @@
     }
   }
 
-  /* Custom scrollbar */
+  /* Custom scrollbar — thin, rounded, always visible */
   &::-webkit-scrollbar {
-    width: 8px;
+    width: 4px;
   }
 
   &::-webkit-scrollbar-track {
@@ -49,31 +50,35 @@
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, 0.2);
+    background: rgba(0, 0, 0, 0.12);
     border-radius: 4px;
+  }
 
-    &:hover {
-      background: rgba(0, 0, 0, 0.3);
-    }
+  &::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.28);
+  }
+
+  &::-webkit-scrollbar-corner {
+    background: transparent;
   }
 
   /* Dark mode scrollbar */
   :global(.dark-mode) & {
     &::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.12);
+    }
 
-      &:hover {
-        background: rgba(255, 255, 255, 0.3);
-      }
+    &::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.28);
     }
   }
 
   /* Firefox scrollbar */
   scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  scrollbar-color: rgba(0, 0, 0, 0.12) transparent;
 
   :global(.dark-mode) & {
-    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+    scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
   }
 }
 
@@ -88,7 +93,7 @@
 
 .suggestionCommand {
   flex: 0 0 88px;
-  color: #ff7f16;
+  color: #3769FC;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -105,7 +110,7 @@
 
 :global(.dark-mode) {
   .suggestionCommand {
-    color: #ff7f16;
+    color: #3769FC;
   }
 
   .suggestionDescription {
@@ -118,7 +123,7 @@
   .chat-anywhere-prompt-icon,
   [class*="prompt-icon"],
   [class*="PromptIcon"] {
-    color: #ff7f16 !important;
+    color: #3769FC !important;
   }
 }
 

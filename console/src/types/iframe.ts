@@ -33,32 +33,36 @@ export interface AuthHeaderItem {
  * 父窗口发送给子窗口的初始化参数
  *
  * 参数说明：
- * - sapId: SAP ID，存储为 userId，并作为 X-User-Id header
- * - clawName: Claw 名称
- * - space: 空间标识
- * - source: 来源标识
- * - hideMenu: 是否隐藏菜单（支持 boolean 或字符串 "true"/"false"）
- * - isSuperManager: 是否为超级管理员
- * - auth: 自定义 headers 数组
+ * - type: 消息类型
+ * - data: 数据对象，包含以下字段：
+ *   - sapId: SAP ID，存储为 userId，并作为 X-User-Id header
+ *   - clawName: Claw 名称
+ *   - space: 空间标识
+ *   - source: 来源标识
+ *   - hideMenu: 是否隐藏菜单（支持 boolean 或字符串 "true"/"false"）
+ *   - isSuperManager: 是否为超级管理员
+ *   - auth: 自定义 headers 数组
  */
 export interface IframeUserDataMessage {
   type: "USER_DATA";
-  /** SAP ID，会作为 userId 存储 */
-  sapId?: string;
-  /** Claw 名称 */
-  clawName?: string;
-  /** 空间标识 */
-  space?: string;
-  /** 来源标识 */
-  source?: string;
-  /** 是否隐藏菜单（支持 boolean 或字符串 "true"/"false"） */
-  hideMenu?: boolean | string;
-  /** 是否为超级管理员（支持 boolean 或字符串 "true"/"false"） */
-  isSuperManager?: boolean | string;
-  /** 自定义 headers 数组，每项包含 headerName 和 headerValue */
-  auth?: AuthHeaderItem[];
-  /** 其他任意参数 */
-  [key: string]: unknown;
+  data: {
+    /** SAP ID，会作为 userId 存储 */
+    sapId?: string;
+    /** Claw 名称 */
+    clawName?: string;
+    /** 空间标识 */
+    space?: string;
+    /** 来源标识 */
+    source?: string;
+    /** 是否隐藏菜单（支持 boolean 或字符串 "true"/"false"） */
+    hideMenu?: boolean | string;
+    /** 是否为超级管理员（支持 boolean 或字符串 "true"/"false"） */
+    isSuperManager?: boolean | string;
+    /** 自定义 headers 数组，每项包含 headerName 和 headerValue */
+    auth?: AuthHeaderItem[];
+    /** 其他任意参数 */
+    [key: string]: unknown;
+  };
 }
 
 /**
@@ -144,4 +148,6 @@ export interface IframeContext {
   orgLvl: string | null;
   /** 职位 ID */
   positionId: string | null;
+  /** 用户是否变更 */
+  userChange: boolean;
 }

@@ -231,7 +231,7 @@ export default function ModelSelector() {
           )}
         >
           {saving && (
-            <LoadingOutlined style={{ fontSize: 11, color: "#FF7F16" }} />
+            <LoadingOutlined style={{ fontSize: 11, color: "#3769FC" }} />
           )}
           <span className={styles.triggerName}>{activeModelName}</span>
           <SparkDownLine
