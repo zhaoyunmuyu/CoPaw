@@ -284,6 +284,7 @@ class MultiAgentManager:
         new_instance = Workspace(
             agent_id=agent_id,
             workspace_dir=agent_ref.workspace_dir,
+            tenant_id=tenant_id,
         )
 
         # Step 3.5: Set reusable components from old instance (if any)
