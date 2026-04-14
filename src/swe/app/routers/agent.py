@@ -231,7 +231,7 @@ async def put_agent_language(
 
     # Update agent's language
     agent_config.language = language
-    save_agent_config(agent_id, agent_config)
+    save_agent_config(agent_id, agent_config, tenant_id=workspace.tenant_id)
 
     copied_files: list[str] = []
     if old_language != language:
@@ -456,7 +456,7 @@ async def put_agents_running_config(
     workspace = await get_agent_for_request(request)
     agent_config = load_agent_config(workspace.agent_id)
     agent_config.running = running_config
-    save_agent_config(workspace.agent_id, agent_config)
+    save_agent_config(workspace.agent_id, agent_config, tenant_id=workspace.tenant_id)
 
     # Hot reload config (async, non-blocking)
     schedule_agent_reload(request, workspace.agent_id)
@@ -496,7 +496,7 @@ async def put_system_prompt_files(
     workspace = await get_agent_for_request(request)
     agent_config = load_agent_config(workspace.agent_id)
     agent_config.system_prompt_files = files
-    save_agent_config(workspace.agent_id, agent_config)
+    save_agent_config(workspace.agent_id, agent_config, tenant_id=workspace.tenant_id)
 
     # Hot reload config (async, non-blocking)
     schedule_agent_reload(request, workspace.agent_id)

@@ -5,7 +5,6 @@ Each Workspace represents a standalone agent workspace with its own:
 - Runner (request processing)
 - ChannelManager (communication channels)
 - BaseMemoryManager (conversation memory)
-- MCPClientManager (MCP tool clients)
 - CronManager (scheduled tasks)
 
 All existing single-agent components are reused without modification.
@@ -16,15 +15,12 @@ from typing import Optional, TYPE_CHECKING
 
 from .service_manager import ServiceDescriptor, ServiceManager
 from .service_factories import (
-    create_mcp_service,
     create_chat_service,
     create_channel_service,
     create_agent_config_watcher,
-    create_mcp_config_watcher,
 )
 from ..runner import AgentRunner
 from ..runner.task_tracker import TaskTracker
-from ..mcp import MCPClientManager
 from ..crons.manager import CronManager
 from ..crons.repo.json_repo import JsonJobRepository
 from ...config.config import load_agent_config
@@ -50,7 +46,6 @@ class Workspace:
     - Runner: Processes agent requests
     - ChannelManager: Manages communication channels
     - BaseMemoryManager: Manages conversation memory
-    - MCPClientManager: Manages MCP tool clients
     - CronManager: Manages scheduled tasks
 
     All components use existing single-agent code without modification.
@@ -100,11 +95,6 @@ class Workspace:
     def memory_manager(self):
         """Get memory manager instance from ServiceManager."""
         return self._service_manager.services.get("memory_manager")
-
-    @property
-    def mcp_manager(self):
-        """Get MCP manager instance from ServiceManager."""
-        return self._service_manager.services.get("mcp_manager")
 
     @property
     def chat_manager(self):
@@ -168,6 +158,7 @@ class Workspace:
                     "agent_id": ws.agent_id,
                     "workspace_dir": ws.workspace_dir,
                     "task_tracker": ws._task_tracker,
+                    "tenant_id": ws.tenant_id,
                 },
                 stop_method="stop",
                 priority=10,
@@ -194,17 +185,6 @@ class Workspace:
                 start_method="start",
                 stop_method="close",
                 reusable=True,
-                priority=20,
-                concurrent_init=True,
-            ),
-        )
-
-        sm.register(
-            ServiceDescriptor(
-                name="mcp_manager",
-                service_class=MCPClientManager,
-                post_init=create_mcp_service,
-                stop_method="close_all",
                 priority=20,
                 concurrent_init=True,
             ),
@@ -279,19 +259,6 @@ class Workspace:
                 start_method="start",
                 stop_method="stop",
                 priority=50,
-                concurrent_init=False,
-            ),
-        )
-
-        # Priority 51: MCP Config Watcher (conditional)
-        sm.register(
-            ServiceDescriptor(
-                name="mcp_config_watcher",
-                service_class=None,
-                post_init=create_mcp_config_watcher,
-                start_method="start",
-                stop_method="stop",
-                priority=51,
                 concurrent_init=False,
             ),
         )

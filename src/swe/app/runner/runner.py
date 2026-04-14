@@ -5,16 +5,21 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncGenerator
 
+import httpx
+from agentscope.mcp import HttpStatefulClient, StdIOStatefulClient
 from agentscope.message import Msg, TextBlock
 from agentscope.pipeline import stream_printing_messages
 from agentscope_runtime.engine.runner import Runner
 from agentscope_runtime.engine.schemas.agent_schemas import AgentRequest, Event
 from agentscope_runtime.engine.schemas.exception import AgentException
 from dotenv import load_dotenv
+from mcp.client.sse import sse_client
+from mcp.client.streamable_http import streamable_http_client
 
 from .command_dispatch import (
     _get_last_user_text,
@@ -28,7 +33,7 @@ from .utils import build_env_context
 from ..channels.schema import DEFAULT_CHANNEL
 from ...agents.react_agent import SWEAgent
 from ...security.tool_guard.models import TOOL_GUARD_DENIED_MARK
-from ...config.config import load_agent_config
+from ...config.config import MCPClientConfig, MCPConfig, load_agent_config
 from ...constant import (
     TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS,
     WORKING_DIR,
@@ -66,12 +71,153 @@ def _is_approval(text: str) -> bool:
     return normalized in _APPROVE_EXACT
 
 
+async def _build_and_connect_mcp_clients(
+    mcp_config: MCPConfig | None,
+    passthrough_headers: dict[str, str] | None = None,
+) -> list[Any]:
+    """Build and connect MCP clients from config for single request use.
+
+    Args:
+        mcp_config: MCP configuration from agent_config.mcp
+        passthrough_headers: Headers to merge for HTTP transport clients
+
+    Returns:
+        List of connected MCP client instances (all created for this request)
+    """
+    if mcp_config is None or not mcp_config.clients:
+        return []
+
+    clients = []
+    for key, client_config in mcp_config.clients.items():
+        if not client_config.enabled:
+            continue
+
+        try:
+            client = await _create_mcp_client_with_headers(
+                client_config,
+                passthrough_headers,
+            )
+            if client is not None:
+                await client.connect()
+                clients.append(client)
+                logger.debug(f"MCP client '{key}' created and connected")
+        except Exception as e:
+            logger.warning(
+                f"Failed to create MCP client '{key}': {e}",
+                exc_info=True,
+            )
+
+    return clients
+
+
+async def _create_mcp_client_with_headers(
+    client_config: MCPClientConfig,
+    passthrough_headers: dict[str, str] | None = None,
+) -> Any:
+    """Create a single MCP client with optional header passthrough.
+
+    For HTTP transport, merges static config headers with passthrough headers.
+    For StdIO transport, uses static config directly.
+
+    Args:
+        client_config: Single MCP client configuration
+        passthrough_headers: Headers to merge for HTTP transport
+
+    Returns:
+        MCP client instance (not yet connected)
+    """
+    rebuild_info = {
+        "name": client_config.name,
+        "transport": client_config.transport,
+        "url": client_config.url,
+        "headers": client_config.headers or None,
+        "command": client_config.command,
+        "args": list(client_config.args),
+        "env": dict(client_config.env),
+        "cwd": client_config.cwd or None,
+    }
+
+    if client_config.transport == "stdio":
+        client = StdIOStatefulClient(
+            name=client_config.name,
+            command=client_config.command,
+            args=client_config.args,
+            env=client_config.env,
+            cwd=client_config.cwd or None,
+        )
+        setattr(client, "_swe_rebuild_info", rebuild_info)
+        setattr(client, "_swe_temp_client", True)
+        return client
+
+    # HTTP transport (streamable_http or sse)
+    headers = client_config.headers
+    if headers:
+        headers = {k: os.path.expandvars(v) for k, v in headers.items()}
+
+    # Merge passthrough headers for HTTP transport
+    merged_headers = dict(headers or {})
+    if passthrough_headers:
+        merged_headers.update(passthrough_headers)
+
+    http_client = httpx.AsyncClient(headers=merged_headers)
+
+    client = HttpStatefulClient(
+        name=client_config.name,
+        transport=client_config.transport,
+        url=client_config.url,
+        headers=None,  # Headers are in http_client
+    )
+
+    # Create appropriate transport context
+    if client_config.transport == "sse":
+        client_context = sse_client(
+            url=client_config.url,
+            headers=merged_headers,
+        )
+    else:  # streamable_http
+        client_context = streamable_http_client(
+            url=client_config.url,
+            http_client=http_client,
+        )
+
+    client.client = client_context
+
+    setattr(client, "_swe_rebuild_info", {
+        **rebuild_info,
+        "headers": merged_headers,
+        "_temp_client": True,
+        "_http_client": http_client,
+    })
+    setattr(client, "_swe_temp_client", True)
+
+    return client
+
+
+async def _cleanup_mcp_clients(clients: list[Any]) -> None:
+    """Clean up all MCP clients created for a request.
+
+    Args:
+        clients: List of MCP client instances to close
+    """
+    for client in clients:
+        try:
+            await client.close()
+            # For HTTP clients, also close the httpx client
+            rebuild_info = getattr(client, "_swe_rebuild_info", {})
+            http_client = rebuild_info.get("_http_client")
+            if http_client is not None:
+                await http_client.aclose()
+        except Exception as e:
+            logger.warning(f"Error closing MCP client: {e}")
+
+
 class AgentRunner(Runner):
     def __init__(
         self,
         agent_id: str = "default",
         workspace_dir: Path | None = None,
         task_tracker: Any | None = None,
+        tenant_id: str | None = None,
     ) -> None:
         super().__init__()
         self.framework_type = "agentscope"
@@ -79,8 +225,8 @@ class AgentRunner(Runner):
         self.workspace_dir = (
             workspace_dir  # Store workspace_dir for prompt building
         )
+        self.tenant_id = tenant_id  # Store tenant_id for config loading
         self._chat_manager = None  # Store chat_manager reference
-        self._mcp_manager = None  # MCP client manager for hot-reload
         self._workspace: Any = None  # Workspace instance for control commands
         self.memory_manager: BaseMemoryManager | None = None
         self._task_tracker = task_tracker  # Task tracker for background tasks
@@ -92,14 +238,6 @@ class AgentRunner(Runner):
             chat_manager: ChatManager instance
         """
         self._chat_manager = chat_manager
-
-    def set_mcp_manager(self, mcp_manager):
-        """Set MCP client manager for hot-reload support.
-
-        Args:
-            mcp_manager: MCPClientManager instance
-        """
-        self._mcp_manager = mcp_manager
 
     def set_workspace(self, workspace):
         """Set workspace for control command handlers.
@@ -317,17 +455,18 @@ class AgentRunner(Runner):
                 ),
             )
 
-            # Get MCP clients from manager (hot-reloadable)
-            # If passthrough headers exist, create temporary clients with merged headers
-            mcp_clients = []
-            if self._mcp_manager is not None:
-                passthrough_headers = get_current_passthrough_headers()
-                mcp_clients = await self._mcp_manager.get_clients_with_headers(
-                    passthrough_headers=passthrough_headers,
-                )
+            # Load agent-specific configuration FIRST (needed for MCP config)
+            agent_config = load_agent_config(
+                self.agent_id,
+                tenant_id=self.tenant_id,
+            )
 
-            # Load agent-specific configuration
-            agent_config = load_agent_config(self.agent_id)
+            # Create MCP clients directly from agent config for this request
+            passthrough_headers = get_current_passthrough_headers()
+            mcp_clients = await _build_and_connect_mcp_clients(
+                agent_config.mcp,
+                passthrough_headers=passthrough_headers,
+            )
 
             agent = SWEAgent(
                 agent_config=agent_config,
@@ -488,20 +627,8 @@ class AgentRunner(Runner):
             if self._chat_manager is not None and chat is not None:
                 await self._chat_manager.update_chat(chat)
 
-            # Close temporary MCP clients created with passthrough headers
-            for client in mcp_clients:
-                rebuild_info = getattr(client, "_swe_rebuild_info", {})
-                if rebuild_info.get("_temp_client"):
-                    try:
-                        await client.close()
-                        # Also close the httpx client if stored
-                        http_client = rebuild_info.get("_http_client")
-                        if http_client is not None:
-                            await http_client.aclose()
-                    except Exception as e:
-                        logger.warning(
-                            f"Error closing temporary MCP client: {e}",
-                        )
+            # Close all MCP clients created for this request
+            await _cleanup_mcp_clients(mcp_clients)
 
     async def _cleanup_denied_session_memory(
         self,

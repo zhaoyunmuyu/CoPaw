@@ -443,6 +443,10 @@ async def execute_shell_command(
 
     cmd = _collapse_embedded_newlines((command or "").strip())
 
+    # Intercept command and inject tenant isolation params if applicable
+    from .shell_interceptor import intercept_command
+    cmd, was_intercepted = intercept_command(cmd)
+
     # Validate and resolve the working directory against tenant boundary
     try:
         working_dir = _resolve_cwd(cwd)

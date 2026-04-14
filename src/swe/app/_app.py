@@ -75,10 +75,11 @@ class DynamicMultiAgentRunner:
 
     async def _get_workspace_runner(self, request):
         """Get the correct workspace runner based on request."""
-        from .agent_context import get_current_agent_id
+        from .agent_context import get_current_agent_id, get_current_tenant_id
 
         # Get agent_id from context (set by middleware or header)
         agent_id = get_current_agent_id()
+        tenant_id = get_current_tenant_id()
 
         logger.debug(f"_get_workspace_runner: agent_id={agent_id}")
 
@@ -87,7 +88,10 @@ class DynamicMultiAgentRunner:
             raise RuntimeError("MultiAgentManager not initialized")
 
         try:
-            workspace = await self._multi_agent_manager.get_agent(agent_id)
+            workspace = await self._multi_agent_manager.get_agent(
+                agent_id,
+                tenant_id=tenant_id,
+            )
             logger.debug(
                 "Got workspace: %s, runner: %s",
                 workspace.agent_id,
