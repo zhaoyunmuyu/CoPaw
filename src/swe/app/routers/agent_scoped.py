@@ -8,6 +8,7 @@ Note: For tenant-scoped deployments, tenant identity is resolved first
 before agent resolution. The agent namespace is per-tenant.
 """
 from fastapi import APIRouter, Request
+from fastapi.routing import APIRoute
 from starlette.middleware.base import (
     BaseHTTPMiddleware,
     RequestResponseEndpoint,
@@ -90,6 +91,17 @@ def create_agent_scoped_router() -> APIRouter:
     # Create parent router with agentId parameter
     router = APIRouter(prefix="/agents/{agentId}", tags=["agent-scoped"])
 
+    scoped_agent_router = APIRouter()
+    scoped_agent_router.include_router(agent_router)
+    scoped_agent_router.routes = [
+        route
+        for route in scoped_agent_router.routes
+        if not (
+            isinstance(route, APIRoute)
+            and route.path == "/agent/init"
+        )
+    ]
+
     # Include all agent-specific sub-routers (they keep their own prefixes)
     # /agents/{agentId}/agent/* -> agent_router
     # /agents/{agentId}/chats/* -> chats_router
@@ -99,7 +111,7 @@ def create_agent_scoped_router() -> APIRouter:
     # /agents/{agentId}/skills/* -> skills_router
     # /agents/{agentId}/tools/* -> tools_router
     # /agents/{agentId}/workspace/* -> workspace_router
-    router.include_router(agent_router)
+    router.include_router(scoped_agent_router)
     router.include_router(chats_router)
     router.include_router(config_router)
     router.include_router(cron_router)

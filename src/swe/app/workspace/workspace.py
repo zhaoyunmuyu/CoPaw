@@ -22,6 +22,7 @@ from .service_factories import (
 from ..runner import AgentRunner
 from ..runner.task_tracker import TaskTracker
 from ..crons.manager import CronManager
+from ..crons.coordination import CoordinationConfig
 from ..crons.repo.json_repo import JsonJobRepository
 from ...config.config import load_agent_config
 from ...agents.memory import ReMeLightMemoryManager
@@ -138,6 +139,50 @@ class Workspace:
         if self.runner is not None:
             self.runner._manager = manager  # pylint: disable=protected-access
 
+    def _get_cron_coordination_config(self) -> "CoordinationConfig":
+        """Get coordination config from environment-backed constants.
+
+        Returns:
+            CoordinationConfig for cron leadership election, scheduler
+            preflight, and definition convergence built from environment-
+            derived values and hardcoded defaults.
+        """
+        from ...constant import (
+            CRON_COORDINATION_ENABLED,
+            CRON_CLUSTER_MODE,
+            CRON_REDIS_URL,
+            CRON_CLUSTER_NODES,
+            CRON_LEASE_TTL_SECONDS,
+            CRON_LEASE_RENEW_INTERVAL_SECONDS,
+            CRON_LEASE_RENEW_FAILURE_THRESHOLD,
+            CRON_LOCK_SAFETY_MARGIN_SECONDS,
+            CRON_REDIS_ACCESS,
+        )
+        from ...config.config import _parse_cluster_nodes
+
+        cluster_nodes = _parse_cluster_nodes(CRON_CLUSTER_NODES)
+
+        # Validate lease configuration only when coordination is enabled
+        if CRON_COORDINATION_ENABLED:
+            if CRON_LEASE_TTL_SECONDS <= CRON_LEASE_RENEW_INTERVAL_SECONDS:
+                raise ValueError(
+                    "lease_ttl_seconds must be greater than "
+                    f"lease_renew_interval_seconds (got {CRON_LEASE_TTL_SECONDS} <= "
+                    f"{CRON_LEASE_RENEW_INTERVAL_SECONDS})",
+                )
+
+        return CoordinationConfig(
+            enabled=CRON_COORDINATION_ENABLED,
+            redis_url=CRON_REDIS_URL,
+            redis_access=CRON_REDIS_ACCESS,
+            cluster_mode=CRON_CLUSTER_MODE,
+            cluster_nodes=cluster_nodes if CRON_CLUSTER_MODE else None,
+            lease_ttl_seconds=CRON_LEASE_TTL_SECONDS,
+            lease_renew_interval_seconds=CRON_LEASE_RENEW_INTERVAL_SECONDS,
+            lease_renew_failure_threshold=CRON_LEASE_RENEW_FAILURE_THRESHOLD,
+            lock_safety_margin_seconds=CRON_LOCK_SAFETY_MARGIN_SECONDS,
+        )
+
     def _register_services(  # pylint: disable=too-many-statements
         self,
     ) -> None:
@@ -242,9 +287,11 @@ class Workspace:
                     ),
                     "timezone": "UTC",
                     "agent_id": ws.agent_id,
+                    "tenant_id": ws.tenant_id,
+                    "coordination_config": ws._get_cron_coordination_config(),
                 },
-                start_method="start",
-                stop_method="stop",
+                start_method="activate",
+                stop_method="deactivate",
                 priority=40,
                 concurrent_init=False,
             ),

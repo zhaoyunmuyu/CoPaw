@@ -19,16 +19,16 @@ from ...security.tenant_path_boundary import (
     resolve_tenant_path,
     TenantPathBoundaryError,
     make_permission_denied_response,
+    get_current_tool_base_dir,
 )
-from ...config.context import get_current_workspace_dir
 
 
 def _resolve_file_path(file_path: str) -> str:
     """Resolve file path using tenant path boundary.
 
     All paths are resolved against the current agent's workspace directory
-    (if set) or the current tenant's workspace root, and validated to ensure
-    they stay within WORKING_DIR/<tenant_id>.
+    (when available) or the current tenant's workspace root, and validated
+    to ensure they stay within WORKING_DIR/<tenant_id>.
 
     Args:
         file_path: The input file path (absolute or relative).
@@ -40,8 +40,7 @@ def _resolve_file_path(file_path: str) -> str:
         TenantPathBoundaryError: If the path escapes the tenant workspace
                                  or tenant context is missing.
     """
-    # Use current workspace dir as base if available, otherwise tenant root
-    base_dir = get_current_workspace_dir()
+    base_dir = get_current_tool_base_dir()
     resolved = resolve_tenant_path(file_path, base_dir=base_dir, allow_nonexistent=True)
     return str(resolved)
 
@@ -75,7 +74,8 @@ async def read_file(  # pylint: disable=too-many-return-statements
     start_line: Optional[int] = None,
     end_line: Optional[int] = None,
 ) -> ToolResponse:
-    """Read a file. Relative paths resolve from the current tenant workspace.
+    """Read a file. Relative paths resolve from the current agent workspace
+    when available, otherwise the current tenant workspace root.
 
     Use start_line/end_line to read a specific line range (output includes
     line numbers). Omit both to read the full file.
@@ -222,7 +222,8 @@ async def write_file(
     file_path: str,
     content: str,
 ) -> ToolResponse:
-    """Create or overwrite a file. Relative paths resolve from the current tenant workspace.
+    """Create or overwrite a file. Relative paths resolve from the current agent
+    workspace when available, otherwise the current tenant workspace root.
 
     Args:
         file_path (`str`):
@@ -377,7 +378,8 @@ async def append_file(
     content: str,
 ) -> ToolResponse:
     """Append content to the end of a file. Relative paths resolve from
-    the current tenant workspace.
+    the current agent workspace when available, otherwise the current tenant
+    workspace root.
 
     Args:
         file_path (`str`):

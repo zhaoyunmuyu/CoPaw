@@ -334,3 +334,53 @@ except (TypeError, ValueError):
 # Split output on this marker to recover the original (untruncated) portion:
 #   original = output.split(TRUNCATION_NOTICE_MARKER)[0]
 TRUNCATION_NOTICE_MARKER = "<<<TRUNCATED>>>"
+
+# Redis coordination for cron leadership (multi-instance support)
+CRON_COORDINATION_ENABLED = EnvVarLoader.get_bool(
+    "SWE_CRON_COORDINATION_ENABLED",
+    False,
+)
+
+CRON_CLUSTER_MODE = EnvVarLoader.get_bool(
+    "SWE_CRON_CLUSTER_MODE",
+    False,
+)
+
+CRON_REDIS_URL = EnvVarLoader.get_str(
+    "SWE_CRON_REDIS_URL",
+    "redis://localhost:6379/0",
+)
+
+CRON_REDIS_ACCESS = EnvVarLoader.get_str(
+    "SWE_CRON_REDIS_ACCESS",
+    "",
+)
+
+CRON_CLUSTER_NODES = EnvVarLoader.get_str(
+    "SWE_CRON_CLUSTER_NODES",
+    "",
+)
+
+CRON_LEASE_TTL_SECONDS = EnvVarLoader.get_int(
+    "SWE_CRON_LEASE_TTL_SECONDS",
+    30,
+    min_value=5,
+)
+
+CRON_LEASE_RENEW_INTERVAL_SECONDS = EnvVarLoader.get_int(
+    "SWE_CRON_LEASE_RENEW_INTERVAL_SECONDS",
+    10,
+    min_value=1,
+)
+
+CRON_LEASE_RENEW_FAILURE_THRESHOLD = EnvVarLoader.get_int(
+    "SWE_CRON_LEASE_RENEW_FAILURE_THRESHOLD",
+    3,
+    min_value=1,
+)
+
+CRON_LOCK_SAFETY_MARGIN_SECONDS = EnvVarLoader.get_int(
+    "SWE_CRON_LOCK_SAFETY_MARGIN_SECONDS",
+    30,
+    min_value=5,
+)

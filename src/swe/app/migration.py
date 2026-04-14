@@ -844,6 +844,7 @@ def _do_ensure_qa_agent(
         agent_config,
         skill_names=qa_skill_list,
         builtin_qa_md_seed=True,
+        working_dir=config_path.parent,
     )
 
     config.agents.profiles[qa_id] = AgentProfileRef(

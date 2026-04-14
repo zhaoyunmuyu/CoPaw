@@ -224,6 +224,28 @@ class TestValidateShellPaths:
             result = _validate_shell_paths("echo hello world", base_dir=tenant_dir)
             assert result is None
 
+    def test_validate_shell_paths_uses_workspace_dir_as_base(
+        self, mock_working_dir: Path
+    ):
+        tenant_dir = mock_working_dir / "test_tenant"
+        workspace_root = tenant_dir / "workspaces"
+        workspace_root.mkdir(parents=True, exist_ok=True)
+        workspace_dir = workspace_root / "agent_a"
+        workspace_dir.mkdir(parents=True, exist_ok=True)
+        shared_file = workspace_root / "shared.txt"
+        shared_file.write_text("shared")
+
+        with tenant_context(
+            tenant_id="test_tenant",
+            workspace_dir=workspace_dir,
+        ):
+            result = _validate_shell_paths(
+                "cat ../shared.txt",
+                base_dir=_resolve_cwd(None),
+            )
+
+        assert result is None
+
     def test_tenant_local_paths_allowed(self, mock_working_dir: Path):
         """Should allow paths within tenant workspace."""
         tenant_dir = mock_working_dir / "test_tenant"
@@ -345,6 +367,21 @@ class TestResolveCwd:
             result = _resolve_cwd(None)
             expected = mock_working_dir / "test_tenant"
             assert result == expected
+
+    def test_resolve_cwd_defaults_to_workspace_dir_when_present(
+        self, mock_working_dir: Path
+    ):
+        tenant_dir = mock_working_dir / "test_tenant"
+        workspace_dir = tenant_dir / "workspaces" / "agent_a"
+        workspace_dir.mkdir(parents=True)
+
+        with tenant_context(
+            tenant_id="test_tenant",
+            workspace_dir=workspace_dir,
+        ):
+            result = _resolve_cwd(None)
+
+        assert result == workspace_dir.resolve()
 
     def test_returns_resolved_cwd_when_within_tenant(self, mock_working_dir: Path):
         """Should return resolved cwd when within tenant."""

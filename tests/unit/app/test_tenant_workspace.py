@@ -615,7 +615,13 @@ class TestTenantProviderConfigInitialization:
 
         middleware = TenantWorkspaceMiddleware(app=MagicMock())
 
-        exempt_routes = ["/health", "/healthz", "/ready", "/alive"]
+        exempt_routes = [
+            "/health",
+            "/healthz",
+            "/api/health/health",
+            "/ready",
+            "/alive",
+        ]
         for route in exempt_routes:
             assert middleware._is_workspace_exempt(route) is True
 

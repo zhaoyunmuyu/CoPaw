@@ -9,8 +9,6 @@ dependencies = [
     "agentscope-runtime==1.1.3",
     "httpx>=0.27.0",
     "packaging>=24.0",
-    "discord-py>=2.3",
-    "dingtalk-stream>=0.24.3",
     "uvicorn>=0.40.0",
     "apscheduler>=3.11.2,<4",
     "playwright>=1.49.0",
@@ -20,14 +18,9 @@ dependencies = [
     "transformers>=4.30.0",
     "python-dotenv>=1.0.0",
     "python-socks>=2.5.3",
-    "onnxruntime<1.24",
-    "lark-oapi>=1.5.3",
-    "python-telegram-bot>=20.0",
     "twilio>=9.10.2",
     "pywebview>=4.0",
     "aiofiles>=24.1.0",
-    "paho-mqtt>=2.0.0",
-    "wecom-aibot-python-sdk==1.0.2",
     "matrix-nio>=0.24.0",
     "shortuuid>=1.0.0",
     "google-genai>=1.67.0",
@@ -40,6 +33,8 @@ dependencies = [
     "pillow>=10.0.0",
     # anyio 4.13.0: _deliver_cancellation busy-loop / getpid storm (CoPaw#2632)
     "anyio>=4.0.0,<4.13.0",
+    # Redis for cron coordination (multi-instance support)
+    "redis>=5.0.0",
     "boto3>=1.24.1"
 ]
 

@@ -2,11 +2,14 @@
 # pylint: disable=too-many-branches
 # mypy: ignore-errors
 """ReMeLight-backed memory manager for SWE agents."""
+import importlib
 import importlib.metadata
 import json
 import logging
 import os
 import platform
+import sys
+import types
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -15,8 +18,6 @@ from agentscope.message import Msg, TextBlock
 from agentscope.tool import Toolkit, ToolResponse
 
 # Pre-import heavy dependencies to avoid first-request latency
-from reme.reme_light import ReMeLight
-
 from swe.agents.memory.base_memory_manager import BaseMemoryManager
 from swe.agents.model_factory import create_model_and_formatter
 from swe.agents.tools import read_file, write_file, edit_file
@@ -35,6 +36,81 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _EXPECTED_REME_VERSION = "0.3.1.8"
+
+
+def _exception_chain_messages(exc: Exception) -> list[str]:
+    """Flatten exception/context/cause messages for lightweight matching."""
+    messages = [str(exc)]
+    current = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        current = current.__cause__ or current.__context__
+        if current is not None:
+            messages.append(str(current))
+    return messages
+
+
+def _is_optional_chromadb_import_error(exc: Exception) -> bool:
+    """Return True when the import failure is due to optional chromadb."""
+    messages = " | ".join(_exception_chain_messages(exc)).lower()
+    return "chromadb" in messages or "clientapi" in messages
+
+
+def _clear_cached_reme_modules() -> None:
+    """Clear partially imported reme modules before a retry."""
+    for module_name in list(sys.modules):
+        if module_name == "reme" or module_name.startswith("reme."):
+            del sys.modules[module_name]
+
+
+def _install_chromadb_compat_shim() -> None:
+    """Install a minimal chromadb shim so local ReMe backend can import.
+
+    ReMe imports its Chroma vector store unconditionally. When chromadb is
+    absent or broken, the class annotations in that module can fail during
+    import even if SWE intends to use the local backend. The shim provides
+    only the symbols needed for import-time annotations.
+    """
+    chromadb_module = types.ModuleType("chromadb")
+    chromadb_config_module = types.ModuleType("chromadb.config")
+
+    class ClientAPI:  # pylint: disable=too-few-public-methods
+        """Import-time stub for chromadb.ClientAPI."""
+
+    class Collection:  # pylint: disable=too-few-public-methods
+        """Import-time stub for chromadb.Collection."""
+
+    class Settings:  # pylint: disable=too-few-public-methods
+        """Import-time stub for chromadb.config.Settings."""
+
+    chromadb_module.ClientAPI = ClientAPI
+    chromadb_module.Collection = Collection
+    chromadb_module.config = chromadb_config_module
+    chromadb_config_module.Settings = Settings
+
+    sys.modules["chromadb"] = chromadb_module
+    sys.modules["chromadb.config"] = chromadb_config_module
+
+
+def _import_reme_light(memory_backend: str):
+    """Import ReMeLight with a local-backend retry for chromadb failures."""
+    try:
+        return importlib.import_module("reme.reme_light").ReMeLight
+    except Exception as exc:
+        if memory_backend == "chroma" or not _is_optional_chromadb_import_error(
+            exc,
+        ):
+            raise
+
+        logger.warning(
+            "ReMeLight import failed due to optional chromadb dependency. "
+            "Retrying with a compatibility shim for local backend. Error: %s",
+            exc,
+        )
+        _clear_cached_reme_modules()
+        _install_chromadb_compat_shim()
+        return importlib.import_module("reme.reme_light").ReMeLight
 
 
 class ReMeLightMemoryManager(BaseMemoryManager):
@@ -113,7 +189,9 @@ See: https://docs.trychroma.com/docs/overview/troubleshooting#sqlite
             agent_config.running.memory_summary.rebuild_memory_index_on_start
         )
 
-        self._reme = ReMeLight(
+        reme_light_cls = _import_reme_light(memory_backend)
+
+        self._reme = reme_light_cls(
             working_dir=working_dir,
             default_embedding_model_config=emb_config,
             default_file_store_config={

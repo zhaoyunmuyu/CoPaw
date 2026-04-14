@@ -24,37 +24,36 @@ logger = logging.getLogger(__name__)
 
 # Routes that are explicitly exempt from tenant identity requirements
 # These are either truly stateless or system-level endpoints
-TENANT_EXEMPT_ROUTES = frozenset(
-    [
-        # Health check endpoints
-        "/health",
-        "/healthz",
-        "/ready",
-        "/readyz",
-        "/alive",
-        # Version endpoint
-        "/api/version",
-        # OpenAPI docs (if enabled)
-        "/docs",
-        "/redoc",
-        "/openapi.json",
-        # Auth endpoints
-        "/api/auth/login",
-        "/api/auth/register",
-        "/api/auth/refresh",
-        "/api/auth/logout",
-        "/api/zhaohu/callback",
-        # Static assets
-        "/assets",
-        "/logo.png",
-        "/dark-logo.png",
-        "/swe-symbol.svg",
-        "/swe-dark.png",
-        # Console SPA routes (static files)
-        "/console",
-        "/console/",
-    ],
-)
+TENANT_EXEMPT_ROUTES = frozenset([
+    # Health check endpoints
+    "/health",
+    "/healthz",
+    "/api/health/health",
+    "/ready",
+    "/readyz",
+    "/alive",
+    # Version endpoint
+    "/api/version",
+    # OpenAPI docs (if enabled)
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    # Auth endpoints
+    "/api/auth/login",
+    "/api/auth/register",
+    "/api/auth/refresh",
+    "/api/auth/logout",
+    "/api/zhaohu/callback",
+    # Static assets
+    "/assets",
+    "/logo.png",
+    "/dark-logo.png",
+    "/swe-symbol.svg",
+    "/swe-dark.png",
+    # Console SPA routes (static files)
+    "/console",
+    "/console/",
+])
 
 
 def is_tenant_exempt(path: str) -> bool:

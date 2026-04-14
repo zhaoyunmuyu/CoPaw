@@ -72,6 +72,36 @@ def test_ensure_qa_agent_exists_uses_tenant_working_dir(tmp_path, monkeypatch):
     assert not (global_dir / "workspaces").exists()
 
 
+def test_ensure_qa_agent_exists_uses_tenant_language_templates(
+    tmp_path,
+    monkeypatch,
+):
+    tenant_dir = tmp_path / "tenant-echo"
+    observed = {}
+    original_agent_profile_config = migration_module.AgentProfileConfig
+    save_config(
+        Config(
+            agents=AgentsConfig(
+                language="ru",
+                profiles={},
+            ),
+        ),
+        tenant_dir / "config.json",
+    )
+    monkeypatch.setattr(
+        migration_module,
+        "AgentProfileConfig",
+        lambda *args, **kwargs: (
+            observed.update({"language": kwargs.get("language")})
+            or original_agent_profile_config(*args, **kwargs)
+        ),
+    )
+
+    ensure_qa_agent_exists(working_dir=tenant_dir)
+
+    assert observed["language"] == "ru"
+
+
 def test_ensure_skill_pool_initialized_uses_tenant_working_dir(
     tmp_path,
     monkeypatch,

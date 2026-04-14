@@ -87,10 +87,9 @@ async def delete_job(
 
 @router.post("/jobs/{job_id}/pause")
 async def pause_job(job_id: str, mgr: CronManager = Depends(get_cron_manager)):
-    try:
-        await mgr.pause_job(job_id)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    ok = await mgr.pause_job(job_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="job not found")
     return {"paused": True}
 
 
@@ -99,10 +98,9 @@ async def resume_job(
     job_id: str,
     mgr: CronManager = Depends(get_cron_manager),
 ):
-    try:
-        await mgr.resume_job(job_id)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    ok = await mgr.resume_job(job_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="job not found")
     return {"resumed": True}
 
 
@@ -114,6 +112,8 @@ async def run_job(job_id: str, mgr: CronManager = Depends(get_cron_manager)):
         raise HTTPException(status_code=404, detail="job not found") from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+    # Note: run_job is a manual execution, not a schedule mutation
+    # No reload signal needed
     return {"started": True}
 
 

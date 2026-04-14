@@ -21,6 +21,7 @@ from swe.config.context import tenant_context
 from swe.constant import WORKING_DIR
 from swe.security.tenant_path_boundary import (
     get_current_tenant_root,
+    get_current_tool_base_dir,
     resolve_tenant_path,
     validate_path_within_tenant,
     is_path_within_tenant,
@@ -98,6 +99,42 @@ class TestGetCurrentTenantRoot:
             result = get_current_tenant_root()
             assert result == expected_root
             assert result.is_absolute()
+
+
+class TestGetCurrentToolBaseDir:
+    """Tests for get_current_tool_base_dir helper."""
+
+    def test_get_current_tool_base_dir_prefers_workspace_dir(
+        self, mock_working_dir: Path
+    ):
+        tenant_id = "test_tenant"
+        workspace_dir = mock_working_dir / tenant_id / "workspaces" / "agent_a"
+        workspace_dir.mkdir(parents=True)
+
+        with tenant_context(tenant_id=tenant_id, workspace_dir=workspace_dir):
+            result = get_current_tool_base_dir()
+
+        assert result == workspace_dir.resolve()
+
+    def test_get_current_tool_base_dir_falls_back_to_tenant_root(
+        self, mock_working_dir: Path
+    ):
+        tenant_id = "test_tenant"
+
+        with tenant_context(tenant_id=tenant_id):
+            result = get_current_tool_base_dir()
+
+        assert result == (mock_working_dir / tenant_id).resolve()
+
+    def test_get_current_tool_base_dir_rejects_workspace_outside_tenant(
+        self, mock_working_dir: Path
+    ):
+        tenant_id = "test_tenant"
+        outside_workspace = mock_working_dir / "other_tenant"
+
+        with tenant_context(tenant_id=tenant_id, workspace_dir=outside_workspace):
+            with pytest.raises(PathTraversalError):
+                get_current_tool_base_dir()
 
 
 # =============================================================================

@@ -883,14 +883,20 @@ def _build_import_conflict(
     }
 
 
-def list_builtin_import_candidates() -> list[dict[str, Any]]:
+def list_builtin_import_candidates(
+    *,
+    working_dir: Path | None = None,
+) -> list[dict[str, Any]]:
     """List builtin skills available from packaged source."""
     builtin_dir = get_builtin_skills_dir()
     builtin_sigs = _get_builtin_signatures()
     if not builtin_sigs:
         return []
 
-    manifest = read_skill_pool_manifest(reconcile=False)
+    manifest = read_skill_pool_manifest(
+        reconcile=False,
+        working_dir=working_dir,
+    )
     pool_skills = manifest.get("skills", {})
     candidates: list[dict[str, Any]] = []
 
@@ -933,7 +939,8 @@ def import_builtin_skills(
     pool_dir.mkdir(parents=True, exist_ok=True)
 
     candidates = {
-        item["name"]: item for item in list_builtin_import_candidates()
+        item["name"]: item
+        for item in list_builtin_import_candidates(working_dir=working_dir)
     }
     selected_names = sorted(skill_names or candidates.keys())
 
@@ -1228,13 +1235,20 @@ def list_workspaces(tenant_id: str | None = None) -> list[dict[str, str]]:
         from ..config.utils import load_config, get_tenant_config_path
         from ..config.config import load_agent_config
 
-        config = load_config(get_tenant_config_path(tenant_id))
+        config_path = get_tenant_config_path(tenant_id)
+        config = load_config(config_path)
         # Only return agents that are still in the configuration
         # This ensures deleted agents are not included
         for agent_id, profile in sorted(config.agents.profiles.items()):
             agent_name = agent_id
             try:
-                agent_name = load_agent_config(agent_id).name or agent_id
+                agent_name = (
+                    load_agent_config(
+                        agent_id,
+                        config_path=config_path,
+                    ).name
+                    or agent_id
+                )
             except Exception:
                 pass
             workspaces.append(
@@ -1320,7 +1334,10 @@ def ensure_skills_initialized(workspace_dir: Path) -> None:
     reconcile_workspace_manifest(workspace_dir)
 
 
-def get_pool_builtin_sync_status() -> dict[str, dict[str, Any]]:
+def get_pool_builtin_sync_status(
+    *,
+    working_dir: Path | None = None,
+) -> dict[str, dict[str, Any]]:
     """Compare pool skills against packaged builtins.
 
     Returns a dict keyed by skill name with sync status for each
@@ -1335,7 +1352,7 @@ def get_pool_builtin_sync_status() -> dict[str, dict[str, Any]]:
         return {}
 
     manifest = _read_json(
-        get_pool_skill_manifest_path(),
+        get_pool_skill_manifest_path(working_dir=working_dir),
         _default_pool_manifest(),
     )
     pool_skills = manifest.get("skills", {})
@@ -1361,13 +1378,20 @@ def get_pool_builtin_sync_status() -> dict[str, dict[str, Any]]:
     return result
 
 
-def update_single_builtin(skill_name: str) -> dict[str, Any]:
+def update_single_builtin(
+    skill_name: str,
+    *,
+    working_dir: Path | None = None,
+) -> dict[str, Any]:
     """Update one builtin skill in the pool to the latest packaged version."""
     builtin_sigs = _get_builtin_signatures()
     if skill_name not in builtin_sigs:
         raise ValueError(f"'{skill_name}' is not a builtin skill")
 
-    manifest = read_skill_pool_manifest(reconcile=False)
+    manifest = read_skill_pool_manifest(
+        reconcile=False,
+        working_dir=working_dir,
+    )
     existing = manifest.get("skills", {}).get(skill_name)
     if existing is None or not _is_pool_builtin_entry(existing):
         raise ValueError(
@@ -1379,7 +1403,7 @@ def update_single_builtin(skill_name: str) -> dict[str, Any]:
     if not src.exists():
         raise ValueError(f"Packaged builtin '{skill_name}' not found")
 
-    pool_dir = get_skill_pool_dir()
+    pool_dir = get_skill_pool_dir(working_dir=working_dir)
     target = pool_dir / skill_name
     _copy_skill_dir(src, target)
 
@@ -1397,7 +1421,7 @@ def update_single_builtin(skill_name: str) -> dict[str, Any]:
         return entry
 
     return _mutate_json(
-        get_pool_skill_manifest_path(),
+        get_pool_skill_manifest_path(working_dir=working_dir),
         _default_pool_manifest(),
         _update,
     )
@@ -2143,12 +2167,20 @@ class SkillPoolService:
         the pool entry.
     """
 
-    def __init__(self):
-        ensure_skill_pool_initialized()
+    def __init__(
+        self,
+        *,
+        working_dir: Path | None = None,
+    ):
+        self.working_dir = working_dir
+        ensure_skill_pool_initialized(working_dir=self.working_dir)
 
     def list_all_skills(self) -> list[SkillInfo]:
-        manifest = read_skill_pool_manifest(reconcile=False)
-        pool_dir = get_skill_pool_dir()
+        manifest = read_skill_pool_manifest(
+            reconcile=False,
+            working_dir=self.working_dir,
+        )
+        pool_dir = get_skill_pool_dir(working_dir=self.working_dir)
         skills: list[SkillInfo] = []
         for skill_name, entry in sorted(manifest.get("skills", {}).items()):
             skill = _read_skill_from_dir(
@@ -2170,9 +2202,12 @@ class SkillPoolService:
     ) -> str | None:
         _validate_skill_content(content)
         skill_name = _normalize_skill_dir_name(name)
-        pool_dir = get_skill_pool_dir()
+        pool_dir = get_skill_pool_dir(working_dir=self.working_dir)
         skill_dir = pool_dir / skill_name
-        manifest = read_skill_pool_manifest(reconcile=False)
+        manifest = read_skill_pool_manifest(
+            reconcile=False,
+            working_dir=self.working_dir,
+        )
         existing = manifest.get("skills", {}).get(skill_name)
         if existing is not None or skill_dir.exists():
             return None
@@ -2200,7 +2235,7 @@ class SkillPoolService:
                 payload["skills"][skill_name]["config"] = dict(config)
 
         _mutate_json(
-            get_pool_skill_manifest_path(),
+            get_pool_skill_manifest_path(working_dir=self.working_dir),
             _default_pool_manifest(),
             _update,
         )
@@ -2213,7 +2248,7 @@ class SkillPoolService:
         target_name: str | None = None,
         rename_map: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        pool_dir = get_skill_pool_dir()
+        pool_dir = get_skill_pool_dir(working_dir=self.working_dir)
         tmp_dir, found = _extract_zip_skills(data)
         renames = rename_map or {}
         try:
@@ -2232,7 +2267,10 @@ class SkillPoolService:
                 (d, _normalize_skill_dir_name(renames.get(n, n)))
                 for d, n in found
             ]
-            manifest = read_skill_pool_manifest(reconcile=False)
+            manifest = read_skill_pool_manifest(
+                reconcile=False,
+                working_dir=self.working_dir,
+            )
             existing_pool_names = (
                 set(
                     manifest.get("skills", {}).keys(),
@@ -2303,7 +2341,9 @@ class SkillPoolService:
                         )
 
                 _mutate_json(
-                    get_pool_skill_manifest_path(),
+                    get_pool_skill_manifest_path(
+                        working_dir=self.working_dir,
+                    ),
                     _default_pool_manifest(),
                     _update,
                 )
@@ -2317,12 +2357,15 @@ class SkillPoolService:
 
     def delete_skill(self, name: str) -> bool:
         skill_name = str(name or "")
-        manifest = read_skill_pool_manifest(reconcile=False)
+        manifest = read_skill_pool_manifest(
+            reconcile=False,
+            working_dir=self.working_dir,
+        )
         entry = manifest.get("skills", {}).get(skill_name)
         if entry is None:
             return False
 
-        skill_dir = get_skill_pool_dir() / skill_name
+        skill_dir = get_skill_pool_dir(working_dir=self.working_dir) / skill_name
         if skill_dir.exists():
             shutil.rmtree(skill_dir)
 
@@ -2330,7 +2373,7 @@ class SkillPoolService:
             payload.get("skills", {}).pop(skill_name, None)
 
         _mutate_json(
-            get_pool_skill_manifest_path(),
+            get_pool_skill_manifest_path(working_dir=self.working_dir),
             _default_pool_manifest(),
             _update,
         )
@@ -2342,7 +2385,10 @@ class SkillPoolService:
         *,
         target_name: str | None = None,
     ) -> dict[str, Any]:
-        manifest = read_skill_pool_manifest(reconcile=False)
+        manifest = read_skill_pool_manifest(
+            reconcile=False,
+            working_dir=self.working_dir,
+        )
         entry = manifest.get("skills", {}).get(skill_name)
         if entry is None:
             return {"success": False, "reason": "not_found"}
@@ -2387,7 +2433,10 @@ class SkillPoolService:
         config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         _validate_skill_content(content)
-        manifest = read_skill_pool_manifest(reconcile=False)
+        manifest = read_skill_pool_manifest(
+            reconcile=False,
+            working_dir=self.working_dir,
+        )
         entry = manifest.get("skills", {}).get(skill_name)
         if entry is None:
             return {"success": False, "reason": "not_found"}
@@ -2404,8 +2453,10 @@ class SkillPoolService:
             str(edit_target["mode"]) == "rename" and final_name != skill_name
         )
         keep_original = _is_pool_builtin_entry(entry) and is_rename
-        skill_dir = get_skill_pool_dir() / final_name
-        old_skill_dir = get_skill_pool_dir() / skill_name
+        skill_dir = get_skill_pool_dir(working_dir=self.working_dir) / final_name
+        old_skill_dir = (
+            get_skill_pool_dir(working_dir=self.working_dir) / skill_name
+        )
         old_sig = str(entry.get("signature", ""))
         new_config = (
             config if config is not None else entry.get("config") or {}
@@ -2466,7 +2517,7 @@ class SkillPoolService:
                 payload["skills"].pop(skill_name, None)
 
         _mutate_json(
-            get_pool_skill_manifest_path(),
+            get_pool_skill_manifest_path(working_dir=self.working_dir),
             _default_pool_manifest(),
             _update,
         )
@@ -2489,8 +2540,11 @@ class SkillPoolService:
             return {"success": False, "reason": "not_found"}
 
         final_name = _normalize_skill_dir_name(target_name or skill_name)
-        target_dir = get_skill_pool_dir() / final_name
-        manifest = read_skill_pool_manifest(reconcile=False)
+        target_dir = get_skill_pool_dir(working_dir=self.working_dir) / final_name
+        manifest = read_skill_pool_manifest(
+            reconcile=False,
+            working_dir=self.working_dir,
+        )
         existing = manifest.get("skills", {}).get(final_name)
         if existing:
             if _is_pool_builtin_entry(existing):
@@ -2535,7 +2589,7 @@ class SkillPoolService:
             payload["skills"][final_name] = entry
 
         _mutate_json(
-            get_pool_skill_manifest_path(),
+            get_pool_skill_manifest_path(working_dir=self.working_dir),
             _default_pool_manifest(),
             _update,
         )
@@ -2550,12 +2604,15 @@ class SkillPoolService:
         target_name: str | None = None,
         overwrite: bool = False,
     ) -> dict[str, Any]:
-        manifest = read_skill_pool_manifest(reconcile=False)
+        manifest = read_skill_pool_manifest(
+            reconcile=False,
+            working_dir=self.working_dir,
+        )
         entry = manifest.get("skills", {}).get(skill_name)
         if entry is None:
             return {"success": False, "reason": "not_found"}
 
-        source_dir = get_skill_pool_dir() / skill_name
+        source_dir = get_skill_pool_dir(working_dir=self.working_dir) / skill_name
         final_name = _normalize_skill_dir_name(target_name or skill_name)
         target_dir = get_workspace_skills_dir(workspace_dir) / final_name
         workspace_manifest = read_skill_manifest(
@@ -2648,7 +2705,10 @@ class SkillPoolService:
         target_name: str | None = None,
         overwrite: bool = False,
     ) -> dict[str, Any]:
-        manifest = read_skill_pool_manifest(reconcile=False)
+        manifest = read_skill_pool_manifest(
+            reconcile=False,
+            working_dir=self.working_dir,
+        )
         entry = manifest.get("skills", {}).get(skill_name)
         if entry is None:
             return {"success": False, "reason": "not_found"}

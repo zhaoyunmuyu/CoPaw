@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 from pathlib import Path
-from typing import Optional, Union, Dict, List, Literal
+from typing import Any, Optional, Dict, List, Literal
 
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 import shortuuid
@@ -26,6 +26,14 @@ from ..constant import (
     TRACING_RETENTION_DAYS,
     TRACING_SANITIZE_OUTPUT,
     TRACING_MAX_OUTPUT_LENGTH,
+    CRON_COORDINATION_ENABLED,
+    CRON_CLUSTER_MODE,
+    CRON_REDIS_URL,
+    CRON_CLUSTER_NODES,
+    CRON_LEASE_TTL_SECONDS,
+    CRON_LEASE_RENEW_INTERVAL_SECONDS,
+    CRON_LEASE_RENEW_FAILURE_THRESHOLD,
+    CRON_LOCK_SAFETY_MARGIN_SECONDS,
 )
 from ..providers.models import ModelSlotConfig
 from ..tracing.config import TracingConfig
@@ -52,47 +60,6 @@ class BaseChannelConfig(BaseModel):
     allow_from: List[str] = Field(default_factory=list)
     deny_message: str = ""
     require_mention: bool = False
-
-
-class IMessageChannelConfig(BaseChannelConfig):
-    db_path: str = "~/Library/Messages/chat.db"
-    poll_sec: float = 1.0
-    media_dir: Optional[str] = None
-    max_decoded_size: int = (
-        10 * 1024 * 1024
-    )  # 10MB default limit for Base64 data
-
-
-class DiscordConfig(BaseChannelConfig):
-    bot_token: str = ""
-    http_proxy: str = ""
-    http_proxy_auth: str = ""
-    accept_bot_messages: bool = False
-
-
-class DingTalkConfig(BaseChannelConfig):
-    client_id: str = ""
-    client_secret: str = ""
-    message_type: str = "markdown"
-    card_template_id: str = ""
-    card_template_key: str = "content"
-    robot_code: str = ""
-    media_dir: Optional[str] = None
-    card_auto_layout: bool = False
-
-
-class FeishuConfig(BaseChannelConfig):
-    """Feishu/Lark channel: app_id, app_secret; optional encrypt_key,
-    verification_token for event handler. media_dir for received media.
-    domain: 'feishu' for China, 'lark' for international.
-    """
-
-    app_id: str = ""
-    app_secret: str = ""
-    encrypt_key: str = ""
-    verification_token: str = ""
-    media_dir: Optional[str] = None
-    domain: Literal["feishu", "lark"] = "feishu"
 
 
 class ZhaohuConfig(BaseChannelConfig):
@@ -127,108 +94,10 @@ class ZhaohuConfig(BaseChannelConfig):
     )
 
 
-class QQConfig(BaseChannelConfig):
-    app_id: str = ""
-    client_secret: str = ""
-    markdown_enabled: bool = True
-    max_reconnect_attempts: int = 100
-
-
-class TelegramConfig(BaseChannelConfig):
-    bot_token: str = ""
-    http_proxy: str = ""
-    http_proxy_auth: str = ""
-    show_typing: Optional[bool] = None
-
-
-class MQTTConfig(BaseChannelConfig):
-    host: str = ""
-    port: Optional[int] = None
-    transport: str = ""
-    clean_session: bool = True
-    qos: int = 2
-    username: Optional[str] = None
-    password: Optional[str] = None
-    subscribe_topic: str = ""
-    publish_topic: str = ""
-    tls_enabled: bool = False
-    tls_ca_certs: Optional[str] = None
-    tls_certfile: Optional[str] = None
-    tls_keyfile: Optional[str] = None
-
-
-class MattermostConfig(BaseChannelConfig):
-    """Mattermost channel: WebSocket polling and REST API."""
-
-    url: str = ""
-    bot_token: str = ""
-    media_dir: Optional[str] = None
-    show_typing: Optional[bool] = None
-    thread_follow_without_mention: bool = False
-
-
 class ConsoleConfig(BaseChannelConfig):
     """Console channel: prints agent responses to stdout."""
 
     enabled: bool = True
-    media_dir: Optional[str] = None
-
-
-class WecomConfig(BaseChannelConfig):
-    """WeCom (Enterprise WeChat) AI Bot channel config."""
-
-    bot_id: str = ""
-    secret: str = ""
-    media_dir: Optional[str] = None
-    welcome_text: str = ""
-    max_reconnect_attempts: int = -1
-
-
-class MatrixConfig(BaseChannelConfig):
-    """Matrix channel configuration."""
-
-    homeserver: str = ""
-    user_id: str = ""
-    access_token: str = ""
-
-
-class VoiceChannelConfig(BaseChannelConfig):
-    """Voice channel: Twilio ConversationRelay + Cloudflare Tunnel."""
-
-    twilio_account_sid: str = ""
-    twilio_auth_token: str = ""
-    phone_number: str = ""
-    phone_number_sid: str = ""
-    tts_provider: str = "google"
-    tts_voice: str = "en-US-Journey-D"
-    stt_provider: str = "deepgram"
-    language: str = "en-US"
-    welcome_greeting: str = "Hi! This is SWE. How can I help you?"
-
-
-class XiaoYiConfig(BaseChannelConfig):
-    """XiaoYi channel: Huawei A2A protocol via WebSocket."""
-
-    ak: str = ""  # Access Key
-    sk: str = ""  # Secret Key
-    agent_id: str = ""  # Agent ID from XiaoYi platform
-    ws_url: str = "wss://hag.cloud.huawei.com/openclaw/v1/ws/link"
-    task_timeout_ms: int = 3600000  # 1 hour task timeout
-
-
-class WeixinConfig(BaseChannelConfig):
-    """WeChat (iLink Bot) personal account channel config.
-
-    bot_token:      Bearer token obtained after QR code login.
-    bot_token_file: Path to persist/load the bot_token
-                    (default ~/.swe/weixin_bot_token).
-    base_url:       iLink API base URL (leave empty to use default).
-    media_dir:      Local directory for downloaded media files.
-    """
-
-    bot_token: str = ""
-    bot_token_file: str = ""
-    base_url: str = ""
     media_dir: Optional[str] = None
 
 
@@ -237,21 +106,8 @@ class ChannelConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    imessage: IMessageChannelConfig = IMessageChannelConfig()
-    discord: DiscordConfig = DiscordConfig()
-    dingtalk: DingTalkConfig = DingTalkConfig()
-    feishu: FeishuConfig = FeishuConfig()
-    zhaohu: ZhaohuConfig = ZhaohuConfig()
-    qq: QQConfig = QQConfig()
-    telegram: TelegramConfig = TelegramConfig()
-    mattermost: MattermostConfig = MattermostConfig()
-    mqtt: MQTTConfig = MQTTConfig()
     console: ConsoleConfig = ConsoleConfig()
-    matrix: MatrixConfig = MatrixConfig()
-    voice: VoiceChannelConfig = VoiceChannelConfig()
-    wecom: WecomConfig = WecomConfig()
-    xiaoyi: XiaoYiConfig = XiaoYiConfig()
-    weixin: WeixinConfig = WeixinConfig()
+    zhaohu: ZhaohuConfig = ZhaohuConfig()
 
 
 class LastApiConfig(BaseModel):
@@ -703,6 +559,10 @@ class AgentProfileConfig(BaseModel):
         default_factory=AgentsRunningConfig,
         description="Runtime configuration",
     )
+    llm_routing: AgentsLLMRoutingConfig = Field(
+        default_factory=AgentsLLMRoutingConfig,
+        description="LLM routing configuration",
+    )
     language: str = Field(
         default="zh",
         description="Language setting for this agent",
@@ -897,15 +757,20 @@ class MCPConfig(BaseModel):
 class BuiltinToolConfig(BaseModel):
     """Configuration for a single built-in tool."""
 
+    model_config = ConfigDict(extra="ignore")
+
     name: str = Field(..., description="Tool function name")
-    enabled: bool = Field(True, description="Whether the tool is enabled")
+    enabled: bool = Field(
+        default=True,
+        description="Whether the tool is enabled",
+    )
     description: str = Field(default="", description="Tool description")
     display_to_user: bool = Field(
-        True,
+        default=True,
         description="Whether tool output is rendered to user channels",
     )
     async_execution: bool = Field(
-        False,
+        default=False,
         description="Whether to execute the tool asynchronously in background",
     )
 
@@ -1187,6 +1052,124 @@ class ServiceHeartbeatConfig(BaseModel):
         )
 
 
+def _parse_cluster_nodes(env_value: str) -> List[Dict[str, Any]]:
+    """Parse cluster nodes from environment variable string.
+
+    Format: "host1:port1,host2:port2,host3:port3"
+    Returns: [{"host": "host1", "port": port1}, ...]
+    """
+    if not env_value or not env_value.strip():
+        return []
+
+    nodes = []
+    for node_str in env_value.split(","):
+        node_str = node_str.strip()
+        if not node_str:
+            continue
+        if ":" in node_str:
+            host, port_str = node_str.rsplit(":", 1)
+            try:
+                port = int(port_str)
+            except ValueError:
+                port = 6379
+            nodes.append({"host": host.strip(), "port": port})
+        else:
+            nodes.append({"host": node_str, "port": 6379})
+    return nodes
+
+
+class CronCoordinationConfig(BaseModel):
+    """Redis-based cron coordination configuration.
+
+    Controls multi-instance cron leadership election, scheduler preflight,
+    and jobs.json definition convergence. Execution-lock settings remain for
+    explicit legacy paths and are not the default timed execution contract.
+    Supports both standalone Redis and Redis Cluster modes. Defaults are
+    derived from environment-backed cron constants and code fallbacks rather
+    than root config.json.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = Field(
+        default=CRON_COORDINATION_ENABLED,
+        description="Enable Redis coordination for cron leadership election",
+    )
+    # Connection mode: standalone or cluster
+    cluster_mode: bool = Field(
+        default=CRON_CLUSTER_MODE,
+        description="Use Redis Cluster mode instead of standalone Redis",
+    )
+    # Standalone mode configuration
+    redis_url: str = Field(
+        default=CRON_REDIS_URL,
+        description="Redis connection URL for standalone mode",
+    )
+    # Cluster mode configuration
+    cluster_nodes: List[Dict[str, Any]] = Field(
+        default_factory=lambda: _parse_cluster_nodes(CRON_CLUSTER_NODES),
+        description="List of cluster nodes as dicts with 'host' and 'port' keys. "
+        "Example: [{'host': 'node1', 'port': 6379}, {'host': 'node2', 'port': 6379}]",
+    )
+    cluster_skip_full_coverage_check: bool = Field(
+        default=True,
+        description="Skip full coverage check for cluster (useful with some cluster setups)",
+    )
+    cluster_max_connections: int = Field(
+        default=50,
+        ge=1,
+        le=500,
+        description="Maximum connections in cluster mode",
+    )
+    # Lease configuration
+    lease_ttl_seconds: int = Field(
+        default=CRON_LEASE_TTL_SECONDS,
+        ge=5,
+        le=300,
+        description="Lease TTL in seconds (must be > renew interval)",
+    )
+    lease_renew_interval_seconds: int = Field(
+        default=CRON_LEASE_RENEW_INTERVAL_SECONDS,
+        ge=1,
+        le=60,
+        description="How often to renew lease",
+    )
+    lease_renew_failure_threshold: int = Field(
+        default=CRON_LEASE_RENEW_FAILURE_THRESHOLD,
+        ge=1,
+        le=10,
+        description="Consecutive failures before considering lease lost",
+    )
+    # Execution lock configuration
+    lock_safety_margin_seconds: int = Field(
+        default=CRON_LOCK_SAFETY_MARGIN_SECONDS,
+        ge=5,
+        le=300,
+        description="Additional time added to job timeout for legacy execution-lock paths",
+    )
+    definition_lock_timeout_seconds: float = Field(
+        default=10.0,
+        ge=0.05,
+        le=300,
+        description="How long to wait for the shared jobs.json definition lock",
+    )
+    # Reload pub/sub configuration
+    reload_channel_prefix: str = Field(
+        default="swe:cron:reload",
+        description="Redis pub/sub channel prefix for reload signals",
+    )
+
+    @model_validator(mode="after")
+    def validate_lease_config(self) -> "CronCoordinationConfig":
+        """Validate lease configuration."""
+        if self.lease_ttl_seconds <= self.lease_renew_interval_seconds:
+            raise ValueError(
+                "lease_ttl_seconds must be greater than "
+                "lease_renew_interval_seconds",
+            )
+        return self
+
+
 class Config(BaseModel):
     """Root config (config.json)."""
 
@@ -1209,22 +1192,7 @@ class Config(BaseModel):
     )
 
 
-ChannelConfigUnion = Union[
-    IMessageChannelConfig,
-    DiscordConfig,
-    DingTalkConfig,
-    FeishuConfig,
-    QQConfig,
-    TelegramConfig,
-    MattermostConfig,
-    MQTTConfig,
-    ConsoleConfig,
-    MatrixConfig,
-    VoiceChannelConfig,
-    WecomConfig,
-    XiaoYiConfig,
-    WeixinConfig,
-]
+ChannelConfigUnion = ConsoleConfig
 
 
 # Agent configuration utility functions
@@ -1335,13 +1303,21 @@ def load_agent_config(
     with open(agent_config_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
+    # Ensure required fields exist for legacy data
+    if "id" not in data:
+        data["id"] = agent_id
+    if "name" not in data:
+        data["name"] = agent_id.title()
+
     # Normalize legacy ~/.swe-bound paths to current WORKING_DIR.
     # This keeps SWE_WORKING_DIR effective even if existing agent.json
     # contains older hard-coded paths like "~/.swe/media".
     try:
         from .utils import _normalize_working_dir_bound_paths
 
-        data = _normalize_working_dir_bound_paths(data)
+        normalized_data = _normalize_working_dir_bound_paths(data)
+        if isinstance(normalized_data, dict):
+            data = normalized_data
     except Exception:
         pass
 
