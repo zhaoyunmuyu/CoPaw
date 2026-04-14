@@ -109,7 +109,7 @@ async def toggle_tool(
     tool_config.enabled = not tool_config.enabled
 
     # Save agent config
-    save_agent_config(workspace.agent_id, agent_config)
+    save_agent_config(workspace.agent_id, agent_config, tenant_id=workspace.tenant_id)
 
     # Hot reload config (async, non-blocking)
     schedule_agent_reload(request, workspace.agent_id)
@@ -162,7 +162,7 @@ async def update_tool_async_execution(
     tool_config.async_execution = async_execution
 
     # Save agent config
-    save_agent_config(workspace.agent_id, agent_config)
+    save_agent_config(workspace.agent_id, agent_config, tenant_id=workspace.tenant_id)
 
     # Hot reload config (async, non-blocking)
     schedule_agent_reload(request, workspace.agent_id)

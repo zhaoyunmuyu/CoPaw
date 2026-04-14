@@ -1,10 +1,11 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useProviderContext, ChatInput, Disclaimer } from '@/components/agentscope-chat';
 import { useChatAnywhereOptions } from "../../Context/ChatAnywhereOptionsContext";
 import { useGetState } from 'ahooks';
 import { useChatAnywhereInput } from "../../Context/ChatAnywhereInputContext";
 import useAttachments from "./useAttachments";
 import { IAgentScopeRuntimeWebUIInputData } from '@/components/agentscope-chat';
+import { emit } from '../../Context/useChatAnywhereEventEmitter';
 
 export interface InputProps {
   onCancel: () => void;
@@ -38,6 +39,17 @@ export default function Input(props: InputProps) {
     uploadFileListHeader
   } = useAttachments(attachments, { disabled: !!inputContext.disabled });
 
+  // Listen for external pasteFile events (drag-drop upload)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const file = (e as CustomEvent).detail?.file as File | undefined;
+      if (file && handlePasteFile) {
+        handlePasteFile(file);
+      }
+    };
+    document.addEventListener('pasteFile', handler);
+    return () => document.removeEventListener('pasteFile', handler);
+  }, [handlePasteFile]);
 
   const handleSubmit = useCallback(async () => {
     const next = await beforeSubmit();

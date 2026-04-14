@@ -80,8 +80,8 @@ function validateMessage(data: unknown): data is IframeIncomingMessage {
   // 根据类型验证
   switch (msg.type) {
     case "USER_DATA":
-      // 所有参数均为可选，只要有 type 字段即可
-      return true;
+      // 必须有 data 字段且为对象
+      return msg.data !== undefined && typeof msg.data === "object";
     case "HEARTBEAT":
       return typeof msg.timestamp === "number";
     case "READY_REQUEST":
@@ -97,9 +97,9 @@ function validateMessage(data: unknown): data is IframeIncomingMessage {
  * 将 sapId 作为 X-User-Id，并合并父窗口传递的 auth 数组
  */
 function buildAuthHeaders(message: IframeUserDataMessage): AuthHeaderItem[] {
-  const authHeaders = message.auth ?? [];
-  if (message.sapId) {
-    authHeaders.push({ headerName: "X-User-Id", headerValue: message.sapId });
+  const authHeaders = message.data.auth ?? [];
+  if (message.data.sapId) {
+    authHeaders.push({ headerName: "X-User-Id", headerValue: message.data.sapId });
   }
   return authHeaders;
 }
@@ -107,11 +107,15 @@ function buildAuthHeaders(message: IframeUserDataMessage): AuthHeaderItem[] {
 /**
  * 调用客户信息查询接口并更新 store
  * 当 URL 参数 origin === "Y" 时触发
+ * 不论接口是否成功，都会设置 userId（使用传入的 userId）
  */
 async function fetchAndApplyCustomerInfo(
   userId: string,
   store: ReturnType<typeof useIframeStore.getState>,
 ): Promise<void> {
+  // 默认设置传入的 userId
+  store.setContext({ userId });
+
   try {
     const targetUserData = {
       inputParams: {
@@ -129,13 +133,14 @@ async function fetchAndApplyCustomerInfo(
       const result = response.body.output.result;
       if (result.userChange) {
         store.setContext({
-          userId: result.userId ?? null,
+          userId: result.userId ?? userId,
           sysId: result.sysId ?? null,
           token: result.token ?? null,
           bbk: result.bbk ?? null,
           orgCode: result.orgCode ?? null,
           orgLvl: result.orgLvl ?? null,
           positionId: result.positionId ?? null,
+          userChange: result.userChange ?? false,
         });
       }
     } else {
@@ -185,12 +190,12 @@ async function handleUserDataMessage(message: IframeUserDataMessage, origin: str
   const authHeaders = buildAuthHeaders(message);
 
   store.setContext({
-    userId: message.sapId ?? null,
-    clawName: message.clawName ?? null,
-    space: message.space ?? null,
-    source: message.source ?? null,
-    hideMenu: toBoolean(message.hideMenu),
-    isSuperManager: toBoolean(message.isSuperManager),
+    userId: message.data.sapId ?? null,
+    clawName: message.data.clawName ?? null,
+    space: message.data.space ?? null,
+    source: message.data.source ?? null,
+    hideMenu: toBoolean(message.data.hideMenu),
+    isSuperManager: toBoolean(message.data.isSuperManager),
     authHeaders,
     parentOrigin: origin,
   });
@@ -198,8 +203,8 @@ async function handleUserDataMessage(message: IframeUserDataMessage, origin: str
   const urlParams = new URLSearchParams(window.location.search);
   const originParam = urlParams.get("origin");
 
-  if (originParam === "Y" && message.sapId) {
-    await fetchAndApplyCustomerInfo(message.sapId, store);
+  if (originParam === "Y" && message.data.sapId) {
+    await fetchAndApplyCustomerInfo(message.data.sapId, store);
     const currentUserId = store.userId;
     if (currentUserId) {
       await initializeUserIfNeeded(currentUserId, store);
@@ -207,16 +212,16 @@ async function handleUserDataMessage(message: IframeUserDataMessage, origin: str
   }
 
   store.markInitialized();
-  sendMessageToParent({ type: "READY_RESPONSE", initialized: true });
+  // sendMessageToParent({ type: "READY_RESPONSE", initialized: true });
 
   console.info("[IframeMessage] Initialized with context from parent:", {
     origin,
-    userId: message.sapId,
-    clawName: message.clawName,
-    space: message.space,
-    source: message.source,
-    hideMenu: message.hideMenu,
-    isSuperManager: message.isSuperManager,
+    userId: message.data.sapId,
+    clawName: message.data.clawName,
+    space: message.data.space,
+    source: message.data.source,
+    hideMenu: message.data.hideMenu,
+    isSuperManager: message.data.isSuperManager,
     authHeadersCount: authHeaders.length,
   });
 }
@@ -234,11 +239,12 @@ function handleHeartbeatMessage(timestamp: number): void {
  * 处理就绪查询消息
  */
 function handleReadyRequest(): void {
-  const context = getIframeContext();
-  sendMessageToParent({
-    type: "READY_RESPONSE",
-    initialized: context.initialized,
-  });
+  // 父容器不需要知道初始化状态，已注释
+  // const context = getIframeContext();
+  // sendMessageToParent({
+  //   type: "READY_RESPONSE",
+  //   initialized: context.initialized,
+  // });
 }
 
 /**
@@ -288,7 +294,10 @@ export function sendMessageToParent(message: IframeOutgoingMessage): void {
   }
 
   const context = getIframeContext();
-  const targetOrigin = context.parentOrigin || "*";
+  // 确保 targetOrigin 有效，避免传入 null 或 "null" 字符串
+  const targetOrigin = context.parentOrigin && context.parentOrigin !== "null"
+    ? context.parentOrigin
+    : "*";
 
   window.parent.postMessage(message, targetOrigin);
 }
@@ -332,9 +341,10 @@ export function initIframeMessageListener(): void {
 
   console.info("[IframeMessage] Listener registered");
 
+  // 父容器不需要知道初始化状态，已注释
   // 通知父窗口准备就绪，可以发送初始化消息 (USER_DATA)
   // initialized: false 表示等待父窗口发送数据
-  sendMessageToParent({ type: "READY_RESPONSE", initialized: false });
+  // sendMessageToParent({ type: "READY_RESPONSE", initialized: false });
 }
 
 /**

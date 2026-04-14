@@ -2,7 +2,7 @@ import type { TFunction } from "i18next";
 
 const defaultConfig = {
   theme: {
-    colorPrimary: "#FF7F16",
+    colorPrimary: "#3769FC",
     darkMode: false,
     prefix: "swe",
     leftHeader: {
@@ -52,7 +52,7 @@ export function getDefaultConfig(t: TFunction) {
       description: "",
       prompts: [
         { value: t("chat.prompt1") },
-        { value: "3月12日至3月19日上证指数累计下跌达3.07%，帮我找到可能受影响的客户，并提供沟通建议" }, 
+        { value: "3月12日至3月19日上证指数累计下跌达3.07%，帮我找到可能受影响的客户，并提供沟通建议" },
         { value: "帮我监控管户客户风险异动" },
         { value: "我需要营销基金007119，帮我找客户" },
       ],

@@ -86,7 +86,10 @@ export default function MainLayout() {
 
   return (
     <Layout className={styles.mainLayout}>
-      <Header />
+      {/* ==================== 首页改版 (Kun He) ==================== */}
+      {/* Header 和 Sidebar 一起根据 hideMenu 控制显隐 */}
+      {!shouldHideSidebar && <Header />}
+      {/* ==================== 首页改版结束 ==================== */}
       <Layout>
         {/* ==================== iframe 集成 (Kun He) ==================== */}
         {/* 条件渲染 Sidebar：根据 origin 参数或 hideMenu 决定是否显示 */}

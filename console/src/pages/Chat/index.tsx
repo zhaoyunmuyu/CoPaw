@@ -24,6 +24,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { useAgentStore } from "../../stores/agentStore";
 // ==================== 组件引入方式变更 (Kun He) ====================
 import { useChatAnywhereInput } from "@/components/agentscope-chat";
+import DragUploadOverlay from "@/components/agentscope-chat/DragUploadOverlay";
 // ==================== 组件引入方式变更结束 ====================
 // ==================== userId 统一整改 (Kun He) ====================
 // 使用统一的 getUserId/getChannel helper
@@ -37,6 +38,10 @@ import { IconButton } from "@agentscope-ai/design";
 import ChatActionGroup from "./components/ChatActionGroup";
 import ChatHeaderTitle from "./components/ChatHeaderTitle";
 import ChatSessionInitializer from "./components/ChatSessionInitializer";
+// ==================== 首页改版 (Kun He) ====================
+import WelcomeCenterLayout from "@/components/agentscope-chat/WelcomeCenterLayout";
+import ChatSidebar from "./components/ChatSidebar";
+// ==================== 首页改版结束 ====================
 import {
   toDisplayUrl,
   copyText,
@@ -287,6 +292,8 @@ export default function ChatPage() {
   const [showModelPrompt, setShowModelPrompt] = useState(false);
   const { selectedAgent } = useAgentStore();
   const [refreshKey, setRefreshKey] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounterRef = useRef(0);
   const runtimeLoadingBridgeRef = useRef<RuntimeLoadingBridgeApi | null>(null);
   const { message } = useAppMessage();
 
@@ -550,6 +557,55 @@ export default function ChatPage() {
     [multimodalCaps, t],
   );
 
+  // ==================== Drag & drop file upload (Kun He) ====================
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types.includes('Files')) {
+      dragCounterRef.current += 1;
+      if (dragCounterRef.current === 1) {
+        setIsDragging(true);
+      }
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current === 0) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dragCounterRef.current = 0;
+      setIsDragging(false);
+
+      const files = Array.from(e.dataTransfer.files);
+      for (const file of files) {
+        document.dispatchEvent(new CustomEvent('pasteFile', {
+          detail: { file },
+        }));
+      }
+    },
+    [],
+  );
+
+  const handleDragOverlayClose = useCallback(() => {
+    dragCounterRef.current = 0;
+    setIsDragging(false);
+  }, []);
+  // ==================== Drag & drop end ====================
+
   const options = useMemo(() => {
     const i18nConfig = getDefaultConfig(t);
     const commandSuggestions: CommandSuggestion[] = [
@@ -608,6 +664,24 @@ export default function ChatPage() {
           ? `${import.meta.env.BASE_URL}${brandTheme.avatar.replace(/^\//, "")}`
           : undefined,
         // ==================== 品牌主题结束 ====================
+        // ==================== 首页改版 (Kun He) ====================
+        // 使用自定义欢迎页渲染，替代默认 WelcomePrompts
+        render: ({ greeting, prompts, onSubmit }) => (
+          <WelcomeCenterLayout
+            greeting={
+              typeof greeting === 'string'
+                ? greeting
+                : '你好，你的专属小龙虾，前来报到！'
+            }
+            prompts={prompts?.map((p) =>
+              typeof p === 'string'
+                ? { label: p, value: p }
+                : { label: p.label || p.value, value: p.value },
+            )}
+            onSubmit={(data) => onSubmit(data)}
+          />
+        ),
+        // ==================== 首页改版结束 ====================
       },
       sender: {
         ...(i18nConfig as any)?.sender,
@@ -699,21 +773,47 @@ export default function ChatPage() {
     } as unknown as IAgentScopeRuntimeWebUIOptions;
   }, [customFetch, copyResponse, handleFileUpload, t, isDark, multimodalCaps]);
 
+  // ==================== 首页改版 (Kun He) ====================
+  // 新建聊天：通过 chatRef 调用后端 createSession API
+  const handleCreateSessionFromSidebar = useCallback(async () => {
+    const newId = await chatRef.current?.createSession?.();
+    if (newId) {
+      navigate(`/chat/${newId}`, { replace: true });
+    } else {
+      navigate('/chat', { replace: true });
+    }
+  }, [navigate]);
+  // ==================== 首页改版结束 ====================
+
   return (
     <div
       style={{
         height: "100%",
         width: "100%",
         display: "flex",
-        flexDirection: "column",
+        flexDirection: "row",
       }}
     >
-      <div className={styles.chatMessagesArea}>
+      {/* ==================== 首页改版 (Kun He) ==================== */}
+      {/* 聊天专用侧栏：支持折叠为64px工具条 */}
+      <ChatSidebar
+        onCreateSession={handleCreateSessionFromSidebar}
+      />
+      {/* ==================== 首页改版结束 ==================== */}
+      <div
+        className={styles.chatMessagesArea}
+        style={{ flex: 1, minWidth: 0, position: 'relative' }}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
         <AgentScopeRuntimeWebUI
           ref={chatRef}
           key={refreshKey}
           options={options}
         />
+        <DragUploadOverlay visible={isDragging} onClose={handleDragOverlayClose} />
       </div>
 
       <Modal

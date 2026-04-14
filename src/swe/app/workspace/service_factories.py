@@ -15,24 +15,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def create_mcp_service(ws: "Workspace", mcp):
-    """Initialize MCP manager and attach to runner.
-
-    Args:
-        ws: Workspace instance
-        mcp: MCPClientManager instance
-    """
-    # pylint: disable=protected-access
-    if ws._config.mcp:
-        try:
-            await mcp.init_from_config(ws._config.mcp)
-            logger.debug(f"MCP initialized for agent: {ws.agent_id}")
-        except Exception as e:
-            logger.warning(f"Failed to init MCP: {e}")
-    ws._service_manager.services["runner"].set_mcp_manager(mcp)
-    # pylint: enable=protected-access
-
-
 async def create_chat_service(ws: "Workspace", service):
     """Create and attach chat manager, or reuse existing one.
 
@@ -141,40 +123,5 @@ async def create_agent_config_watcher(ws: "Workspace", _):
         tenant_id=ws.tenant_id,
     )
     ws._service_manager.services["agent_config_watcher"] = watcher
-    return watcher
-    # pylint: enable=protected-access
-
-
-async def create_mcp_config_watcher(ws: "Workspace", _):
-    """Create MCP config watcher if MCP manager exists.
-
-    Args:
-        ws: Workspace instance
-        _: Unused service parameter
-
-    Returns:
-        MCPConfigWatcher instance or None if not needed
-    """
-    # pylint: disable=protected-access
-    mcp_mgr = ws._service_manager.services.get("mcp_manager")
-    if not mcp_mgr:
-        return None
-
-    from ..mcp.watcher import MCPConfigWatcher
-    from ...config.config import load_agent_config
-
-    def mcp_config_loader():
-        agent_config = load_agent_config(
-            ws.agent_id,
-            tenant_id=ws.tenant_id,
-        )
-        return agent_config.mcp
-
-    watcher = MCPConfigWatcher(
-        mcp_manager=mcp_mgr,
-        config_loader=mcp_config_loader,
-        config_path=ws.workspace_dir / "agent.json",
-    )
-    ws._service_manager.services["mcp_config_watcher"] = watcher
     return watcher
     # pylint: enable=protected-access

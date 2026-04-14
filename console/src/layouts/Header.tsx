@@ -1,6 +1,8 @@
 import { Layout, Space, Select } from "antd";
-import LanguageSwitcher from "../components/LanguageSwitcher/index";
-import ThemeToggleButton from "../components/ThemeToggleButton";
+// ==================== 语言/主题切换暂时隐藏 (Kun He) ====================
+// import LanguageSwitcher from "../components/LanguageSwitcher/index";
+// import ThemeToggleButton from "../components/ThemeToggleButton";
+// ==================== 语言/主题切换暂时隐藏结束 ====================
 import styles from "./index.module.less";
 import { useTheme } from "../contexts/ThemeContext";
 // ==================== 品牌主题 (Kun He) ====================
@@ -106,8 +108,10 @@ export default function Header() {
           {/* ==================== 超管用户切换结束 ==================== */}
         </div>
         <Space size="middle">
-          <LanguageSwitcher />
-          <ThemeToggleButton />
+          {/* ==================== 语言/主题切换暂时隐藏 (Kun He) ==================== */}
+          {/* <LanguageSwitcher /> */}
+          {/* <ThemeToggleButton /> */}
+          {/* ==================== 语言/主题切换暂时隐藏结束 ==================== */}
         </Space>
       </AntHeader>
     </>

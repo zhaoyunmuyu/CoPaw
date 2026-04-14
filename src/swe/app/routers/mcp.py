@@ -291,7 +291,7 @@ async def create_mcp_client(
 
     # Add to agent's config and save
     agent.config.mcp.clients[client_key] = new_client
-    save_agent_config(agent.agent_id, agent.config)
+    save_agent_config(agent.agent_id, agent.config, tenant_id=agent.tenant_id)
 
     # Hot reload config (async, non-blocking)
     schedule_agent_reload(request, agent.agent_id)
@@ -342,7 +342,7 @@ async def update_mcp_client(
     agent.config.mcp.clients[client_key] = updated_client
 
     # Save updated config
-    save_agent_config(agent.agent_id, agent.config)
+    save_agent_config(agent.agent_id, agent.config, tenant_id=agent.tenant_id)
 
     # Hot reload config (async, non-blocking)
     schedule_agent_reload(request, agent.agent_id)
@@ -372,7 +372,7 @@ async def toggle_mcp_client(
 
     # Toggle enabled status
     client.enabled = not client.enabled
-    save_agent_config(agent.agent_id, agent.config)
+    save_agent_config(agent.agent_id, agent.config, tenant_id=agent.tenant_id)
 
     # Hot reload config (async, non-blocking)
     schedule_agent_reload(request, agent.agent_id)
@@ -400,7 +400,7 @@ async def delete_mcp_client(
 
     # Remove client
     del agent.config.mcp.clients[client_key]
-    save_agent_config(agent.agent_id, agent.config)
+    save_agent_config(agent.agent_id, agent.config, tenant_id=agent.tenant_id)
 
     # Hot reload config (async, non-blocking)
     schedule_agent_reload(request, agent.agent_id)

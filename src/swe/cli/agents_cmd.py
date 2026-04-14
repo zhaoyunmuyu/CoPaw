@@ -14,6 +14,19 @@ import click
 from .http import client, print_json, resolve_base_url
 
 
+def _build_headers(
+    agent_id: Optional[str] = None,
+    tenant_id: Optional[str] = None,
+) -> Dict[str, str]:
+    """Build API headers for agent CLI commands."""
+    headers: Dict[str, str] = {}
+    if agent_id:
+        headers["X-Agent-Id"] = agent_id
+    if tenant_id:
+        headers["X-Tenant-Id"] = tenant_id
+    return headers
+
+
 def _generate_unique_session_id(from_agent: str, to_agent: str) -> str:
     """Generate unique session_id (concurrency-safe).
 
@@ -274,10 +287,11 @@ def _check_task_status(
     task_id: str,
     json_output: bool,
     to_agent: Optional[str] = None,
+    tenant_id: Optional[str] = None,
 ) -> None:
     """Check background task status and display result."""
     with client(base_url) as c:
-        headers = {"X-Agent-Id": to_agent} if to_agent else {}
+        headers = _build_headers(to_agent, tenant_id)
 
         try:
             r = c.get(
@@ -396,8 +410,17 @@ def agents_group() -> None:
         "If omitted, uses global --host and --port from config."
     ),
 )
+@click.option(
+    "--tenant-id",
+    default=None,
+    help="Tenant ID forwarded as X-Tenant-Id header.",
+)
 @click.pass_context
-def list_agents(ctx: click.Context, base_url: Optional[str]) -> None:
+def list_agents(
+    ctx: click.Context,
+    base_url: Optional[str],
+    tenant_id: Optional[str],
+) -> None:
     """List all configured agents.
 
     Shows agent ID, name, description, and workspace directory.
@@ -423,7 +446,7 @@ def list_agents(ctx: click.Context, base_url: Optional[str]) -> None:
     """
     base_url = resolve_base_url(ctx, base_url)
     with client(base_url) as c:
-        r = c.get("/agents")
+        r = c.get("/agents", headers=_build_headers(tenant_id=tenant_id))
         r.raise_for_status()
         print_json(r.json())
 
@@ -507,6 +530,11 @@ def list_agents(ctx: click.Context, base_url: Optional[str]) -> None:
     default=None,
     help="Override the API base URL. Defaults to global --host/--port.",
 )
+@click.option(
+    "--tenant-id",
+    default=None,
+    help="Tenant ID forwarded as X-Tenant-Id header.",
+)
 @click.pass_context
 def chat_cmd(
     ctx: click.Context,
@@ -521,6 +549,7 @@ def chat_cmd(
     timeout: int,
     json_output: bool,
     base_url: Optional[str],
+    tenant_id: Optional[str],
 ) -> None:
     """Chat with another agent (inter-agent communication).
 
@@ -619,7 +648,13 @@ def chat_cmd(
 
     # Check task status mode (early return)
     if background and task_id:
-        _check_task_status(resolved_base_url, task_id, json_output, to_agent)
+        _check_task_status(
+            resolved_base_url,
+            task_id,
+            json_output,
+            to_agent,
+            tenant_id,
+        )
         return
 
     final_session_id = _resolve_session_id(
@@ -650,7 +685,7 @@ def chat_cmd(
     }
 
     with client(resolved_base_url) as c:
-        headers = {"X-Agent-Id": to_agent}
+        headers = _build_headers(to_agent, tenant_id)
 
         if background:
             _submit_background_task(

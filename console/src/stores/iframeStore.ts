@@ -71,6 +71,7 @@ const initialState: IframeContext = {
   orgCode: null,
   orgLvl: null,
   positionId: null,
+  userChange: false,
 };
 
 export const useIframeStore = create<IframeStore>()(
@@ -108,6 +109,7 @@ export const useIframeStore = create<IframeStore>()(
         orgCode: state.orgCode,
         orgLvl: state.orgLvl,
         positionId: state.positionId,
+        userChange: state.userChange,
       }),
       storage: {
         getItem: (name) => {
