@@ -67,7 +67,7 @@ class ZhaohuConfig(BaseChannelConfig):
     push_url: str = Field(
         default_factory=lambda: EnvVarLoader.get_str(
             "SWE_ZHAOHU_PUSH_URL",
-            "https://agentframework.paas.cmbchina.cn/exp-msg/push",
+            "",
         ),
     )
     sys_id: str = "RMS"
@@ -75,7 +75,7 @@ class ZhaohuConfig(BaseChannelConfig):
     robot_open_id: str = Field(
         default_factory=lambda: EnvVarLoader.get_str(
             "SWE_ZHAOHU_ROBOT_OPEN_ID",
-            "77D1CCFC2E210ED714ACC3093BFC9BAB",
+            "",
         ),
     )
     channel: str = "ZH"
@@ -83,7 +83,7 @@ class ZhaohuConfig(BaseChannelConfig):
     user_query_url: str = Field(
         default_factory=lambda: EnvVarLoader.get_str(
             "SWE_ZHAOHU_USER_QUERY_URL",
-            "https://llm-evaluate.paas.cmbchina.cn/evaluate/getYstUserList",
+            "",
         ),
     )
     extract_url: str = Field(
