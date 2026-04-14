@@ -4,6 +4,7 @@ import { buildAuthHeaders } from "../authHeaders";
 // Types
 export interface OverviewStats {
   online_users: number;
+  online_user_ids: string[];
   total_users: number;
   model_distribution: ModelUsage[];
   total_tokens: number;

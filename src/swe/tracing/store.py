@@ -355,6 +355,7 @@ class TraceStore:
         self,
         total_users: int,
         online_users: int,
+        online_user_ids: list[str],
         token_row: Optional[dict],
         model_distribution: list,
         top_tools: list,
@@ -365,6 +366,7 @@ class TraceStore:
         """Build OverviewStats from collected data."""
         return OverviewStats(
             online_users=online_users,
+            online_user_ids=online_user_ids,
             total_users=total_users,
             model_distribution=model_distribution,
             total_tokens=token_row["total_tokens"] or 0 if token_row else 0,
@@ -420,7 +422,7 @@ class TraceStore:
 
         # Basic stats
         total_users = await self._db_get_total_users(start_date, end_date)
-        online_users = await self._db_get_online_users()
+        online_users, online_user_ids = await self._db_get_online_users()
         token_row = await self._db_get_token_stats(start_date, end_date)
 
         # Distribution stats
@@ -438,6 +440,7 @@ class TraceStore:
         return self._build_overview_stats(
             total_users,
             online_users,
+            online_user_ids,
             token_row,
             model_distribution,
             top_tools,
@@ -1379,16 +1382,21 @@ class TraceStore:
         )
         return result
 
-    async def _db_get_online_users(self) -> int:
-        """Get online users count (active in last 5 minutes)."""
+    async def _db_get_online_users(self) -> tuple[int, list[str]]:
+        """Get online users count and IDs (active in last 5 minutes).
+
+        Returns:
+            Tuple of (count, list of user IDs)
+        """
         query = """
-            SELECT COUNT(DISTINCT user_id) as online_users
+            SELECT DISTINCT user_id
             FROM swe_tracing_spans
-            WHERE start_time >= %s
+            WHERE start_time >= %s AND user_id IS NOT NULL AND user_id != ''
         """
         online_threshold = datetime.now() - timedelta(minutes=5)
-        row = await self.db.fetch_one(query, (online_threshold,))
-        return row["online_users"] if row else 0
+        rows = await self.db.fetch_all(query, (online_threshold,))
+        user_ids = [row["user_id"] for row in rows if row["user_id"]]
+        return len(user_ids), user_ids
 
     async def _db_get_token_stats(
         self,

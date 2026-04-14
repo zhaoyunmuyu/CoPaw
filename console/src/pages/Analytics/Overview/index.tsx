@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Row, Col, Card, Statistic, Table, Spin, DatePicker, Empty, Tag, Collapse } from "antd";
+import { Row, Col, Card, Statistic, Table, Spin, DatePicker, Empty, Tag, Collapse, Tooltip } from "antd";
 import {
   Users,
   MessageSquare,
@@ -206,11 +206,35 @@ export default function OverviewPage() {
           <Card>
             <Statistic
               title={t("analytics.users", "Users")}
+              valueRender={() => (
+                <Tooltip
+                  title={
+                    stats.online_user_ids && stats.online_user_ids.length > 0 ? (
+                      <div>
+                        <div style={{ marginBottom: 4, fontWeight: "bold" }}>在线用户:</div>
+                        {stats.online_user_ids.slice(0, 20).map((id) => (
+                          <div key={id} style={{ fontSize: 12 }}>{id}</div>
+                        ))}
+                        {stats.online_user_ids.length > 20 && (
+                          <div style={{ fontSize: 12, color: "#999" }}>
+                            ...及其他 {stats.online_user_ids.length - 20} 个用户
+                          </div>
+                        )}
+                      </div>
+                    ) : "暂无在线用户"
+                  }
+                  placement="bottom"
+                >
+                  <span style={{ cursor: "pointer", color: "#52c41a" }}>
+                    <Users size={20} style={{ marginRight: 8, verticalAlign: "middle" }} />
+                    {stats.online_users}
+                    <span style={{ fontSize: 14, color: "#999" }}> / {stats.total_users} ({stats.total_users > 0 ? Math.round((stats.online_users / stats.total_users) * 100) : 0}%)</span>
+                  </span>
+                </Tooltip>
+              )}
               value={stats.online_users}
-              suffix={<span style={{ fontSize: 14, color: "#999" }}> / {stats.total_users} ({stats.total_users > 0 ? Math.round((stats.online_users / stats.total_users) * 100) : 0}%)</span>}
-              prefix={<Users size={20} />}
-              valueStyle={{ color: "#52c41a" }}
             />
+            <div style={{ marginTop: 8, minHeight: 22 }} />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -220,6 +244,7 @@ export default function OverviewPage() {
               value={stats.total_sessions}
               prefix={<MessageSquare size={20} />}
             />
+            <div style={{ marginTop: 8, minHeight: 22 }} />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -230,6 +255,14 @@ export default function OverviewPage() {
               prefix={<Zap size={20} />}
               formatter={(v) => formatTokens(Number(v))}
             />
+            <div style={{ marginTop: 8, display: "flex", gap: 16, minHeight: 22 }}>
+              <span style={{ fontSize: 12, color: "#666" }}>
+                {t("analytics.inputTokens", "输入")}: {formatTokens(stats.input_tokens)}
+              </span>
+              <span style={{ fontSize: 12, color: "#666" }}>
+                {t("analytics.outputTokens", "输出")}: {formatTokens(stats.output_tokens)}
+              </span>
+            </div>
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -240,6 +273,7 @@ export default function OverviewPage() {
               prefix={<Clock size={20} />}
               formatter={(v) => formatDuration(Number(v))}
             />
+            <div style={{ marginTop: 8, minHeight: 22 }} />
           </Card>
         </Col>
       </Row>

@@ -240,6 +240,7 @@ class OverviewStats(BaseModel):
     """Overview dashboard statistics."""
 
     online_users: int = 0
+    online_user_ids: list[str] = Field(default_factory=list)
     total_users: int = 0
     model_distribution: list[ModelUsage] = Field(default_factory=list)
     total_tokens: int = 0
