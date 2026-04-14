@@ -653,15 +653,13 @@ def _do_ensure_default_agent(
         logger.info(
             "Config file not found, copying from md_files templates...",
         )
-        config_copied, providers_copied = copy_init_config_files(
+        config_copied, _ = copy_init_config_files(
             tenant_id=None,  # Use default tenant
             force=False,
             skip_existing=False,
         )
         if config_copied:
             logger.info("Copied config.json template")
-        if providers_copied:
-            logger.info("Copied providers.json template")
 
     config = load_config(config_path)
 
