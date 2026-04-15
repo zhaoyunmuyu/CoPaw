@@ -1,7 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Style from "./style";
+import { casesApi } from "@/api/modules/cases";
+import type { Case } from "@/api/types/cases";
 
 export interface FeaturedCase {
+  id: string;
   label: string;
   value: string;
   image?: string;
@@ -10,39 +13,8 @@ export interface FeaturedCase {
 export interface FeaturedCasesProps {
   cases?: FeaturedCase[];
   onFillInput?: (text: string) => void;
-  onViewCase?: (caseItem: FeaturedCase) => void;
+  onViewCase?: (caseId: string) => void;
 }
-
-const DEFAULT_CASES: FeaturedCase[] = [
-  {
-    label: "我想销售007119基金，请帮我找目标用户，并提供相应建议。",
-    value: "我想销售007119基金，请帮我找目标用户，并提供相应建议。",
-  },
-  {
-    label:
-      '我要做存款经营，请基于历史本月到期流失，推测本月【他行存款到期】的潜力客户，按照"是谁、为什么、怎么做"提供给我。',
-    value:
-      '我要做存款经营，请基于历史本月到期流失，推测本月【他行存款到期】的潜力客户，按照"是谁、为什么、怎么做"提供给我。',
-  },
-  {
-    label:
-      "每天下午三点，收集今天的行情数据和重大市场资讯，如果某个板块跌5%以上，告诉我原因，以及哪些客户可能受到影响。",
-    value:
-      "每天下午三点，收集今天的行情数据和重大市场资讯，如果某个板块跌5%以上，告诉我原因，以及哪些客户可能受到影响。",
-  },
-  {
-    label:
-      "从三笔保单切入，帮我给【客户】做一份保障计划书，目标是让客户意识到保障缺口、进行加配。",
-    value:
-      "从三笔保单切入，帮我给【客户】做一份保障计划书，目标是让客户意识到保障缺口、进行加配。",
-  },
-  {
-    label:
-      "每天下午五点，向我发送今日业绩简报，需包含当日、当月的业绩数据、排名情况，并分析业绩缺口。",
-    value:
-      "每天下午五点，向我发送今日业绩简报，需包含当日、当月的业绩数据、排名情况，并分析业绩缺口。",
-  },
-];
 
 function DocumentIcon() {
   return (
@@ -88,8 +60,33 @@ function KYCIcon() {
 }
 
 export default function FeaturedCases(props: FeaturedCasesProps) {
-  const { cases = DEFAULT_CASES, onFillInput, onViewCase } = props;
-  const [expandedCase, setExpandedCase] = useState<string | null>(null);
+  const { onFillInput, onViewCase } = props;
+  const [cases, setCases] = useState<FeaturedCase[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Load cases from API on mount
+  useEffect(() => {
+    const loadCases = async () => {
+      try {
+        const apiCases = await casesApi.listCases();
+        const featuredCases: FeaturedCase[] = apiCases.map((c) => ({
+          id: c.id,
+          label: c.label,
+          value: c.value,
+          image: c.image_url,
+        }));
+        setCases(featuredCases);
+      } catch (error) {
+        console.error("Failed to load cases:", error);
+        // Keep empty array on error
+        setCases([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadCases();
+  }, []);
 
   const handleCardClick = (caseItem: FeaturedCase) => {
     onFillInput?.(caseItem.value);
@@ -97,13 +94,38 @@ export default function FeaturedCases(props: FeaturedCasesProps) {
 
   const handleViewCase = (e: React.MouseEvent, caseItem: FeaturedCase) => {
     e.stopPropagation();
-    onViewCase?.(caseItem);
+    onViewCase?.(caseItem.id);
   };
 
   const handleUseSame = (e: React.MouseEvent, caseItem: FeaturedCase) => {
     e.stopPropagation();
     onFillInput?.(caseItem.value);
   };
+
+  if (loading) {
+    return (
+      <>
+        <Style />
+        <div className="featured-cases">
+          <div className="featured-cases-header">
+            <div className="featured-cases-title">
+              <span className="featured-cases-title-icon">
+                <DocumentIcon />
+              </span>
+              精选案例
+            </div>
+          </div>
+          <div className="featured-cases-scroll">
+            <div className="featured-cases-loading">加载中...</div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (cases.length === 0) {
+    return null;
+  }
 
   return (
     <>
@@ -116,15 +138,17 @@ export default function FeaturedCases(props: FeaturedCasesProps) {
             </span>
             精选案例
           </div>
-          <div className="featured-cases-more">
-            查看更多
-            <MoreIcon />
-          </div>
+          {cases.length > 5 && (
+            <div className="featured-cases-more">
+              查看更多
+              <MoreIcon />
+            </div>
+          )}
         </div>
         <div className="featured-cases-scroll">
           {cases.map((caseItem) => (
             <div
-              key={caseItem.value}
+              key={caseItem.id}
               className="featured-cases-card"
               onClick={() => handleCardClick(caseItem)}
               role="button"

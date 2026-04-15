@@ -42,72 +42,25 @@ export default createGlobalStyle`
   padding: 0;
 }
 
+.case-detail-drawer-loading-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(100% - 48px - 60px);
+}
+
 .case-detail-drawer-body {
   display: flex;
   gap: 16px;
   padding: 16px 20px;
-  overflow: auto;
+  overflow: hidden;
   height: calc(100% - 48px - 60px);
 }
 
-.case-detail-drawer-table-panel {
-  flex: 3;
-  background: ${DESIGN_TOKENS.colorBgCard};
-  border-radius: ${DESIGN_TOKENS.radiusPanel}px;
-  padding: 16px 20px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.case-detail-drawer-table-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: ${DESIGN_TOKENS.colorTextPrimary};
-  margin-bottom: 12px;
-  line-height: 21px;
-}
-
-.case-detail-drawer-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-  line-height: 22px;
-}
-
-.case-detail-drawer-table thead th {
-  background: #f7f7fc;
-  color: ${DESIGN_TOKENS.colorTextPrimary};
-  font-weight: 500;
-  text-align: left;
-  padding: 9px 16px;
-  white-space: nowrap;
-}
-
-.case-detail-drawer-table tbody td {
-  padding: 9px 16px;
-  color: ${DESIGN_TOKENS.colorTextPrimary};
-  border-top: 1px solid rgba(0, 0, 0, 0.04);
-  vertical-align: top;
-}
-
-.case-detail-drawer-table tbody tr:hover {
-  background: rgba(0, 0, 0, 0.02);
-}
-
-.case-detail-drawer-table-action {
-  color: ${DESIGN_TOKENS.colorPrimary};
-  cursor: pointer;
-  display: block;
-  line-height: 22px;
-
-  &:hover {
-    opacity: 0.8;
-  }
-}
-
+/* Left panel: Steps (flex: 1) */
 .case-detail-drawer-steps-panel {
-  flex: 2;
+  flex: 1;
+  min-width: 300px;
   background: ${DESIGN_TOKENS.colorBgCard};
   border-radius: ${DESIGN_TOKENS.radiusPanel}px;
   padding: 16px 20px;
@@ -137,6 +90,107 @@ export default createGlobalStyle`
   white-space: pre-wrap;
 }
 
+.case-detail-drawer-empty {
+  font-size: 14px;
+  color: ${DESIGN_TOKENS.colorTextSecondary};
+  text-align: center;
+  padding: 40px 0;
+}
+
+/* Right panel: iframe (flex: 2) */
+.case-detail-drawer-iframe-panel {
+  flex: 2;
+  min-width: 400px;
+  background: ${DESIGN_TOKENS.colorBgCard};
+  border-radius: ${DESIGN_TOKENS.radiusPanel}px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.case-detail-drawer-iframe-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: ${DESIGN_TOKENS.colorTextPrimary};
+  margin-bottom: 12px;
+  line-height: 21px;
+}
+
+.case-detail-drawer-iframe-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #f7f7fc;
+}
+
+.case-detail-drawer-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+
+.case-detail-drawer-iframe-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #f7f7fc;
+  font-size: 14px;
+  color: ${DESIGN_TOKENS.colorTextSecondary};
+}
+
+.case-detail-drawer-iframe-error {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: #f7f7fc;
+  font-size: 14px;
+  color: ${DESIGN_TOKENS.colorTextSecondary};
+}
+
+.case-detail-drawer-iframe-refresh {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid ${DESIGN_TOKENS.colorPrimary};
+  border-radius: 4px;
+  background: transparent;
+  color: ${DESIGN_TOKENS.colorPrimary};
+  font-size: 14px;
+  cursor: pointer;
+
+  &:hover {
+    opacity: 0.85;
+  }
+}
+
+.case-detail-drawer-iframe-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 14px;
+  color: ${DESIGN_TOKENS.colorTextSecondary};
+}
+
+/* Footer */
 .case-detail-drawer-footer {
   height: 60px;
   display: flex;
@@ -163,6 +217,11 @@ export default createGlobalStyle`
 
   &:hover {
     opacity: 0.85;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 }
 
