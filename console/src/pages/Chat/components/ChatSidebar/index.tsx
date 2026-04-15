@@ -1,5 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { Image } from "antd";
+import guideImage from "@/assets/icons/agent_default_logo.png";
 import { chatApi } from '@/api/modules/chat';
 import type { CronJobSpecOutput } from '@/api/types';
 import Style from './style';
@@ -138,6 +140,8 @@ export default function ChatSidebar(props: ChatSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [activePanel, setActivePanel] = useState<PanelType>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
+  // Guide image preview state
+  const [guidePreviewVisible, setGuidePreviewVisible] = useState(false);
 
   const currentChatId = location.pathname.match(/^\/chat\/(.+)$/)?.[1] || null;
 
@@ -211,6 +215,10 @@ export default function ChatSidebar(props: ChatSidebarProps) {
     },
     [onTaskClick],
   );
+
+  const handleOpenGuide = useCallback(() => {
+    setGuidePreviewVisible(true);
+  }, []);
 
   if (collapsed) {
     return (
@@ -316,12 +324,17 @@ export default function ChatSidebar(props: ChatSidebarProps) {
           </div>
 
           <div className="chat-sidebar-footer">
+            {/* 暂时隐藏，后续需要时再开放
             <div className="chat-sidebar-footer-item">
               <SkillMarketIcon />
               skill市场
             </div>
-            <div className="chat-sidebar-footer-divider" />
-            <div className="chat-sidebar-footer-item">
+            <div className="chat-sidebar-footer-divider" /> */}
+            <div
+              className="chat-sidebar-footer-item"
+              onClick={handleOpenGuide}
+              role="button"
+              tabIndex={0}>
               <GuideIcon />
               操作指南
             </div>
@@ -337,6 +350,17 @@ export default function ChatSidebar(props: ChatSidebarProps) {
             <path d="M6 2L3 5L6 8" stroke="rgba(0,0,0,0.35)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
+      </div>
+      {/* Guide Image Preview */}
+      <div style={{ display: "none" }}>
+        <Image.PreviewGroup
+          preview={{
+            visible: guidePreviewVisible,
+            onVisibleChange: (vis) => setGuidePreviewVisible(vis),
+          }}
+        >
+          <Image src={guideImage} />
+        </Image.PreviewGroup>
       </div>
     </>
   );

@@ -77,7 +77,7 @@ const Bubble: React.FC<BubbleProps> = (props) => {
   const variantClassname = `${prefixCls}-content-${
     variant || (isAssistant ? "borderless" : "filled")
   }`;
-  let fullContent: React.ReactNode = (
+  const fullContent: React.ReactNode = (
     <div
       style={
         !isAssistant && contentNode ? { flexDirection: "column-reverse" } : {}

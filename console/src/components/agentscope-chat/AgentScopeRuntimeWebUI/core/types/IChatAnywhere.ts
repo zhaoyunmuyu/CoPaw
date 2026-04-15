@@ -243,7 +243,7 @@ export interface IAgentScopeRuntimeWebUISenderOptions {
    * @description 提交前的钩子函数
    * @descriptionEn Hook function before submit
    */
-  beforeSubmit?: () => Promise<Boolean>;
+  beforeSubmit?: () => Promise<boolean>;
   /**
    * @description 提交回调函数
    * @descriptionEn Submit callback function
