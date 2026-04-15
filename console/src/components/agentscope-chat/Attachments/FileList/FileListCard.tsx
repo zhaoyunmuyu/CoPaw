@@ -1,15 +1,25 @@
-import classnames from 'classnames';
-import React from 'react';
-import type { Attachment } from '..';
-import { AttachmentContext } from '../context';
-import Style from '../style/fileCard';
-import { useProviderContext } from '@/components/agentscope-chat';
-import { SparkFalseLine } from '@agentscope-ai/icons';
-import ImageCard from './ImageCard';
-import type { ImageCardProps } from './ImageCard';
+import classnames from "classnames";
+import React from "react";
+import type { Attachment } from "..";
+import { AttachmentContext } from "../context";
+import Style from "../style/fileCard";
+import { useProviderContext } from "@/components/agentscope-chat";
+import { SparkFalseLine } from "@agentscope-ai/icons";
+import ImageCard from "./ImageCard";
+import type { ImageCardProps } from "./ImageCard";
+import {
+  xlsxIcon,
+  imgIcon,
+  mdIcon,
+  pdfIcon,
+  pptIcon,
+  docIcon,
+  zipIcon,
+  videoIcon,
+  audioIcon,
+} from "@/assets/icons";
 
-
-export interface FileListCardProps extends Pick<ImageCardProps, 'onReplace'> {
+export interface FileListCardProps extends Pick<ImageCardProps, "onReplace"> {
   /**
    * @description 自定义CSS类名前缀，用于样式隔离和主题定制
    * @descriptionEn Custom CSS class name prefix for style isolation and theme customization
@@ -39,70 +49,68 @@ export interface FileListCardProps extends Pick<ImageCardProps, 'onReplace'> {
    * @description 渲染类型，目前仅支持默认渲染模式
    * @descriptionEn Render type, currently only supports default render mode
    */
-  renderType?: 'default',
+  renderType?: "default";
 }
 
-const EMPTY = '\u00A0';
+const EMPTY = "\u00A0";
 
-const DEFAULT_ICON_COLOR = '#8c8c8c';
+const DEFAULT_ICON_COLOR = "#8c8c8c";
 
-const IMG_EXTS = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg'];
+const IMG_EXTS = ["png", "jpg", "jpeg", "gif", "bmp", "webp", "svg"];
 
-const IconImage = ({ url }) => <img src={url} width={32} height={32} />
+const IconImage = ({ url }) => <img src={url} width={32} height={32} />;
 
 const PRESET_FILE_ICONS: {
   ext: string[];
   color: string;
   icon: React.ReactElement;
 }[] = [
-    {
-      icon: <IconImage url="/icons/files/xlsx.svg" />,
-      color: '#22b35e',
-      ext: ['xlsx', 'xls'],
-    },
-    {
-      icon: <IconImage url="/icons/files/img.svg" />,
-      color: DEFAULT_ICON_COLOR,
-      ext: IMG_EXTS,
-    },
-    {
-      icon: <IconImage url="/icons/files/md.svg" />,
-      color: DEFAULT_ICON_COLOR,
-      ext: ['md', 'mdx'],
-    },
-    {
-      icon: <IconImage url="/icons/files/pdf.svg" />,
-      color: '#ff4d4f',
-      ext: ['pdf'],
-    },
-    {
-      icon: <IconImage url="/icons/files/ppt.svg" />,
-      color: '#ff6e31',
-      ext: ['ppt', 'pptx'],
-    },
-    {
-      icon: <IconImage url="/icons/files/doc.svg" />,
-      color: '#1677ff',
-      ext: ['doc', 'docx'],
-    },
-    {
-      icon: <IconImage url="/icons/files/zip.svg" />,
-      color: '#fab714',
-      ext: ['zip', 'rar', '7z', 'tar', 'gz'],
-    },
-    {
-      icon: <IconImage url="/icons/files/video.svg" />,
-
-      color: '#ff4d4f',
-      ext: ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv'],
-    },
-    {
-      icon: <IconImage url="/icons/files/audio.svg" />,
-
-      color: '#8c8c8c',
-      ext: ['mp3', 'wav', 'flac', 'ape', 'aac', 'ogg'],
-    },
-  ];
+  {
+    icon: <IconImage url={xlsxIcon} />,
+    color: "#22b35e",
+    ext: ["xlsx", "xls"],
+  },
+  {
+    icon: <IconImage url={imgIcon} />,
+    color: DEFAULT_ICON_COLOR,
+    ext: IMG_EXTS,
+  },
+  {
+    icon: <IconImage url={mdIcon} />,
+    color: DEFAULT_ICON_COLOR,
+    ext: ["md", "mdx"],
+  },
+  {
+    icon: <IconImage url={pdfIcon} />,
+    color: "#ff4d4f",
+    ext: ["pdf"],
+  },
+  {
+    icon: <IconImage url={pptIcon} />,
+    color: "#ff6e31",
+    ext: ["ppt", "pptx"],
+  },
+  {
+    icon: <IconImage url={docIcon} />,
+    color: "#1677ff",
+    ext: ["doc", "docx"],
+  },
+  {
+    icon: <IconImage url={zipIcon} />,
+    color: "#fab714",
+    ext: ["zip", "rar", "7z", "tar", "gz"],
+  },
+  {
+    icon: <IconImage url={videoIcon} />,
+    color: "#ff4d4f",
+    ext: ["mp4", "avi", "mov", "wmv", "flv", "mkv"],
+  },
+  {
+    icon: <IconImage url={audioIcon} />,
+    color: "#8c8c8c",
+    ext: ["mp3", "wav", "flac", "ape", "aac", "ogg"],
+  },
+];
 
 function matchExt(suffix: string, ext: string[]) {
   return ext.some((e) => suffix.toLowerCase() === `.${e}`);
@@ -110,7 +118,7 @@ function matchExt(suffix: string, ext: string[]) {
 
 function getSize(size: number) {
   let retSize = size;
-  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB'];
+  const units = ["B", "KB", "MB", "GB", "TB", "PB", "EB"];
   let unitIndex = 0;
 
   while (retSize >= 1024 && unitIndex < units.length - 1) {
@@ -121,25 +129,34 @@ function getSize(size: number) {
   return `${retSize.toFixed(0)} ${units[unitIndex]}`;
 }
 
-function FileListCard(props: FileListCardProps, ref: React.Ref<HTMLDivElement>) {
+function FileListCard(
+  props: FileListCardProps,
+  ref: React.Ref<HTMLDivElement>,
+) {
   const { getPrefixCls } = useProviderContext();
   const { item, onRemove, onReplace, className, style } = props;
   const context = React.useContext(AttachmentContext);
   const { disabled } = context || {};
-  const { name, size, percent, status = 'done', description } = item;
-  const prefixCls = getPrefixCls('attachment');
+  const { name, size, percent, status = "done", description } = item;
+  const prefixCls = getPrefixCls("attachment");
   const cardCls = `${prefixCls}-list-card`;
 
   const [namePrefix, nameSuffix] = React.useMemo(() => {
-    const nameStr = name || '';
+    const nameStr = name || "";
     const match = nameStr.match(/^(.*)\.[^.]+$/);
-    return match ? [match[1], nameStr.slice(match[1].length)] : [nameStr, ''];
+    return match ? [match[1], nameStr.slice(match[1].length)] : [nameStr, ""];
   }, [name]);
 
-  const isImg = React.useMemo(() => matchExt(nameSuffix, IMG_EXTS), [nameSuffix]);
+  const isImg = React.useMemo(
+    () => matchExt(nameSuffix, IMG_EXTS),
+    [nameSuffix],
+  );
 
-  const renderType = props.renderType || 'default';
-  const isImgPreview = isImg && (item.originFileObj || item.thumbUrl || item.url) && renderType === 'default';
+  const renderType = props.renderType || "default";
+  const isImgPreview =
+    isImg &&
+    (item.originFileObj || item.thumbUrl || item.url) &&
+    renderType === "default";
 
   if (isImgPreview) {
     return (
@@ -159,11 +176,11 @@ function FileListCard(props: FileListCardProps, ref: React.Ref<HTMLDivElement>) 
       return description;
     }
 
-    if (status === 'uploading') {
+    if (status === "uploading") {
       return `${percent || 0}%`;
     }
 
-    if (status === 'error') {
+    if (status === "error") {
       return item.response || EMPTY;
     }
 
@@ -177,7 +194,10 @@ function FileListCard(props: FileListCardProps, ref: React.Ref<HTMLDivElement>) 
       }
     }
 
-    return [<IconImage url="/icons/files/zip.svg" key="defaultIcon" />, DEFAULT_ICON_COLOR];
+    return [
+      <IconImage url={zipIcon} key="defaultIcon" />,
+      DEFAULT_ICON_COLOR,
+    ];
   })();
 
   return (
@@ -202,7 +222,8 @@ function FileListCard(props: FileListCardProps, ref: React.Ref<HTMLDivElement>) 
         </div>
         <div className={`${cardCls}-content`}>
           <div className={`${cardCls}-name`}>
-            {namePrefix ?? EMPTY}{nameSuffix}
+            {namePrefix ?? EMPTY}
+            {nameSuffix}
           </div>
           <div className={`${cardCls}-desc`}>
             <div className={`${cardCls}-ellipsis-prefix`}>{desc}</div>

@@ -9,10 +9,10 @@ const AUTH_TOKEN_KEY = "copaw_auth_token";
  * @returns 运行时配置对象
  */
 function getRuntimeConfig(): { baseUrl?: string } {
-  if (typeof window !== 'undefined' && window.__env__?.baseUrl !== undefined) {
+  if (typeof window !== "undefined" && window.__env__?.baseUrl !== undefined) {
     return window.__env__;
   }
-  return {};  
+  return {};
 }
 // ==================== 运行时配置结束 ====================
 /**

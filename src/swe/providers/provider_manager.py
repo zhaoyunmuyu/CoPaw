@@ -20,19 +20,8 @@ try:
     import msvcrt
 except ImportError:  # pragma: no cover (Unix)
     msvcrt = None
-from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List
-
-try:
-    import fcntl
-except ImportError:  # pragma: no cover
-    fcntl = None
-
-try:
-    import msvcrt
-except ImportError:  # pragma: no cover
-    msvcrt = None
 
 from pydantic import BaseModel
 
@@ -92,76 +81,6 @@ def _unlock_file(file_obj) -> None:
 # -------------------------------------------------------
 # Built-in provider definitions and their default models.
 # -------------------------------------------------------
-
-ALIYUN_CODINGPLAN_MODELS: List[ModelInfo] = [
-    ModelInfo(
-        id="qwen3.5-plus",
-        name="Qwen3.5 Plus",
-        supports_image=True,
-        supports_video=True,
-        probe_source="documentation",
-    ),
-    ModelInfo(
-        id="glm-5",
-        name="GLM-5",
-        supports_image=False,
-        supports_video=False,
-        probe_source="documentation",
-    ),
-    ModelInfo(
-        id="glm-4.7",
-        name="GLM-4.7",
-        supports_image=False,
-        supports_video=False,
-        probe_source="documentation",
-    ),
-    ModelInfo(
-        id="MiniMax-M2.5",
-        name="MiniMax M2.5",
-        supports_image=False,
-        supports_video=False,
-        probe_source="documentation",
-    ),
-    ModelInfo(
-        id="kimi-k2.5",
-        name="Kimi K2.5",
-        supports_image=True,
-        supports_video=True,
-        probe_source="documentation",
-    ),
-    ModelInfo(
-        id="qwen3-max-2026-01-23",
-        name="Qwen3 Max 2026-01-23",
-        supports_image=False,
-        supports_video=False,
-        probe_source="documentation",
-    ),
-    ModelInfo(
-        id="qwen3-coder-next",
-        name="Qwen3 Coder Next",
-        supports_image=False,
-        supports_video=False,
-        probe_source="documentation",
-    ),
-    ModelInfo(
-        id="qwen3-coder-plus",
-        name="Qwen3 Coder Plus",
-        supports_image=False,
-        supports_video=False,
-        probe_source="documentation",
-    ),
-]
-
-PROVIDER_ALIYUN_CODINGPLAN = OpenAIProvider(
-    id="aliyun-codingplan",
-    name="Aliyun Coding Plan",
-    base_url="https://coding.dashscope.aliyuncs.com/v1",
-    api_key_prefix="sk-sp",
-    models=ALIYUN_CODINGPLAN_MODELS,
-    # This provider doesn't support connection check without model config
-    support_connection_check=False,
-    freeze_url=True,
-)
 
 
 class ActiveModelsInfo(BaseModel):
@@ -438,7 +357,7 @@ class ProviderManager:
 
     def _init_builtins(self):
         # Deep copy builtin providers to ensure per-tenant isolation
-        self._add_builtin(deepcopy(PROVIDER_ALIYUN_CODINGPLAN))
+        pass
 
     def _add_builtin(self, provider: Provider):
         self.builtin_providers[provider.id] = provider

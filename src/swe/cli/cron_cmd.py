@@ -140,10 +140,16 @@ def job_state(
         print_json(r.json())
 
 
-def _build_headers(agent_id: str, tenant_id: Optional[str] = None) -> dict[str, str]:
+def _build_headers(
+    agent_id: str,
+    tenant_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+) -> dict[str, str]:
     headers = {"X-Agent-Id": agent_id}
     if tenant_id:
         headers["X-Tenant-Id"] = tenant_id
+    if user_id:
+        headers["X-User-Id"] = user_id
     return headers
 
 
@@ -154,6 +160,7 @@ def _build_spec_from_cli(
     channel: str,
     target_user: str,
     target_session: str,
+    creator_user: Optional[str],
     text: Optional[str],
     timezone: str,
     enabled: bool,
@@ -169,6 +176,9 @@ def _build_spec_from_cli(
         "mode": mode,
         "meta": {},
     }
+    meta = {}
+    if creator_user:
+        meta["creator_user_id"] = creator_user
     runtime = {
         "max_concurrency": 1,
         "timeout_seconds": 120,
@@ -189,7 +199,7 @@ def _build_spec_from_cli(
             "text": text.strip(),
             "dispatch": dispatch,
             "runtime": runtime,
-            "meta": {},
+            "meta": meta,
         }
     if task_type == "agent":
         if not (text and text.strip()):
@@ -217,7 +227,7 @@ def _build_spec_from_cli(
             },
             "dispatch": dispatch,
             "runtime": runtime,
-            "meta": {},
+            "meta": meta,
         }
     raise click.UsageError(f"Unsupported task type: {task_type}")
 
@@ -283,6 +293,12 @@ def _build_spec_from_cli(
     ),
 )
 @click.option(
+    "--creator-user",
+    default=None,
+    hidden=True,
+    help="Creator user_id for task ownership metadata.",
+)
+@click.option(
     "--text",
     default=None,
     help=(
@@ -338,6 +354,7 @@ def create_job(
     channel: Optional[str],
     target_user: Optional[str],
     target_session: Optional[str],
+    creator_user: Optional[str],
     text: Optional[str],
     timezone: Optional[str],
     enabled: bool,
@@ -379,6 +396,7 @@ def create_job(
             channel=channel or DEFAULT_CHANNEL,
             target_user=target_user or "",
             target_session=target_session or "",
+            creator_user=creator_user,
             text=text,
             timezone=timezone,
             enabled=enabled,
@@ -386,7 +404,23 @@ def create_job(
             tenant_id=tenant_id,
         )
     with client(base_url) as c:
-        headers = _build_headers(agent_id, tenant_id)
+        effective_user_id = creator_user
+        if not effective_user_id and isinstance(payload, dict):
+            meta = payload.get("meta") or {}
+            if isinstance(meta, dict):
+                effective_user_id = meta.get("creator_user_id")
+        if (
+            not effective_user_id
+            and isinstance(payload, dict)
+            and payload.get("task_type") == "agent"
+        ):
+            dispatch = payload.get("dispatch") or {}
+            target = (
+                dispatch.get("target") if isinstance(dispatch, dict) else {}
+            )
+            if isinstance(target, dict):
+                effective_user_id = target.get("user_id")
+        headers = _build_headers(agent_id, tenant_id, effective_user_id)
         r = c.post("/cron/jobs", json=payload, headers=headers)
         r.raise_for_status()
         print_json(r.json())

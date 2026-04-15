@@ -1,4 +1,4 @@
-import { createGlobalStyle } from 'antd-style';
+import { createGlobalStyle } from "antd-style";
 
 export default createGlobalStyle`
 .${(p) => p.theme.prefixCls}-status-card {
@@ -74,7 +74,7 @@ export default createGlobalStyle`
     border-top: 1px solid ${(p) => p.theme.colorBorderSecondary};
     background-color: ${(p) => p.theme.colorBgBase};
     border-radius: ${(p) => p.theme.borderRadiusLG}px ${(p) =>
-  p.theme.borderRadiusLG}px 0 0;
+      p.theme.borderRadiusLG}px 0 0;
 
     &-desc {
       color: ${(p) => p.theme.colorTextTertiary};
@@ -85,7 +85,7 @@ export default createGlobalStyle`
       display: flex;
       justify-content: flex-end;
     }
-  
+
   }
 
   &-statistic {
@@ -94,7 +94,7 @@ export default createGlobalStyle`
     border-top: 1px solid ${(p) => p.theme.colorBorderSecondary};
     background-color: ${(p) => p.theme.colorBgBase};
     border-radius: ${(p) => p.theme.borderRadiusLG}px ${(p) =>
-  p.theme.borderRadiusLG}px 0 0;
+      p.theme.borderRadiusLG}px 0 0;
 
     &-item {
       display: flex;

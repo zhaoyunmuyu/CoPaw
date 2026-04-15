@@ -12,17 +12,27 @@ interface OptionsPanelProps {
 export default function OptionsPanel(props: OptionsPanelProps) {
   const [open, setOpen] = useState(false);
 
-  return <>
-    <IconButton onClick={() => setOpen(true)} icon={<SparkSettingLine />} bordered={false} />
-    <Drawer
-      destroyOnHidden
-      open={open}
-      onClose={() => setOpen(false)}
-      styles={{ body: { padding: 0 }, header: { padding: 8 } }}>
-      <OptionsEditor value={props.value} onChange={v => {
-        setOpen(false);
-        props.onChange(v);
-      }} />
-    </Drawer>
-  </>
+  return (
+    <>
+      <IconButton
+        onClick={() => setOpen(true)}
+        icon={<SparkSettingLine />}
+        bordered={false}
+      />
+      <Drawer
+        destroyOnHidden
+        open={open}
+        onClose={() => setOpen(false)}
+        styles={{ body: { padding: 0 }, header: { padding: 8 } }}
+      >
+        <OptionsEditor
+          value={props.value}
+          onChange={(v) => {
+            setOpen(false);
+            props.onChange(v);
+          }}
+        />
+      </Drawer>
+    </>
+  );
 }

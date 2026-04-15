@@ -1,11 +1,11 @@
-import React from 'react';
-import cls from 'classnames';
-import { useProviderContext } from '@/components/agentscope-chat';
-import { SparkPlusLine } from '@agentscope-ai/icons';
-import { Upload } from 'antd';
-import type { DraggerProps } from 'antd/es/upload';
-import Style from './style';
-import { IChatAnywhereConfigOnUpload } from '@/components/agentscope-chat/ChatAnywhere/hooks/types';
+import React from "react";
+import cls from "classnames";
+import { useProviderContext } from "@/components/agentscope-chat";
+import { SparkPlusLine } from "@agentscope-ai/icons";
+import { Upload } from "antd";
+import type { DraggerProps } from "antd/es/upload";
+import Style from "./style";
+import { IChatAnywhereConfigOnUpload } from "@/components/agentscope-chat/ChatAnywhere/hooks/types";
 
 type MediaUploadProps = Omit<DraggerProps, keyof IChatAnywhereConfigOnUpload> &
   IChatAnywhereConfigOnUpload & {
@@ -17,7 +17,7 @@ const { Dragger } = Upload;
 const MediaUpload: React.FC<MediaUploadProps> = (props) => {
   const { className, icon, ...restProps } = props;
   const { getPrefixCls } = useProviderContext();
-  const prefixCls = getPrefixCls('media-upload');
+  const prefixCls = getPrefixCls("media-upload");
 
   return (
     <>
@@ -32,16 +32,14 @@ const MediaUpload: React.FC<MediaUploadProps> = (props) => {
           <div className={cls(`${prefixCls}-thumbnail-gradient`)} />
           {/* 加号图标 */}
           <div className={cls(`${prefixCls}-thumbnail-content`)}>
-            {
-              icon || (
-                <SparkPlusLine className={cls(`${prefixCls}-thumbnail-icon`)} />
-              )
-            }
-            {
-              props.maxCount > 1 && (
-                <div className={cls(`${prefixCls}-thumbnail-count`)}>{props.fileList.length}/{props.maxCount}</div>
-              )
-            }
+            {icon || (
+              <SparkPlusLine className={cls(`${prefixCls}-thumbnail-icon`)} />
+            )}
+            {props.maxCount > 1 && (
+              <div className={cls(`${prefixCls}-thumbnail-count`)}>
+                {props.fileList.length}/{props.maxCount}
+              </div>
+            )}
           </div>
         </div>
       </Dragger>

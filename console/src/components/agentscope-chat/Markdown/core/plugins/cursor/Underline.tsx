@@ -1,6 +1,6 @@
-import { useProviderContext } from '@/components/agentscope-chat';
-import classNames from 'classnames';
-import { createGlobalStyle } from 'antd-style';
+import { useProviderContext } from "@/components/agentscope-chat";
+import classNames from "classnames";
+import { createGlobalStyle } from "antd-style";
 
 const Style = createGlobalStyle`
 .markdown-cursor-underline {
@@ -24,15 +24,17 @@ const Style = createGlobalStyle`
     opacity: 0;
   }
 }
-`
-
-
+`;
 
 export default function () {
   const { getPrefixCls } = useProviderContext();
-  const prefixCls = ('markdown-cursor-underline');
-  return <>
-    <Style />
-    <span className={classNames(prefixCls, getPrefixCls('markdown-cursor'))} />
-  </>
+  const prefixCls = "markdown-cursor-underline";
+  return (
+    <>
+      <Style />
+      <span
+        className={classNames(prefixCls, getPrefixCls("markdown-cursor"))}
+      />
+    </>
+  );
 }

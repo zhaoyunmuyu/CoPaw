@@ -1,7 +1,7 @@
-import { createGlobalStyle } from 'antd-style';
+import { createGlobalStyle } from "antd-style";
 
 export default createGlobalStyle`
-.${p => p.theme.prefixCls}-attachment {
+.${(p) => p.theme.prefixCls}-attachment {
   position: relative;
   width: 100%;
   box-sizing: border-box;
@@ -28,12 +28,12 @@ export default createGlobalStyle`
     }
 
     &-hide-placement {
-      .${p => p.theme.prefixCls}-attachment-placeholder-inner {
+      .${(p) => p.theme.prefixCls}-attachment-placeholder-inner {
         display: none;
       }
     }
 
-    .${p => p.theme.prefixCls}-attachment-placeholder {
+    .${(p) => p.theme.prefixCls}-attachment-placeholder {
       padding: 0;
     }
   }
@@ -54,15 +54,16 @@ export default createGlobalStyle`
       box-sizing: border-box;
     }
 
-    .${p => p.theme.prefixCls}-upload-wrapper .${p => p.theme.prefixCls}-upload.${p => p.theme.prefixCls}-upload-btn {
+    .${(p) => p.theme.prefixCls}-upload-wrapper .${(p) =>
+      p.theme.prefixCls}-upload.${(p) => p.theme.prefixCls}-upload-btn {
       padding: 0;
     }
 
-    &.${p => p.theme.prefixCls}-attachment-placeholder-drag-in {
+    &.${(p) => p.theme.prefixCls}-attachment-placeholder-drag-in {
       border-color: ${(p) => p.theme.colorPrimaryHover};
     }
 
-    &.${p => p.theme.prefixCls}-attachment-placeholder-disabled {
+    &.${(p) => p.theme.prefixCls}-attachment-placeholder-disabled {
       opacity: 0.25;
       pointer-events: none;
     }
@@ -76,7 +77,7 @@ export default createGlobalStyle`
       line-height: 1;
     }
 
-    &-title.${p => p.theme.prefixCls}-attachment-placeholder-title {
+    &-title.${(p) => p.theme.prefixCls}-attachment-placeholder-title {
       margin: 0;
       font-size: ${(p) => p.theme.fontSize}px;
       line-height: ${(p) => p.theme.lineHeight};
@@ -155,8 +156,8 @@ export default createGlobalStyle`
       overflow-x: hidden;
       overflow-y: auto;
       max-height: calc(${(p) => p.theme.fontSize}px * ${(p) =>
-  p.theme.lineHeight}px * 2 + ${(p) => p.theme.paddingSM}px + ${(p) =>
-  p.theme.paddingSM}px * 3);
+        p.theme.lineHeight}px * 2 + ${(p) => p.theme.paddingSM}px + ${(p) =>
+        p.theme.paddingSM}px * 3);
 
       &:before,
       &:after {
@@ -177,11 +178,11 @@ export default createGlobalStyle`
 
     &-upload-btn {
       width: calc(${(p) => p.theme.fontSize}px * ${(p) =>
-  p.theme.lineHeight}px * 2 + ${(p) => p.theme.paddingSM}px + ${(p) =>
-  p.theme.paddingSM}px);
+        p.theme.lineHeight}px * 2 + ${(p) => p.theme.paddingSM}px + ${(p) =>
+        p.theme.paddingSM}px);
       height: calc(${(p) => p.theme.fontSize}px * ${(p) =>
-  p.theme.lineHeight}px * 2 + ${(p) => p.theme.paddingSM}px + ${(p) =>
-  p.theme.paddingSM}px);
+        p.theme.lineHeight}px * 2 + ${(p) => p.theme.paddingSM}px + ${(p) =>
+        p.theme.paddingSM}px);
       font-size: ${(p) => p.theme.fontSizeHeading2}px;
       color: #999;
     }
@@ -205,24 +206,30 @@ export default createGlobalStyle`
     }
 
     &:dir(ltr) {
-      &.${p => p.theme.prefixCls}-attachment-list-overflow-ping-start .${p => p.theme.prefixCls}-attachment-list-prev-btn {
+      &.${(p) => p.theme.prefixCls}-attachment-list-overflow-ping-start .${(
+        p,
+      ) => p.theme.prefixCls}-attachment-list-prev-btn {
         opacity: 1;
         pointer-events: auto;
       }
 
-      &.${p => p.theme.prefixCls}-attachment-list-overflow-ping-end .${p => p.theme.prefixCls}-attachment-list-next-btn {
+      &.${(p) => p.theme.prefixCls}-attachment-list-overflow-ping-end .${(p) =>
+        p.theme.prefixCls}-attachment-list-next-btn {
         opacity: 1;
         pointer-events: auto;
       }
     }
 
     &:dir(rtl) {
-      &.${p => p.theme.prefixCls}-attachment-list-overflow-ping-end .${p => p.theme.prefixCls}-attachment-list-prev-btn {
+      &.${(p) => p.theme.prefixCls}-attachment-list-overflow-ping-end .${(p) =>
+        p.theme.prefixCls}-attachment-list-prev-btn {
         opacity: 1;
         pointer-events: auto;
       }
 
-      &.${p => p.theme.prefixCls}-attachment-list-overflow-ping-start .${p => p.theme.prefixCls}-attachment-list-next-btn {
+      &.${(p) => p.theme.prefixCls}-attachment-list-overflow-ping-start .${(
+        p,
+      ) => p.theme.prefixCls}-attachment-list-next-btn {
         opacity: 1;
         pointer-events: auto;
       }

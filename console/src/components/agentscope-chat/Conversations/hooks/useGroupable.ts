@@ -1,21 +1,21 @@
-import React from 'react';
-import type { Conversation, Groupable } from '../interface';
+import React from "react";
+import type { Conversation, Groupable } from "../interface";
 
 /**
  * 🔥 Only for handling ungrouped data. Do not use it for any other purpose! 🔥
  */
-const __UNGROUPED = '__ungrouped';
+const __UNGROUPED = "__ungrouped";
 
 type GroupList = {
   data: Conversation[];
   name?: string;
-  title?: Groupable['title'];
+  title?: Groupable["title"];
 }[];
 
 type GroupMap = Record<string, Conversation[]>;
 
 const useGroupable = (
-  groupable?: { groupable?: boolean | Groupable }['groupable'],
+  groupable?: { groupable?: boolean | Groupable }["groupable"],
   items: Conversation[] = [],
 ): [groupList: GroupList, enableGroup: boolean] => {
   const [enableGroup, sort, title] = React.useMemo(() => {
@@ -28,7 +28,7 @@ const useGroupable = (
       title: undefined,
     };
 
-    if (typeof groupable === 'object') {
+    if (typeof groupable === "object") {
       baseConfig = { ...baseConfig, ...groupable };
     }
 

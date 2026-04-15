@@ -1,4 +1,4 @@
-import { createGlobalStyle } from 'antd-style';
+import { createGlobalStyle } from "antd-style";
 
 export default createGlobalStyle`
 .${(p) => p.theme.prefixCls}-media-info {
@@ -22,4 +22,3 @@ export default createGlobalStyle`
   }
 }
 `;
-

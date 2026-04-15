@@ -1,11 +1,13 @@
-import { Markdown } from '@/components/agentscope-chat';
+import { Markdown } from "@/components/agentscope-chat";
 
 export default function (props) {
-  const cursor = props.data.msgStatus === 'generating';
+  const cursor = props.data.msgStatus === "generating";
 
-  return <Markdown
-    cursor={cursor}
-    {...props.data}
-    typing={props.data.msgStatus === 'generating' ? props.data.typing : false}
-  />
+  return (
+    <Markdown
+      cursor={cursor}
+      {...props.data}
+      typing={props.data.msgStatus === "generating" ? props.data.typing : false}
+    />
+  );
 }

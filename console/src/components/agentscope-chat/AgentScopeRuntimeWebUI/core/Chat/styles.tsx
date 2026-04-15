@@ -1,4 +1,4 @@
-import { createGlobalStyle } from 'antd-style';
+import { createGlobalStyle } from "antd-style";
 
 export default createGlobalStyle`
 .${(p) => p.theme.prefixCls}-chat-anywhere-chat {
@@ -22,7 +22,8 @@ export default createGlobalStyle`
 
 
 
-.${(p) => p.theme.prefixCls}-chat-anywhere-message-list .${(p) => p.theme.prefixCls}-bubble-list-scroll::-webkit-scrollbar {
+.${(p) => p.theme.prefixCls}-chat-anywhere-message-list .${(p) =>
+  p.theme.prefixCls}-bubble-list-scroll::-webkit-scrollbar {
   display: none;
 }
 
@@ -35,11 +36,13 @@ export default createGlobalStyle`
   }
 }
 
-.${(p) => p.theme.prefixCls}-chat-anywhere-message-list .${(p) => p.theme.prefixCls}-bubble-list-wrapper {
+.${(p) => p.theme.prefixCls}-chat-anywhere-message-list .${(p) =>
+  p.theme.prefixCls}-bubble-list-wrapper {
   animation: message-list-fade-in 0.4s ease-in-out;
 }
 
-.${(p) => p.theme.prefixCls}-chat-anywhere-message-list .${(p) => p.theme.prefixCls}-bubble-list {
+.${(p) => p.theme.prefixCls}-chat-anywhere-message-list .${(p) =>
+  p.theme.prefixCls}-bubble-list {
   margin: 0 auto;
   max-width: 850px;
   min-width: 300px;

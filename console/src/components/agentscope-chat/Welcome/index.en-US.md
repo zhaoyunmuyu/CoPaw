@@ -14,7 +14,6 @@ description: Landing welcome page for conversations
 
 <Install>import { Welcome } from '@agentscope-ai/chat'</Install>
 
-
 #### Welcome Examples
 
 The following are examples and variations of the welcome page component

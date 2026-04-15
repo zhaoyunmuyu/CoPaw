@@ -1,12 +1,12 @@
-import { useMemo } from 'react';
-import InnerCitationComponent, { CitationComponentProps } from '../plugins/citations/CitationComponent';
+import { useMemo } from "react";
+import InnerCitationComponent, {
+  CitationComponentProps,
+} from "../plugins/citations/CitationComponent";
 
 const emptyArray = [];
 const emptyMap = {};
 
-export default function useCitationsData(
-  props,
-) {
+export default function useCitationsData(props) {
   const { citations = emptyArray, citationsMap = emptyMap } = props;
 
   const [citationsData, CitationComponent] = useMemo(() => {
@@ -17,11 +17,14 @@ export default function useCitationsData(
       map[key] = item;
     });
 
-    return [map, (function citationComponentWrapper() {
-      return function (props: CitationComponentProps) {
-        return <InnerCitationComponent {...props} citationsData={map} />;
-      }
-    })()];
+    return [
+      map,
+      (function citationComponentWrapper() {
+        return function (props: CitationComponentProps) {
+          return <InnerCitationComponent {...props} citationsData={map} />;
+        };
+      })(),
+    ];
   }, [citations, citationsMap]);
 
   return {

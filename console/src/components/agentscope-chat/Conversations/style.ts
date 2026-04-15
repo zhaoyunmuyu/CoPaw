@@ -1,4 +1,4 @@
-import { createGlobalStyle } from 'antd-style';
+import { createGlobalStyle } from "antd-style";
 
 export default createGlobalStyle`
 .${(p) => p.theme.prefixCls}-conversations {
@@ -126,8 +126,8 @@ export default createGlobalStyle`
 
     &:focus-within {
       background-color: ${(p) => p.theme.colorFillTertiary};
-      
-    
+
+
     }
   }
 

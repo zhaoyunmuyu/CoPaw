@@ -54,11 +54,15 @@ export default function AllocationsPage() {
 
   // Migrate drawer
   const [migrateDrawerOpen, setMigrateDrawerOpen] = useState(false);
-  const [migratingAllocation, setMigratingAllocation] = useState<UserAllocation | null>(null);
+  const [migratingAllocation, setMigratingAllocation] =
+    useState<UserAllocation | null>(null);
   const [migrateForm] = Form.useForm();
   const [migrateSubmitting, setMigrateSubmitting] = useState(false);
 
-  const filtersRef = useRef({ user_id: "", source_id: undefined as string | undefined });
+  const filtersRef = useRef({
+    user_id: "",
+    source_id: undefined as string | undefined,
+  });
 
   const fetchSources = useCallback(async () => {
     try {
@@ -125,7 +129,14 @@ export default function AllocationsPage() {
     if (instances.length > 0) {
       fetchAllocations();
     }
-  }, [filterUserId, filterSourceId, page, pageSize, instances, fetchAllocations]);
+  }, [
+    filterUserId,
+    filterSourceId,
+    page,
+    pageSize,
+    instances,
+    fetchAllocations,
+  ]);
 
   const handleCreate = () => {
     addForm.resetFields();
@@ -138,7 +149,7 @@ export default function AllocationsPage() {
       const result = await instanceApi.allocateUser(values);
       if (result.success) {
         message.success(
-          `${t("instance.allocateSuccess")}: ${result.instance_url}`
+          `${t("instance.allocateSuccess")}: ${result.instance_url}`,
         );
         setAddDrawerOpen(false);
         fetchAllocations();
@@ -190,7 +201,9 @@ export default function AllocationsPage() {
   const handleDelete = (record: UserAllocation) => {
     Modal.confirm({
       title: t("instance.confirmDelete"),
-      content: t("instance.confirmDeleteAllocation", { userId: record.user_id }),
+      content: t("instance.confirmDeleteAllocation", {
+        userId: record.user_id,
+      }),
       okText: t("common.delete"),
       okType: "danger",
       cancelText: t("common.cancel"),
@@ -277,7 +290,10 @@ export default function AllocationsPage() {
   return (
     <div className={styles.allocationsPage}>
       <PageHeader
-        items={[{ title: t("nav.instance") }, { title: t("instance.allocations") }]}
+        items={[
+          { title: t("nav.instance") },
+          { title: t("instance.allocations") },
+        ]}
         extra={
           <Space>
             <Input
@@ -300,10 +316,17 @@ export default function AllocationsPage() {
                 </Select.Option>
               ))}
             </Select>
-            <Button icon={<ReloadOutlined spin={loading} />} onClick={fetchAllocations}>
+            <Button
+              icon={<ReloadOutlined spin={loading} />}
+              onClick={fetchAllocations}
+            >
               {t("common.refresh")}
             </Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={handleCreate}
+            >
               {t("instance.addAllocation")}
             </Button>
           </Space>
@@ -413,7 +436,11 @@ export default function AllocationsPage() {
           </Form.Item>
           <Form.Item>
             <Space>
-              <Button type="primary" htmlType="submit" loading={migrateSubmitting}>
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={migrateSubmitting}
+              >
                 {t("instance.migrate")}
               </Button>
               <Button onClick={() => setMigrateDrawerOpen(false)}>

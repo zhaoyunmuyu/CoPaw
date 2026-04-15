@@ -60,6 +60,17 @@ export function getUserId(sessionUserId?: string): string {
   return DEFAULT_USER_ID;
 }
 
+export function getUserIdWithoutWindow(sessionUserId?: string): string {
+  const iframeContext = getIframeContext();
+  if (iframeContext.userId) {
+    return iframeContext.userId;
+  }
+  if (sessionUserId) {
+    return sessionUserId;
+  }
+  return DEFAULT_USER_ID;
+}
+
 /**
  * 获取当前渠道
  *
@@ -83,5 +94,16 @@ export function getChannel(sessionChannel?: string): string {
   return DEFAULT_CHANNEL;
 }
 
+export function getChannelWithoutWindow(sessionChannel?: string): string {
+  if (sessionChannel) {
+    return sessionChannel;
+  }
+  return DEFAULT_CHANNEL;
+}
+
 // Re-export constants for convenience
-export { DEFAULT_USER_ID, DEFAULT_CHANNEL, DEFAULT_TENANT_ID } from "../constants/identity";
+export {
+  DEFAULT_USER_ID,
+  DEFAULT_CHANNEL,
+  DEFAULT_TENANT_ID,
+} from "../constants/identity";

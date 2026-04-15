@@ -1,4 +1,4 @@
-import { createGlobalStyle } from 'antd-style';
+import { createGlobalStyle } from "antd-style";
 
 export default createGlobalStyle`
 .${(p) => p.theme.prefixCls}-media-upload {
@@ -7,7 +7,8 @@ export default createGlobalStyle`
   .${(p) => p.theme.prefixCls}-upload-drag {
     border: none;
   }
-  .${(p) => p.theme.prefixCls}-upload-drag .${(p) => p.theme.prefixCls}-upload-btn {
+  .${(p) => p.theme.prefixCls}-upload-drag .${(p) =>
+    p.theme.prefixCls}-upload-btn {
     padding: 0;
   }
 

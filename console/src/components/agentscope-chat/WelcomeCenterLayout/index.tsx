@@ -1,17 +1,18 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { Input, Upload } from 'antd';
-import { SparkAttachmentLine } from '@agentscope-ai/icons';
-import { IconButton } from '@agentscope-ai/design';
-import { Tooltip } from 'antd';
-import Style from './style';
-import KnowledgeTabs from '../KnowledgeTabs';
-import FeaturedCases, { type FeaturedCase } from '../FeaturedCases';
-import CaseDetailDrawer, { type CaseDetailData } from '../CaseDetailDrawer';
-import { DESIGN_TOKENS } from '@/config/designTokens';
+import React, { useState, useCallback, useRef } from "react";
+import { Input, Upload } from "antd";
+import { SparkAttachmentLine } from "@agentscope-ai/icons";
+import { IconButton } from "@agentscope-ai/design";
+import { Tooltip } from "antd";
+import Style from "./style";
+import KnowledgeTabs from "../KnowledgeTabs";
+import FeaturedCases from "../FeaturedCases";
+import CaseDetailDrawer from "../CaseDetailDrawer";
+import { casesApi } from "@/api/modules/cases";
+import type { Case } from "@/api/types/cases";
+import { DESIGN_TOKENS } from "@/config/designTokens";
 
 interface WelcomeCenterLayoutProps {
   greeting?: string;
-  prompts?: { label?: string; value: string; icon?: React.ReactElement; image?: string }[];
   onSubmit: (data: { query: string }) => void;
 }
 
@@ -30,22 +31,26 @@ function SendIcon() {
 }
 
 export default function WelcomeCenterLayout(props: WelcomeCenterLayoutProps) {
-  const { greeting = '你好，你的专属小龙虾，前来报到！', prompts, onSubmit } = props;
-  const [inputValue, setInputValue] = useState('');
+  const {
+    greeting = "你好，你的专属小龙虾，前来报到！",
+    onSubmit,
+  } = props;
+  const [inputValue, setInputValue] = useState("");
   const [drawerVisible, setDrawerVisible] = useState(false);
-  const [selectedCase, setSelectedCase] = useState<CaseDetailData | null>(null);
+  const [selectedCase, setSelectedCase] = useState<Case | null>(null);
+  const [loadingCase, setLoadingCase] = useState(false);
   const uploadRef = useRef<any>(null);
 
   const handleSend = useCallback(() => {
     const trimmed = inputValue.trim();
     if (!trimmed) return;
     onSubmit({ query: trimmed });
-    setInputValue('');
+    setInputValue("");
   }, [inputValue, onSubmit]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
         handleSend();
       }
@@ -57,19 +62,28 @@ export default function WelcomeCenterLayout(props: WelcomeCenterLayoutProps) {
     setInputValue(text);
   }, []);
 
-  const handleViewCase = useCallback((caseItem: FeaturedCase) => {
-    setSelectedCase({
-      title: caseItem.label,
-      value: caseItem.value,
-    });
+  // Handle "看案例" click - fetch detail from API
+  const handleViewCase = useCallback(async (caseId: string) => {
+    setLoadingCase(true);
     setDrawerVisible(true);
+    setSelectedCase(null); // Clear previous case
+
+    try {
+      const caseData = await casesApi.getCaseDetail(caseId);
+      setSelectedCase(caseData);
+    } catch (error) {
+      console.error("Failed to load case detail:", error);
+      // Close drawer on error
+      setDrawerVisible(false);
+    } finally {
+      setLoadingCase(false);
+    }
   }, []);
 
-  const cases: FeaturedCase[] = (prompts || []).map((p) => ({
-    label: p.label || p.value,
-    value: p.value,
-    image: p.image,
-  }));
+  const handleCloseDrawer = useCallback(() => {
+    setDrawerVisible(false);
+    setSelectedCase(null);
+  }, []);
 
   return (
     <>
@@ -98,9 +112,11 @@ export default function WelcomeCenterLayout(props: WelcomeCenterLayoutProps) {
                     showUploadList={false}
                     accept="*/*"
                     beforeUpload={(file) => {
-                      document.dispatchEvent(new CustomEvent('pasteFile', {
-                        detail: { file },
-                      }));
+                      document.dispatchEvent(
+                        new CustomEvent("pasteFile", {
+                          detail: { file },
+                        }),
+                      );
                       return false;
                     }}
                   >
@@ -130,17 +146,22 @@ export default function WelcomeCenterLayout(props: WelcomeCenterLayoutProps) {
 
         {/* Featured Cases */}
         <div className="welcome-cases-area">
-          <FeaturedCases cases={cases} onFillInput={handleFillInput} onViewCase={handleViewCase} />
+          <FeaturedCases
+            onFillInput={handleFillInput}
+            onViewCase={handleViewCase}
+          />
         </div>
       </div>
 
       {/* Case Detail Drawer */}
       <CaseDetailDrawer
         visible={drawerVisible}
-        onClose={() => setDrawerVisible(false)}
+        onClose={handleCloseDrawer}
         caseData={selectedCase}
+        loading={loadingCase}
         onMakeSimilar={(value) => {
           setInputValue(value);
+          handleCloseDrawer();
         }}
       />
     </>

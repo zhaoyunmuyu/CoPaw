@@ -47,5 +47,3 @@ description: 一种展示对话流中AI操作行为的卡片
 ##### IWebSearchProps
 
 <ApiParser source="./preset/WebSearch.tsx" id="IWebSearchProps"></ApiParser>
-
-

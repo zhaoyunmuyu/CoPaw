@@ -1,16 +1,18 @@
 import { type RefObject, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
-import { BubbleDataType } from "../BubbleList"
-
+import { BubbleDataType } from "../BubbleList";
 
 export interface UsePaginationItemsOptions {
   enable: boolean;
-  order?: 'asc' | 'desc';
+  order?: "asc" | "desc";
 }
 
-export const usePaginationItems = (items: (BubbleDataType & { history?: boolean })[], options: UsePaginationItemsOptions) => {
+export const usePaginationItems = (
+  items: (BubbleDataType & { history?: boolean })[],
+  options: UsePaginationItemsOptions,
+) => {
   const [page, setPage] = useState(1);
-  const order = options?.order || 'asc';
+  const order = options?.order || "asc";
   const data = useMemo(() => {
     const historyItems: (BubbleDataType & { history?: boolean })[] = [];
     const otherItems: (BubbleDataType & { history?: boolean })[] = [];
@@ -22,7 +24,7 @@ export const usePaginationItems = (items: (BubbleDataType & { history?: boolean 
       }
     }
 
-    if (order === 'desc') {
+    if (order === "desc") {
       return [...otherItems, ...historyItems.slice(0, page * 10)];
     }
 
@@ -33,8 +35,9 @@ export const usePaginationItems = (items: (BubbleDataType & { history?: boolean 
     return {
       items,
       noMore: true,
-      loadMore: (_scrollRef?: RefObject<HTMLElement | null>) => Promise.resolve(),
-    }
+      loadMore: (_scrollRef?: RefObject<HTMLElement | null>) =>
+        Promise.resolve(),
+    };
   }
 
   return {
@@ -58,6 +61,6 @@ export const usePaginationItems = (items: (BubbleDataType & { history?: boolean 
           resolve();
         }, 1000);
       });
-    }
-  }
-}
+    },
+  };
+};

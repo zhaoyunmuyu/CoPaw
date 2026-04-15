@@ -1,4 +1,4 @@
-import { Progress as AntdProgress, theme } from 'antd';
+import { Progress as AntdProgress, theme } from "antd";
 
 export interface ProgressProps {
   /**
@@ -24,7 +24,9 @@ export default function Progress(props: ProgressProps) {
       size={40}
       strokeColor="#FFF"
       trailColor="rgba(255, 255, 255, 0.3)"
-      format={(ptg) => <span style={{ color: '#FFF' }}>{(ptg || 0).toFixed(0)}%</span>}
+      format={(ptg) => (
+        <span style={{ color: "#FFF" }}>{(ptg || 0).toFixed(0)}%</span>
+      )}
     />
   );
 }

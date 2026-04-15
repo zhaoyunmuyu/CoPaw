@@ -37,7 +37,8 @@ export default function ThemeToggleButton() {
     },
   ];
 
-  const icon = themeMode === "system" ? ICONS.system : ICONS[isDark ? "dark" : "light"];
+  const icon =
+    themeMode === "system" ? ICONS.system : ICONS[isDark ? "dark" : "light"];
 
   return (
     <Dropdown

@@ -1,5 +1,5 @@
-import { createGlobalStyle } from 'antd-style';
-import { DESIGN_TOKENS } from '@/config/designTokens';
+import { createGlobalStyle } from "antd-style";
+import { DESIGN_TOKENS } from "@/config/designTokens";
 
 export default createGlobalStyle`
 .chat-task-list {
@@ -95,6 +95,11 @@ export default createGlobalStyle`
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  &-item-time {
+    margin-right: 8px;
+    color: ${DESIGN_TOKENS.colorTextMuted};
   }
 
   &-empty {

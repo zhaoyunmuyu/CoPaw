@@ -1,6 +1,6 @@
-import { Button, IconButton, type ButtonProps } from '@agentscope-ai/design';
-import classNames from 'classnames';
-import * as React from 'react';
+import { Button, IconButton, type ButtonProps } from "@agentscope-ai/design";
+import classNames from "classnames";
+import * as React from "react";
 
 export interface ActionButtonContextProps {
   /**
@@ -60,14 +60,15 @@ export interface ActionButtonContextProps {
   disabled?: boolean;
 }
 
-export const ActionButtonContext = React.createContext<ActionButtonContextProps>(null!);
+export const ActionButtonContext =
+  React.createContext<ActionButtonContextProps>(null!);
 
 export interface ActionButtonProps {
   /**
    * @description 按钮的操作类型，决定按钮的行为和样式
    * @descriptionEn Action type of the button, determines button behavior and style
    */
-  action: 'onSend' | 'onClear' | 'onCancel' | 'onSpeech';
+  action: "onSend" | "onClear" | "onCancel" | "onSpeech";
   onClick?: (e) => void;
   className?: string;
   disabled?: boolean;
@@ -79,7 +80,8 @@ export function ActionButton(props: ActionButtonProps) {
   const { prefixCls, disabled: rootDisabled } = context;
 
   const onClick = context[action];
-  const mergedDisabled = rootDisabled || restProps.disabled || context[`${action}Disabled`] || false;
+  const mergedDisabled =
+    rootDisabled || restProps.disabled || context[`${action}Disabled`] || false;
 
   return (
     <IconButton

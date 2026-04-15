@@ -15,10 +15,11 @@ import { useLocation, useNavigate } from "react-router-dom";
 import sessionApi from "./sessionApi";
 import defaultConfig, { getDefaultConfig } from "./OptionsPanel/defaultConfig";
 import { chatApi } from "../../api/modules/chat";
+import { cronJobApi } from "../../api/modules/cronjob";
 import { getApiUrl } from "../../api/config";
 import { buildAuthHeaders } from "../../api/authHeaders";
 import { providerApi } from "../../api/modules/provider";
-import type { ProviderInfo, ModelInfo } from "../../api/types";
+import type { ProviderInfo, ModelInfo, CronJobSpecOutput } from "../../api/types";
 import ModelSelector from "./ModelSelector";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAgentStore } from "../../stores/agentStore";
@@ -52,8 +53,12 @@ import {
   type CopyableResponse,
   type RuntimeLoadingBridgeApi,
 } from "./utils";
+import { deriveChatTaskState } from "./taskJobs";
+import { shouldRefreshCurrentTaskMessages } from "./taskMessageRefresh";
 
 const CHAT_ATTACHMENT_MAX_MB = 10;
+const TASK_PAGE_POLL_MS = 10_000;
+const TASK_PENDING_POLL_MS = 2_000;
 
 interface SessionInfo {
   session_id?: string;
@@ -290,6 +295,7 @@ export default function ChatPage() {
     return match?.[1];
   }, [location.pathname]);
   const [showModelPrompt, setShowModelPrompt] = useState(false);
+  const [jobs, setJobs] = useState<CronJobSpecOutput[]>([]);
   const { selectedAgent } = useAgentStore();
   const [refreshKey, setRefreshKey] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -315,6 +321,8 @@ export default function ChatPage() {
   const lastSessionIdRef = useRef<string | null>(null);
   /** Tracks the stale auto-selected session ID that was skipped on init, so we can suppress its late-arriving onSessionSelected callback. */
   const staleAutoSelectedIdRef = useRef<string | null>(null);
+  const taskHadResultRef = useRef(false);
+  const previousCurrentTaskRef = useRef<CronJobSpecOutput | null>(null);
   const chatIdRef = useRef(chatId);
   const navigateRef = useRef(navigate);
   const chatRef = useRef<IAgentScopeRuntimeWebUIRef>(null);
@@ -419,6 +427,133 @@ export default function ChatPage() {
     }
     prevSelectedAgentRef.current = selectedAgent;
   }, [selectedAgent]);
+
+  const refreshJobs = useCallback(async () => {
+    try {
+      const nextJobs = await cronJobApi.listCronJobs();
+      setJobs(Array.isArray(nextJobs) ? nextJobs : []);
+    } catch {
+      setJobs([]);
+    }
+  }, []);
+
+  const { tasks, currentTask } = useMemo(
+    () => deriveChatTaskState(jobs, chatId),
+    [jobs, chatId],
+  );
+
+  useEffect(() => {
+    void refreshJobs();
+
+    const handleFocusRefresh = () => {
+      void refreshJobs();
+    };
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState === "visible") {
+        void refreshJobs();
+      }
+    };
+
+    window.addEventListener("focus", handleFocusRefresh);
+    document.addEventListener("visibilitychange", handleVisibilityRefresh);
+
+    return () => {
+      window.removeEventListener("focus", handleFocusRefresh);
+      document.removeEventListener("visibilitychange", handleVisibilityRefresh);
+    };
+  }, [refreshJobs]);
+
+  useEffect(() => {
+    const pollMs =
+      currentTask?.task?.has_scheduled_result === false
+        ? TASK_PENDING_POLL_MS
+        : TASK_PAGE_POLL_MS;
+
+    const intervalId = window.setInterval(() => {
+      void refreshJobs();
+    }, pollMs);
+
+    return () => window.clearInterval(intervalId);
+  }, [currentTask?.task?.has_scheduled_result, refreshJobs]);
+
+  useEffect(() => {
+    const hadResult = Boolean(currentTask?.task?.has_scheduled_result);
+    if (hadResult && !taskHadResultRef.current) {
+      setRefreshKey((prev) => prev + 1);
+    }
+    taskHadResultRef.current = hadResult;
+  }, [currentTask?.task?.has_scheduled_result]);
+
+  useEffect(() => {
+    if (!currentTask?.id) return;
+    if ((currentTask.task?.unread_execution_count || 0) <= 0) return;
+
+    setJobs((prev) =>
+      prev.map((job) =>
+        job.id === currentTask.id && job.task
+          ? {
+              ...job,
+              task: {
+                ...job.task,
+                unread_execution_count: 0,
+              },
+            }
+          : job,
+      ),
+    );
+    void cronJobApi.markTaskRead(currentTask.id).catch(() => {});
+  }, [currentTask?.id, currentTask?.task?.unread_execution_count]);
+
+  const handleTaskOpen = useCallback(
+    async (task: CronJobSpecOutput) => {
+      const taskChatId = task.task?.chat_id;
+      if (!taskChatId) return;
+
+      setJobs((prev) =>
+        prev.map((job) =>
+          job.id === task.id && job.task
+            ? {
+                ...job,
+                task: {
+                  ...job.task,
+                  unread_execution_count: 0,
+                },
+              }
+            : job,
+        ),
+      );
+
+      navigate(`/chat/${taskChatId}`, { replace: true });
+
+      try {
+        await cronJobApi.markTaskRead(task.id);
+      } catch {
+        void refreshJobs();
+      }
+    },
+    [navigate, refreshJobs],
+  );
+
+  useEffect(() => {
+    const previousTask = previousCurrentTaskRef.current;
+    previousCurrentTaskRef.current = currentTask;
+
+    if (
+      !shouldRefreshCurrentTaskMessages({
+        previousTask,
+        currentTask,
+      })
+    ) {
+      return;
+    }
+
+    void chatRef.current?.refreshSession?.();
+  }, [
+    currentTask?.id,
+    currentTask?.task?.has_scheduled_result,
+    currentTask?.task?.last_scheduled_run_at,
+    currentTask?.task?.unread_execution_count,
+  ]);
 
   const copyResponse = useCallback(
     async (response: CopyableResponse) => {
@@ -561,7 +696,7 @@ export default function ChatPage() {
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.dataTransfer.types.includes('Files')) {
+    if (e.dataTransfer.types.includes("Files")) {
       dragCounterRef.current += 1;
       if (dragCounterRef.current === 1) {
         setIsDragging(true);
@@ -583,22 +718,21 @@ export default function ChatPage() {
     e.stopPropagation();
   }, []);
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      dragCounterRef.current = 0;
-      setIsDragging(false);
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDragging(false);
 
-      const files = Array.from(e.dataTransfer.files);
-      for (const file of files) {
-        document.dispatchEvent(new CustomEvent('pasteFile', {
+    const files = Array.from(e.dataTransfer.files);
+    for (const file of files) {
+      document.dispatchEvent(
+        new CustomEvent("pasteFile", {
           detail: { file },
-        }));
-      }
-    },
-    [],
-  );
+        }),
+      );
+    }
+  }, []);
 
   const handleDragOverlayClose = useCallback(() => {
     dragCounterRef.current = 0;
@@ -669,12 +803,12 @@ export default function ChatPage() {
         render: ({ greeting, prompts, onSubmit }) => (
           <WelcomeCenterLayout
             greeting={
-              typeof greeting === 'string'
+              typeof greeting === "string"
                 ? greeting
-                : '你好，你的专属小龙虾，前来报到！'
+                : "你好，你的专属小龙虾，前来报到！"
             }
             prompts={prompts?.map((p) =>
-              typeof p === 'string'
+              typeof p === "string"
                 ? { label: p, value: p }
                 : { label: p.label || p.value, value: p.value },
             )}
@@ -780,7 +914,7 @@ export default function ChatPage() {
     if (newId) {
       navigate(`/chat/${newId}`, { replace: true });
     } else {
-      navigate('/chat', { replace: true });
+      navigate("/chat", { replace: true });
     }
   }, [navigate]);
   // ==================== 首页改版结束 ====================
@@ -797,12 +931,14 @@ export default function ChatPage() {
       {/* ==================== 首页改版 (Kun He) ==================== */}
       {/* 聊天专用侧栏：支持折叠为64px工具条 */}
       <ChatSidebar
+        tasks={tasks}
         onCreateSession={handleCreateSessionFromSidebar}
+        onTaskClick={handleTaskOpen}
       />
       {/* ==================== 首页改版结束 ==================== */}
       <div
         className={styles.chatMessagesArea}
-        style={{ flex: 1, minWidth: 0, position: 'relative' }}
+        style={{ flex: 1, minWidth: 0, position: "relative" }}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
@@ -813,6 +949,33 @@ export default function ChatPage() {
           key={refreshKey}
           options={options}
         />
+        {currentTask && !currentTask.task?.has_scheduled_result && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+              zIndex: 2,
+            }}
+          >
+            <div
+              style={{
+                padding: '10px 18px',
+                borderRadius: 999,
+                background: 'rgba(255,255,255,0.92)',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+                color: '#1f1f1f',
+                fontSize: 14,
+                fontWeight: 500,
+              }}
+            >
+              任务执行中
+            </div>
+          </div>
+        )}
         <DragUploadOverlay visible={isDragging} onClose={handleDragOverlayClose} />
       </div>
 

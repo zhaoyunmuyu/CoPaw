@@ -1,22 +1,20 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { cronJobApi } from '@/api/modules/cronjob';
 import type { CronJobSpecOutput } from '@/api/types';
 import type { IAgentScopeRuntimeWebUISession } from '@/components/agentscope-chat';
-import sessionApi from '../../../sessionApi';
 import { TasksIconSmall, HistoryIconSmall } from '../CollapsedToolbar/icons';
-import { DESIGN_TOKENS } from '@/config/designTokens';
 import Style from './style';
 
 export interface ExpandablePanelProps {
   visible: boolean;
   type: 'tasks' | 'history';
   onClose: () => void;
-  /** For click-outside detection — the toolbar element ref */
+  tasks: CronJobSpecOutput[];
+  sessions: IAgentScopeRuntimeWebUISession[];
+  onTaskClick: (task: CronJobSpecOutput) => void;
   toolbarRef: React.RefObject<HTMLElement | null>;
 }
 
-/** Format ISO timestamp to YYYY-MM-DD HH:mm */
 function formatTime(raw: string | null | undefined): string {
   if (!raw) return '';
   const date = new Date(raw);
@@ -31,11 +29,13 @@ export default function ExpandablePanel({
   visible,
   type,
   onClose,
+  tasks,
+  sessions,
+  onTaskClick,
   toolbarRef,
 }: ExpandablePanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Click-outside detection
   useEffect(() => {
     if (!visible) return;
 
@@ -51,7 +51,6 @@ export default function ExpandablePanel({
       }
     };
 
-    // Use mousedown for immediate response, delay to avoid same-click closing
     const timer = setTimeout(() => {
       document.addEventListener('mousedown', handleClickOutside);
     }, 0);
@@ -62,7 +61,6 @@ export default function ExpandablePanel({
     };
   }, [visible, onClose, toolbarRef]);
 
-  // Escape key to close
   useEffect(() => {
     if (!visible) return;
     const handleEscape = (e: KeyboardEvent) => {
@@ -78,35 +76,28 @@ export default function ExpandablePanel({
     <>
       <Style />
       <div className="expandable-panel" ref={panelRef}>
-        {type === 'tasks' ? <TasksContent /> : <HistoryContent onClose={onClose} />}
+        {type === 'tasks' ? (
+          <TasksContent tasks={tasks} onTaskClick={onTaskClick} />
+        ) : (
+          <HistoryContent sessions={sessions} onClose={onClose} />
+        )}
       </div>
     </>
   );
 }
 
-// ─── Tasks Panel Content ───
-
-function TasksContent() {
-  const [tasks, setTasks] = React.useState<CronJobSpecOutput[]>([]);
-
-  useEffect(() => {
-    cronJobApi
-      .listCronJobs()
-      .then((data) => setTasks(Array.isArray(data) ? data : []))
-      .catch(() => setTasks([]));
-  }, []);
-
-  const handleTaskClick = useCallback((task: CronJobSpecOutput) => {
-    cronJobApi.triggerCronJob(task.id).catch(() => {});
-  }, []);
-
+function TasksContent({
+  tasks,
+  onTaskClick,
+}: {
+  tasks: CronJobSpecOutput[];
+  onTaskClick: (task: CronJobSpecOutput) => void;
+}) {
   return (
     <>
       <div className="expandable-panel-header">
         <TasksIconSmall />
-        <span className="expandable-panel-header-title">
-          我的任务({tasks.length})
-        </span>
+        <span className="expandable-panel-header-title">我的任务({tasks.length})</span>
       </div>
       <div className="expandable-panel-content">
         {tasks.length === 0 ? (
@@ -116,19 +107,30 @@ function TasksContent() {
             <div
               key={task.id}
               className="expandable-panel-task-card"
-              onClick={() => handleTaskClick(task)}
+              onClick={() => onTaskClick(task)}
               role="button"
               tabIndex={0}
             >
               <div className="expandable-panel-task-title-row">
                 <span className="expandable-panel-task-title">
-                  {task.name || task.text || task.id}
+                  {task.name || task.id}
                 </span>
-                {/* Badge placeholder — will be driven by unread count when API supports it */}
+                {(task.task?.unread_execution_count || 0) > 0 && (
+                  <span className="expandable-panel-task-badge">
+                    {task.task!.unread_execution_count > 99
+                      ? '99+'
+                      : task.task!.unread_execution_count}
+                  </span>
+                )}
               </div>
-              {task.text && task.name && (
+              {(task.task?.latest_scheduled_preview || task.task?.last_scheduled_run_at) && (
                 <div className="expandable-panel-task-subtitle">
-                  {task.text}
+                  {task.task?.last_scheduled_run_at && (
+                    <span className="expandable-panel-task-time">
+                      {formatTime(task.task.last_scheduled_run_at)}
+                    </span>
+                  )}
+                  {task.task?.latest_scheduled_preview}
                 </div>
               )}
             </div>
@@ -139,23 +141,18 @@ function TasksContent() {
   );
 }
 
-// ─── History Panel Content ───
-
-function HistoryContent({ onClose }: { onClose: () => void }) {
+function HistoryContent({
+  sessions,
+  onClose,
+}: {
+  sessions: IAgentScopeRuntimeWebUISession[];
+  onClose: () => void;
+}) {
   const navigate = useNavigate();
-  const [sessions, setSessions] = React.useState<IAgentScopeRuntimeWebUISession[]>([]);
-
-  useEffect(() => {
-    sessionApi
-      .getSessionList()
-      .then((list) => setSessions(Array.isArray(list) ? list : []))
-      .catch(() => setSessions([]));
-  }, []);
 
   const handleSessionClick = useCallback(
     (sessionId: string) => {
-      const realId = sessionApi.getRealIdForSession(sessionId) || sessionId;
-      navigate(`/chat/${realId}`, { replace: true });
+      navigate(`/chat/${sessionId}`, { replace: true });
       onClose();
     },
     [navigate, onClose],

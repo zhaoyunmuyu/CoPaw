@@ -1,26 +1,31 @@
-import React from 'react';
-import { UploadFile } from 'antd';
-import { TMessage, TSession, IChatAnywhereConfig } from './types';
-import { useGetState } from 'ahooks';
-import { useSessionList } from './useSessionList';
-import { createContext, useContextSelector } from 'use-context-selector';
-import { useMessages } from './useMessages';
-import { useInput } from './useInput';
-import { ScrollToBottomOptions } from 'use-stick-to-bottom';
+import React from "react";
+import { UploadFile } from "antd";
+import { TMessage, TSession, IChatAnywhereConfig } from "./types";
+import { useGetState } from "ahooks";
+import { useSessionList } from "./useSessionList";
+import { createContext, useContextSelector } from "use-context-selector";
+import { useMessages } from "./useMessages";
+import { useInput } from "./useInput";
+import { ScrollToBottomOptions } from "use-stick-to-bottom";
 
-
-export function ChatAnywhereProvider(props:
-  IChatAnywhereConfig &
-  { children: React.ReactNode, }
+export function ChatAnywhereProvider(
+  props: IChatAnywhereConfig & { children: React.ReactNode },
 ) {
-
-  const [sessionList, setSessionList, getSessionList] = useGetState<TSession[]>([]);
-  const [currentSessionKey, setCurrentSessionKey, getCurrentSessionKey] = useGetState<string>('0');
-  const [currentRegenerateIndex, setCurrentRegenerateIndex, getCurrentRegenerateIndex] = useGetState<number>(0);
+  const [sessionList, setSessionList, getSessionList] = useGetState<TSession[]>(
+    [],
+  );
+  const [currentSessionKey, setCurrentSessionKey, getCurrentSessionKey] =
+    useGetState<string>("0");
+  const [
+    currentRegenerateIndex,
+    setCurrentRegenerateIndex,
+    getCurrentRegenerateIndex,
+  ] = useGetState<number>(0);
   const [messages, setMessages, getMessages] = useGetState<TMessage[]>([]);
   const [loading, setLoading, getLoading] = useGetState<boolean>(false);
   const [disabled, setDisabled, getDisabled] = useGetState<boolean>(false);
-  const [sessionListShow, setSessionListShow, getSessionListShow] = useGetState<boolean>(true);
+  const [sessionListShow, setSessionListShow, getSessionListShow] =
+    useGetState<boolean>(true);
 
   const { children, ...rest } = props;
 
@@ -47,26 +52,28 @@ export function ChatAnywhereProvider(props:
     setCurrentRegenerateIndex,
     getCurrentRegenerateIndex,
     ...rest,
-  }
+  };
 
-
-
-  return <ChatAnywhereContext.Provider value={value}>
-    {children}
-  </ChatAnywhereContext.Provider>
+  return (
+    <ChatAnywhereContext.Provider value={value}>
+      {children}
+    </ChatAnywhereContext.Provider>
+  );
 }
 
-export const ChatAnywhereContext = createContext<IChatAnywhereContext>(undefined);
+export const ChatAnywhereContext =
+  createContext<IChatAnywhereContext>(undefined);
 
-export function useChatAnywhere<Selected>(selector: (value: IChatAnywhereContext) => Selected) {
+export function useChatAnywhere<Selected>(
+  selector: (value: IChatAnywhereContext) => Selected,
+) {
   try {
     const context = useContextSelector(ChatAnywhereContext, selector);
     return context;
-
   } catch (error) {
     return {} as Selected;
   }
-};
+}
 
 export interface IChatAnywhereContext {
   /**
@@ -78,7 +85,7 @@ export interface IChatAnywhereContext {
    * @description 设置会话列表的状态更新函数
    * @descriptionEn State update function for setting session list
    */
-  setSessionList: React.Dispatch<React.SetStateAction<TSession[]>>
+  setSessionList: React.Dispatch<React.SetStateAction<TSession[]>>;
   /**
    * @description 获取当前会话列表的同步函数
    * @descriptionEn Synchronous function to get current session list
@@ -185,35 +192,32 @@ export interface IChatAnywhereContext {
    * @description 输入事件的处理函数，用于处理用户输入
    * @descriptionEn Input event handler for processing user input
    */
-  onInput?: IChatAnywhereConfig['onInput'];
+  onInput?: IChatAnywhereConfig["onInput"];
   /**
    * @description 停止生成事件的处理函数，用于中断AI响应
    * @descriptionEn Stop generation event handler for interrupting AI responses
    */
-  onStop?: IChatAnywhereConfig['onStop'];
+  onStop?: IChatAnywhereConfig["onStop"];
   /**
    * @description 文件上传事件的处理函数，用于处理文件上传
    * @descriptionEn File upload event handler for processing file uploads
    */
-  onUpload?: IChatAnywhereConfig['onUpload'];
+  onUpload?: IChatAnywhereConfig["onUpload"];
   /**
    * @description 会话切换事件的处理函数，用于处理会话变更
    * @descriptionEn Session change event handler for processing session switches
    */
-  onSessionKeyChange?: IChatAnywhereConfig['onSessionKeyChange'];
+  onSessionKeyChange?: IChatAnywhereConfig["onSessionKeyChange"];
   /**
    * @description UI配置对象，用于自定义界面外观和行为
    * @descriptionEn UI configuration object for customizing interface appearance and behavior
    */
-  uiConfig?: IChatAnywhereConfig['uiConfig'];
-};
+  uiConfig?: IChatAnywhereConfig["uiConfig"];
+}
 
-
-export type ChatAnywhereRef =
-  ReturnType<typeof useMessages> &
+export type ChatAnywhereRef = ReturnType<typeof useMessages> &
   ReturnType<typeof useInput> &
-  ReturnType<typeof useSessionList> &
-  {
+  ReturnType<typeof useSessionList> & {
     setInputContent: (content: string, fileList?: UploadFile[][]) => void;
     scrollToBottom: (options?: ScrollToBottomOptions) => void;
     reload: () => void;

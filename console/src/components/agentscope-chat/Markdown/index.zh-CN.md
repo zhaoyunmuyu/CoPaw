@@ -14,13 +14,11 @@ description: 是一个用于渲染 Markdown 文本的 React 组件
 import { Markdown } from '@agentscope-ai/chat';
 </Install>
 
-
 #### 更多示例
 
 <code src="./demo/latex.tsx" height="600">Latex</code>
 <code src="./demo/citations.tsx" height="auto">引用</code>
 <code src="./demo/cursor.tsx" height="auto">光标</code>
-
 
 #### API
 

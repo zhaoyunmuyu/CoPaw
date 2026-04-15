@@ -12,7 +12,6 @@ description: AI Input Box
 
 <Install>import { ChatInput } from '@agentscope-ai/chat'</Install>
 
-
 #### ChatInput Examples
 
 The following are examples and variations of this component

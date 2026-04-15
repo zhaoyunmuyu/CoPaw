@@ -1,13 +1,18 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { Image } from "antd";
+import guideImage from "@/assets/icons/agent_default_logo.png";
+import { chatApi } from '@/api/modules/chat';
+import type { CronJobSpecOutput } from '@/api/types';
 import Style from './style';
 import ChatTaskList from '../ChatTaskList';
-import sessionApi from '../../sessionApi';
-import { cronJobApi } from '@/api/modules/cronjob';
-import type { IAgentScopeRuntimeWebUISession } from '@/components/agentscope-chat';
 import { DESIGN_TOKENS } from '@/config/designTokens';
 import CollapsedToolbar, { type PanelType } from './CollapsedToolbar';
 import ExpandablePanel from './ExpandablePanel';
+import {
+  buildHistorySessions,
+  type HistorySession,
+} from './historySessions';
 
 function HistoryIcon() {
   return (
@@ -111,11 +116,11 @@ function ToggleIcon({ collapsed }: { collapsed: boolean }) {
 }
 
 export interface ChatSidebarProps {
+  tasks: CronJobSpecOutput[];
   onCreateSession?: () => void;
-  onTaskClick?: (task: any) => void;
+  onTaskClick?: (task: CronJobSpecOutput) => void;
 }
 
-/** Format ISO timestamp to YYYY-MM-DD HH:mm */
 function formatTime(raw: string | null | undefined): string {
   if (!raw) return '';
   const date = new Date(raw);
@@ -127,38 +132,48 @@ function formatTime(raw: string | null | undefined): string {
 }
 
 export default function ChatSidebar(props: ChatSidebarProps) {
-  const { onCreateSession, onTaskClick } = props;
+  const { tasks, onCreateSession, onTaskClick } = props;
   const navigate = useNavigate();
   const location = useLocation();
   const [historyCollapsed, setHistoryCollapsed] = useState(false);
-  const [sessions, setSessions] = useState<IAgentScopeRuntimeWebUISession[]>([]);
-  const [taskCount, setTaskCount] = useState(0);
-
-  // Collapsed mode state — managed internally
+  const [sessions, setSessions] = useState<HistorySession[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [activePanel, setActivePanel] = useState<PanelType>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
+  // Guide image preview state
+  const [guidePreviewVisible, setGuidePreviewVisible] = useState(false);
 
-  // Extract current chat ID from URL
   const currentChatId = location.pathname.match(/^\/chat\/(.+)$/)?.[1] || null;
 
-  // Fetch session list from sessionApi directly
-  useEffect(() => {
-    sessionApi.getSessionList().then((list) => {
-      setSessions(Array.isArray(list) ? list : []);
-    }).catch(() => {
+  const fetchSessions = useCallback(async () => {
+    try {
+      const chats = await chatApi.listChats();
+      setSessions(Array.isArray(chats) ? buildHistorySessions(chats) : []);
+    } catch {
       setSessions([]);
-    });
+    }
   }, []);
 
-  // Fetch task count for badge
   useEffect(() => {
-    cronJobApi.listCronJobs().then((jobs) => {
-      setTaskCount(Array.isArray(jobs) ? jobs.length : 0);
-    }).catch(() => {
-      setTaskCount(0);
-    });
-  }, []);
+    void fetchSessions();
+
+    const handleFocusRefresh = () => {
+      void fetchSessions();
+    };
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState === 'visible') {
+        void fetchSessions();
+      }
+    };
+
+    window.addEventListener('focus', handleFocusRefresh);
+    document.addEventListener('visibilitychange', handleVisibilityRefresh);
+
+    return () => {
+      window.removeEventListener('focus', handleFocusRefresh);
+      document.removeEventListener('visibilitychange', handleVisibilityRefresh);
+    };
+  }, [fetchSessions]);
 
   const handleToggleHistory = useCallback(() => {
     setHistoryCollapsed((prev) => !prev);
@@ -166,8 +181,7 @@ export default function ChatSidebar(props: ChatSidebarProps) {
 
   const handleSessionClick = useCallback(
     (sessionId: string) => {
-      const realId = sessionApi.getRealIdForSession(sessionId) || sessionId;
-      navigate(`/chat/${realId}`, { replace: true });
+      navigate(`/chat/${sessionId}`, { replace: true });
     },
     [navigate],
   );
@@ -194,7 +208,18 @@ export default function ChatSidebar(props: ChatSidebarProps) {
     setActivePanel(null);
   }, []);
 
-  // ─── Collapsed mode ───
+  const handleTaskOpen = useCallback(
+    (task: CronJobSpecOutput) => {
+      setActivePanel(null);
+      onTaskClick?.(task);
+    },
+    [onTaskClick],
+  );
+
+  const handleOpenGuide = useCallback(() => {
+    setGuidePreviewVisible(true);
+  }, []);
+
   if (collapsed) {
     return (
       <>
@@ -205,22 +230,27 @@ export default function ChatSidebar(props: ChatSidebarProps) {
               activePanel={activePanel}
               onIconClick={handleIconClick}
               onNewChat={handleNewChat}
-              taskBadgeCount={taskCount}
+              taskBadgeCount={tasks.length}
             />
           </div>
           <ExpandablePanel
             visible={activePanel === 'tasks'}
             type="tasks"
             onClose={handleClosePanel}
+            tasks={tasks}
+            sessions={sessions}
+            onTaskClick={handleTaskOpen}
             toolbarRef={toolbarRef}
           />
           <ExpandablePanel
             visible={activePanel === 'history'}
             type="history"
             onClose={handleClosePanel}
+            tasks={tasks}
+            sessions={sessions}
+            onTaskClick={handleTaskOpen}
             toolbarRef={toolbarRef}
           />
-          {/* Collapse toggle */}
           <button
             className="chat-sidebar-collapse-toggle"
             onClick={handleToggleCollapse}
@@ -236,17 +266,14 @@ export default function ChatSidebar(props: ChatSidebarProps) {
     );
   }
 
-  // ─── Expanded mode (existing layout) ───
   return (
     <>
       <Style />
       <div className="chat-sidebar-wrapper">
         <div className="chat-sidebar">
           <div className="chat-sidebar-content">
-            {/* Task List */}
-            <ChatTaskList onTaskClick={onTaskClick} />
+            <ChatTaskList tasks={tasks} onTaskClick={handleTaskOpen} />
 
-            {/* History Section */}
             <div className="chat-sidebar-history">
               <div
                 className="chat-sidebar-history-header"
@@ -285,7 +312,6 @@ export default function ChatSidebar(props: ChatSidebarProps) {
             </div>
           </div>
 
-          {/* New Topic Button */}
           <div className="chat-sidebar-new-topic">
             <button
               className="chat-sidebar-new-topic-btn"
@@ -297,20 +323,23 @@ export default function ChatSidebar(props: ChatSidebarProps) {
             </button>
           </div>
 
-          {/* Footer Toolbar */}
           <div className="chat-sidebar-footer">
+            {/* 暂时隐藏，后续需要时再开放
             <div className="chat-sidebar-footer-item">
               <SkillMarketIcon />
               skill市场
             </div>
-            <div className="chat-sidebar-footer-divider" />
-            <div className="chat-sidebar-footer-item">
+            <div className="chat-sidebar-footer-divider" /> */}
+            <div
+              className="chat-sidebar-footer-item"
+              onClick={handleOpenGuide}
+              role="button"
+              tabIndex={0}>
               <GuideIcon />
               操作指南
             </div>
           </div>
         </div>
-        {/* Collapse toggle */}
         <button
           className="chat-sidebar-collapse-toggle"
           onClick={handleToggleCollapse}
@@ -321,6 +350,17 @@ export default function ChatSidebar(props: ChatSidebarProps) {
             <path d="M6 2L3 5L6 8" stroke="rgba(0,0,0,0.35)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
+      </div>
+      {/* Guide Image Preview */}
+      <div style={{ display: "none" }}>
+        <Image.PreviewGroup
+          preview={{
+            visible: guidePreviewVisible,
+            onVisibleChange: (vis) => setGuidePreviewVisible(vis),
+          }}
+        >
+          <Image src={guideImage} />
+        </Image.PreviewGroup>
       </div>
     </>
   );

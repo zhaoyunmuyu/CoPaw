@@ -25,7 +25,10 @@ from ..crons.manager import CronManager
 from ..crons.coordination import CoordinationConfig
 from ..crons.repo.json_repo import JsonJobRepository
 from ...config.config import load_agent_config
-from ...agents.memory import ReMeLightMemoryManager
+from ...agents.memory.reme_light_memory_manager import (
+    ReMeLightMemoryManager,
+)
+from ...utils.tools import decrypt_string
 
 if TYPE_CHECKING:
     from ..channels.base import BaseChannel
@@ -174,7 +177,7 @@ class Workspace:
         return CoordinationConfig(
             enabled=CRON_COORDINATION_ENABLED,
             redis_url=CRON_REDIS_URL,
-            redis_access=CRON_REDIS_ACCESS,
+            redis_access=decrypt_string(CRON_REDIS_ACCESS),
             cluster_mode=CRON_CLUSTER_MODE,
             cluster_nodes=cluster_nodes if CRON_CLUSTER_MODE else None,
             lease_ttl_seconds=CRON_LEASE_TTL_SECONDS,
@@ -282,6 +285,9 @@ class Workspace:
                         str(ws.workspace_dir / "jobs.json"),
                     ),
                     "runner": ws._service_manager.services["runner"],
+                    "chat_manager": ws._service_manager.services.get(
+                        "chat_manager",
+                    ),
                     "channel_manager": ws._service_manager.services.get(
                         "channel_manager",
                     ),

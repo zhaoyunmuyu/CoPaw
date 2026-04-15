@@ -1,6 +1,11 @@
 import { IAudio } from "./types";
 import { useProviderContext } from "..";
-import { SparkMuteLine, SparkPauseFill, SparkPlayFill, SparkVolumeLine } from "@agentscope-ai/icons";
+import {
+  SparkMuteLine,
+  SparkPauseFill,
+  SparkPlayFill,
+  SparkVolumeLine,
+} from "@agentscope-ai/icons";
 import { useCallback, useRef, useState, useEffect } from "react";
 import { IconButton } from "@agentscope-ai/design";
 
@@ -50,7 +55,7 @@ export default function Audio(props: IAudio) {
         setCurrentTime(newTime);
       }
     },
-    [duration]
+    [duration],
   );
 
   useEffect(() => {
@@ -78,13 +83,20 @@ export default function Audio(props: IAudio) {
     <>
       <audio ref={audioRef} src={props.src} muted={isMuted} />
       <div className={prefixCls}>
-        <IconButton size="small" type="text" onClick={togglePlay} icon={isPlaying ? <SparkPauseFill /> : <SparkPlayFill />} />
-        <IconButton size="small" type="text" onClick={toggleMuted} icon={isMuted ? <SparkMuteLine /> : <SparkVolumeLine />} />
+        <IconButton
+          size="small"
+          type="text"
+          onClick={togglePlay}
+          icon={isPlaying ? <SparkPauseFill /> : <SparkPlayFill />}
+        />
+        <IconButton
+          size="small"
+          type="text"
+          onClick={toggleMuted}
+          icon={isMuted ? <SparkMuteLine /> : <SparkVolumeLine />}
+        />
         <div className={`${prefixCls}-time`}>{formatTime(currentTime)}</div>
-        <div
-          className={`${prefixCls}-progress`}
-          onClick={handleProgressClick}
-        >
+        <div className={`${prefixCls}-progress`} onClick={handleProgressClick}>
           <div
             className={`${prefixCls}-progress-bar`}
             style={{ width: `${progress}%` }}

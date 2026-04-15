@@ -1,4 +1,4 @@
-import { createGlobalStyle } from 'antd-style';
+import { createGlobalStyle } from "antd-style";
 
 export default createGlobalStyle`
 .${(p) => p.theme.prefixCls}-assets-preview {
@@ -150,7 +150,7 @@ export default createGlobalStyle`
       color: #fff;
       transition: transform 0.2s ease;
       font-size: 40px;
-      
+
 
       &:hover {
         transform: scale(1.1);
@@ -190,7 +190,7 @@ export default createGlobalStyle`
       bottom: 0;
     }
   }
-    
+
   &-audio {
     display: flex;
     align-items: center;

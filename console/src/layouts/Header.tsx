@@ -11,10 +11,7 @@ import { useBrandTheme } from "../contexts/BrandThemeContext";
 // ==================== 超管用户切换 (Kun He) ====================
 import { useState, useEffect } from "react";
 import { useIframeStore } from "../stores/iframeStore";
-import {
-  mockFetchUserList,
-  type UserInfo,
-} from "../api/modules/customerInfo";
+import { mockFetchUserList, type UserInfo } from "../api/modules/customerInfo";
 // ==================== 超管用户切换结束 ====================
 
 const { Header: AntHeader } = Layout;
@@ -83,8 +80,14 @@ export default function Header() {
           <img
             src={
               isDark
-                ? `${import.meta.env.BASE_URL}${brandTheme.darkLogo.replace(/^\//, "")}`
-                : `${import.meta.env.BASE_URL}${brandTheme.logo.replace(/^\//, "")}`
+                ? `${import.meta.env.BASE_URL}${brandTheme.darkLogo.replace(
+                    /^\//,
+                    "",
+                  )}`
+                : `${import.meta.env.BASE_URL}${brandTheme.logo.replace(
+                    /^\//,
+                    "",
+                  )}`
             }
             alt={brandTheme.brandName}
             className={styles.logoImg}

@@ -1,5 +1,5 @@
-import { createGlobalStyle } from 'antd-style';
-import { DESIGN_TOKENS } from '@/config/designTokens';
+import { createGlobalStyle } from "antd-style";
+import { DESIGN_TOKENS } from "@/config/designTokens";
 
 export default createGlobalStyle`
 .welcome-center-layout {

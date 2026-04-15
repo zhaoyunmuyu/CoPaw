@@ -2,7 +2,7 @@ import React from "react";
 import { IconButton } from "@agentscope-ai/design";
 import { SparkNewChatFill } from "@agentscope-ai/icons";
 // ==================== 组件引入方式变更 (Kun He) ====================
-import { useChatAnywhereSessions } from '@/components/agentscope-chat';
+import { useChatAnywhereSessions } from "@/components/agentscope-chat";
 // ==================== 组件引入方式变更结束 ====================
 import { useTranslation } from "react-i18next";
 import { Flex, Tooltip } from "antd";

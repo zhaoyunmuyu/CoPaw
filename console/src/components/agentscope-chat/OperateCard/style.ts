@@ -1,11 +1,11 @@
-import { createGlobalStyle } from 'antd-style';
+import { createGlobalStyle } from "antd-style";
 
 export default createGlobalStyle`
 .${(p) => p.theme.prefixCls}-operate-card {
   width: 100%;
   border-radius: ${(p) => p.theme.borderRadiusLG}px;
   overflow: hidden;
-  
+
   &-collapsed {
     background-color: ${(p) => p.theme.colorFillTertiary};
   }
@@ -70,7 +70,7 @@ export default createGlobalStyle`
     opacity: 0;
     animation: ${(p) =>
       p.theme.prefixCls}-operate-card-body-open 0.2s ease-in-out forwards;
-    
+
     @keyframes ${(p) => p.theme.prefixCls}-operate-card-body-open {
       from {
         opacity: 0;
@@ -79,7 +79,7 @@ export default createGlobalStyle`
         opacity: 1;
       }
     }
-  
+
   }
 
 
@@ -106,7 +106,7 @@ export default createGlobalStyle`
       align-items: center;
       padding: 0 12px;
       gap: 8px;
-      
+
       color: ${(p) => p.theme.colorText};
 
 
@@ -126,11 +126,11 @@ export default createGlobalStyle`
       }
 
       &-done {
-        
+
       }
 
     }
-  
+
   }
 
 
@@ -160,7 +160,7 @@ export default createGlobalStyle`
 
       &:hover {
         color: ${(p) => p.theme.colorText};
-        
+
       }
 
     }
@@ -347,7 +347,7 @@ export default createGlobalStyle`
       display: flex;
       gap: 8px;
       background-color: ${(p) => p.theme.colorFillQuaternary};
-      
+
     }
 
     &-footer {

@@ -1,10 +1,10 @@
-import { Avatar as AAvatar } from 'antd';
-import classnames from 'classnames';
-import React from 'react';
-import { BubbleProps } from './interface';
+import { Avatar as AAvatar } from "antd";
+import classnames from "classnames";
+import React from "react";
+import { BubbleProps } from "./interface";
 
 interface AvatarProps
-  extends Pick<BubbleProps, 'avatar' | 'msgStatus' | 'prefixCls'> {
+  extends Pick<BubbleProps, "avatar" | "msgStatus" | "prefixCls"> {
   isAssistant?: boolean;
   className?: string;
   style?: React.CSSProperties;
@@ -25,7 +25,7 @@ const Avatar: React.FC<AvatarProps> = (props) => {
         `${prefixCls}-avatar`,
         {
           [`${prefixCls}-avatar-loading`]:
-            isAssistant && msgStatus === 'generating',
+            isAssistant && msgStatus === "generating",
         },
         className,
       )}

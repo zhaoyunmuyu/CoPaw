@@ -5,12 +5,12 @@ body {
   margin: 0;
   padding: 0;
   /* background: #fff; */
-  background: #FFFFFF;
+  background: #ffffff;
 }
 
 .swe-layout {
   /* background: #fff; */
-  background: #FFFFFF;
+  background: #ffffff;
 }
 
 /* ─── Dark mode global token overrides ─────────────────────────────────────── */
@@ -139,8 +139,8 @@ html.dark-mode .ant-pagination .ant-pagination-item a {
 
 html.dark-mode .swe-pagination .swe-pagination-item-active,
 html.dark-mode .ant-pagination .ant-pagination-item-active {
-  background: #3769FC !important;
-  border-color: #3769FC !important;
+  background: #3769fc !important;
+  border-color: #3769fc !important;
 }
 
 html.dark-mode .swe-pagination .swe-pagination-item-active a,
@@ -167,7 +167,7 @@ html.dark-mode .swe-table-column-sorter-up.active,
 html.dark-mode .swe-table-column-sorter-down.active,
 html.dark-mode .ant-table-column-sorter-up.active,
 html.dark-mode .ant-table-column-sorter-down.active {
-  color: #3769FC !important;
+  color: #3769fc !important;
 }
 
 /* Checkbox in table */
@@ -179,8 +179,8 @@ html.dark-mode .ant-checkbox-inner {
 
 html.dark-mode .swe-checkbox-checked .swe-checkbox-inner,
 html.dark-mode .ant-checkbox-checked .ant-checkbox-inner {
-  background: #3769FC !important;
-  border-color: #3769FC !important;
+  background: #3769fc !important;
+  border-color: #3769fc !important;
 }
 
 /* Page titles (h1) */
@@ -268,7 +268,7 @@ html.dark-mode .ant-select-item-option-active {
 html.dark-mode .swe-select-item-option-selected,
 html.dark-mode .ant-select-item-option-selected {
   background: rgba(97, 92, 237, 0.2) !important;
-  color: #3769FC !important;
+  color: #3769fc !important;
 }
 
 /* Form labels */
@@ -349,7 +349,7 @@ html.dark-mode
   .ant-picker-time-panel-cell-selected
   .ant-picker-time-panel-cell-inner {
   background: rgba(97, 92, 237, 0.2) !important;
-  color: #3769FC !important;
+  color: #3769fc !important;
 }
 
 /* DatePicker / RangePicker calendar panel */
@@ -419,7 +419,7 @@ html.dark-mode .ant-picker-cell-disabled {
 /* Today marker */
 html.dark-mode .swe-picker-cell-today .swe-picker-cell-inner::before,
 html.dark-mode .ant-picker-cell-today .ant-picker-cell-inner::before {
-  border-color: #3769FC !important;
+  border-color: #3769fc !important;
 }
 
 /* Selected start/end cell */
@@ -429,7 +429,7 @@ html.dark-mode .swe-picker-cell-range-start .swe-picker-cell-inner,
 html.dark-mode .ant-picker-cell-range-start .ant-picker-cell-inner,
 html.dark-mode .swe-picker-cell-range-end .swe-picker-cell-inner,
 html.dark-mode .ant-picker-cell-range-end .ant-picker-cell-inner {
-  background: #3769FC !important;
+  background: #3769fc !important;
   color: #fff !important;
 }
 
@@ -451,10 +451,9 @@ html.dark-mode
   .swe-picker-cell-in-view.swe-picker-cell-range-hover-start::after,
 html.dark-mode
   .ant-picker-cell-in-view.ant-picker-cell-range-hover-start::after,
-html.dark-mode
-  .swe-picker-cell-in-view.swe-picker-cell-range-hover-end::after,
+html.dark-mode .swe-picker-cell-in-view.swe-picker-cell-range-hover-end::after,
 html.dark-mode .ant-picker-cell-in-view.ant-picker-cell-range-hover-end::after {
-  border-color: #3769FC !important;
+  border-color: #3769fc !important;
 }
 
 /* Panel footer (OK button area) */
@@ -466,7 +465,7 @@ html.dark-mode .ant-picker-footer {
 
 html.dark-mode .swe-picker-today-btn,
 html.dark-mode .ant-picker-today-btn {
-  color: #3769FC !important;
+  color: #3769fc !important;
 }
 
 /* Divider between two panels in RangePicker */
@@ -613,12 +612,12 @@ html.dark-mode .ant-slider-rail {
 
 html.dark-mode .swe-slider-track,
 html.dark-mode .ant-slider-track {
-  background-color: #3769FC !important;
+  background-color: #3769fc !important;
 }
 
 html.dark-mode .swe-slider-mark-text,
 html.dark-mode .ant-slider-mark-text {
-  color: #3769FC !important;
+  color: #3769fc !important;
 }
 
 html.dark-mode .swe-form-item-label > label .swe-form-item-tooltip,
@@ -628,7 +627,7 @@ html.dark-mode .ant-form-item-label > label .ant-form-item-tooltip {
 
 html.dark-mode .swe-slider-handle::after,
 html.dark-mode .ant-slider-handle::after {
-  box-shadow: 0 0 0 2px #3769FC !important;
+  box-shadow: 0 0 0 2px #3769fc !important;
   background-color: #1f1f1f !important;
 }
 
@@ -737,7 +736,7 @@ html.dark-mode [class*="chat-anywhere"] [class*="message"] code {
 }
 
 html.dark-mode [class*="chat-anywhere"] [class*="message"] a {
-  color: #3769FC !important;
+  color: #3769fc !important;
 }
 
 #root {
@@ -749,12 +748,12 @@ html.dark-mode [class*="chat-anywhere"] [class*="message"] a {
   min-height: 100vh;
   max-height: 100vh;
   overflow: hidden;
-  background: #FFFFFF;
+  background: #ffffff;
 }
 
 .ant-layout-content {
   overflow: hidden;
-  background: #FFFFFF;
+  background: #ffffff;
 }
 
 .swe-bubble-list-wrapper {

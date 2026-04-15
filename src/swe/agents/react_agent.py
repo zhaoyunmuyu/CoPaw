@@ -351,6 +351,74 @@ class SWEAgent(ToolGuardMixin, ReActAgent):
 
         self._sanitize_registered_skill_dirs(toolkit)
 
+        # Build skill-tool registry for multi-skill attribution
+        self._build_skill_tool_registry(Path(workspace_dir), effective_skills)
+
+        # Store effective skills for later detector setup
+        self._effective_skills = effective_skills
+
+    def get_effective_skills(self) -> list[str]:
+        """Get the list of effective skills for this agent.
+
+        Returns:
+            List of enabled skill names
+        """
+        return self._effective_skills
+
+    def _build_skill_tool_registry(
+        self,
+        workspace_dir: Path,
+        effective_skills: list[str],
+    ) -> None:
+        """Build skill-tool registry for tool attribution.
+
+        Args:
+            workspace_dir: Workspace directory
+            effective_skills: List of enabled skill names
+        """
+        from .skill_tool_registry import build_skill_tool_registry
+
+        try:
+            build_skill_tool_registry(workspace_dir, effective_skills)
+        except Exception as e:
+            logger.warning("Failed to build skill-tool registry: %s", e)
+
+    def setup_skill_detector(self, trace_id: str) -> None:
+        """Setup skill invocation detector for a trace.
+
+        This should be called after start_trace() to enable skill
+        detection during the trace.
+
+        Args:
+            trace_id: The trace ID to setup detector for
+        """
+        try:
+            from ..tracing.manager import (
+                get_trace_manager,
+                has_trace_manager,
+                get_current_trace,
+            )
+
+            if not has_trace_manager():
+                return
+
+            trace_mgr = get_trace_manager()
+            if not trace_mgr.enabled:
+                return
+
+            # Check if detector already setup
+            ctx = get_current_trace()
+            if ctx and ctx.skill_detector:
+                return
+
+            # Setup detector with effective skills
+            trace_mgr.setup_skill_detector(
+                trace_id=trace_id,
+                enabled_skills=self._effective_skills,
+            )
+        except Exception as e:
+            logger.debug("Failed to setup skill detector: %s", e)
+
     @staticmethod
     def _sanitize_registered_skill_dirs(toolkit: Toolkit) -> None:
         """Sanitize skill dir paths for prompt/runtime display only."""

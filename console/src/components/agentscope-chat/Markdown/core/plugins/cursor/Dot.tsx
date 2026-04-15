@@ -1,9 +1,9 @@
-import { useProviderContext } from '@/components/agentscope-chat';
-import { createGlobalStyle } from 'antd-style';
-import classNames from 'classnames';
+import { useProviderContext } from "@/components/agentscope-chat";
+import { createGlobalStyle } from "antd-style";
+import classNames from "classnames";
 
 const Style = createGlobalStyle`
-.${p => p.theme.prefixCls}-markdown-cursor-dot {
+.${(p) => p.theme.prefixCls}-markdown-cursor-dot {
   display: inline-flex;
   width: 0;
   align-items: center;
@@ -16,7 +16,7 @@ const Style = createGlobalStyle`
     width: 5px;
     height: 5px;
     border-radius: 999px;
-    background-color: ${p => p.theme.colorText};
+    background-color: ${(p) => p.theme.colorText};
     animation: markdown-cursor-dot1 2s infinite ease;
   }
 
@@ -27,7 +27,7 @@ const Style = createGlobalStyle`
     height: 5px;
     border-radius: 999px;
     opacity: 0.5;
-    background-color: ${p => p.theme.colorText};
+    background-color: ${(p) => p.theme.colorText};
     animation: markdown-cursor-dot2 2s infinite ease;
   }
 
@@ -89,18 +89,20 @@ const Style = createGlobalStyle`
     opacity: 0.5;
   }
 }
-`
+`;
 
 export default function () {
   const { getPrefixCls } = useProviderContext();
-  const prefixCls = getPrefixCls('markdown-cursor-dot');
+  const prefixCls = getPrefixCls("markdown-cursor-dot");
 
-  return <>
-    <Style />
-    <span className={classNames(prefixCls, getPrefixCls('markdown-cursor'))}>
-      <span style={{ opacity: 0, marginLeft: '-.75em' }}>_</span>
-      <span className={`${prefixCls}-dot1`}></span>
-      <span className={`${prefixCls}-dot2`}></span>
-    </span>
-  </>
+  return (
+    <>
+      <Style />
+      <span className={classNames(prefixCls, getPrefixCls("markdown-cursor"))}>
+        <span style={{ opacity: 0, marginLeft: "-.75em" }}>_</span>
+        <span className={`${prefixCls}-dot1`}></span>
+        <span className={`${prefixCls}-dot2`}></span>
+      </span>
+    </>
+  );
 }
