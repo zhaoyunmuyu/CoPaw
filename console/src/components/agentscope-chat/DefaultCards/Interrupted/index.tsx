@@ -1,11 +1,11 @@
-import Interrupted from '../../Bubble/Interrupted';
+import Interrupted from "../../Bubble/Interrupted";
 
 interface IProps {
   data: {
     title?: string;
-    type?: 'error' | 'interrupted';
+    type?: "error" | "interrupted";
     desc?: string;
-  }
+  };
 }
 
 export default function (props: IProps) {

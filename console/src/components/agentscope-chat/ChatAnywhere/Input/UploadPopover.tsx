@@ -1,16 +1,16 @@
 import React, { useMemo, useRef, useState } from "react";
 import { IconButton, Popover } from "@agentscope-ai/design";
 import { PlusOutlined } from "@ant-design/icons";
-import { useProviderContext } from '@/components/agentscope-chat';
+import { useProviderContext } from "@/components/agentscope-chat";
 import { Flex, Upload } from "antd";
 
 export default function UploadPopover({
-  uploadPropsList
+  uploadPropsList,
 }: {
   uploadPropsList: any[];
 }) {
   const { getPrefixCls } = useProviderContext();
-  const prefixCls = getPrefixCls('chat-anywhere-sender');
+  const prefixCls = getPrefixCls("chat-anywhere-sender");
   const [visible, setVisible] = useState(false);
   const uploadRefs = useRef<Array<HTMLDivElement | null>>([]);
 
@@ -28,38 +28,33 @@ export default function UploadPopover({
           {item.trigger}
         </div>
       );
-    })
+    });
   }, [uploadPropsList]);
 
   const nodes = useMemo(() => {
     return uploadPropsList.map((item, index) => {
       const { trigger, ...rest } = item;
       return (
-        <Upload
-          key={index}
-          {...rest}
-        >
+        <Upload key={index} {...rest}>
           <div ref={(el) => (uploadRefs.current[index] = el)} />
         </Upload>
-      )
+      );
     });
   }, [uploadPropsList]);
 
   return (
     <>
       <Popover
-        placement='bottomLeft'
+        placement="bottomLeft"
         open={visible}
         onOpenChange={setVisible}
-        content={<Flex vertical>
-          {popoverNodes}
-        </Flex>} trigger="click" styles={{ body: { padding: 4 } }}>
-        <IconButton
-          icon={<PlusOutlined />}
-          bordered={false}
-        />
+        content={<Flex vertical>{popoverNodes}</Flex>}
+        trigger="click"
+        styles={{ body: { padding: 4 } }}
+      >
+        <IconButton icon={<PlusOutlined />} bordered={false} />
       </Popover>
       <div className={`${prefixCls}-upload-hidden-nodes`}>{nodes}</div>
     </>
-  )
+  );
 }

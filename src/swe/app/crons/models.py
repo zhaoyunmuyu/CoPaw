@@ -148,12 +148,12 @@ class CronJobSpec(BaseModel):
         elif self.task_type == "agent":
             if self.request is None:
                 raise ValueError("task_type is agent but request is missing")
-            # Keep request.user_id and request.session_id in sync with target
+            # Default request context to the dispatch target when omitted.
             target = self.dispatch.target
             self.request = self.request.model_copy(
                 update={
-                    "user_id": target.user_id,
-                    "session_id": target.session_id,
+                    "user_id": self.request.user_id or target.user_id,
+                    "session_id": self.request.session_id or target.session_id,
                 },
             )
         return self
@@ -177,3 +177,20 @@ class CronJobState(BaseModel):
 class CronJobView(BaseModel):
     spec: CronJobSpec
     state: CronJobState = Field(default_factory=CronJobState)
+    task: Optional[CronTaskView] = None
+
+
+class CronTaskView(BaseModel):
+    visible_in_my_tasks: bool = False
+    chat_id: Optional[str] = None
+    session_id: Optional[str] = None
+    has_scheduled_result: bool = False
+    latest_scheduled_preview: str = ""
+    unread_execution_count: int = 0
+    last_scheduled_run_at: Optional[datetime] = None
+    is_running: bool = False
+
+
+class CronJobListItem(CronJobSpec):
+    state: CronJobState = Field(default_factory=CronJobState)
+    task: Optional[CronTaskView] = None

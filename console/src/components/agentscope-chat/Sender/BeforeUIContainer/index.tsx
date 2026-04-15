@@ -1,7 +1,6 @@
-import { useProviderContext } from '@/components/agentscope-chat'
-import Style from './style';
-import { useMemo } from 'react';
-
+import { useProviderContext } from "@/components/agentscope-chat";
+import Style from "./style";
+import { useMemo } from "react";
 
 interface IBeforeUIContainerProps {
   leftChildren?: React.ReactNode;
@@ -9,18 +8,24 @@ interface IBeforeUIContainerProps {
   children?: React.ReactNode;
 }
 
-
-
-export default function BeforeUIContainer({ leftChildren, rightChildren, children }: IBeforeUIContainerProps) {
-  const prefixCls = useProviderContext().getPrefixCls('sender-before-ui-container');
+export default function BeforeUIContainer({
+  leftChildren,
+  rightChildren,
+  children,
+}: IBeforeUIContainerProps) {
+  const prefixCls = useProviderContext().getPrefixCls(
+    "sender-before-ui-container",
+  );
 
   const left = useMemo(() => {
-    if (leftChildren) return <div className={`${prefixCls}-left`}>{leftChildren}</div>;
+    if (leftChildren)
+      return <div className={`${prefixCls}-left`}>{leftChildren}</div>;
     return null;
   }, [leftChildren]);
 
   const right = useMemo(() => {
-    if (rightChildren) return <div className={`${prefixCls}-right`}>{rightChildren}</div>;
+    if (rightChildren)
+      return <div className={`${prefixCls}-right`}>{rightChildren}</div>;
     return null;
   }, [rightChildren]);
 
@@ -30,10 +35,12 @@ export default function BeforeUIContainer({ leftChildren, rightChildren, childre
       <div className={prefixCls}>
         <div className={`${prefixCls}-content`}>
           <div className={`${prefixCls}-content-children`}>
-            {children || <>
-              {left}
-              {right}
-            </>}
+            {children || (
+              <>
+                {left}
+                {right}
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { createGlobalStyle } from 'antd-style';
+import { createGlobalStyle } from "antd-style";
 
 export default createGlobalStyle`
 .${(p) => p.theme.prefixCls}-chat-anywhere-welcome-default {
@@ -20,7 +20,7 @@ export default createGlobalStyle`
     font-size: 12px;
     line-height: 18px;
   }
-  
+
   &-prompts {
     display: flex;
     flex-direction: column;
@@ -53,12 +53,12 @@ export default createGlobalStyle`
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    
+
 
     &:hover {
       background-color: ${({ theme }) => theme.colorFillTertiary};
     }
-    
+
   }
 }
 `;

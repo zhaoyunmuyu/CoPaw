@@ -16,7 +16,7 @@
   "SWE_DB_HOST": "",
   "SWE_DB_PORT": "3306",
   "SWE_DB_USER": "root",
-  "SWE_DB_PASSWORD": "",
+  "SWE_DB_ACCESS": "BEE_",
   "SWE_DB_NAME": "copaw_dev",
   "SWE_DB_MIN_CONN": "1",
   "SWE_DB_MAX_CONN": "5",

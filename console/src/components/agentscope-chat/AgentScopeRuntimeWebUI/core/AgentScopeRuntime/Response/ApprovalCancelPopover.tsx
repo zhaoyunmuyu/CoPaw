@@ -1,8 +1,8 @@
-import { Button, Input, Popover } from '@agentscope-ai/design';
-import { Flex } from 'antd';
-import { useState } from 'react';
-import { createStyles } from 'antd-style';
-import { useTranslation } from '../../Context/ChatAnywhereI18nContext';
+import { Button, Input, Popover } from "@agentscope-ai/design";
+import { Flex } from "antd";
+import { useState } from "react";
+import { createStyles } from "antd-style";
+import { useTranslation } from "../../Context/ChatAnywhereI18nContext";
 
 const useStyles = createStyles(({ css, token }) => ({
   container: css`
@@ -80,10 +80,10 @@ export interface ApprovalCancelPopoverProps {
 function useDefaultOptions() {
   const { t } = useTranslation();
   return [
-    t?.('cancelPopover.options.notNeeded') || '不需要',
-    t?.('cancelPopover.options.poorResult') || '效果不理想',
-    t?.('cancelPopover.options.tooSlow') || '等待时间久',
-    t?.('cancelPopover.options.wrongInput') || '输入错误',
+    t?.("cancelPopover.options.notNeeded") || "不需要",
+    t?.("cancelPopover.options.poorResult") || "效果不理想",
+    t?.("cancelPopover.options.tooSlow") || "等待时间久",
+    t?.("cancelPopover.options.wrongInput") || "输入错误",
   ];
 }
 
@@ -93,7 +93,7 @@ interface TabSelectProps {
 }
 
 function TabSelect(props: TabSelectProps) {
-  const { options, } = props;
+  const { options } = props;
   const [value, setValue] = useState<string>();
   const { styles } = useStyles();
 
@@ -102,7 +102,9 @@ function TabSelect(props: TabSelectProps) {
       {options.map((option) => (
         <div
           key={option}
-          className={`${styles.tabItem} ${value === option ? styles.tabItemSelected : ''}`}
+          className={`${styles.tabItem} ${
+            value === option ? styles.tabItemSelected : ""
+          }`}
           onClick={() => {
             setValue(option);
             props.onSelect(option);
@@ -115,55 +117,68 @@ function TabSelect(props: TabSelectProps) {
   );
 }
 
-export default function ApprovalCancelPopover(props: ApprovalCancelPopoverProps) {
+export default function ApprovalCancelPopover(
+  props: ApprovalCancelPopoverProps,
+) {
   const { t } = useTranslation();
   const defaultOptions = useDefaultOptions();
-  
+
   const {
     options = defaultOptions,
     onConfirm,
-    title = t?.('cancelPopover.title') || '取消原因',
-    placeholder = t?.('cancelPopover.placeholder') || '请输入原因，以便大模型做进一步规划',
+    title = t?.("cancelPopover.title") || "取消原因",
+    placeholder = t?.("cancelPopover.placeholder") ||
+      "请输入原因，以便大模型做进一步规划",
   } = props;
 
   const [open, setOpen] = useState<boolean>(false);
 
   const { styles } = useStyles();
-  const [reason, setReason] = useState<string>('');
+  const [reason, setReason] = useState<string>("");
 
   const handleConfirm = () => {
     onConfirm?.(reason.trim());
   };
 
-  const content = <div className={styles.container}>
-    <div className={styles.title}>{title}</div>
-    <div className={styles.content}>
-      <TabSelect
-        options={options}
-        onSelect={setReason}
-      />
-      <Input.TextArea
-        className={styles.textarea}
-        value={reason}
-        onChange={(e) => setReason(e.target.value)}
-        placeholder={placeholder}
-        rows={3}
-      />
-      <Flex className={styles.actions}>
-        <Button size="small" onClick={() => setOpen(false)}>
-          {t?.('cancelPopover.cancel') || '取消'}
-        </Button>
-        <Button size="small" type="primary" onClick={() => {
-          setOpen(false);
-          handleConfirm();
-        }}>
-          {t?.('cancelPopover.confirm') || '确认'}
-        </Button>
-      </Flex>
+  const content = (
+    <div className={styles.container}>
+      <div className={styles.title}>{title}</div>
+      <div className={styles.content}>
+        <TabSelect options={options} onSelect={setReason} />
+        <Input.TextArea
+          className={styles.textarea}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder={placeholder}
+          rows={3}
+        />
+        <Flex className={styles.actions}>
+          <Button size="small" onClick={() => setOpen(false)}>
+            {t?.("cancelPopover.cancel") || "取消"}
+          </Button>
+          <Button
+            size="small"
+            type="primary"
+            onClick={() => {
+              setOpen(false);
+              handleConfirm();
+            }}
+          >
+            {t?.("cancelPopover.confirm") || "确认"}
+          </Button>
+        </Flex>
+      </div>
     </div>
-  </div>
+  );
 
-  return <Popover open={open} onOpenChange={setOpen} trigger="click" content={content}>
-    <Button size="small" >{t?.('approval.cancel') || '取消执行'}</Button>
-  </Popover>
+  return (
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+      trigger="click"
+      content={content}
+    >
+      <Button size="small">{t?.("approval.cancel") || "取消执行"}</Button>
+    </Popover>
+  );
 }

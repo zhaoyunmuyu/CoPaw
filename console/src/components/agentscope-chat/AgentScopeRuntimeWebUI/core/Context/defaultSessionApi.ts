@@ -1,13 +1,13 @@
 import {
   IAgentScopeRuntimeWebUISession,
   IAgentScopeRuntimeWebUISessionAPI,
-} from '@/components/agentscope-chat';
+} from "@/components/agentscope-chat";
 
-const STORAGE_KEY_MULTIPLE = 'agent-scope-runtime-webui-sessions';
-const STORAGE_KEY_SINGLE = 'agent-scope-runtime-webui-session';
+const STORAGE_KEY_MULTIPLE = "agent-scope-runtime-webui-sessions";
+const STORAGE_KEY_SINGLE = "agent-scope-runtime-webui-session";
 
 function canUseLocalStorage() {
-  return typeof window !== 'undefined' && !!window.localStorage;
+  return typeof window !== "undefined" && !!window.localStorage;
 }
 
 function createSessionId() {
@@ -20,7 +20,7 @@ function normalizeSession(
 ) {
   return {
     id: session.id || fallbackId || createSessionId(),
-    name: session.name || '',
+    name: session.name || "",
     messages: session.messages || [],
     generating: session.generating,
   } as IAgentScopeRuntimeWebUISession;

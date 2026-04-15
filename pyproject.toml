@@ -33,9 +33,10 @@ dependencies = [
     "pillow>=10.0.0",
     # anyio 4.13.0: _deliver_cancellation busy-loop / getpid storm (CoPaw#2632)
     "anyio>=4.0.0,<4.13.0",
+    "boto3>=1.24.1",
+    "openpyxl>=3.1.0",
     # Redis for cron coordination (multi-instance support)
     "redis>=5.0.0",
-    "boto3>=1.24.1"
 ]
 
 [tool.setuptools.dynamic]
@@ -101,3 +102,6 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
+
+[tool.pylint.'CLASSES']
+max-public-methods = 25

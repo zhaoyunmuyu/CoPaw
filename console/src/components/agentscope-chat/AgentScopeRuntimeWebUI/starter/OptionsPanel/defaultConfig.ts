@@ -1,13 +1,15 @@
+import { agentDefaultLogo } from "@/assets/icons";
+
 export default () => {
   return {
     theme: {
-      locale: 'en',
-      colorPrimary: '#615CED',
+      locale: "en",
+      colorPrimary: "#615CED",
       darkMode: true,
-      prefix: 'agentscope-runtime-webui',
+      prefix: "agentscope-runtime-webui",
       leftHeader: {
-        logo: '/icons/agent_default_logo.png',
-        title: 'Runtime WebUI',
+        logo: agentDefaultLogo,
+        title: "Runtime WebUI",
       },
     },
     sender: {
@@ -15,42 +17,41 @@ export default () => {
       attachments: true,
       maxLength: 10000,
       disclaimer:
-        'AI can also make mistakes, so please check carefully and use it with caution',
+        "AI can also make mistakes, so please check carefully and use it with caution",
       suggestions: [
         {
-          label: 'Draw a picture',
-          value: 'draw',
+          label: "Draw a picture",
+          value: "draw",
         },
         {
-          label: 'Check some knowledge',
-          value: 'knowledge',
+          label: "Check some knowledge",
+          value: "knowledge",
         },
       ],
     },
 
     welcome: {
-      greeting: 'Hello, how can I help you today?',
-      nick: 'Assistant',
+      greeting: "Hello, how can I help you today?",
+      nick: "Assistant",
       description:
-        'I am a helpful assistant that can help you with your questions.',
-      avatar:
-        '/icons/agent_default_logo.png',
+        "I am a helpful assistant that can help you with your questions.",
+      avatar: agentDefaultLogo,
 
       prompts: [
         {
-          value: 'Hello',
+          value: "Hello",
         },
         {
-          value: 'How are you?',
+          value: "How are you?",
         },
         {
-          value: 'What can you do?',
+          value: "What can you do?",
         },
       ],
     },
     api: {
-      baseURL: '',
-      token: '',
+      baseURL: "",
+      token: "",
     },
   };
 };

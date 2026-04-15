@@ -1,10 +1,10 @@
-import Bubble from './Bubble';
-import List from './BubbleList';
-import Spin from './Spin';
-import Footer from './Footer';
-import Interrupted from './Interrupted';
+import Bubble from "./Bubble";
+import List from "./BubbleList";
+import Spin from "./Spin";
+import Footer from "./Footer";
+import Interrupted from "./Interrupted";
 
-export type { BubbleProps } from './interface';
+export type { BubbleProps } from "./interface";
 
 type BubbleType = typeof Bubble & {
   List: typeof List;

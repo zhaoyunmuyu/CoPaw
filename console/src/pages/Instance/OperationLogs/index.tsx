@@ -1,5 +1,14 @@
 import { useEffect, useState, useCallback } from "react";
-import { Card, Table, Button, Select, Space, Tag, Typography, Tooltip } from "antd";
+import {
+  Card,
+  Table,
+  Button,
+  Select,
+  Space,
+  Tag,
+  Typography,
+  Tooltip,
+} from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { instanceApi, type OperationLog } from "../../../api/modules/instance";
@@ -144,7 +153,10 @@ export default function OperationLogsPage() {
   return (
     <div className={styles.logsPage}>
       <PageHeader
-        items={[{ title: t("nav.instance") }, { title: t("nav.instanceOperationLogs") }]}
+        items={[
+          { title: t("nav.instance") },
+          { title: t("nav.instanceOperationLogs") },
+        ]}
         extra={
           <Space>
             <Select
@@ -157,12 +169,24 @@ export default function OperationLogsPage() {
                 setPage(1);
               }}
               options={[
-                { label: t("instance.actionCreateInstance"), value: "create_instance" },
-                { label: t("instance.actionUpdateInstance"), value: "update_instance" },
-                { label: t("instance.actionDeleteInstance"), value: "delete_instance" },
+                {
+                  label: t("instance.actionCreateInstance"),
+                  value: "create_instance",
+                },
+                {
+                  label: t("instance.actionUpdateInstance"),
+                  value: "update_instance",
+                },
+                {
+                  label: t("instance.actionDeleteInstance"),
+                  value: "delete_instance",
+                },
                 { label: t("instance.actionAllocate"), value: "allocate" },
                 { label: t("instance.actionMigrate"), value: "migrate" },
-                { label: t("instance.actionDeleteAllocation"), value: "delete_allocation" },
+                {
+                  label: t("instance.actionDeleteAllocation"),
+                  value: "delete_allocation",
+                },
               ]}
             />
             <Select
@@ -193,7 +217,11 @@ export default function OperationLogsPage() {
               options={[]}
               onSearch={(v) => setFilterTargetId(v)}
             />
-            <Button icon={<ReloadOutlined spin={loading} />} onClick={fetchData} loading={loading}>
+            <Button
+              icon={<ReloadOutlined spin={loading} />}
+              onClick={fetchData}
+              loading={loading}
+            >
               {t("common.refresh")}
             </Button>
           </Space>

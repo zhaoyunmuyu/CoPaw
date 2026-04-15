@@ -79,6 +79,14 @@ class Span(BaseModel):
         default=None,
         description="Skill name for skill events",
     )
+    skill_names: Optional[list[str]] = Field(
+        default=None,
+        description="List of skill names that claim ownership of this tool call",
+    )
+    skill_weights: Optional[dict[str, float]] = Field(
+        default=None,
+        description="Weight distribution for multi-skill attribution (sum = 1.0)",
+    )
     mcp_server: Optional[str] = Field(
         default=None,
         description="MCP server name if this tool is from MCP",
@@ -180,11 +188,17 @@ class ToolUsage(BaseModel):
 
 
 class SkillUsage(BaseModel):
-    """Skill usage statistics."""
+    """Skill usage statistics with weighted attribution."""
 
     skill_name: str
     count: int = 0
+    weighted_count: float = 0.0
     avg_duration_ms: int = 0
+    weighted_duration_ms: int = 0
+    tool_attribution: dict[str, float] = Field(
+        default_factory=dict,
+        description="Tool name -> weighted usage count mapping",
+    )
 
 
 class MCPToolUsage(BaseModel):
@@ -226,6 +240,7 @@ class OverviewStats(BaseModel):
     """Overview dashboard statistics."""
 
     online_users: int = 0
+    online_user_ids: list[str] = Field(default_factory=list)
     total_users: int = 0
     model_distribution: list[ModelUsage] = Field(default_factory=list)
     total_tokens: int = 0
@@ -274,6 +289,138 @@ class TraceDetail(BaseModel):
     llm_duration_ms: int = 0
     tool_duration_ms: int = 0
     tools_called: list[dict[str, Any]] = Field(default_factory=list)
+
+
+# Timeline models for hierarchical display
+
+
+class ToolCallInSkill(BaseModel):
+    """Tool call within a skill invocation."""
+
+    span_id: str
+    tool_name: str
+    mcp_server: Optional[str] = None
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    duration_ms: int = 0
+    status: str = "success"  # success / error
+    error: Optional[str] = None
+    skill_weight: Optional[float] = None
+
+
+class SkillCallTimeline(BaseModel):
+    """Skill invocation in timeline with tool hierarchy."""
+
+    span_id: str
+    skill_name: str
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    duration_ms: int = 0
+    confidence: float = 1.0
+    trigger_reason: str = "declared"  # declared / inferred / keyword
+
+    # Tools called within this skill (hierarchical)
+    tools: list[ToolCallInSkill] = Field(default_factory=list)
+
+    # Statistics
+    total_tool_calls: int = 0
+    tool_duration_ms: int = 0
+
+
+class TimelineEvent(BaseModel):
+    """Timeline event with hierarchical structure.
+
+    Supports nested events for skill -> tool hierarchy.
+    """
+
+    event_type: str  # skill_invocation / tool_call / llm_call
+    span_id: Optional[str] = None
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    duration_ms: int = 0
+
+    # Skill invocation fields
+    skill_name: Optional[str] = None
+    confidence: Optional[float] = None
+    trigger_reason: Optional[str] = None
+
+    # Tool call fields
+    tool_name: Optional[str] = None
+    mcp_server: Optional[str] = None
+    skill_weight: Optional[float] = None
+
+    # LLM call fields
+    model_name: Optional[str] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+
+    # Hierarchical children (tools under skill)
+    children: list["TimelineEvent"] = Field(default_factory=list)
+
+
+# Update forward reference for recursive model
+TimelineEvent.model_rebuild()
+
+
+class TraceDetailWithTimeline(BaseModel):
+    """Trace detail with hierarchical timeline.
+
+    Provides both flat spans (backward compatible) and
+    hierarchical timeline for enhanced visualization.
+    """
+
+    trace: Trace
+
+    # Flat list (backward compatible)
+    spans: list[Span] = Field(default_factory=list)
+
+    # Hierarchical timeline
+    timeline: list[TimelineEvent] = Field(default_factory=list)
+
+    # Skill invocations summary
+    skill_invocations: list[SkillCallTimeline] = Field(default_factory=list)
+
+    # Statistics
+    llm_duration_ms: int = 0
+    tool_duration_ms: int = 0
+    skill_duration_ms: int = 0
+    total_skills: int = 0
+    total_tools: int = 0
+    total_llm_calls: int = 0
+
+
+class SkillToolAttribution(BaseModel):
+    """Skill attribution for a tool call."""
+
+    skill_name: str
+    calls: int = 0
+    weight: float = 0.0
+    confidence: float = 1.0
+
+
+class ToolAttributionDetail(BaseModel):
+    """Detailed attribution for a tool."""
+
+    tool_name: str
+    total_calls: int = 0
+    skill_attribution: dict[str, SkillToolAttribution] = Field(
+        default_factory=dict,
+    )
+    ambiguous_calls: int = 0
+    avg_confidence: float = 1.0
+
+
+class SkillToolsStats(BaseModel):
+    """Statistics for tools used by a skill."""
+
+    skill_name: str
+    total_calls: int = 0
+    avg_duration_ms: int = 0
+    success_rate: float = 1.0
+    tools_used: list[dict[str, Any]] = Field(default_factory=list)
+    mcp_servers_used: list[str] = Field(default_factory=list)
+    trigger_reasons: dict[str, int] = Field(default_factory=dict)
+    avg_confidence: float = 1.0
 
 
 class UserListItem(BaseModel):

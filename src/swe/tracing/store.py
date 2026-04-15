@@ -18,13 +18,20 @@ from .models import (
     OverviewStats,
     SessionListItem,
     SessionStats,
+    SkillCallTimeline,
+    SkillToolsStats,
+    SkillToolAttribution,
+    SkillUsage,
     Span,
+    TimelineEvent,
+    ToolAttributionDetail,
+    ToolCallInSkill,
+    ToolUsage,
     Trace,
     TraceDetail,
+    TraceDetailWithTimeline,
     TraceListItem,
     TraceStatus,
-    ToolUsage,
-    SkillUsage,
     UserListItem,
     UserMessageItem,
     UserStats,
@@ -210,8 +217,9 @@ class TraceStore:
                 span_id, trace_id, parent_span_id, name, event_type,
                 start_time, end_time, duration_ms, user_id, session_id, channel,
                 model_name, input_tokens, output_tokens, tool_name, skill_name, mcp_server,
+                skill_names, skill_weights,
                 tool_input, tool_output, error, metadata
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         params = (
             span.span_id,
@@ -233,6 +241,8 @@ class TraceStore:
             span.tool_name,
             span.skill_name,
             span.mcp_server,
+            json.dumps(span.skill_names) if span.skill_names else None,
+            json.dumps(span.skill_weights) if span.skill_weights else None,
             json.dumps(span.tool_input) if span.tool_input else None,
             span.tool_output,
             span.error,
@@ -299,8 +309,9 @@ class TraceStore:
                 span_id, trace_id, parent_span_id, name, event_type,
                 start_time, end_time, duration_ms, user_id, session_id, channel,
                 model_name, input_tokens, output_tokens, tool_name, skill_name, mcp_server,
+                skill_names, skill_weights,
                 tool_input, tool_output, error, metadata
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         params_list = []
         for span in spans:
@@ -325,6 +336,10 @@ class TraceStore:
                     span.tool_name,
                     span.skill_name,
                     span.mcp_server,
+                    json.dumps(span.skill_names) if span.skill_names else None,
+                    json.dumps(span.skill_weights)
+                    if span.skill_weights
+                    else None,
                     json.dumps(span.tool_input) if span.tool_input else None,
                     span.tool_output,
                     span.error,
@@ -339,6 +354,7 @@ class TraceStore:
         self,
         total_users: int,
         online_users: int,
+        online_user_ids: list[str],
         token_row: Optional[dict],
         model_distribution: list,
         top_tools: list,
@@ -349,6 +365,7 @@ class TraceStore:
         """Build OverviewStats from collected data."""
         return OverviewStats(
             online_users=online_users,
+            online_user_ids=online_user_ids,
             total_users=total_users,
             model_distribution=model_distribution,
             total_tokens=token_row["total_tokens"] or 0 if token_row else 0,
@@ -357,7 +374,7 @@ class TraceStore:
             total_sessions=token_row["total_sessions"] or 0
             if token_row
             else 0,
-            total_conversations=token_row["total_sessions"] or 0
+            total_conversations=token_row["total_traces"] or 0
             if token_row
             else 0,
             avg_duration_ms=(
@@ -404,7 +421,7 @@ class TraceStore:
 
         # Basic stats
         total_users = await self._db_get_total_users(start_date, end_date)
-        online_users = await self._db_get_online_users()
+        online_users, online_user_ids = await self._db_get_online_users()
         token_row = await self._db_get_token_stats(start_date, end_date)
 
         # Distribution stats
@@ -422,6 +439,7 @@ class TraceStore:
         return self._build_overview_stats(
             total_users,
             online_users,
+            online_user_ids,
             token_row,
             model_distribution,
             top_tools,
@@ -477,8 +495,8 @@ class TraceStore:
         offset = (page - 1) * page_size
         query = f"""
             SELECT t.user_id,
-                   COUNT(*) as total_sessions,
-                   COUNT(DISTINCT t.session_id) as total_conversations,
+                   COUNT(DISTINCT t.session_id) as total_sessions,
+                   COUNT(*) as total_conversations,
                    SUM(t.total_tokens) as total_tokens,
                    MAX(t.start_time) as last_active,
                    (SELECT COUNT(*) FROM swe_tracing_spans s
@@ -652,8 +670,8 @@ class TraceStore:
         # Get basic stats
         stats_query = """
             SELECT
-                COUNT(*) as total_sessions,
-                COUNT(DISTINCT session_id) as total_conversations,
+                COUNT(DISTINCT session_id) as total_sessions,
+                COUNT(*) as total_conversations,
                 SUM(total_input_tokens) as input_tokens,
                 SUM(total_output_tokens) as output_tokens,
                 SUM(total_tokens) as total_tokens,
@@ -822,6 +840,239 @@ class TraceStore:
             tool_duration_ms=tool_duration,
             tools_called=tools_called,
         )
+
+    async def get_trace_detail_with_timeline(
+        self,
+        trace_id: str,
+    ) -> Optional[TraceDetailWithTimeline]:
+        """Get trace detail with hierarchical timeline.
+
+        Builds a hierarchical timeline where skill invocations
+        are parent nodes containing their tool calls as children.
+
+        Args:
+            trace_id: Trace identifier
+
+        Returns:
+            Trace detail with timeline or None
+        """
+        trace = await self.get_trace(trace_id)
+        if trace is None:
+            return None
+
+        spans = await self.get_spans(trace_id)
+
+        # Build timeline from spans
+        timeline = self._build_timeline(spans)
+
+        # Build skill invocations summary
+        skill_invocations = self._build_skill_invocations(spans)
+
+        # Calculate statistics
+        llm_duration = sum(
+            s.duration_ms or 0
+            for s in spans
+            if s.event_type in (EventType.LLM_INPUT, EventType.LLM_OUTPUT)
+        )
+        tool_duration = sum(
+            s.duration_ms or 0
+            for s in spans
+            if s.event_type
+            in (EventType.TOOL_CALL_START, EventType.TOOL_CALL_END)
+        )
+        skill_duration = sum(inv.duration_ms for inv in skill_invocations)
+
+        return TraceDetailWithTimeline(
+            trace=trace,
+            spans=spans,
+            timeline=timeline,
+            skill_invocations=skill_invocations,
+            llm_duration_ms=llm_duration,
+            tool_duration_ms=tool_duration,
+            skill_duration_ms=skill_duration,
+            total_skills=len(skill_invocations),
+            total_tools=len(
+                [s for s in spans if s.event_type == EventType.TOOL_CALL_END],
+            ),
+            total_llm_calls=len(
+                [s for s in spans if s.event_type == EventType.LLM_INPUT],
+            ),
+        )
+
+    def _build_timeline(self, spans: list[Span]) -> list[TimelineEvent]:
+        """Build hierarchical timeline from flat spans.
+
+        Converts flat span list to hierarchical structure where
+        skill invocations contain their tool calls as children.
+
+        Args:
+            spans: List of spans (flat)
+
+        Returns:
+            List of TimelineEvent with hierarchical structure
+        """
+        # Sort spans by start_time
+        spans = sorted(spans, key=lambda s: s.start_time)
+
+        timeline: list[TimelineEvent] = []
+        skill_stack: list[
+            TimelineEvent
+        ] = []  # Track active skills for nesting
+
+        for span in spans:
+            if span.event_type == EventType.SKILL_INVOCATION:
+                # Skill invocation start
+                event = TimelineEvent(
+                    event_type="skill_invocation",
+                    span_id=span.span_id,
+                    start_time=span.start_time,
+                    end_time=span.end_time,
+                    duration_ms=span.duration_ms or 0,
+                    skill_name=span.skill_name,
+                    confidence=(
+                        span.metadata.get("confidence", 1.0)
+                        if span.metadata
+                        else 1.0
+                    ),
+                    trigger_reason=(
+                        span.metadata.get("trigger_reason", "declared")
+                        if span.metadata
+                        else "declared"
+                    ),
+                    children=[],
+                )
+
+                # Nest under parent skill if exists
+                if skill_stack:
+                    skill_stack[-1].children.append(event)
+                else:
+                    timeline.append(event)
+
+                # Push to stack for tool nesting
+                skill_stack.append(event)
+
+            elif span.event_type in (
+                EventType.TOOL_CALL_START,
+                EventType.TOOL_CALL_END,
+            ):
+                # Only process TOOL_CALL_END for complete events
+                if span.event_type == EventType.TOOL_CALL_END:
+                    event = TimelineEvent(
+                        event_type="tool_call",
+                        span_id=span.span_id,
+                        start_time=span.start_time,
+                        end_time=span.end_time,
+                        duration_ms=span.duration_ms or 0,
+                        tool_name=span.tool_name,
+                        mcp_server=span.mcp_server,
+                        skill_weight=(
+                            span.skill_weights.get(span.skill_name, 1.0)
+                            if span.skill_weights and span.skill_name
+                            else None
+                        ),
+                        children=[],
+                    )
+
+                    # Nest under current skill if exists
+                    if skill_stack:
+                        skill_stack[-1].children.append(event)
+                    else:
+                        timeline.append(event)
+
+            elif span.event_type in (
+                EventType.LLM_INPUT,
+                EventType.LLM_OUTPUT,
+            ):
+                # LLM call event
+                if span.event_type == EventType.LLM_INPUT:
+                    event = TimelineEvent(
+                        event_type="llm_call",
+                        span_id=span.span_id,
+                        start_time=span.start_time,
+                        end_time=span.end_time,
+                        duration_ms=span.duration_ms or 0,
+                        model_name=span.model_name,
+                        input_tokens=span.input_tokens,
+                        output_tokens=span.output_tokens,
+                        children=[],
+                    )
+                    timeline.append(event)
+
+        return timeline
+
+    def _build_skill_invocations(
+        self,
+        spans: list[Span],
+    ) -> list[SkillCallTimeline]:
+        """Build skill invocation summaries with tool hierarchy.
+
+        Args:
+            spans: List of spans
+
+        Returns:
+            List of SkillCallTimeline
+        """
+        skill_spans = [
+            s for s in spans if s.event_type == EventType.SKILL_INVOCATION
+        ]
+
+        invocations: list[SkillCallTimeline] = []
+        skill_tools: dict[str, list[ToolCallInSkill]] = {}
+
+        # Group tools by skill
+        for span in spans:
+            if span.event_type == EventType.TOOL_CALL_END and span.skill_name:
+                skill_name = span.skill_name
+                if skill_name not in skill_tools:
+                    skill_tools[skill_name] = []
+
+                skill_tools[skill_name].append(
+                    ToolCallInSkill(
+                        span_id=span.span_id,
+                        tool_name=span.tool_name or "",
+                        mcp_server=span.mcp_server,
+                        start_time=span.start_time,
+                        end_time=span.end_time,
+                        duration_ms=span.duration_ms or 0,
+                        status="error" if span.error else "success",
+                        error=span.error,
+                        skill_weight=(
+                            span.skill_weights.get(skill_name)
+                            if span.skill_weights
+                            else None
+                        ),
+                    ),
+                )
+
+        # Build skill invocations
+        for skill_span in skill_spans:
+            skill_name = skill_span.skill_name or ""
+            tools = skill_tools.get(skill_name, [])
+
+            invocations.append(
+                SkillCallTimeline(
+                    span_id=skill_span.span_id,
+                    skill_name=skill_name,
+                    start_time=skill_span.start_time,
+                    end_time=skill_span.end_time,
+                    duration_ms=skill_span.duration_ms or 0,
+                    confidence=(
+                        skill_span.metadata.get("confidence", 1.0)
+                        if skill_span.metadata
+                        else 1.0
+                    ),
+                    trigger_reason=(
+                        skill_span.metadata.get("trigger_reason", "declared")
+                        if skill_span.metadata
+                        else "declared"
+                    ),
+                    tools=tools,
+                    total_tool_calls=len(tools),
+                    tool_duration_ms=sum(t.duration_ms for t in tools),
+                ),
+            )
+
+        return invocations
 
     async def get_sessions(
         self,
@@ -1130,16 +1381,21 @@ class TraceStore:
         )
         return result
 
-    async def _db_get_online_users(self) -> int:
-        """Get online users count (active in last 5 minutes)."""
+    async def _db_get_online_users(self) -> tuple[int, list[str]]:
+        """Get online users count and IDs (active in last 5 minutes).
+
+        Returns:
+            Tuple of (count, list of user IDs)
+        """
         query = """
-            SELECT COUNT(DISTINCT user_id) as online_users
+            SELECT DISTINCT user_id
             FROM swe_tracing_spans
-            WHERE start_time >= %s
+            WHERE start_time >= %s AND user_id IS NOT NULL AND user_id != ''
         """
         online_threshold = datetime.now() - timedelta(minutes=5)
-        row = await self.db.fetch_one(query, (online_threshold,))
-        return row["online_users"] if row else 0
+        rows = await self.db.fetch_all(query, (online_threshold,))
+        user_ids = [row["user_id"] for row in rows if row["user_id"]]
+        return len(user_ids), user_ids
 
     async def _db_get_token_stats(
         self,
@@ -1152,7 +1408,8 @@ class TraceStore:
                 SUM(total_input_tokens) as input_tokens,
                 SUM(total_output_tokens) as output_tokens,
                 SUM(total_tokens) as total_tokens,
-                COUNT(*) as total_sessions,
+                COUNT(*) as total_traces,
+                COUNT(DISTINCT session_id) as total_sessions,
                 AVG(duration_ms) as avg_duration
             FROM swe_tracing_traces
             WHERE start_time >= %s AND start_time <= %s
@@ -1244,6 +1501,168 @@ class TraceStore:
             )
             for row in rows
         ]
+
+    async def _db_get_top_skills_with_weights(
+        self,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> list[SkillUsage]:
+        """Get top skills with weighted attribution.
+
+        For spans with skill_weights, expand and aggregate.
+        For spans with only skill_name (old format), use weight = 1.0.
+
+        Args:
+            start_date: Start date filter
+            end_date: End date filter
+
+        Returns:
+            List of SkillUsage with weighted counts
+        """
+        # Query all relevant spans and aggregate in Python
+        # This avoids JSON_TABLE dependency for older MySQL versions
+        query = """
+            SELECT skill_name, skill_names, skill_weights, duration_ms
+            FROM swe_tracing_spans
+            WHERE start_time >= %s AND start_time <= %s
+              AND event_type = 'tool_call_end'
+              AND (skill_name IS NOT NULL OR skill_names IS NOT NULL)
+        """
+        rows = await self.db.fetch_all(query, (start_date, end_date))
+
+        # Aggregate in Python
+        skill_stats: dict[str, dict[str, float]] = {}
+
+        for row in rows:
+            duration_ms = float(row["duration_ms"] or 0)
+
+            # New format: use skill_weights
+            if row["skill_weights"]:
+                try:
+                    weights = json.loads(row["skill_weights"])
+                    for skill_name, weight in weights.items():
+                        if skill_name not in skill_stats:
+                            skill_stats[skill_name] = {
+                                "weighted_count": 0.0,
+                                "raw_count": 0,
+                                "total_duration": 0.0,
+                                "weighted_duration": 0.0,
+                            }
+                        skill_stats[skill_name]["weighted_count"] += weight
+                        skill_stats[skill_name]["raw_count"] += 1
+                        skill_stats[skill_name][
+                            "total_duration"
+                        ] += duration_ms
+                        skill_stats[skill_name]["weighted_duration"] += (
+                            duration_ms * weight
+                        )
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            # Old format: single skill_name with weight = 1.0
+            elif row["skill_name"]:
+                skill_name = row["skill_name"]
+                if skill_name not in skill_stats:
+                    skill_stats[skill_name] = {
+                        "weighted_count": 0.0,
+                        "raw_count": 0,
+                        "total_duration": 0.0,
+                        "weighted_duration": 0.0,
+                    }
+                skill_stats[skill_name]["weighted_count"] += 1.0
+                skill_stats[skill_name]["raw_count"] += 1
+                skill_stats[skill_name]["total_duration"] += duration_ms
+                skill_stats[skill_name]["weighted_duration"] += duration_ms
+
+        # Convert to SkillUsage objects
+        result = []
+        for skill_name, stats in skill_stats.items():
+            avg_duration = (
+                stats["total_duration"] / stats["raw_count"]
+                if stats["raw_count"] > 0
+                else 0
+            )
+            weighted_avg_duration = (
+                stats["weighted_duration"] / stats["weighted_count"]
+                if stats["weighted_count"] > 0
+                else 0
+            )
+            result.append(
+                SkillUsage(
+                    skill_name=skill_name,
+                    count=int(stats["raw_count"]),
+                    weighted_count=round(stats["weighted_count"], 2),
+                    avg_duration_ms=int(avg_duration),
+                    weighted_duration_ms=int(weighted_avg_duration),
+                ),
+            )
+
+        return sorted(result, key=lambda x: x.weighted_count, reverse=True)[
+            :10
+        ]
+
+    async def _db_get_skill_tool_attribution(
+        self,
+        skill_name: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> dict[str, float]:
+        """Get tool attribution for a specific skill.
+
+        Returns weighted usage count for each tool used by the skill.
+
+        Args:
+            skill_name: Skill identifier
+            start_date: Start date filter
+            end_date: End date filter
+
+        Returns:
+            Dict mapping tool_name -> weighted usage count
+        """
+        query = """
+            SELECT tool_name, skill_name, skill_weights
+            FROM swe_tracing_spans
+            WHERE start_time >= %s AND start_time <= %s
+              AND event_type = 'tool_call_end'
+              AND tool_name IS NOT NULL
+              AND (skill_name = %s OR skill_names IS NOT NULL)
+        """
+        rows = await self.db.fetch_all(
+            query,
+            (start_date, end_date, skill_name),
+        )
+
+        attribution: dict[str, float] = {}
+
+        for row in rows:
+            tool_name = row["tool_name"]
+            if tool_name is None:
+                continue
+
+            if row["skill_weights"]:
+                try:
+                    weights = json.loads(row["skill_weights"])
+                    weight = weights.get(skill_name, 0)
+                except (json.JSONDecodeError, TypeError):
+                    weight = 0
+            elif row["skill_name"] == skill_name:
+                weight = 1.0
+            else:
+                weight = 0
+
+            if weight > 0:
+                if tool_name not in attribution:
+                    attribution[tool_name] = 0.0
+                attribution[tool_name] += weight
+
+        return {
+            k: round(v, 2)
+            for k, v in sorted(
+                attribution.items(),
+                key=lambda x: x[1],
+                reverse=True,
+            )
+        }
 
     async def _db_get_mcp_stats(
         self,
@@ -1570,3 +1989,305 @@ class TraceStore:
             error=row["error"],
             metadata=json.loads(row["metadata"]) if row["metadata"] else None,
         )
+
+    # Skill attribution methods
+
+    async def get_skill_tools_stats(
+        self,
+        skill_name: str,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> SkillToolsStats:
+        """Get statistics for tools used by a skill.
+
+        Args:
+            skill_name: Skill identifier
+            start_date: Start date filter
+            end_date: End date filter
+
+        Returns:
+            SkillToolsStats with tool usage breakdown
+        """
+        if start_date is None:
+            start_date = datetime.now() - timedelta(days=30)
+        if end_date is None:
+            end_date = datetime.now()
+
+        # Get skill invocation stats
+        skill_query = """
+            SELECT COUNT(*) as total_calls,
+                   AVG(duration_ms) as avg_duration,
+                   SUM(CASE WHEN error IS NULL THEN 1 ELSE 0 END) as success_count
+            FROM swe_tracing_spans
+            WHERE start_time >= %s AND start_time <= %s
+              AND event_type = 'skill_invocation'
+              AND skill_name = %s
+        """
+        skill_row = await self.db.fetch_one(
+            skill_query,
+            (start_date, end_date, skill_name),
+        )
+
+        if not skill_row or skill_row["total_calls"] == 0:
+            return SkillToolsStats(skill_name=skill_name)
+
+        total_calls = skill_row["total_calls"] or 0
+        avg_duration = int(skill_row["avg_duration"] or 0)
+        success_count = skill_row["success_count"] or 0
+        success_rate = success_count / total_calls if total_calls > 0 else 1.0
+
+        # Get tools used by this skill
+        tools_query = """
+            SELECT tool_name, mcp_server,
+                   COUNT(*) as count,
+                   AVG(duration_ms) as avg_duration
+            FROM swe_tracing_spans
+            WHERE start_time >= %s AND start_time <= %s
+              AND event_type = 'tool_call_end'
+              AND tool_name IS NOT NULL
+              AND (skill_name = %s OR JSON_CONTAINS(skill_names, %s))
+            GROUP BY tool_name, mcp_server
+            ORDER BY count DESC
+        """
+        tool_rows = await self.db.fetch_all(
+            tools_query,
+            (start_date, end_date, skill_name, f'"{skill_name}"'),
+        )
+
+        tools_used = []
+        mcp_servers = set()
+
+        for row in tool_rows:
+            tool_entry = {
+                "tool_name": row["tool_name"],
+                "count": row["count"] or 0,
+                "avg_duration_ms": int(row["avg_duration"] or 0),
+                "is_mcp": row["mcp_server"] is not None,
+                "mcp_server": row["mcp_server"],
+            }
+            tools_used.append(tool_entry)
+            if row["mcp_server"]:
+                mcp_servers.add(row["mcp_server"])
+
+        # Get trigger reason distribution
+        trigger_query = """
+            SELECT JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.trigger_reason')) as reason,
+                   COUNT(*) as count
+            FROM swe_tracing_spans
+            WHERE start_time >= %s AND start_time <= %s
+              AND event_type = 'skill_invocation'
+              AND skill_name = %s
+              AND metadata IS NOT NULL
+            GROUP BY reason
+        """
+        trigger_rows = await self.db.fetch_all(
+            trigger_query,
+            (start_date, end_date, skill_name),
+        )
+
+        trigger_reasons = {}
+        for row in trigger_rows:
+            reason = row["reason"] or "unknown"
+            trigger_reasons[reason] = row["count"] or 0
+
+        # Get average confidence
+        confidence_query = """
+            SELECT AVG(CAST(JSON_EXTRACT(metadata, '$.confidence') AS DECIMAL(10,2))) as avg_conf
+            FROM swe_tracing_spans
+            WHERE start_time >= %s AND start_time <= %s
+              AND event_type = 'skill_invocation'
+              AND skill_name = %s
+              AND metadata IS NOT NULL
+        """
+        conf_row = await self.db.fetch_one(
+            confidence_query,
+            (start_date, end_date, skill_name),
+        )
+        avg_confidence = float(conf_row["avg_conf"] or 1.0)
+
+        return SkillToolsStats(
+            skill_name=skill_name,
+            total_calls=total_calls,
+            avg_duration_ms=avg_duration,
+            success_rate=round(success_rate, 2),
+            tools_used=tools_used,
+            mcp_servers_used=list(mcp_servers),
+            trigger_reasons=trigger_reasons,
+            avg_confidence=round(avg_confidence, 2),
+        )
+
+    def _init_tool_data_bucket(self) -> dict[str, Any]:
+        """Initialize a new tool data bucket for aggregation."""
+        return {
+            "total_calls": 0,
+            "skill_calls": {},
+            "ambiguous": 0,
+            "confidence_sum": 0.0,
+            "confidence_count": 0,
+        }
+
+    def _process_skill_weights(
+        self,
+        tool_data: dict[str, dict[str, Any]],
+        tool_name: str,
+        row: dict,
+    ) -> None:
+        """Process skill weights from a database row."""
+        try:
+            weights = json.loads(row["skill_weights"])
+            count = row["count"] or 0
+            bucket = tool_data[tool_name]
+
+            for skill, weight in weights.items():
+                if skill not in bucket["skill_calls"]:
+                    bucket["skill_calls"][skill] = {
+                        "calls": 0,
+                        "weight_sum": 0.0,
+                    }
+                bucket["skill_calls"][skill]["calls"] += count
+                bucket["skill_calls"][skill]["weight_sum"] += weight * count
+
+            bucket["confidence_count"] += count
+            bucket["confidence_sum"] += sum(weights.values()) * count
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    def _process_single_skill(
+        self,
+        tool_data: dict[str, dict[str, Any]],
+        tool_name: str,
+        row: dict,
+    ) -> None:
+        """Process single skill attribution from a database row."""
+        skill = row["skill_name"]
+        count = row["count"] or 0
+        bucket = tool_data[tool_name]
+
+        if skill not in bucket["skill_calls"]:
+            bucket["skill_calls"][skill] = {"calls": 0, "weight_sum": 0.0}
+        bucket["skill_calls"][skill]["calls"] += count
+        bucket["skill_calls"][skill]["weight_sum"] += count
+        bucket["confidence_count"] += count
+        bucket["confidence_sum"] += count
+
+    def _check_multi_skill_attribution(
+        self,
+        tool_data: dict[str, dict[str, Any]],
+        tool_name: str,
+        row: dict,
+    ) -> None:
+        """Check and mark multi-skill attribution."""
+        if not row["skill_names"]:
+            return
+        try:
+            names = json.loads(row["skill_names"])
+            if len(names) > 1:
+                tool_data[tool_name]["ambiguous"] += row["count"] or 0
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    def _build_attribution_result(
+        self,
+        tool_data: dict[str, dict[str, Any]],
+    ) -> list[ToolAttributionDetail]:
+        """Build ToolAttributionDetail list from aggregated data."""
+        result = []
+        for tool_name, data in tool_data.items():
+            total_calls = data["total_calls"]
+            skill_attribution = {}
+
+            for skill, skill_data in data["skill_calls"].items():
+                weight = (
+                    skill_data["weight_sum"] / total_calls
+                    if total_calls > 0
+                    else 0.0
+                )
+                confidence = (
+                    skill_data["weight_sum"] / skill_data["calls"]
+                    if skill_data["calls"] > 0
+                    else 1.0
+                )
+                skill_attribution[skill] = SkillToolAttribution(
+                    skill_name=skill,
+                    calls=skill_data["calls"],
+                    weight=round(weight, 2),
+                    confidence=round(confidence, 2),
+                )
+
+            avg_confidence = (
+                data["confidence_sum"] / data["confidence_count"]
+                if data["confidence_count"] > 0
+                else 1.0
+            )
+
+            result.append(
+                ToolAttributionDetail(
+                    tool_name=tool_name,
+                    total_calls=total_calls,
+                    skill_attribution=skill_attribution,
+                    ambiguous_calls=data["ambiguous"],
+                    avg_confidence=round(avg_confidence, 2),
+                ),
+            )
+        return result
+
+    async def get_tool_skill_attributions(
+        self,
+        tool_name: Optional[str] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> list[ToolAttributionDetail]:
+        """Get skill attribution details for tools.
+
+        Args:
+            tool_name: Optional filter by tool name
+            start_date: Start date filter
+            end_date: End date filter
+
+        Returns:
+            List of ToolAttributionDetail
+        """
+        if start_date is None:
+            start_date = datetime.now() - timedelta(days=30)
+        if end_date is None:
+            end_date = datetime.now()
+
+        where_clauses = [
+            "start_time >= %s",
+            "start_time <= %s",
+            "event_type = 'tool_call_end'",
+            "tool_name IS NOT NULL",
+        ]
+        params: list[Any] = [start_date, end_date]
+
+        if tool_name:
+            where_clauses.append("tool_name = %s")
+            params.append(tool_name)
+
+        where_sql = " AND ".join(where_clauses)
+        query = f"""
+            SELECT tool_name, skill_name, skill_names, skill_weights,
+                   COUNT(*) as count
+            FROM swe_tracing_spans
+            WHERE {where_sql}
+            GROUP BY tool_name, skill_name, skill_names, skill_weights
+        """
+        rows = await self.db.fetch_all(query, tuple(params))
+
+        tool_data: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            tn = row["tool_name"]
+            if tn not in tool_data:
+                tool_data[tn] = self._init_tool_data_bucket()
+
+            tool_data[tn]["total_calls"] += row["count"] or 0
+
+            if row["skill_weights"]:
+                self._process_skill_weights(tool_data, tn, row)
+            elif row["skill_name"]:
+                self._process_single_skill(tool_data, tn, row)
+
+            self._check_multi_skill_attribution(tool_data, tn, row)
+
+        result = self._build_attribution_result(tool_data)
+        return sorted(result, key=lambda x: x.total_calls, reverse=True)[:20]

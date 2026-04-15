@@ -1,8 +1,10 @@
 import { request } from "../request";
+import { buildAuthHeaders } from "../authHeaders";
 
 // Types
 export interface OverviewStats {
   online_users: number;
+  online_user_ids: string[];
   total_users: number;
   model_distribution: ModelUsage[];
   total_tokens: number;
@@ -177,6 +179,93 @@ export interface ToolCall {
   error: string | null;
 }
 
+// Timeline types for hierarchical display
+export interface ToolCallInSkill {
+  span_id: string;
+  tool_name: string;
+  mcp_server: string | null;
+  start_time: string;
+  end_time: string | null;
+  duration_ms: number;
+  status: string;
+  error: string | null;
+  skill_weight: number | null;
+}
+
+export interface SkillCallTimeline {
+  span_id: string;
+  skill_name: string;
+  start_time: string;
+  end_time: string | null;
+  duration_ms: number;
+  confidence: number;
+  trigger_reason: string;
+  tools: ToolCallInSkill[];
+  total_tool_calls: number;
+  tool_duration_ms: number;
+}
+
+export interface TimelineEvent {
+  event_type: string;
+  span_id: string | null;
+  start_time: string;
+  end_time: string | null;
+  duration_ms: number;
+  skill_name: string | null;
+  confidence: number | null;
+  trigger_reason: string | null;
+  tool_name: string | null;
+  mcp_server: string | null;
+  skill_weight: number | null;
+  model_name: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  children: TimelineEvent[];
+}
+
+export interface TraceDetailWithTimeline {
+  trace: Trace;
+  spans: Span[];
+  timeline: TimelineEvent[];
+  skill_invocations: SkillCallTimeline[];
+  llm_duration_ms: number;
+  tool_duration_ms: number;
+  skill_duration_ms: number;
+  total_skills: number;
+  total_tools: number;
+  total_llm_calls: number;
+}
+
+export interface SkillToolsStats {
+  skill_name: string;
+  total_calls: number;
+  avg_duration_ms: number;
+  success_rate: number;
+  tools_used: {
+    tool_name: string;
+    count: number;
+    avg_duration_ms: number;
+    is_mcp: boolean;
+    mcp_server: string | null;
+  }[];
+  mcp_servers_used: string[];
+  trigger_reasons: Record<string, number>;
+  avg_confidence: number;
+}
+
+export interface ToolAttributionDetail {
+  tool_name: string;
+  total_calls: number;
+  skill_attribution: Record<string, {
+    skill_name: string;
+    calls: number;
+    weight: number;
+    confidence: number;
+  }>;
+  ambiguous_calls: number;
+  avg_confidence: number;
+}
+
 export interface UserMessageItem {
   trace_id: string;
   user_id: string;
@@ -192,7 +281,10 @@ export interface UserMessageItem {
 
 // API functions
 export const tracingApi = {
-  getOverview: async (startDate?: string, endDate?: string): Promise<OverviewStats> => {
+  getOverview: async (
+    startDate?: string,
+    endDate?: string,
+  ): Promise<OverviewStats> => {
     const params = new URLSearchParams();
     if (startDate) params.append("start_date", startDate);
     if (endDate) params.append("end_date", endDate);
@@ -206,8 +298,13 @@ export const tracingApi = {
       user_id?: string;
       start_date?: string;
       end_date?: string;
-    }
-  ): Promise<{ items: UserListItem[]; total: number; page: number; page_size: number }> => {
+    },
+  ): Promise<{
+    items: UserListItem[];
+    total: number;
+    page: number;
+    page_size: number;
+  }> => {
     const params = new URLSearchParams();
     params.append("page", page.toString());
     params.append("page_size", pageSize.toString());
@@ -219,7 +316,11 @@ export const tracingApi = {
     return request(`/tracing/users?${params.toString()}`);
   },
 
-  getUserStats: async (userId: string, startDate?: string, endDate?: string): Promise<UserStats> => {
+  getUserStats: async (
+    userId: string,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<UserStats> => {
     const params = new URLSearchParams();
     if (startDate) params.append("start_date", startDate);
     if (endDate) params.append("end_date", endDate);
@@ -236,8 +337,13 @@ export const tracingApi = {
       status?: string;
       start_date?: string;
       end_date?: string;
-    }
-  ): Promise<{ items: TraceListItem[]; total: number; page: number; page_size: number }> => {
+    },
+  ): Promise<{
+    items: TraceListItem[];
+    total: number;
+    page: number;
+    page_size: number;
+  }> => {
     const params = new URLSearchParams();
     params.append("page", page.toString());
     params.append("page_size", pageSize.toString());
@@ -253,7 +359,10 @@ export const tracingApi = {
     return request(`/tracing/traces/${traceId}`);
   },
 
-  getModelUsage: async (startDate?: string, endDate?: string): Promise<{ models: ModelUsage[] }> => {
+  getModelUsage: async (
+    startDate?: string,
+    endDate?: string,
+  ): Promise<{ models: ModelUsage[] }> => {
     const params = new URLSearchParams();
     if (startDate) params.append("start_date", startDate);
     if (endDate) params.append("end_date", endDate);
@@ -261,7 +370,10 @@ export const tracingApi = {
     return request(`/tracing/models${query}`);
   },
 
-  getToolUsage: async (startDate?: string, endDate?: string): Promise<{ tools: ToolUsage[] }> => {
+  getToolUsage: async (
+    startDate?: string,
+    endDate?: string,
+  ): Promise<{ tools: ToolUsage[] }> => {
     const params = new URLSearchParams();
     if (startDate) params.append("start_date", startDate);
     if (endDate) params.append("end_date", endDate);
@@ -277,8 +389,13 @@ export const tracingApi = {
       session_id?: string;
       start_date?: string;
       end_date?: string;
-    }
-  ): Promise<{ items: SessionListItem[]; total: number; page: number; page_size: number }> => {
+    },
+  ): Promise<{
+    items: SessionListItem[];
+    total: number;
+    page: number;
+    page_size: number;
+  }> => {
     const params = new URLSearchParams();
     params.append("page", page.toString());
     params.append("page_size", pageSize.toString());
@@ -290,12 +407,18 @@ export const tracingApi = {
     return request(`/tracing/sessions?${params.toString()}`);
   },
 
-  getSessionStats: async (sessionId: string, startDate?: string, endDate?: string): Promise<SessionStats> => {
+  getSessionStats: async (
+    sessionId: string,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<SessionStats> => {
     const params = new URLSearchParams();
     if (startDate) params.append("start_date", startDate);
     if (endDate) params.append("end_date", endDate);
     const query = params.toString() ? `?${params.toString()}` : "";
-    return request(`/tracing/sessions/${encodeURIComponent(sessionId)}${query}`);
+    return request(
+      `/tracing/sessions/${encodeURIComponent(sessionId)}${query}`,
+    );
   },
 
   getUserMessages: async (
@@ -307,8 +430,13 @@ export const tracingApi = {
       start_date?: string;
       end_date?: string;
       query?: string;
-    }
-  ): Promise<{ items: UserMessageItem[]; total: number; page: number; page_size: number }> => {
+    },
+  ): Promise<{
+    items: UserMessageItem[];
+    total: number;
+    page: number;
+    page_size: number;
+  }> => {
     const params = new URLSearchParams();
     params.append("page", page.toString());
     params.append("page_size", pageSize.toString());
@@ -328,7 +456,7 @@ export const tracingApi = {
       end_date?: string;
       query?: string;
     },
-    format: string = "xlsx"
+    format: string = "xlsx",
   ): Promise<Blob> => {
     const params = new URLSearchParams();
     params.append("format", format);
@@ -338,17 +466,60 @@ export const tracingApi = {
       });
     }
     // Use the proper API URL and include authorization token
-    const { getApiUrl, getApiToken } = await import("../config");
+    const { getApiUrl } = await import("../config");
     const url = getApiUrl(`/tracing/user-messages/export?${params.toString()}`);
-    const token = getApiToken();
-    const headers: HeadersInit = {};
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
+    const headers = new Headers(buildAuthHeaders());
     const response = await fetch(url, { headers });
     if (!response.ok) {
-      throw new Error(`Export failed: ${response.status} ${response.statusText}`);
+      // Try to parse error message from response
+      let errorMessage = `Export failed: ${response.status} ${response.statusText}`;
+      try {
+        const errorData = await response.json();
+        console.error("Export error response:", errorData);
+        if (errorData.detail) {
+          errorMessage = errorData.detail;
+        }
+      } catch {
+        // Ignore JSON parse error
+      }
+      throw new Error(errorMessage);
     }
     return response.blob();
+  },
+
+  // Timeline with skill hierarchy
+  getTraceTimeline: async (traceId: string): Promise<TraceDetailWithTimeline> => {
+    return request(`/tracing/traces/${traceId}/timeline`);
+  },
+
+  // Skill tools statistics
+  getSkillToolsStats: async (
+    skillName: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<SkillToolsStats> => {
+    const params = new URLSearchParams();
+    if (startDate) params.append("start_date", startDate);
+    if (endDate) params.append("end_date", endDate);
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return request(`/tracing/skills/${encodeURIComponent(skillName)}/tools${query}`);
+  },
+
+  // Skill attribution details
+  getSkillAttribution: async (
+    filters?: {
+      tool_name?: string;
+      start_date?: string;
+      end_date?: string;
+    }
+  ): Promise<{ attributions: ToolAttributionDetail[] }> => {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) params.append(key, value);
+      });
+   }
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return request(`/tracing/skills/attribution${query}`);
   },
 };

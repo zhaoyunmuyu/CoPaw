@@ -27,6 +27,7 @@ from ..instance import instance_router
 from ..backup.router import router as backup_router
 from ..backup.batch_router import router as batch_backup_router
 from .zhaohu import zhaohu_router
+from .cases import router as cases_router
 
 router = APIRouter()
 
@@ -55,6 +56,7 @@ router.include_router(instance_router)
 router.include_router(backup_router)
 router.include_router(batch_backup_router)
 router.include_router(zhaohu_router)
+router.include_router(cases_router)
 
 
 def create_agent_scoped_router() -> APIRouter:

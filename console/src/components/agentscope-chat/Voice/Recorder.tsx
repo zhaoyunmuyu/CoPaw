@@ -1,3 +1,3 @@
 export default function Recorder() {
-  return <div>...</div>
+  return <div>...</div>;
 }

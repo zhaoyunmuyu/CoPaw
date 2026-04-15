@@ -1,8 +1,8 @@
-import React from 'react';
-import { Avatar, Tooltip } from 'antd';
-import { useProviderContext } from '@/components/agentscope-chat';
-import { SparkRightArrowLine } from '@agentscope-ai/icons';
-import Style from './style';
+import React from "react";
+import { Avatar, Tooltip } from "antd";
+import { useProviderContext } from "@/components/agentscope-chat";
+import { SparkRightArrowLine } from "@agentscope-ai/icons";
+import Style from "./style";
 
 export interface IWelcomePromptsProps {
   /**
@@ -37,33 +37,52 @@ export interface IWelcomePromptsProps {
 
 export default function WelcomePrompts(props: IWelcomePromptsProps) {
   const { greeting, avatar, description, prompts, onClick } = props;
-  const prefixCls = useProviderContext().getPrefixCls('welcome-prompts');
+  const prefixCls = useProviderContext().getPrefixCls("welcome-prompts");
 
-  return <>
-    <Style />
-    <div className={prefixCls}>
-      {avatar && (
-        typeof avatar === 'string'
-          ? <Avatar src={avatar} shape="square" style={{ width: "100%", height: 110 }} />
-          : avatar
-      )}
-      {greeting && <div className={`${prefixCls}-greeting`}>{greeting}</div>}
-      {description && <div className={`${prefixCls}-description`}>{description}</div>}
-      {prompts?.length > 0 && (
-        <div className={`${prefixCls}-prompts`}>
-          {prompts.map(item => {
-            const prompt = typeof item === 'string'
-              ? { label: item, value: item }
-              : { ...item, label: item.label || item.value, value: item.value };
+  return (
+    <>
+      <Style />
+      <div className={prefixCls}>
+        {avatar &&
+          (typeof avatar === "string" ? (
+            <Avatar
+              src={avatar}
+              shape="square"
+              style={{ width: "100%", height: 110 }}
+            />
+          ) : (
+            avatar
+          ))}
+        {greeting && <div className={`${prefixCls}-greeting`}>{greeting}</div>}
+        {description && (
+          <div className={`${prefixCls}-description`}>{description}</div>
+        )}
+        {prompts?.length > 0 && (
+          <div className={`${prefixCls}-prompts`}>
+            {prompts.map((item) => {
+              const prompt =
+                typeof item === "string"
+                  ? { label: item, value: item }
+                  : {
+                      ...item,
+                      label: item.label || item.value,
+                      value: item.value,
+                    };
 
-            return (
-              <Prompt key={prompt.value} prompt={prompt} prefixCls={prefixCls} onClick={onClick} />
-            );
-          })}
-        </div>
-      )}
-    </div>
-  </>;
+              return (
+                <Prompt
+                  key={prompt.value}
+                  prompt={prompt}
+                  prefixCls={prefixCls}
+                  onClick={onClick}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </>
+  );
 }
 
 function Prompt(props: {
@@ -74,17 +93,17 @@ function Prompt(props: {
   const { prefixCls } = props;
 
   return (
-    <div className={`${prefixCls}-prompt`} onClick={() => props.onClick?.(props.prompt.value)}>
+    <div
+      className={`${prefixCls}-prompt`}
+      onClick={() => props.onClick?.(props.prompt.value)}
+    >
       {/* =========== 移除图标展示Start =========== */}
-      <img
-        className={`${prefixCls}-prompt-icon`}
-        src="/chat_icon.png"
-        alt=""
-      />
+      <img className={`${prefixCls}-prompt-icon`} src="/chat_icon.png" alt="" />
       {/* =========== 移除图标展示End =========== */}
       <Tooltip
-        title={props.prompt.label?.length > 28 ? props.prompt.label : ''}
-        mouseEnterDelay={0.3}>
+        title={props.prompt.label?.length > 28 ? props.prompt.label : ""}
+        mouseEnterDelay={0.3}
+      >
         <span className={`${prefixCls}-prompt-label`}>
           {props.prompt.label}
         </span>

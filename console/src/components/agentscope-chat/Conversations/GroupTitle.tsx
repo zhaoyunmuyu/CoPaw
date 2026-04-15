@@ -1,7 +1,7 @@
-import { Typography } from 'antd';
-import type { ConfigProviderProps, GetProp } from 'antd';
-import classnames from 'classnames';
-import React from 'react';
+import { Typography } from "antd";
+import type { ConfigProviderProps, GetProp } from "antd";
+import classnames from "classnames";
+import React from "react";
 
 export interface GroupTitleProps {
   /**
@@ -12,7 +12,7 @@ export interface GroupTitleProps {
 }
 
 export const GroupTitleContext = React.createContext<{
-  prefixCls?: GetProp<ConfigProviderProps, 'prefixCls'>;
+  prefixCls?: GetProp<ConfigProviderProps, "prefixCls">;
 }>(null!);
 
 const GroupTitle: React.FC<GroupTitleProps> = ({ children }) => {

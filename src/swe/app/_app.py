@@ -226,6 +226,10 @@ async def lifespan(
 
             db_connection = DatabaseConnection(database_config)
             await db_connection.connect()
+            if not db_connection.is_connected:
+                raise RuntimeError(
+                    "Database connection failed. Please check database configuration.",
+                )
             logger.info(
                 "Database connection established: %s",
                 database_config.host,

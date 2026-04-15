@@ -282,6 +282,9 @@ class Workspace:
                         str(ws.workspace_dir / "jobs.json"),
                     ),
                     "runner": ws._service_manager.services["runner"],
+                    "chat_manager": ws._service_manager.services.get(
+                        "chat_manager",
+                    ),
                     "channel_manager": ws._service_manager.services.get(
                         "channel_manager",
                     ),

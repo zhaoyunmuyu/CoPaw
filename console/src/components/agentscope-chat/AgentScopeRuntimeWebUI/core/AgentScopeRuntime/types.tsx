@@ -39,41 +39,41 @@ export enum AgentScopeRuntimeContentType {
   AUDIO = "audio",
   VIDEO = "video",
   FILE = "file",
-  REFUSAL = 'refusal'
+  REFUSAL = "refusal",
 }
 
 export interface IBaseContent {
   type: string;
-  object?: 'content';
+  object?: "content";
   delta?: boolean | null;
   msg_id?: string;
   status: AgentScopeRuntimeRunStatus;
 }
 
 export interface ITextContent extends IBaseContent {
-  type: AgentScopeRuntimeContentType.TEXT,
+  type: AgentScopeRuntimeContentType.TEXT;
   text: string;
 }
 export interface IImageContent extends IBaseContent {
-  type: AgentScopeRuntimeContentType.IMAGE,
+  type: AgentScopeRuntimeContentType.IMAGE;
   image_url: string;
 }
 
 export interface IAudioContent extends IBaseContent {
-  type: AgentScopeRuntimeContentType.AUDIO,
+  type: AgentScopeRuntimeContentType.AUDIO;
   data?: string;
   audio_url?: string;
   format?: string;
 }
 
 export interface IVideoContent extends IBaseContent {
-  type: AgentScopeRuntimeContentType.VIDEO,
+  type: AgentScopeRuntimeContentType.VIDEO;
   video_url: string;
   video_poster?: string;
 }
 
 export interface IFileContent extends IBaseContent {
-  type: AgentScopeRuntimeContentType.FILE,
+  type: AgentScopeRuntimeContentType.FILE;
   file_id?: string;
   file_url?: string;
   file_name?: string;
@@ -82,20 +82,27 @@ export interface IFileContent extends IBaseContent {
 }
 
 export interface IRefusalContent extends IBaseContent {
-  type: AgentScopeRuntimeContentType.REFUSAL,
+  type: AgentScopeRuntimeContentType.REFUSAL;
   refusal: string;
 }
 
 export interface IDataContent<T = Record<string, any>> extends IBaseContent {
-  type: AgentScopeRuntimeContentType.DATA,
+  type: AgentScopeRuntimeContentType.DATA;
   data: T;
 }
 
-export type IContent = ITextContent | IImageContent | IAudioContent | IVideoContent | IDataContent | IFileContent | IRefusalContent;
+export type IContent =
+  | ITextContent
+  | IImageContent
+  | IAudioContent
+  | IVideoContent
+  | IDataContent
+  | IFileContent
+  | IRefusalContent;
 
 export interface IAgentScopeRuntimeMessage {
   id: string;
-  object?: 'message';
+  object?: "message";
   role: AgentScopeRuntimeMessageRole | string;
   type: AgentScopeRuntimeMessageType;
   content: IContent[];
@@ -106,7 +113,7 @@ export interface IAgentScopeRuntimeMessage {
 
 export interface IAgentScopeRuntimeResponse {
   id: string;
-  object?: 'response';
+  object?: "response";
   status: AgentScopeRuntimeRunStatus;
   created_at: number;
   completed_at?: number;
@@ -125,5 +132,5 @@ export interface IAgentScopeRuntimeRequest {
     role: AgentScopeRuntimeMessageRole | string;
     type: AgentScopeRuntimeMessageType;
     content: IContent[];
-  }[]
+  }[];
 }

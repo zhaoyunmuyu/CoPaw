@@ -1,5 +1,11 @@
 import { SparkFileCodeLine } from "@agentscope-ai/icons";
-import { IconButton, Drawer, Input, Button, message } from "@agentscope-ai/design";
+import {
+  IconButton,
+  Drawer,
+  Input,
+  Button,
+  message,
+} from "@agentscope-ai/design";
 import { useState, useEffect } from "react";
 import { useTranslation } from "../../core/Context/ChatAnywhereI18nContext";
 
@@ -20,33 +26,43 @@ export default function (props) {
   const handleSave = () => {
     try {
       localStorage.setItem(STORAGE_KEY, sessionValue);
-      message.success(t?.('common.saveSuccess') || '保存成功');
+      message.success(t?.("common.saveSuccess") || "保存成功");
       location.reload();
     } catch (e) {
-      message.error(t?.('common.saveFailed') || '保存失败');
+      message.error(t?.("common.saveFailed") || "保存失败");
     }
   };
 
-  return <>
-    <IconButton onClick={() => setOpen(true)} icon={<SparkFileCodeLine />} bordered={false} />
-    <Drawer
-      destroyOnHidden
-      open={open}
-      onClose={() => setOpen(false)}
-      title={t?.('messageImport.title') || 'Sessions 数据导入'}
-      styles={{ body: { padding: 16 }, header: { padding: 8 } }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <Input.TextArea
-          value={sessionValue}
-          onChange={(e) => setSessionValue(e.target.value)}
-          placeholder={t?.('messageImport.placeholder') || '输入 JSON 数据以覆盖当前 sessions'}
-          rows={10}
-          style={{ fontFamily: "monospace" }}
-        />
-        <Button type="primary" onClick={handleSave}>
-          {t?.('messageImport.saveToLocalStorage') || '保存到 LocalStorage'}
-        </Button>
-      </div>
-    </Drawer>
-  </>
+  return (
+    <>
+      <IconButton
+        onClick={() => setOpen(true)}
+        icon={<SparkFileCodeLine />}
+        bordered={false}
+      />
+      <Drawer
+        destroyOnHidden
+        open={open}
+        onClose={() => setOpen(false)}
+        title={t?.("messageImport.title") || "Sessions 数据导入"}
+        styles={{ body: { padding: 16 }, header: { padding: 8 } }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Input.TextArea
+            value={sessionValue}
+            onChange={(e) => setSessionValue(e.target.value)}
+            placeholder={
+              t?.("messageImport.placeholder") ||
+              "输入 JSON 数据以覆盖当前 sessions"
+            }
+            rows={10}
+            style={{ fontFamily: "monospace" }}
+          />
+          <Button type="primary" onClick={handleSave}>
+            {t?.("messageImport.saveToLocalStorage") || "保存到 LocalStorage"}
+          </Button>
+        </div>
+      </Drawer>
+    </>
+  );
 }

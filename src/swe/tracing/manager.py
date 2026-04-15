@@ -42,6 +42,9 @@ class TraceContext:
         self.start_time = datetime.now()
         self.trace: Optional[Trace] = None
         self._span_stack: list[str] = []
+        self._active_skills: list[str] = []  # Active skill context stack
+        self.skill_detector: Optional[Any] = None  # SkillInvocationDetector
+        self.enabled_skills: list[str] = []  # Skills enabled for this trace
 
     def push_span(self, span_id: str) -> None:
         """Push a span ID onto the stack."""
@@ -55,6 +58,38 @@ class TraceContext:
     def current_span_id(self) -> Optional[str]:
         """Get current span ID."""
         return self._span_stack[-1] if self._span_stack else None
+
+    def push_skill(self, skill_name: str) -> None:
+        """Push a skill onto the active skill stack."""
+        self._active_skills.append(skill_name)
+
+    def pop_skill(self) -> Optional[str]:
+        """Pop a skill from the active skill stack."""
+        return self._active_skills.pop() if self._active_skills else None
+
+    @property
+    def current_skill(self) -> Optional[str]:
+        """Get the currently active skill (top of stack)."""
+        return self._active_skills[-1] if self._active_skills else None
+
+    @property
+    def active_skills(self) -> list[str]:
+        """Get all active skills in the stack (copy)."""
+        return list(self._active_skills)
+
+    def set_skill_detector(
+        self,
+        detector: Any,
+        enabled_skills: list[str],
+    ) -> None:
+        """Set the skill invocation detector.
+
+        Args:
+            detector: SkillInvocationDetector instance
+            enabled_skills: List of enabled skill names
+        """
+        self.skill_detector = detector
+        self.enabled_skills = enabled_skills
 
 
 def get_current_trace() -> Optional[TraceContext]:
@@ -265,6 +300,60 @@ class TraceManager:
         logger.debug("Started trace: %s", trace_id)
         return trace_id
 
+    def setup_skill_detector(
+        self,
+        trace_id: str,
+        enabled_skills: list[str],
+    ) -> None:
+        """Set up skill invocation detector for a trace.
+
+        This should be called after start_trace() to enable skill
+        detection during the trace.
+
+        Args:
+            trace_id: Trace identifier
+            enabled_skills: List of skill names enabled for this trace
+        """
+        if not self.enabled:
+            return
+
+        ctx = get_current_trace()
+        if not ctx or ctx.trace_id != trace_id:
+            logger.warning("Cannot setup detector: trace context not found")
+            return
+
+        try:
+            from ..agents.skill_invocation_detector import (
+                SkillInvocationDetector,
+            )
+            from ..agents.skill_context_manager import (
+                get_skill_context_manager,
+            )
+            from ..agents.skill_tool_registry import get_skill_tool_registry
+
+            # Create detector with dependencies
+            detector = SkillInvocationDetector(
+                registry=get_skill_tool_registry(),
+                context_manager=get_skill_context_manager(),
+                trace_manager=self,
+                trace_id=trace_id,
+                user_id=ctx.user_id,
+                session_id=ctx.session_id,
+                channel=ctx.channel,
+            )
+            detector.set_enabled_skills(enabled_skills)
+
+            # Attach to context
+            ctx.set_skill_detector(detector, enabled_skills)
+
+            logger.debug(
+                "Skill detector set up for trace %s with %d skills",
+                trace_id,
+                len(enabled_skills),
+            )
+        except Exception as e:
+            logger.debug("Failed to setup skill detector: %s", e)
+
     async def end_trace(
         self,
         trace_id: str,
@@ -284,6 +373,14 @@ class TraceManager:
         # Flush pending spans before ending trace
         await self._flush_spans()
 
+        # End skill detection
+        ctx = get_current_trace()
+        if ctx and ctx.trace_id == trace_id and ctx.skill_detector:
+            try:
+                await ctx.skill_detector.on_reasoning_end()
+            except Exception as e:
+                logger.debug("Failed to end skill detection: %s", e)
+
         trace = self._active_traces.pop(
             trace_id,
             None,
@@ -302,7 +399,6 @@ class TraceManager:
         await self.store.update_trace(trace)
 
         # Clear context
-        ctx = get_current_trace()
         if ctx and ctx.trace_id == trace_id:
             set_current_trace(None)
 
@@ -331,6 +427,8 @@ class TraceManager:
         tool_input: Optional[dict[str, Any]] = None,
         start_time: Optional[datetime] = None,
         mcp_server: Optional[str] = None,
+        skill_names: Optional[list[str]] = None,
+        skill_weights: Optional[dict[str, float]] = None,
     ) -> str:
         """Emit a new span event.
 
@@ -345,10 +443,12 @@ class TraceManager:
             model_name: Optional model name
             input_tokens: Optional input token count
             tool_name: Optional tool name
-            skill_name: Optional skill name
+            skill_name: Optional skill name (for backward compatibility)
             tool_input: Optional tool input (will be sanitized)
             start_time: Optional start time
             mcp_server: Optional MCP server name if this is an MCP tool
+            skill_names: Optional list of skills claiming this tool call
+            skill_weights: Optional weight distribution for multi-skill attribution
 
         Returns:
             Span ID
@@ -385,6 +485,8 @@ class TraceManager:
             input_tokens=input_tokens,
             tool_name=tool_name,
             skill_name=skill_name,
+            skill_names=skill_names,
+            skill_weights=skill_weights,
             tool_input=tool_input,
             mcp_server=mcp_server,
         )
@@ -580,7 +682,11 @@ class TraceManager:
         channel: str = "",
         mcp_server: Optional[str] = None,
     ) -> str:
-        """Emit tool call start event.
+        """Emit tool call start event with multi-skill attribution.
+
+        This method uses the SkillInvocationDetector to determine skill
+        attribution, which combines explicit declarations and inference
+        for comprehensive coverage.
 
         Args:
             trace_id: Trace identifier
@@ -594,6 +700,43 @@ class TraceManager:
         Returns:
             Span ID
         """
+        # Determine skill attribution using detector
+        ctx = get_current_trace()
+        skill_names: Optional[list[str]] = None
+        skill_weights: Optional[dict[str, float]] = None
+        primary_skill: Optional[str] = None
+
+        if ctx and ctx.trace_id == trace_id:
+            try:
+                # Use the detector if available on context
+                detector = getattr(ctx, "skill_detector", None)
+                if detector:
+                    primary_skill, skill_weights = await detector.on_tool_call(
+                        tool_name=tool_name,
+                        tool_input=tool_input or {},
+                        mcp_server=mcp_server,
+                    )
+                    if skill_weights:
+                        skill_names = list(skill_weights.keys())
+                else:
+                    # Fallback to registry-based attribution
+                    from ..agents.skill_tool_registry import (
+                        get_skill_tool_registry,
+                    )
+
+                    registry = get_skill_tool_registry()
+
+                    declared_skills = registry.get_skills_for_tool(tool_name)
+                    active_skills = ctx.active_skills
+                    all_skills = list(set(active_skills + declared_skills))
+
+                    if all_skills:
+                        skill_names = sorted(all_skills)
+                        skill_weights = registry.calculate_weights(all_skills)
+                        primary_skill = skill_names[0]
+            except Exception as e:
+                logger.debug("Failed to resolve skill attribution: %s", e)
+
         return await self.emit_span(
             trace_id=trace_id,
             event_type=EventType.TOOL_CALL_START,
@@ -604,6 +747,9 @@ class TraceManager:
             tool_name=tool_name,
             tool_input=tool_input,
             mcp_server=mcp_server,
+            skill_name=primary_skill,
+            skill_names=skill_names,
+            skill_weights=skill_weights,
         )
 
     async def emit_tool_call_end(

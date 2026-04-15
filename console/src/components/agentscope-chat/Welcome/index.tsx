@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
-import { createGlobalStyle } from 'antd-style';
-import { useProviderContext } from '@/components/agentscope-chat';
+import React, { useMemo } from "react";
+import { createGlobalStyle } from "antd-style";
+import { useProviderContext } from "@/components/agentscope-chat";
 export interface IWelcomeProps {
   /**
    * @description 欢迎页面的主标题，支持文本或React元素
@@ -55,18 +55,24 @@ const Style = createGlobalStyle`
 
 export default function (props: IWelcomeProps) {
   const { getPrefixCls } = useProviderContext();
-  const prefix = getPrefixCls('welcome');
-  const logoEle = typeof props.logo === 'string' ? <img className={prefix + '-logo'} src={props.logo} /> : props.logo;
+  const prefix = getPrefixCls("welcome");
+  const logoEle =
+    typeof props.logo === "string" ? (
+      <img className={prefix + "-logo"} src={props.logo} />
+    ) : (
+      props.logo
+    );
 
-
-  return <>
-    <Style />
-    <div className={prefix} style={props.style}>
-      {logoEle}
-      <div>
-        {<div className={prefix + '-title'}>{props.title}</div>}
-        {<div className={prefix + '-desc'}>{props.desc}</div>}
+  return (
+    <>
+      <Style />
+      <div className={prefix} style={props.style}>
+        {logoEle}
+        <div>
+          {<div className={prefix + "-title"}>{props.title}</div>}
+          {<div className={prefix + "-desc"}>{props.desc}</div>}
+        </div>
       </div>
-    </div>
-  </>;
+    </>
+  );
 }

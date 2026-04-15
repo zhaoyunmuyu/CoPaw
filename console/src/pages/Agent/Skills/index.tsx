@@ -19,7 +19,11 @@ import {
   ImportHubModal,
   PoolTransferModal,
 } from "./components";
-import { useSkills, type SkillActionResult, type SkillConflictDetail } from "./useSkills";
+import {
+  useSkills,
+  type SkillActionResult,
+  type SkillConflictDetail,
+} from "./useSkills";
 import { useTranslation } from "react-i18next";
 import { useAgentStore } from "../../../stores/agentStore";
 import { useAppMessage } from "../../../hooks/useAppMessage";
@@ -121,7 +125,9 @@ function SkillsPage() {
     while (true) {
       const result = await uploadSkill(file, undefined, renameMap);
       if (result.success) break;
-      const conflict = (result as { success: false; conflict?: SkillConflictDetail }).conflict;
+      const conflict = (
+        result as { success: false; conflict?: SkillConflictDetail }
+      ).conflict;
       if (!conflict) break;
 
       const conflicts = Array.isArray(conflict.conflicts)
@@ -161,13 +167,14 @@ function SkillsPage() {
     if (result.success) {
       closeImportModal();
     } else {
-      const detail = (result as { success: false; conflict?: SkillConflictDetail }).conflict;
+      const detail = (
+        result as { success: false; conflict?: SkillConflictDetail }
+      ).conflict;
       if (detail) {
         const suggested =
           detail?.suggested_name || detail?.conflicts?.[0]?.suggested_name;
         if (suggested) {
-          const skillName =
-            detail?.conflicts?.[0]?.skill_name || "";
+          const skillName = detail?.conflicts?.[0]?.skill_name || "";
           const renameMap = await showConflictRenameModal([
             {
               key: skillName,
@@ -277,7 +284,9 @@ function SkillsPage() {
         await refreshSkills();
         return;
       }
-      const conflictDetail = (result as { success: false; conflict?: SkillConflictDetail }).conflict;
+      const conflictDetail = (
+        result as { success: false; conflict?: SkillConflictDetail }
+      ).conflict;
       if (conflictDetail?.suggested_name) {
         const renameMap = await showConflictRenameModal([
           {

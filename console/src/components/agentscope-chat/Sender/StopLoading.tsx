@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo } from "react";
 
 const StopLoadingIcon = memo((props: { className?: string }) => {
   const { className } = props;
@@ -12,7 +12,15 @@ const StopLoadingIcon = memo((props: { className?: string }) => {
       className={className}
     >
       <title>Stop Loading</title>
-      <rect fill="currentColor" height="250" rx="24" ry="24" width="250" x="375" y="375" />
+      <rect
+        fill="currentColor"
+        height="250"
+        rx="24"
+        ry="24"
+        width="250"
+        x="375"
+        y="375"
+      />
 
       {/* <circle
         cx="500"

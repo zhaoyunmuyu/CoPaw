@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 
 export interface AttachmentContextProps {
   /**
@@ -8,4 +8,6 @@ export interface AttachmentContextProps {
   disabled?: boolean;
 }
 
-export const AttachmentContext = React.createContext<AttachmentContextProps>(null!);
+export const AttachmentContext = React.createContext<AttachmentContextProps>(
+  null!,
+);

@@ -1,8 +1,15 @@
-import React from 'react';
+import React from "react";
 import { useChatAnywhere } from "./ChatAnywhereProvider";
 
 export function useInput() {
-  const { loading, disabled, setLoading, setDisabled, getLoading, getDisabled } = useChatAnywhere(v => ({
+  const {
+    loading,
+    disabled,
+    setLoading,
+    setDisabled,
+    getLoading,
+    getDisabled,
+  } = useChatAnywhere((v) => ({
     loading: v.loading,
     getLoading: v.getLoading,
     disabled: v.disabled,
@@ -18,5 +25,5 @@ export function useInput() {
     setDisabled,
     getLoading,
     getDisabled,
-  }
+  };
 }

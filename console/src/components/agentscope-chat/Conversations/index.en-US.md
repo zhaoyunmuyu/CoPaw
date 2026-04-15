@@ -13,7 +13,6 @@ description: Conversation History Panel
 
 <Install>import { HistoryPanel } from '@agentscope-ai/chat'</Install>
 
-
 #### HistoryPanel Examples
 
 The following are examples and variations of this component

@@ -35,7 +35,7 @@ INTERCEPT_RULES: List[InterceptRule] = [
     # swe cron create 需要注入 tenant-id 和 target-user
     InterceptRule(
         command_prefix="swe cron create",
-        inject_params=["--tenant-id", "--target-user"],
+        inject_params=["--tenant-id", "--target-user", "--creator-user"],
         inject_position="at_end",
     ),
     # swe cron 其他子命令只需注入 tenant-id
@@ -124,6 +124,8 @@ def intercept_command(command: str) -> Tuple[str, bool]:
                 inject_parts.append(f"{param} {tenant_id}")
             elif param == "--target-user" and user_id:
                 inject_parts.append(f"{param} {user_id}")
+            elif param == "--creator-user" and user_id:
+                inject_parts.append(f"{param} {user_id}")
             elif param == "--user-id" and user_id:
                 inject_parts.append(f"{param} {user_id}")
 
@@ -147,10 +149,14 @@ def intercept_command(command: str) -> Tuple[str, bool]:
                     inject_tokens.extend([param, tenant_id])
                 elif param == "--target-user" and user_id:
                     inject_tokens.extend([param, user_id])
+                elif param == "--creator-user" and user_id:
+                    inject_tokens.extend([param, user_id])
                 elif param == "--user-id" and user_id:
                     inject_tokens.extend([param, user_id])
             if inject_tokens:
-                tokens = tokens[:insert_pos] + inject_tokens + tokens[insert_pos:]
+                tokens = (
+                    tokens[:insert_pos] + inject_tokens + tokens[insert_pos:]
+                )
             modified_command = shlex.join(tokens)
 
         logger.info(

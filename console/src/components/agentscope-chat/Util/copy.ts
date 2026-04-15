@@ -4,13 +4,13 @@ export async function copy(text: string): Promise<void> {
     return;
   }
 
-  const textarea = document.createElement('textarea');
+  const textarea = document.createElement("textarea");
   textarea.value = text;
-  textarea.style.cssText = 'position:fixed;left:-9999px';
+  textarea.style.cssText = "position:fixed;left:-9999px";
   document.body.appendChild(textarea);
   textarea.select();
   try {
-    document.execCommand('copy', true);
+    document.execCommand("copy", true);
   } finally {
     document.body.removeChild(textarea);
   }

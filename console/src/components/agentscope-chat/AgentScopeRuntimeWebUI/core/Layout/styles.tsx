@@ -1,5 +1,4 @@
-import { createGlobalStyle } from 'antd-style';
-
+import { createGlobalStyle } from "antd-style";
 
 export default createGlobalStyle`
 * {
@@ -45,14 +44,17 @@ export default createGlobalStyle`
 }
 
 .${(p) => p.theme.prefixCls}-chat-anywhere-layout-right-has-header {
-  .${(p) => p.theme.prefixCls}-chat-anywhere-message-list .${(p) => p.theme.prefixCls}-bubble-list-scroll::before {
+  .${(p) => p.theme.prefixCls}-chat-anywhere-message-list .${(p) =>
+    p.theme.prefixCls}-bubble-list-scroll::before {
     content: ' ';
     display: block;
     height: 54px;
     flex: 0 0 54px;
   }
 
-  .${(p) => p.theme.prefixCls}-chat-anywhere-message-list .${(p) => p.theme.prefixCls}-bubble-list-scroll.${(p) => p.theme.prefixCls}-bubble-list-order-desc {
+  .${(p) => p.theme.prefixCls}-chat-anywhere-message-list .${(p) =>
+    p.theme.prefixCls}-bubble-list-scroll.${(p) =>
+    p.theme.prefixCls}-bubble-list-order-desc {
     &::before {
       height: 16px;
       flex: 0 0 16px;

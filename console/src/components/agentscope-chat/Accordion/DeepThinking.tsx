@@ -1,8 +1,8 @@
-import { Accordion } from '@/components/agentscope-chat';
-import { useProviderContext } from '@/components/agentscope-chat';
-import { theme as AntdTheme } from 'antd'
-import cls from 'classnames';
-
+import { Accordion } from "@/components/agentscope-chat";
+import { useProviderContext } from "@/components/agentscope-chat";
+import { theme as AntdTheme } from "antd";
+import cls from "classnames";
+import { deepthinkingAnimation } from "@/assets/icons";
 
 export interface IDeepThinking {
   /**
@@ -49,43 +49,59 @@ export interface IDeepThinking {
 
 export default function (props: IDeepThinking) {
   const { theme: providerTheme, getPrefixCls } = useProviderContext();
-  const prefixCls = getPrefixCls('accordion-deep-thinking');
+  const prefixCls = getPrefixCls("accordion-deep-thinking");
   const isDarkMode = providerTheme?.algorithm === AntdTheme.darkAlgorithm;
-  const icon = <img style={{ display: 'block', width: 16, height: 16, filter: isDarkMode ? 'invert(1)  brightness(100%) saturate(0%)' : '' }} src="/icons/deepthinking.apng" />
-  
+  const icon = (
+    <img
+      style={{
+        display: "block",
+        width: 16,
+        height: 16,
+        filter: isDarkMode ? "invert(1)  brightness(100%) saturate(0%)" : "",
+      }}
+      src={deepthinkingAnimation}
+    />
+  );
+
   // 构建标题文本
-  let titleText = props.title || 'Deep thinking';
+  let titleText = props.title || "Deep thinking";
   if (props.loading) {
-    titleText += '...';
+    titleText += "...";
   }
-  
+
   // 构建标题
   const title = props.loading ? (
     <Accordion.SoftLightTitle>{titleText}</Accordion.SoftLightTitle>
-  ) : titleText;
+  ) : (
+    titleText
+  );
 
   // 构建 bodyStyle，添加 maxHeight 支持
-  const bodyStyle: React.CSSProperties = props.maxHeight 
-    ? { maxHeight: props.maxHeight, overflowY: 'auto' as const }
+  const bodyStyle: React.CSSProperties = props.maxHeight
+    ? { maxHeight: props.maxHeight, overflowY: "auto" as const }
     : {};
 
   // 确定默认展开状态：如果设置了 autoCloseOnFinish 且不在 loading 状态，默认关闭
-  const finalDefaultOpen = props.defaultOpen !== undefined 
-    ? props.defaultOpen 
-    : (props.autoCloseOnFinish && !props.loading) ? false : undefined;
+  const finalDefaultOpen =
+    props.defaultOpen !== undefined
+      ? props.defaultOpen
+      : props.autoCloseOnFinish && !props.loading
+      ? false
+      : undefined;
 
-  return <Accordion
-    title={title}
-    status={props.loading ? 'generating' : 'finished'}
-    icon={props.loading ? icon : null}
-    defaultOpen={finalDefaultOpen}
-    open={props.open}
-    bodyStyle={bodyStyle}
-    inline
-  >
-    <div className={cls(prefixCls, props.className)}>{props.content || '...'}</div>
-  </Accordion>
+  return (
+    <Accordion
+      title={title}
+      status={props.loading ? "generating" : "finished"}
+      icon={props.loading ? icon : null}
+      defaultOpen={finalDefaultOpen}
+      open={props.open}
+      bodyStyle={bodyStyle}
+      inline
+    >
+      <div className={cls(prefixCls, props.className)}>
+        {props.content || "..."}
+      </div>
+    </Accordion>
+  );
 }
-
-
-

@@ -136,6 +136,11 @@ class TenantInitializer:
                 overwrite=not config_existed,
             )
 
+        # Step 1.6: Seed providers directory from default tenant
+        result["providers_seed"] = self.seed_providers_from_default(
+            overwrite=False,
+        )
+
         # Step 2: Seed skill pool from default (or builtin fallback)
         # Note: This raises RuntimeError on complete failure (including builtin fallback)
         result["pool_seed"] = self.seed_skill_pool_from_default()
@@ -365,10 +370,13 @@ class TenantInitializer:
         *,
         overwrite: bool = False,
     ) -> dict[str, Any]:
-        """Seed tenant providers.json from default tenant.
+        """Seed tenant providers directory from default tenant.
+
+        Copies the entire providers directory structure from the default tenant,
+        including builtin/, custom/, and active_model.json.
 
         Args:
-            overwrite: If True, overwrite existing providers.json.
+            overwrite: If True, overwrite existing providers directory.
 
         Returns:
             Dict with result status:
@@ -377,24 +385,33 @@ class TenantInitializer:
         """
         from ...constant import SECRET_DIR
 
-        target_secret_dir = SECRET_DIR / self.tenant_id
-        source_secret_dir = SECRET_DIR / "default"
-        target_providers_path = target_secret_dir / "providers.json"
-        source_providers_path = source_secret_dir / "providers.json"
+        target_providers_dir = SECRET_DIR / self.tenant_id / "providers"
+        source_providers_dir = SECRET_DIR / "default" / "providers"
         result: dict[str, Any] = {"seeded": False, "source": None}
 
-        if not source_providers_path.exists():
+        # Check if source providers directory exists and has content
+        if not source_providers_dir.exists():
             return result
-        if target_providers_path.exists() and not overwrite:
+        if not any(source_providers_dir.iterdir()):
             return result
 
-        # Ensure target directory exists
-        target_secret_dir.mkdir(parents=True, exist_ok=True)
+        # Check if target already exists
+        if target_providers_dir.exists() and not overwrite:
+            return result
 
         try:
-            shutil.copy2(source_providers_path, target_providers_path)
+            # Remove existing target if overwrite is True
+            if target_providers_dir.exists():
+                shutil.rmtree(target_providers_dir)
+
+            # Copy entire providers directory
+            shutil.copytree(source_providers_dir, target_providers_dir)
             result["seeded"] = True
             result["source"] = "default"
+            logger.info(
+                f"Seeded providers directory from default for tenant "
+                f"{self.tenant_id}",
+            )
         except Exception as e:
             logger.warning(
                 f"Failed to seed providers from default for tenant "

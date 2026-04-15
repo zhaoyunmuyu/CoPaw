@@ -1,4 +1,4 @@
-import { createGlobalStyle } from 'antd-style';
+import { createGlobalStyle } from "antd-style";
 
 export default createGlobalStyle`
 .${(p) => p.theme.prefixCls}-chat-anywhere-chat {
@@ -52,7 +52,8 @@ export default createGlobalStyle`
     cursor: default !important;
   }
 
-  .${(p) => p.theme.prefixCls}-conversations .${(p) => p.theme.prefixCls}-conversations-item {
+  .${(p) => p.theme.prefixCls}-conversations .${(p) =>
+    p.theme.prefixCls}-conversations-item {
     cursor: default !important;
 
   }

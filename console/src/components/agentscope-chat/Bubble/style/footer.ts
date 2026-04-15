@@ -1,4 +1,4 @@
-import { createGlobalStyle } from 'antd-style';
+import { createGlobalStyle } from "antd-style";
 
 const Style = createGlobalStyle`
 .${(p) => p.theme.prefixCls}-bubble-footer {

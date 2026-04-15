@@ -154,6 +154,64 @@ Provider 配置按租户独立存放：
 - 新租户首次访问时可继承默认租户配置
 - CLI 支持 `--tenant-id` 进行多租户管理
 
+### 案例配置
+
+案例配置用于在首页展示不同的业务场景案例，支持按用户进行案例列表隔离：
+
+```text
+~/.swe/
+├── cases.json           # 案例定义（iframe_url、标题、步骤等）
+└── user_cases.json      # 用户-案例映射（userId -> caseIds）
+```
+
+**案例定义结构 (`cases.json`)：**
+
+```json
+{
+  "cases": [
+    {
+      "id": "case-deposit-maturity",
+      "label": "他行存款到期潜力客户名单",
+      "value": "帮我分析...",
+      "sort_order": 0,
+      "is_active": true,
+      "detail": {
+        "iframe_url": "https://...",
+        "iframe_title": "详情面板标题",
+        "steps": [
+          { "title": "步骤1", "content": "步骤说明" }
+        ]
+      }
+    }
+  ]
+}
+```
+
+**用户映射结构 (`user_cases.json`)：**
+
+```json
+{
+  "user_cases": {
+    "default": ["case-deposit-maturity", "case-fund-sales"],
+    "alice": ["case-deposit-maturity"],
+    "bob": []
+  }
+}
+```
+
+**userId 过滤逻辑：**
+
+1. API 读取 `X-User-Id` 请求头
+2. 若无则读取 `user_id` 查询参数
+3. 若无则使用 `default` 映射
+4. 返回映射数组中对应的案例列表
+
+**管理页面：**
+
+Console 提供 `/cases-management` 页面，包含两个标签页：
+- 案例定义：创建/编辑/删除案例
+- 用户分配：配置 userId 可见案例列表
+
 ### 代码风格
 
 - Python 使用 4 空格缩进、`snake_case` 模块名、Black 79 列
