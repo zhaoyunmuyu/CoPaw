@@ -25,6 +25,7 @@ export const KEY_TO_PATH: Record<string, string> = {
   sessions: "/sessions",
   "cron-jobs": "/cron-jobs",
   heartbeat: "/heartbeat",
+  "cases-management": "/cases-management",
   skills: "/skills",
   "skill-pool": "/skill-pool",
   tools: "/tools",
