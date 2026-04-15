@@ -10,15 +10,15 @@ import Reasoning from "./Reasoning";
 import Error from "./Error";
 import { Bubble } from "@/components/agentscope-chat";
 import Actions from "./Actions";
-import { Avatar, Flex } from "antd";
-import { useChatAnywhereOptions } from "../../Context/ChatAnywhereOptionsContext";
+// import { Avatar, Flex } from "antd";
+// import { useChatAnywhereOptions } from "../../Context/ChatAnywhereOptionsContext";
 
 export default function AgentScopeRuntimeResponseCard(props: {
   data: IAgentScopeRuntimeResponse;
   isLast?: boolean;
 }) {
-  const avatar = useChatAnywhereOptions((v) => v.welcome.avatar);
-  const nick = useChatAnywhereOptions((v) => v.welcome.nick);
+  // const avatar = useChatAnywhereOptions((v) => v.welcome.avatar);
+  // const nick = useChatAnywhereOptions((v) => v.welcome.nick);
   const messages = useMemo(() => {
     return AgentScopeRuntimeResponseBuilder.mergeToolMessages(
       props.data.output,
@@ -33,12 +33,12 @@ export default function AgentScopeRuntimeResponseCard(props: {
 
   return (
     <>
-      {avatar && (
+      {/* {avatar && (
         <Flex align="center" gap={8} style={{ marginBottom: 8 }}>
           <Avatar src={avatar} />
           {nick && <span>{nick as string}</span>}
         </Flex>
-      )}
+      )} */}
       {messages.map((item) => {
         switch (item.type) {
           case AgentScopeRuntimeMessageType.MESSAGE:

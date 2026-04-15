@@ -83,7 +83,7 @@ export const devUseWarning: (component: string) => TypeWarning =
 
               // Warning for the first time
               if (!existWarning) {
-                // eslint-disable-next-line no-console
+
                 console.warn(
                   "[antd] There exists deprecated usage in your code:",
                   deprecatedWarnList,
