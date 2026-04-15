@@ -137,6 +137,11 @@ export default createGlobalStyle`
   text-overflow: ellipsis;
 }
 
+.expandable-panel-task-time {
+  margin-right: 8px;
+  color: ${DESIGN_TOKENS.colorTextMuted};
+}
+
 /* ─── History row styles ─── */
 .expandable-panel-history-item {
   padding: 10px 0;

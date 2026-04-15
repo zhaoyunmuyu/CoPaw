@@ -60,6 +60,17 @@ export function getUserId(sessionUserId?: string): string {
   return DEFAULT_USER_ID;
 }
 
+export function getUserIdWithoutWindow(sessionUserId?: string): string {
+  const iframeContext = getIframeContext();
+  if (iframeContext.userId) {
+    return iframeContext.userId;
+  }
+  if (sessionUserId) {
+    return sessionUserId;
+  }
+  return DEFAULT_USER_ID;
+}
+
 /**
  * 获取当前渠道
  *
@@ -80,6 +91,13 @@ export function getChannel(sessionChannel?: string): string {
   }
 
   // Priority 3: default fallback
+  return DEFAULT_CHANNEL;
+}
+
+export function getChannelWithoutWindow(sessionChannel?: string): string {
+  if (sessionChannel) {
+    return sessionChannel;
+  }
   return DEFAULT_CHANNEL;
 }
 

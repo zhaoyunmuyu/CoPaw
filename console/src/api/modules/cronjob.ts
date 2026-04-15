@@ -48,6 +48,14 @@ export const cronJobApi = {
       method: "POST",
     }),
 
+  markTaskRead: (jobId: string) =>
+    request<{ marked_read: boolean }>(
+      `/cron/jobs/${encodeURIComponent(jobId)}/task/mark-read`,
+      {
+        method: "POST",
+      },
+    ),
+
   getCronJobState: (jobId: string) =>
     request<unknown>(`/cron/jobs/${encodeURIComponent(jobId)}/state`),
 };

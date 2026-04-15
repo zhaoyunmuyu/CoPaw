@@ -7,12 +7,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional, TypeVar, Union
 
+from agentscope.memory import InMemoryMemory
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from ...config import get_heartbeat_config
 
+from ..channels.schema import DEFAULT_CHANNEL
 from ..tenant_context import bind_tenant_context
 from ..console_push_store import append as push_store_append
 from .coordination import (
@@ -26,7 +28,7 @@ from .heartbeat import (
     parse_heartbeat_every,
     run_heartbeat_once,
 )
-from .models import CronJobSpec, CronJobState, JobsFile
+from .models import CronJobSpec, CronJobState, CronTaskView, JobsFile
 from .repo.base import BaseJobRepository
 
 HEARTBEAT_JOB_ID = "_heartbeat"
@@ -56,6 +58,7 @@ class CronManager:
         repo: BaseJobRepository,
         runner: Any,
         channel_manager: Any,
+        chat_manager: Any = None,
         timezone: str = "UTC",  # pylint: disable=redefined-outer-name
         agent_id: Optional[str] = None,
         tenant_id: Optional[str] = None,
@@ -64,6 +67,7 @@ class CronManager:
         self._repo = repo
         self._runner = runner
         self._channel_manager = channel_manager
+        self._chat_manager = chat_manager
         self._agent_id = agent_id
         self._tenant_id = tenant_id
         self._timezone = timezone
@@ -95,7 +99,9 @@ class CronManager:
             # Set callbacks
             self._coordination.set_reload_callback(self._on_reload_signal)
             self._coordination.set_lease_lost_callback(self._on_lease_lost)
-            self._coordination.set_become_leader_callback(self._on_become_leader)
+            self._coordination.set_become_leader_callback(
+                self._on_become_leader,
+            )
 
         self._active_jobs: set[str] = set()  # Track which jobs are scheduled
 
@@ -430,7 +436,9 @@ class CronManager:
         # _do_start() can fail after starting APScheduler but before _started=True.
         # Roll back scheduler runtime state before manager-level cleanup.
         had_running_scheduler = self._scheduler is not None and getattr(
-            self._scheduler, "running", False,
+            self._scheduler,
+            "running",
+            False,
         )
         safe_to_release = True
         if had_running_scheduler:
@@ -562,6 +570,7 @@ class CronManager:
     # ----- write/control -----
 
     async def create_or_replace_job(self, spec: CronJobSpec) -> None:
+        spec = await self._ensure_task_binding(spec)
         async with self._lock:
             changed, _, _ = await self._mutate_jobs_file_locked(
                 lambda jobs_file: self._upsert_job_in_jobs_file(
@@ -575,13 +584,13 @@ class CronManager:
 
     async def delete_job(self, job_id: str) -> bool:
         async with self._lock:
-            changed, found, _ = await self._mutate_jobs_file_locked(
+            changed, deleted_job, _ = await self._mutate_jobs_file_locked(
                 lambda jobs_file: self._delete_job_in_jobs_file(
                     jobs_file,
                     job_id,
                 ),
             )
-            if not found:
+            if deleted_job is None:
                 return False
 
             if self._started and self._scheduler is not None:
@@ -590,7 +599,23 @@ class CronManager:
                 self._active_jobs.discard(job_id)
             self._states.pop(job_id, None)
             self._rt.pop(job_id, None)
-            return found if changed else found
+            task_chat_id = str(
+                (deleted_job.meta or {}).get("task_chat_id") or "",
+            )
+            if task_chat_id and self._chat_manager is not None:
+                try:
+                    await self._chat_manager.delete_chats([task_chat_id])
+                except Exception:  # pragma: no cover - defensive cleanup path
+                    logger.warning(
+                        "Failed to delete task chat after cron deletion: "
+                        "job_id=%s chat_id=%s",
+                        job_id,
+                        task_chat_id,
+                        exc_info=True,
+                    )
+            return (
+                deleted_job is not None if changed else deleted_job is not None
+            )
 
     async def pause_job(self, job_id: str) -> bool:
         """Pause a job - disables execution and persists to repository.
@@ -602,7 +627,7 @@ class CronManager:
             True if job was found and paused, False otherwise.
         """
         async with self._lock:
-            changed, job, _ = await self._mutate_jobs_file_locked(
+            _, job, _ = await self._mutate_jobs_file_locked(
                 lambda jobs_file: self._set_job_enabled_in_jobs_file(
                     jobs_file,
                     job_id,
@@ -629,7 +654,7 @@ class CronManager:
             True if job was found and resumed, False otherwise.
         """
         async with self._lock:
-            changed, job, _ = await self._mutate_jobs_file_locked(
+            _, job, _ = await self._mutate_jobs_file_locked(
                 lambda jobs_file: self._set_job_enabled_in_jobs_file(
                     jobs_file,
                     job_id,
@@ -693,6 +718,46 @@ class CronManager:
         )
         task.add_done_callback(lambda t: self._task_done_cb(t, job))
 
+    async def mark_task_read(self, job_id: str, user_id: str) -> bool:
+        async with self._lock:
+            _, found, _ = await self._mutate_jobs_file_locked(
+                lambda jobs_file: self._mark_task_read_in_jobs_file(
+                    jobs_file,
+                    job_id,
+                    user_id,
+                ),
+            )
+            return found
+
+    def build_task_view(
+        self,
+        spec: CronJobSpec,
+        user_id: Optional[str],
+    ) -> CronTaskView:
+        meta = spec.meta or {}
+        state = self.get_state(spec.id)
+        creator_user_id = meta.get("creator_user_id")
+        return CronTaskView(
+            visible_in_my_tasks=bool(
+                spec.task_type == "agent"
+                and creator_user_id
+                and creator_user_id == user_id,
+            ),
+            chat_id=meta.get("task_chat_id"),
+            session_id=meta.get("task_session_id"),
+            has_scheduled_result=bool(
+                meta.get("task_has_scheduled_result", False),
+            ),
+            latest_scheduled_preview=str(
+                meta.get("task_last_scheduled_preview", "") or "",
+            ),
+            unread_execution_count=int(
+                meta.get("task_unread_execution_count", 0) or 0,
+            ),
+            last_scheduled_run_at=meta.get("task_last_scheduled_run_at"),
+            is_running=state.last_status == "running",
+        )
+
     # ----- callbacks -----
 
     def _task_done_cb(self, task: asyncio.Task, job: CronJobSpec) -> None:
@@ -743,7 +808,9 @@ class CronManager:
         version = self._definition_version
 
         if self._coordination is not None:
-            definition_lock = await self._coordination.acquire_definition_lock()
+            definition_lock = (
+                await self._coordination.acquire_definition_lock()
+            )
 
         try:
             jobs_file = await self._repo.load()
@@ -765,7 +832,9 @@ class CronManager:
             await self._repo.save(jobs_file)
             save_succeeded = True
             if self._coordination is not None:
-                version = await self._coordination.ensure_definition_version(version)
+                version = await self._coordination.ensure_definition_version(
+                    version,
+                )
             self._definition_version = version
             should_publish = True
             return True, result, version
@@ -798,7 +867,10 @@ class CronManager:
         )
         if changed:
             for job_id in disabled_ids:
-                logger.warning("Auto-disabled invalid cron job: job_id=%s", job_id)
+                logger.warning(
+                    "Auto-disabled invalid cron job: job_id=%s",
+                    job_id,
+                )
 
     @staticmethod
     def _get_jobs_file_definition_version(jobs_file: JobsFile) -> int:
@@ -818,14 +890,18 @@ class CronManager:
 
         if self._coordination is not None:
             try:
-                remote_version = await self._coordination.get_definition_version()
+                remote_version = (
+                    await self._coordination.get_definition_version()
+                )
                 if (
                     file_version is not None
                     and remote_version is not None
                     and file_version > remote_version
                 ):
-                    remote_version = await self._coordination.ensure_definition_version(
-                        file_version,
+                    remote_version = (
+                        await self._coordination.ensure_definition_version(
+                            file_version,
+                        )
                     )
             except Exception:  # pylint: disable=broad-except
                 logger.warning(
@@ -842,7 +918,10 @@ class CronManager:
         self._definition_version = max(versions)
 
     def _start_definition_reconcile_loop(self) -> None:
-        if self._coordination is None or self._definition_reconcile_task is not None:
+        if (
+            self._coordination is None
+            or self._definition_reconcile_task is not None
+        ):
             return
         self._stop_definition_reconcile.clear()
         self._definition_reconcile_task = asyncio.create_task(
@@ -855,7 +934,10 @@ class CronManager:
             return
         self._stop_definition_reconcile.set()
         try:
-            await asyncio.wait_for(self._definition_reconcile_task, timeout=5.0)
+            await asyncio.wait_for(
+                self._definition_reconcile_task,
+                timeout=5.0,
+            )
         except asyncio.TimeoutError:
             self._definition_reconcile_task.cancel()
             try:
@@ -889,7 +971,11 @@ class CronManager:
                 )
 
     async def _reconcile_definition_version_once(self) -> None:
-        if self._coordination is None or not self._started or not self.is_leader:
+        if (
+            self._coordination is None
+            or not self._started
+            or not self.is_leader
+        ):
             return
 
         jobs_file = await self._repo.load()
@@ -899,8 +985,10 @@ class CronManager:
         try:
             remote_version = await self._coordination.get_definition_version()
             if file_version > remote_version:
-                remote_version = await self._coordination.ensure_definition_version(
-                    file_version,
+                remote_version = (
+                    await self._coordination.ensure_definition_version(
+                        file_version,
+                    )
                 )
         except Exception:  # pylint: disable=broad-except
             logger.warning(
@@ -936,14 +1024,38 @@ class CronManager:
         jobs_file.jobs.append(spec)
         return True, spec
 
+    def _mark_task_read_in_jobs_file(
+        self,
+        jobs_file: JobsFile,
+        job_id: str,
+        user_id: str,
+    ) -> tuple[bool, bool]:
+        for index, job in enumerate(jobs_file.jobs):
+            if job.id != job_id:
+                continue
+            creator = (job.meta or {}).get("creator_user_id")
+            if creator != user_id:
+                return False, False
+            meta = dict(job.meta or {})
+            unread_count = int(meta.get("task_unread_execution_count", 0) or 0)
+            if unread_count == 0:
+                return False, True
+            meta["task_unread_execution_count"] = 0
+            jobs_file.jobs[index] = job.model_copy(update={"meta": meta})
+            return True, True
+        return False, False
+
     def _delete_job_in_jobs_file(
         self,
         jobs_file: JobsFile,
         job_id: str,
-    ) -> tuple[bool, bool]:
-        before = len(jobs_file.jobs)
-        jobs_file.jobs = [job for job in jobs_file.jobs if job.id != job_id]
-        return before != len(jobs_file.jobs), before != len(jobs_file.jobs)
+    ) -> tuple[bool, Optional[CronJobSpec]]:
+        for index, job in enumerate(jobs_file.jobs):
+            if job.id != job_id:
+                continue
+            del jobs_file.jobs[index]
+            return True, job
+        return False, None
 
     def _set_job_enabled_in_jobs_file(
         self,
@@ -976,6 +1088,165 @@ class CronManager:
             disabled_ids.append(job.id)
             changed = True
         return changed, disabled_ids
+
+    async def _ensure_task_binding(self, spec: CronJobSpec) -> CronJobSpec:
+        creator_user_id = (spec.meta or {}).get("creator_user_id")
+        if (
+            spec.task_type != "agent"
+            or not creator_user_id
+            or self._chat_manager is None
+        ):
+            return spec
+
+        meta = dict(spec.meta or {})
+        task_session_id = str(
+            meta.get("task_session_id") or f"cron-task:{spec.id}",
+        )
+        task_chat = await self._chat_manager.get_or_create_chat(
+            task_session_id,
+            creator_user_id,
+            DEFAULT_CHANNEL,
+            name=spec.name,
+        )
+        task_chat.name = spec.name
+        task_chat.meta = {
+            **(getattr(task_chat, "meta", {}) or {}),
+            "session_kind": "task",
+            "task_job_id": spec.id,
+            "creator_user_id": creator_user_id,
+        }
+        await self._chat_manager.update_chat(task_chat)
+
+        meta.setdefault("task_has_scheduled_result", False)
+        meta.setdefault("task_last_scheduled_preview", "")
+        meta.setdefault("task_unread_execution_count", 0)
+        meta.setdefault("task_last_scheduled_run_at", None)
+        meta["task_session_id"] = task_session_id
+        meta["task_chat_id"] = task_chat.id
+
+        request = spec.request
+        if request is not None:
+            request = request.model_copy(
+                update={
+                    "user_id": creator_user_id,
+                    "session_id": task_session_id,
+                },
+            )
+
+        dispatch = spec.dispatch
+        if dispatch.channel == DEFAULT_CHANNEL:
+            dispatch = dispatch.model_copy(
+                update={
+                    "target": dispatch.target.model_copy(
+                        update={
+                            "user_id": creator_user_id,
+                            "session_id": task_session_id,
+                        },
+                    ),
+                },
+            )
+
+        return spec.model_copy(
+            update={
+                "meta": meta,
+                "request": request,
+                "dispatch": dispatch,
+            },
+        )
+
+    async def _record_task_execution_success(self, job: CronJobSpec) -> None:
+        creator_user_id = (job.meta or {}).get("creator_user_id")
+        task_session_id = (job.meta or {}).get("task_session_id")
+        if (
+            job.task_type != "agent"
+            or not creator_user_id
+            or not task_session_id
+            or not getattr(self._runner, "session", None)
+        ):
+            return
+
+        preview = await self._load_task_preview_text(
+            task_session_id,
+            creator_user_id,
+        )
+        async with self._lock:
+            await self._mutate_jobs_file_locked(
+                lambda jobs_file: self._apply_task_execution_success(
+                    jobs_file,
+                    job.id,
+                    preview,
+                ),
+            )
+
+    async def _load_task_preview_text(
+        self,
+        session_id: str,
+        user_id: str,
+    ) -> str:
+        state = await self._runner.session.get_session_state_dict(
+            session_id,
+            user_id,
+        )
+        if not state:
+            return ""
+        memory_state = state.get("agent", {}).get("memory", {})
+        memory = InMemoryMemory()
+        memory.load_state_dict(memory_state, strict=False)
+        memories = await memory.get_memory(prepend_summary=False)
+        return self._extract_latest_assistant_preview(memories)
+
+    def _apply_task_execution_success(
+        self,
+        jobs_file: JobsFile,
+        job_id: str,
+        preview: str,
+    ) -> tuple[bool, bool]:
+        for index, job in enumerate(jobs_file.jobs):
+            if job.id != job_id:
+                continue
+            meta = dict(job.meta or {})
+            meta["task_has_scheduled_result"] = True
+            meta["task_last_scheduled_preview"] = preview[:10]
+            meta["task_unread_execution_count"] = (
+                int(meta.get("task_unread_execution_count", 0) or 0) + 1
+            )
+            meta["task_last_scheduled_run_at"] = datetime.now(timezone.utc)
+            jobs_file.jobs[index] = job.model_copy(update={"meta": meta})
+            return True, True
+        return False, False
+
+    @staticmethod
+    def _extract_latest_assistant_preview(messages: list[Any]) -> str:
+        for msg in reversed(messages):
+            role = (
+                msg.get("role")
+                if isinstance(msg, dict)
+                else getattr(msg, "role", None)
+            )
+            if role != "assistant":
+                continue
+            content = (
+                msg.get("content")
+                if isinstance(msg, dict)
+                else getattr(msg, "content", None)
+            )
+            if isinstance(content, str):
+                text = content.strip()
+            elif isinstance(content, list):
+                text_parts = []
+                for item in content:
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("type") == "text" and item.get("text"):
+                        text_parts.append(str(item["text"]))
+                    elif item.get("type") == "refusal" and item.get("refusal"):
+                        text_parts.append(str(item["refusal"]))
+                text = "".join(text_parts).strip()
+            else:
+                text = ""
+            if text:
+                return text[:10]
+        return ""
 
     async def _register_or_update(self, spec: CronJobSpec) -> None:
         if self._scheduler is None:
@@ -1074,9 +1345,11 @@ class CronManager:
             return
 
         if self._coordination is not None:
-            still_owner = await self._coordination.preflight_scheduler_execution(
-                job_id=job_id,
-                schedule_type="cron",
+            still_owner = (
+                await self._coordination.preflight_scheduler_execution(
+                    job_id=job_id,
+                    schedule_type="cron",
+                )
             )
             if not still_owner:
                 logger.info(
@@ -1115,9 +1388,11 @@ class CronManager:
             return
 
         if self._coordination is not None:
-            still_owner = await self._coordination.preflight_scheduler_execution(
-                job_id=HEARTBEAT_JOB_ID,
-                schedule_type="heartbeat",
+            still_owner = (
+                await self._coordination.preflight_scheduler_execution(
+                    job_id=HEARTBEAT_JOB_ID,
+                    schedule_type="heartbeat",
+                )
             )
             if not still_owner:
                 logger.info(
@@ -1178,6 +1453,7 @@ class CronManager:
                 await self._executor.execute(job)
                 st.last_status = "success"
                 st.last_error = None
+                await self._record_task_execution_success(job)
                 logger.info(
                     "cron _execute_once: job_id=%s status=success",
                     job.id,

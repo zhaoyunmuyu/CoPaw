@@ -28,6 +28,7 @@ import LoginPage from "./pages/Login";
 import { authApi } from "./api/modules/auth";
 import { languageApi } from "./api/modules/language";
 import { getApiUrl, getApiToken, clearAuthToken } from "./api/config";
+import { buildAuthHeaders } from "./api/authHeaders";
 import "./styles/layout.css";
 import "./styles/form-override.css";
 
@@ -74,7 +75,10 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
         }
         try {
           const r = await fetch(getApiUrl("/auth/verify"), {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: {
+              Authorization: `Bearer ${token}`,
+              ...buildAuthHeaders(),
+            },
           });
           if (cancelled) return;
           if (r.ok) {

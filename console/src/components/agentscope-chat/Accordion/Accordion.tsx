@@ -75,6 +75,21 @@ export interface IAccordionProps {
    * @descriptionEn Whether to use inline mode, affects layout and interaction behavior
    */
   inline?: boolean;
+  /**
+   * @description Internal nesting level for recursive accordion rendering
+   * @descriptionEn Internal nesting level for recursive accordion rendering
+   */
+  level?: number;
+  /**
+   * @description Internal flag for the first step in a nested group
+   * @descriptionEn Internal flag for the first step in a nested group
+   */
+  isFirst?: boolean;
+  /**
+   * @description Internal flag for the last step in a nested group
+   * @descriptionEn Internal flag for the last step in a nested group
+   */
+  isLast?: boolean;
 }
 
 function Item(props: IAccordionProps) {

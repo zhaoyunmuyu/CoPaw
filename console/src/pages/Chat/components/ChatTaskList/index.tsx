@@ -1,8 +1,17 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { cronJobApi } from "@/api/modules/cronjob";
-import type { CronJobSpecOutput } from "@/api/types";
-import Style from "./style";
-import { DESIGN_TOKENS } from "@/config/designTokens";
+import React, { useState, useCallback } from 'react';
+import type { CronJobSpecOutput } from '@/api/types';
+import Style from './style';
+import { DESIGN_TOKENS } from '@/config/designTokens';
+
+function formatTime(raw: string | null | undefined): string {
+  if (!raw) return '';
+  const date = new Date(raw);
+  if (isNaN(date.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate(),
+  )} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 
 function TaskIcon() {
   return (
@@ -40,24 +49,13 @@ function ToggleIcon({ collapsed }: { collapsed: boolean }) {
 }
 
 export interface ChatTaskListProps {
+  tasks: CronJobSpecOutput[];
   onTaskClick?: (task: CronJobSpecOutput) => void;
 }
 
 export default function ChatTaskList(props: ChatTaskListProps) {
-  const { onTaskClick } = props;
-  const [tasks, setTasks] = useState<CronJobSpecOutput[]>([]);
+  const { tasks, onTaskClick } = props;
   const [collapsed, setCollapsed] = useState(false);
-
-  useEffect(() => {
-    cronJobApi
-      .listCronJobs()
-      .then((data) => {
-        setTasks(Array.isArray(data) ? data : []);
-      })
-      .catch(() => {
-        setTasks([]);
-      });
-  }, []);
 
   const handleToggle = useCallback(() => {
     setCollapsed((prev) => !prev);
@@ -66,7 +64,6 @@ export default function ChatTaskList(props: ChatTaskListProps) {
   const handleTaskClick = useCallback(
     (task: CronJobSpecOutput) => {
       onTaskClick?.(task);
-      cronJobApi.triggerCronJob(task.id).catch(() => {});
     },
     [onTaskClick],
   );
@@ -102,13 +99,24 @@ export default function ChatTaskList(props: ChatTaskListProps) {
                 >
                   <div className="chat-task-list-item-header">
                     <span className="chat-task-list-item-title">
-                      {task.name || task.text || task.id}
+                      {task.name || task.id}
                     </span>
-                    {/* Badge placeholder: will be driven by unread count when API supports it */}
+                    {(task.task?.unread_execution_count || 0) > 0 && (
+                      <span className="chat-task-list-item-badge">
+                        {task.task!.unread_execution_count > 99
+                          ? '99+'
+                          : task.task!.unread_execution_count}
+                      </span>
+                    )}
                   </div>
-                  {task.text && task.name && (
+                  {(task.task?.latest_scheduled_preview || task.task?.last_scheduled_run_at) && (
                     <div className="chat-task-list-item-subtitle">
-                      {task.text}
+                      {task.task?.last_scheduled_run_at && (
+                        <span className="chat-task-list-item-time">
+                          {formatTime(task.task.last_scheduled_run_at)}
+                        </span>
+                      )}
+                      {task.task?.latest_scheduled_preview}
                     </div>
                   )}
                 </div>

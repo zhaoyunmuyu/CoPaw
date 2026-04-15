@@ -19,7 +19,7 @@ function Ref(_, ref) {
     ChatAnywhereInputContext,
     (v) => v.setDisabled,
   );
-  const { createSession } = useChatAnywhereSessions();
+  const { createSession, refreshSession } = useChatAnywhereSessions();
 
   React.useImperativeHandle(
     ref,
@@ -37,9 +37,10 @@ function Ref(_, ref) {
           },
         },
         createSession,
+        refreshSession,
       };
     },
-    [messages, createSession],
+    [messages, createSession, refreshSession],
   );
 
   return null;

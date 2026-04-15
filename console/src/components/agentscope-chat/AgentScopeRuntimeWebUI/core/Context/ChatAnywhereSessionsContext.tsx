@@ -1,5 +1,6 @@
 import { createContext, useContextSelector } from "use-context-selector";
 import { IAgentScopeRuntimeWebUISessionsContext } from "../types/ISessions";
+import { IAgentScopeRuntimeWebUISessionAPI } from "../types";
 import { useGetState, useMount } from "ahooks";
 import { IAgentScopeRuntimeWebUISession } from "../types/ISessions";
 import React, { useEffect } from "react";
@@ -8,6 +9,75 @@ import { useChatAnywhereOptions } from "./ChatAnywhereOptionsContext";
 import ReactDOM from "react-dom";
 import { useAsyncEffect } from "ahooks";
 import { emit } from "./useChatAnywhereEventEmitter";
+import { shouldApplySessionLoadResult } from "@/pages/Chat/sessionApi/sessionRaceGuard";
+
+interface SessionApiWithIntent {
+  setSelectedSessionIntent?: (sessionId: string | undefined | null) => void;
+}
+
+interface SessionOptions {
+  api?: IAgentScopeRuntimeWebUISessionAPI & SessionApiWithIntent;
+}
+
+interface LoadSessionMessagesOptions {
+  requestedSessionId: string | undefined;
+  clearBeforeLoad: boolean;
+  options: SessionOptions;
+  setMessages: (messages: any) => void;
+  getCurrentSessionId: () => string | undefined;
+}
+
+async function loadSessionMessages({
+  requestedSessionId,
+  clearBeforeLoad,
+  options,
+  setMessages,
+  getCurrentSessionId,
+}: LoadSessionMessagesOptions): Promise<boolean> {
+  if (!requestedSessionId || !options.api) {
+    if (clearBeforeLoad) {
+      ReactDOM.flushSync(() => {
+        setMessages([]);
+      });
+    }
+    return false;
+  }
+
+  const sessionApi = options.api as SessionApiWithIntent | undefined;
+  sessionApi?.setSelectedSessionIntent?.(requestedSessionId);
+
+  if (clearBeforeLoad) {
+    ReactDOM.flushSync(() => {
+      setMessages([]);
+    });
+  }
+
+  const session = await options.api.getSession(requestedSessionId);
+  if (
+    !shouldApplySessionLoadResult({
+      requestedSessionId,
+      currentSessionId: getCurrentSessionId(),
+    })
+  ) {
+    return false;
+  }
+
+  const messages = session?.messages || [];
+  setMessages(
+    messages.map((item) => {
+      return {
+        ...item,
+        history: true,
+      };
+    }),
+  );
+
+  if (session?.generating) {
+    emit({ type: "handleReconnect", data: { session_id: requestedSessionId } });
+  }
+
+  return true;
+}
 
 export const ChatAnywhereSessionsContext =
   createContext<IAgentScopeRuntimeWebUISessionsContext>({
@@ -64,26 +134,19 @@ export const useChatAnywhereSessionLoader = () => {
     ChatAnywhereMessagesContext,
     (v) => v.setMessages,
   );
+  const getCurrentSessionId = useContextSelector(
+    ChatAnywhereSessionsContext,
+    (v) => v.getCurrentSessionId,
+  );
 
   useAsyncEffect(async () => {
-    ReactDOM.flushSync(() => {
-      setMessages([]);
+    await loadSessionMessages({
+      requestedSessionId: currentSessionId,
+      clearBeforeLoad: true,
+      options,
+      setMessages,
+      getCurrentSessionId,
     });
-
-    const session = await options.api.getSession(currentSessionId);
-    const messages = session?.messages || [];
-    setMessages(
-      messages.map((item) => {
-        return {
-          ...item,
-          history: true,
-        };
-      }),
-    );
-
-    if (session?.generating) {
-      emit({ type: "handleReconnect", data: { session_id: currentSessionId } });
-    }
   }, [currentSessionId]);
 };
 
@@ -146,6 +209,20 @@ export const useChatAnywhereSessions = () => {
     setCurrentSessionId(sessionId);
   }, []);
 
+  const refreshSession = React.useCallback(
+    async (sessionId?: string) => {
+      const requestedSessionId = sessionId ?? getCurrentSessionId();
+      return loadSessionMessages({
+        requestedSessionId,
+        clearBeforeLoad: false,
+        options,
+        setMessages,
+        getCurrentSessionId,
+      });
+    },
+    [getCurrentSessionId, options, setMessages],
+  );
+
   return {
     changeCurrentSessionId,
     getCurrentSessionId,
@@ -153,5 +230,6 @@ export const useChatAnywhereSessions = () => {
     removeSession,
     updateSession,
     createSession,
+    refreshSession,
   };
 };

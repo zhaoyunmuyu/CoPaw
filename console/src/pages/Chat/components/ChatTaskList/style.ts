@@ -97,6 +97,11 @@ export default createGlobalStyle`
     text-overflow: ellipsis;
   }
 
+  &-item-time {
+    margin-right: 8px;
+    color: ${DESIGN_TOKENS.colorTextMuted};
+  }
+
   &-empty {
     padding: 16px 0;
     text-align: center;
