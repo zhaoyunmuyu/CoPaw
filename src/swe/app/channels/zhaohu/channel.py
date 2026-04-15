@@ -880,8 +880,7 @@ class ZhaohuChannel(BaseChannel):
     ) -> bool:
         """Query scheduled task progress for the user and send card (Template 2).
 
-        Placeholder method for querying task status.
-        To be implemented in the future.
+        Queries all tasks for the user on today's date from CronManager.
 
         Args:
             user_id: User's sapId
@@ -890,15 +889,45 @@ class ZhaohuChannel(BaseChannel):
         Returns:
             True if card sent successfully, False otherwise
         """
-        # TODO: Implement actual task progress query logic
+        from datetime import datetime, timezone
+
         logger.info(
-            "zhaohu _query_task_progress: placeholder called for user_id=%s",
+            "zhaohu _query_task_progress: querying for user_id=%s",
             user_id,
         )
 
-        # Placeholder: return mock task list for demo
-        # In real implementation, query actual tasks from storage/API
+        # Get today's date
+        today = datetime.now(timezone.utc)
+
+        # Query tasks from CronManager
         tasks: list = []
+        if self._workspace and self._workspace.cron_manager:
+            try:
+                raw_tasks = await self._workspace.cron_manager.query_user_tasks_by_date(
+                    user_id,
+                    today,
+                )
+                # Convert to format expected by _build_task_progress_card
+                for raw_task in raw_tasks:
+                    tasks.append(
+                        {
+                            "task_name": raw_task.get("task_name", "未知任务"),
+                            "status": raw_task.get("status", "pending"),
+                            "status_text": raw_task.get("status_text", "待开始"),
+                            "time_info": raw_task.get("time_info", ""),
+                            "result_url": raw_task.get("result_url", ""),
+                        },
+                    )
+                logger.info(
+                    "zhaohu _query_task_progress: found %d tasks for user_id=%s",
+                    len(tasks),
+                    user_id,
+                )
+            except Exception:
+                logger.exception(
+                    "zhaohu _query_task_progress: failed to query tasks for user_id=%s",
+                    user_id,
+                )
 
         # Build and send card using Template 2 (task progress card)
         card_content = self._build_task_progress_card(tasks)
@@ -918,53 +947,6 @@ class ZhaohuChannel(BaseChannel):
             )
             return False
 
-    async def _create_task(
-        self,
-        user_id: str,
-        task_content: str,
-        open_id: str,
-    ) -> bool:
-        """Create a new task for the user and send card (Template 1).
-
-        Placeholder method for creating tasks.
-        To be implemented in the future.
-
-        Args:
-            user_id: User's sapId
-            task_content: Task description/content
-            open_id: User's openId (for sending message)
-
-        Returns:
-            True if task created and card sent successfully, False otherwise
-        """
-        # TODO: Implement actual task creation logic
-        logger.info(
-            "zhaohu _create_task: placeholder called for user_id=%s, content_len=%d",
-            user_id,
-            len(task_content),
-        )
-
-        # Placeholder: assume task creation succeeds
-        # In real implementation, save task to storage/API
-
-        # Build and send card using Template 1 (task initiated notification)
-        card_content = self._build_task_initiated_card(task_content)
-        code, msg = await self.send_custom_card(open_id, card_content)
-
-        if code == 0:
-            logger.info(
-                "zhaohu _create_task: card sent successfully, msgId=%s",
-                msg,
-            )
-            return True
-        else:
-            logger.warning(
-                "zhaohu _create_task: card send failed, code=%d msg=%s",
-                code,
-                msg,
-            )
-            return False
-
     async def _run_task_llm_async(
         self,
         request: Any,
@@ -974,7 +956,8 @@ class ZhaohuChannel(BaseChannel):
         """Run LLM task asynchronously in background.
 
         This method runs as a background task after the card is sent to user.
-        The LLM processes the task content, and results can be stored/sent later.
+        The LLM processes the task content via Runner.stream_query, which
+        automatically saves the session state to file after completion.
 
         Args:
             request: AgentRequest for the task session
@@ -991,6 +974,10 @@ class ZhaohuChannel(BaseChannel):
 
         response_text = ""
         try:
+            # self._process calls Runner.stream_query, which:
+            # 1. Loads session state
+            # 2. Processes the request through LLM
+            # 3. Saves session state to file in finally block
             async for event in self._process(request):
                 obj = getattr(event, "object", None)
                 status = getattr(event, "status", None)
@@ -1005,12 +992,12 @@ class ZhaohuChannel(BaseChannel):
 
             if response_text:
                 logger.info(
-                    "zhaohu _run_task_llm_async: completed for sessionId=%s, response_len=%d",
+                    "zhaohu _run_task_llm_async: completed for sessionId=%s, "
+                    "response_len=%d, session saved",
                     session_id,
                     len(response_text),
                 )
-                # TODO: Store result or send notification to user when task completes
-                # Currently just log the result, can be extended later
+                # Notification placeholder: send result to user when needed
             else:
                 logger.warning(
                     "zhaohu _run_task_llm_async: no response for sessionId=%s",
@@ -1158,7 +1145,6 @@ class ZhaohuChannel(BaseChannel):
         if msg_content_len > 10:
             await self._handle_task_assignment(
                 sap_id,
-                yst_id,
                 from_id,
                 msg_content_stripped,
                 meta,
@@ -1178,18 +1164,30 @@ class ZhaohuChannel(BaseChannel):
     async def _handle_task_assignment(
         self,
         sap_id: str,
-        yst_id: str,
         from_id: str,
         task_content: str,
         meta: Dict[str, Any],
     ) -> None:
-        """Handle task assignment (Case 2): launch async LLM and send card."""
+        """Handle task assignment (Case 2): create new session and process task.
+
+        Creates a new unique session for the task, runs LLM asynchronously
+        to process the task content, and sends a card notification to user.
+
+        This is NOT creating a scheduled cron job - it's creating a new
+        conversation session to handle the user's task request.
+
+        Args:
+            sap_id: User's sapId
+            from_id: User's openId (for sending card)
+            task_content: Task description/content from user message
+            meta: Channel metadata
+        """
         logger.info(
             "zhaohu message type: task_assignment, content_len=%d",
             len(task_content),
         )
 
-        # Generate unique sessionID
+        # Generate unique sessionID for this task session
         task_session_id = f"zhaohu:task:{sap_id}:{uuid.uuid4().hex[:8]}"
         logger.info(
             "zhaohu task session: sessionId=%s userId=%s",
@@ -1197,7 +1195,7 @@ class ZhaohuChannel(BaseChannel):
             sap_id,
         )
 
-        # Build AgentRequest
+        # Build AgentRequest for the new session
         content_parts = [TextContent(type=ContentType.TEXT, text=task_content)]
         task_request = self.build_agent_request_from_user_content(
             channel_id=self.channel,
@@ -1208,7 +1206,7 @@ class ZhaohuChannel(BaseChannel):
         )
         task_request.channel_meta = meta
 
-        # Launch async LLM task
+        # Launch async LLM task in the new session
         asyncio.create_task(
             self._run_task_llm_async(
                 task_request,
@@ -1217,10 +1215,22 @@ class ZhaohuChannel(BaseChannel):
             ),
         )
 
-        # Send card to user
-        success = await self._create_task(sap_id, task_content, from_id)
-        if not success:
-            await self.send(yst_id, "任务已发起，处理完成后将通知您。", meta)
+        # Send card notification to user
+        card_content = self._build_task_initiated_card(task_content)
+        code, msg = await self.send_custom_card(from_id, card_content)
+
+        if code == 0:
+            logger.info(
+                "zhaohu _handle_task_assignment: card sent successfully, msgId=%s",
+                msg,
+            )
+        else:
+            logger.warning(
+                "zhaohu _handle_task_assignment: card send failed, "
+                "code=%d msg=%s, fallback to text",
+                code,
+                msg,
+            )
 
     async def _handle_casual_chat(
         self,
