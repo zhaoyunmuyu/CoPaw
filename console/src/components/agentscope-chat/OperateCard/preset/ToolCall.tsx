@@ -9,24 +9,78 @@ import { CodeBlock, IconButton } from "@agentscope-ai/design";
 import { copy } from "../../Util/copy";
 import { useRef, useState } from "react";
 
+function extractPlainText(value: any): string | null {
+  if (!value) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return value;
+    if (
+      (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+      (trimmed.startsWith("{") && trimmed.endsWith("}"))
+    ) {
+      try {
+        return extractPlainText(JSON.parse(trimmed));
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const texts = value
+      .map((item) => extractPlainText(item))
+      .filter((item): item is string => !!item);
+    return texts.length ? texts.join("\n") : null;
+  }
+  if (value.type === "text" && typeof value.text === "string") {
+    return value.text;
+  }
+  if (typeof value.text === "string") {
+    return value.text;
+  }
+  if (Array.isArray(value.content)) {
+    return extractPlainText(value.content);
+  }
+  return null;
+}
+
+function stringifyContent(value: any) {
+  const plainText = extractPlainText(value);
+  if (plainText !== null) {
+    return {
+      contentString: plainText,
+      displayLanguage: "text" as const,
+    };
+  }
+  return {
+    contentString:
+      typeof value === "string" ? value : JSON.stringify(value, null, 2),
+    displayLanguage: "json" as const,
+  };
+}
+
 function Block(props: {
   title: string;
-  content: string | Record<string, any>;
+  content: any;
+  summary?: string;
   expandEnabled?: boolean;
+  defaultExpanded?: boolean;
   language?: "json" | "text";
 }) {
   const { getPrefixCls } = useProviderContext();
   const prefixCls = getPrefixCls("operate-card");
-  const { expandEnabled = false, language = "json" } = props;
-  const contentString =
-    typeof props.content === "string"
-      ? props.content
-      : JSON.stringify(props.content);
+  const {
+    expandEnabled = false,
+    defaultExpanded = true,
+    summary,
+  } = props;
+  const { contentString, displayLanguage } = stringifyContent(props.content);
   const [copied, setCopied] = useState(false);
-  const [expanded, setExpanded] = useState(
-    expandEnabled === true ? false : true,
-  );
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const timer = useRef<NodeJS.Timeout | null>(null);
+
+  const showContent = expanded || (summary && !expanded);
+  const displayContent = summary && !expanded ? summary : contentString;
 
   return (
     <div className={`${prefixCls}-tool-call-block`}>
@@ -41,6 +95,11 @@ function Block(props: {
         <span className={`${prefixCls}-tool-call-block-title`}>
           {props.title}
         </span>
+        {expandEnabled && summary && (
+          <span className={`${prefixCls}-tool-call-block-expand-indicator`}>
+            {expanded ? "收起" : "展开详情"}
+          </span>
+        )}
         <div
           className={`${prefixCls}-tool-call-block-extra`}
           onClick={(e) => e.stopPropagation()}
@@ -66,12 +125,12 @@ function Block(props: {
           />
         </div>
       </div>
-      {expanded && (
+      {showContent && (
         <div className={`${prefixCls}-tool-call-block-content`}>
           {/* @ts-ignore */}
           <CodeBlock
-            language={language}
-            value={contentString}
+            language={props.language || displayLanguage}
+            value={displayContent}
             readOnly={true}
             basicSetup={{ lineNumbers: false, foldGutter: false }}
           />
@@ -99,13 +158,18 @@ export interface IToolCallProps {
    * @descriptionEn Tool Call Input
    * @default ''
    */
-  input: string | Record<string, any>;
+  input: any;
   /**
    * @description 工具调用输出
    * @descriptionEn Tool Call Output
    * @default ''
    */
-  output: string | Record<string, any>;
+  output: any;
+  /**
+   * @description 输出摘要
+   * @descriptionEn Output Summary
+   */
+  outputSummary?: string;
   /**
    * @description 默认展开
    * @descriptionEn Default Open
@@ -128,6 +192,7 @@ export default function (props: IToolCallProps) {
     subTitle,
     defaultOpen = true,
     loading = false,
+    outputSummary,
   } = props;
 
   return (
@@ -142,14 +207,19 @@ export default function (props: IToolCallProps) {
         children: (
           <OperateCard.LineBody>
             <Block
-              title="Input"
+              title="输入"
               content={props.input}
               language={props.inputBlock?.language}
+              expandEnabled={true}
+              defaultExpanded={false}
             />
             <Block
-              title="Output"
+              title="输出"
               content={props.output}
+              summary={outputSummary}
               language={props.outputBlock?.language}
+              expandEnabled={!!outputSummary}
+              defaultExpanded={!outputSummary}
             />
           </OperateCard.LineBody>
         ),

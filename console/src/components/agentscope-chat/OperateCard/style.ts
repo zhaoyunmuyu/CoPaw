@@ -204,6 +204,17 @@ export default createGlobalStyle`
       color: ${(p) => p.theme.colorText};
     }
 
+    &-expand-indicator {
+      font-size: 12px;
+      color: ${(p) => p.theme.colorTextSecondary};
+      margin-left: 8px;
+      cursor: pointer;
+
+      &:hover {
+        color: ${(p) => p.theme.colorPrimary};
+      }
+    }
+
     &-extra {
       display: inline-flex;
       align-items: center;

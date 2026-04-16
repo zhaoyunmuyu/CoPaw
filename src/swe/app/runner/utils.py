@@ -21,6 +21,10 @@ from agentscope_runtime.engine.schemas.agent_schemas import (
     MessageType,
 )
 
+from ...agents.utils.tool_summary import (
+    generate_tool_call_summary,
+    generate_tool_output_summary,
+)
 from ...config import load_config
 
 logger = logging.getLogger(__name__)
@@ -406,6 +410,13 @@ def agentscope_msg_to_message(
                     arguments=arguments,
                 ).model_dump()
 
+                # Generate user-friendly summary for tool call
+                call_data["summary"] = generate_tool_call_summary(
+                    tool_name=block.get("name"),
+                    arguments=arguments,
+                    server_label=block.get("server_label"),
+                )
+
                 data_content = DataContent(
                     delta=False,
                     index=None,
@@ -437,6 +448,12 @@ def agentscope_msg_to_message(
                     name=block.get("name"),
                     output=output,
                 ).model_dump(exclude_none=True)
+
+                # Generate user-friendly summary for tool output
+                output_data["output_summary"] = generate_tool_output_summary(
+                    tool_name=block.get("name"),
+                    output=output,
+                )
 
                 data_content = DataContent(
                     delta=False,

@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import pytest
 from agentscope_runtime.engine.schemas.agent_schemas import (
+    DataContent,
     Message,
     MessageType,
     Role,
@@ -11,6 +13,7 @@ from agentscope_runtime.engine.schemas.agent_schemas import (
 
 from swe.app.runner.stream_boundary import (
     _normalize_reasoning_boundary_events,
+    normalize_reasoning_boundary_stream,
 )
 
 
@@ -97,3 +100,85 @@ def test_reasoning_boundary_keeps_following_assistant_message_start() -> None:
     assert events[1].type == MessageType.REASONING
     assert events[1].status == RunStatus.Completed
     assert events[2] is answer_start
+
+
+@pytest.mark.asyncio
+async def test_stream_tool_call_uses_async_summary(monkeypatch) -> None:
+    event = Message(
+        id="tool-1",
+        type=MessageType.FUNCTION_CALL,
+        role=Role.ASSISTANT,
+        status=RunStatus.InProgress,
+        content=[
+            DataContent(
+                data={
+                    "name": "grep_search",
+                    "arguments": '{"pattern": "tenant"}',
+                },
+                delta=False,
+                index=0,
+            ),
+        ],
+    )
+
+    async def source():
+        yield event
+
+    async def fake_summary(**_kwargs):
+        return "搜索 tenant 相关代码"
+
+    monkeypatch.setattr(
+        "swe.app.runner.stream_boundary.async_generate_tool_call_summary",
+        fake_summary,
+    )
+
+    events = [
+        item async for item in normalize_reasoning_boundary_stream(source())
+    ]
+
+    assert (
+        events[0].content[0].data["summary"]
+        == "搜索 tenant 相关代码"
+    )
+
+
+@pytest.mark.asyncio
+async def test_stream_tool_output_falls_back_to_rule_summary(
+    monkeypatch,
+) -> None:
+    event = Message(
+        id="tool-2",
+        type=MessageType.FUNCTION_CALL_OUTPUT,
+        role=Role.ASSISTANT,
+        status=RunStatus.InProgress,
+        content=[
+            DataContent(
+                data={
+                    "name": "grep_search",
+                    "output": '["a.py:1", "b.py:2"]',
+                },
+                delta=False,
+                index=0,
+            ),
+        ],
+    )
+
+    async def source():
+        yield event
+
+    async def boom(**_kwargs):
+        raise RuntimeError("timeout")
+
+    monkeypatch.setattr(
+        "swe.app.runner.stream_boundary.async_generate_tool_output_summary",
+        boom,
+    )
+
+    events = [
+        item async for item in normalize_reasoning_boundary_stream(source())
+    ]
+
+    assert (
+        events[0].content[0].data["output_summary"]
+        == "共找到 2 项内容"
+    )
