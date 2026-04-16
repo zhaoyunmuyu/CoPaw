@@ -618,48 +618,31 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
         return session;
       }
 
-      // Pure local session (not yet sent to backend): wait until updateSession
-      // resolves the realId, then fetch history with the real UUID.
-      await new Promise<void>((resolve) => {
-        const check = () => {
-          const s = this.sessionList.find((x) => x.id === sessionId) as
-            | ExtendedSession
-            | undefined;
-          if (s?.realId) {
-            resolve();
-          } else {
-            setTimeout(check, 100);
-          }
-        };
-        setTimeout(check, 100);
-      });
-
-      const refreshed = this.sessionList.find((s) => s.id === sessionId) as
-        | ExtendedSession
-        | undefined;
-      if (refreshed?.realId) {
-        const chatHistory = await api.getChat(refreshed.realId);
-        const generating = isGenerating(chatHistory);
-        const messages = convertMessages(chatHistory.messages || []);
-        this.patchLastUserMessage(messages, generating, refreshed.realId);
-        const session: ExtendedSession = {
-          id: sessionId,
-          name: refreshed.name || DEFAULT_SESSION_NAME,
-          sessionId: refreshed.sessionId || sessionId,
-          // ==================== userId 缁熶竴鏁存敼 (Kun He) ====================
-          userId: getUserIdWithoutWindow(refreshed.userId),
-          channel: getChannelWithoutWindow(refreshed.channel),
-          // ==================== userId 缁熶竴鏁存敼缁撴潫 ====================
-          messages,
-          meta: refreshed.meta || {},
-          realId: refreshed.realId,
-          generating,
-        };
-        this.updateWindowVariables(session);
-        return session;
+      // Pure local session (not yet sent to backend):
+      // If realId is not resolved yet, return empty local session immediately.
+      // No need to wait - realId will be resolved after first message is sent.
+      if (!fromList?.realId) {
+        return this.getLocalSession(sessionId);
       }
 
-      return this.getLocalSession(sessionId);
+      // realId resolved: fetch history from backend
+      const chatHistory = await api.getChat(fromList.realId);
+      const generating = isGenerating(chatHistory);
+      const messages = convertMessages(chatHistory.messages || []);
+      this.patchLastUserMessage(messages, generating, fromList.realId);
+      const session: ExtendedSession = {
+        id: sessionId,
+        name: fromList.name || DEFAULT_SESSION_NAME,
+        sessionId: fromList.sessionId || sessionId,
+        userId: getUserIdWithoutWindow(fromList.userId),
+        channel: getChannelWithoutWindow(fromList.channel),
+        messages,
+        meta: fromList.meta || {},
+        realId: fromList.realId,
+        generating,
+      };
+      this.updateWindowVariables(session);
+      return session;
     }
 
     // --- No session selected (e.g. after delete) ---

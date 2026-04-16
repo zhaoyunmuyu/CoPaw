@@ -1,9 +1,9 @@
 import { createContext, useContextSelector } from "use-context-selector";
 import { IAgentScopeRuntimeWebUISessionsContext } from "../types/ISessions";
-import { IAgentScopeRuntimeWebUISessionAPI } from "../types";
+import { IAgentScopeRuntimeWebUISessionAPI, IAgentScopeRuntimeWebUIMessage } from "../types";
 import { useGetState, useMount } from "ahooks";
 import { IAgentScopeRuntimeWebUISession } from "../types/ISessions";
-import React, { useEffect } from "react";
+import React from "react";
 import { ChatAnywhereMessagesContext } from "./ChatAnywhereMessagesContext";
 import { useChatAnywhereOptions } from "./ChatAnywhereOptionsContext";
 import ReactDOM from "react-dom";
@@ -23,8 +23,9 @@ interface LoadSessionMessagesOptions {
   requestedSessionId: string | undefined;
   clearBeforeLoad: boolean;
   options: SessionOptions;
-  setMessages: (messages: any) => void;
+  setMessages: (messages: IAgentScopeRuntimeWebUIMessage[]) => void;
   getCurrentSessionId: () => string | undefined;
+  setSessionLoading?: (loading: boolean) => void;
 }
 
 async function loadSessionMessages({
@@ -33,6 +34,7 @@ async function loadSessionMessages({
   options,
   setMessages,
   getCurrentSessionId,
+  setSessionLoading,
 }: LoadSessionMessagesOptions): Promise<boolean> {
   if (!requestedSessionId || !options.api) {
     if (clearBeforeLoad) {
@@ -47,36 +49,52 @@ async function loadSessionMessages({
   sessionApi?.setSelectedSessionIntent?.(requestedSessionId);
 
   if (clearBeforeLoad) {
+    // 使用 flushSync 确保 loading 状态和消息清空同步更新
+    // 避免 React 状态更新异步导致先显示欢迎页再显示 loading
     ReactDOM.flushSync(() => {
+      setSessionLoading?.(true);
       setMessages([]);
     });
+  } else {
+    setSessionLoading?.(true);
   }
 
-  const session = await options.api.getSession(requestedSessionId);
-  if (
-    !shouldApplySessionLoadResult({
-      requestedSessionId,
-      currentSessionId: getCurrentSessionId(),
-    })
-  ) {
-    return false;
+  try {
+    const session = await options.api.getSession(requestedSessionId);
+    if (
+      !shouldApplySessionLoadResult({
+        requestedSessionId,
+        currentSessionId: getCurrentSessionId(),
+      })
+    ) {
+      // 竞态条件：当前会话已变更，此请求结果不应用
+      // 不清除 loading，因为另一个请求正在加载当前会话
+      return false;
+    }
+
+    const messages = session?.messages || [];
+    setMessages(
+      messages.map((item) => {
+        return {
+          ...item,
+          history: true,
+        };
+      }),
+    );
+
+    if (session?.generating) {
+      emit({ type: "handleReconnect", data: { session_id: requestedSessionId } });
+    }
+
+    return true;
+  } finally {
+    // 只有当请求成功应用时才清除 loading
+    // 竞态失败的请求不应清除 loading，让获胜的请求来清除
+    const currentId = getCurrentSessionId();
+    if (requestedSessionId === currentId) {
+      setSessionLoading?.(false);
+    }
   }
-
-  const messages = session?.messages || [];
-  setMessages(
-    messages.map((item) => {
-      return {
-        ...item,
-        history: true,
-      };
-    }),
-  );
-
-  if (session?.generating) {
-    emit({ type: "handleReconnect", data: { session_id: requestedSessionId } });
-  }
-
-  return true;
 }
 
 export const ChatAnywhereSessionsContext =
@@ -87,6 +105,8 @@ export const ChatAnywhereSessionsContext =
     currentSessionId: undefined,
     setCurrentSessionId: () => {},
     getCurrentSessionId: () => "",
+    isSessionLoading: false,
+    setSessionLoading: () => {},
   });
 
 export function ChatAnywhereSessionsContextProvider(props: {
@@ -98,6 +118,7 @@ export function ChatAnywhereSessionsContextProvider(props: {
   >([]);
   const [currentSessionId, setCurrentSessionId, getCurrentSessionId] =
     useGetState<string | undefined>(undefined);
+  const [isSessionLoading, setSessionLoading] = useGetState<boolean>(false);
 
   useMount(async () => {
     const sessionList = await options.api.getSessionList();
@@ -114,6 +135,8 @@ export function ChatAnywhereSessionsContextProvider(props: {
         currentSessionId,
         setCurrentSessionId,
         getCurrentSessionId,
+        isSessionLoading,
+        setSessionLoading,
       }}
     >
       {props.children}
@@ -138,6 +161,10 @@ export const useChatAnywhereSessionLoader = () => {
     ChatAnywhereSessionsContext,
     (v) => v.getCurrentSessionId,
   );
+  const setSessionLoading = useContextSelector(
+    ChatAnywhereSessionsContext,
+    (v) => v.setSessionLoading,
+  );
 
   useAsyncEffect(async () => {
     await loadSessionMessages({
@@ -146,6 +173,7 @@ export const useChatAnywhereSessionLoader = () => {
       options,
       setMessages,
       getCurrentSessionId,
+      setSessionLoading,
     });
   }, [currentSessionId]);
 };
@@ -163,7 +191,6 @@ export const useChatAnywhereSessions = () => {
     getSessions,
     getCurrentSessionId,
     setCurrentSessionId,
-    currentSessionId,
   } = useContextSelector(ChatAnywhereSessionsContext, (v) => v);
   const options = useChatAnywhereOptions((v) => v.session);
   const setMessages = useContextSelector(

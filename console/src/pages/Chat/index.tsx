@@ -3,6 +3,7 @@ import {
   AgentScopeRuntimeWebUI,
   IAgentScopeRuntimeWebUIOptions,
   type IAgentScopeRuntimeWebUIRef,
+  useChatAnywhereSessionsState,
 } from "@/components/agentscope-chat";
 // ==================== 组件引入方式变更结束 ====================
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -60,8 +61,8 @@ import { deriveChatTaskState } from "./taskJobs";
 import { shouldRefreshCurrentTaskMessages } from "./taskMessageRefresh";
 
 const CHAT_ATTACHMENT_MAX_MB = 10;
-const TASK_PAGE_POLL_MS = 10_000;
-const TASK_PENDING_POLL_MS = 2_000;
+const TASK_PAGE_POLL_MS = 30_000;
+const TASK_PENDING_POLL_MS = 30_000;
 
 interface SessionInfo {
   session_id?: string;
@@ -305,6 +306,7 @@ export default function ChatPage() {
   const dragCounterRef = useRef(0);
   const runtimeLoadingBridgeRef = useRef<RuntimeLoadingBridgeApi | null>(null);
   const { message } = useAppMessage();
+  const { setSessionLoading } = useChatAnywhereSessionsState();
 
   const isChatActiveRef = useRef(false);
   isChatActiveRef.current =
@@ -370,6 +372,17 @@ export default function ChatPage() {
       // Update URL when session is selected and different from current
       const targetId = realId || sessionId;
       if (!targetId) return;
+
+      // If current URL's chatId differs from targetId, skip this callback.
+      // This happens when user quickly switches sessions via sidebar:
+      // 1. User clicks A → getSession(A) starts
+      // 2. User clicks B → URL becomes /chat/B
+      // 3. A's request completes → onSessionSelected(A) fires
+      // 4. Should NOT navigate back to A since user already chose B
+      const currentUrlChatId = chatIdRef.current;
+      if (currentUrlChatId && currentUrlChatId !== targetId) {
+        return;
+      }
 
       // If a preferred chatId from the URL exists and no navigation has happened yet,
       // skip the library's initial auto-selection (always first session).
@@ -575,6 +588,8 @@ export default function ChatPage() {
         ),
       );
 
+      // 先设置 loading 状态，避免导航后闪现欢迎页
+      setSessionLoading(true);
       navigate(`/chat/${taskChatId}`, { replace: true });
 
       try {
@@ -583,7 +598,7 @@ export default function ChatPage() {
         void refreshJobs();
       }
     },
-    [navigate, refreshJobs],
+    [navigate, refreshJobs, setSessionLoading],
   );
 
   useEffect(() => {

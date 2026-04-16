@@ -1,4 +1,4 @@
-import { Bubble, useProviderContext } from "@/components/agentscope-chat";
+import { Bubble, useProviderContext, IAgentScopeRuntimeWebUIInputData } from "@/components/agentscope-chat";
 import { ChatAnywhereMessagesContext } from "../../Context/ChatAnywhereMessagesContext";
 import { useContextSelector } from "use-context-selector";
 import { ChatAnywhereSessionsContext } from "../../Context/ChatAnywhereSessionsContext";
@@ -6,9 +6,10 @@ import cls from "classnames";
 import Welcome from "../Welcome";
 import { useChatAnywhereOptions } from "../../Context/ChatAnywhereOptionsContext";
 import React from "react";
+import { Spin } from "antd";
 
 export default function MessageList(props: {
-  onSubmit: (data: { query: string; fileList?: any[] }) => void;
+  onSubmit: (data: IAgentScopeRuntimeWebUIInputData) => void;
 }) {
   const messages = useContextSelector(
     ChatAnywhereMessagesContext,
@@ -25,6 +26,10 @@ export default function MessageList(props: {
     ChatAnywhereSessionsContext,
     (v) => v.currentSessionId,
   );
+  const isSessionLoading = useContextSelector(
+    ChatAnywhereSessionsContext,
+    (v) => v.isSessionLoading,
+  );
   const bubbleListOptions = useChatAnywhereOptions((v) => v.theme?.bubbleList);
   const listRef = React.useRef<{ scrollToBottom: () => void } | null>(null);
   const prevMessagesLengthRef = React.useRef(safeMessages.length);
@@ -35,6 +40,16 @@ export default function MessageList(props: {
     }
     prevMessagesLengthRef.current = safeMessages.length;
   }, [safeMessages.length]);
+
+  // 当正在加载会话时，显示加载指示器而不是欢迎页
+  // 避免在切换会话时闪现"新建会话"页面
+  if (isSessionLoading) {
+    return (
+      <div className={cls(prefixCls, `${prefixCls}-loading`)}>
+        <Spin size="large" />
+      </div>
+    );
+  }
 
   if (safeMessages.length === 0)
     return (

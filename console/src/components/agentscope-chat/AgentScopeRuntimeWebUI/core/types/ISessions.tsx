@@ -30,4 +30,7 @@ export interface IAgentScopeRuntimeWebUISessionsContext {
   currentSessionId: string | undefined;
   setCurrentSessionId: (sessionId: string | undefined) => void;
   getCurrentSessionId: () => string | undefined;
+  // 会话加载状态，用于在切换会话时保持显示旧消息，避免闪现欢迎页
+  isSessionLoading: boolean;
+  setSessionLoading: (loading: boolean) => void;
 }
