@@ -1,10 +1,10 @@
-import { useEvent, useMergedState } from 'rc-util';
-import React from 'react';
+import { useEvent, useMergedState } from "rc-util";
+import React from "react";
 
 // Ensure that the SpeechRecognition API is available in the browser
 let SpeechRecognition: any;
 
-if (!SpeechRecognition && typeof window !== 'undefined') {
+if (!SpeechRecognition && typeof window !== "undefined") {
   SpeechRecognition =
     (window as any).SpeechRecognition ||
     (window as any).webkitSpeechRecognition;
@@ -26,11 +26,11 @@ export default function useSpeech(
   // ========================== Speech Config ==========================
   const [controlledRecording, onControlledRecordingChange, speechInControlled] =
     React.useMemo(() => {
-      if (typeof allowSpeech === 'object') {
+      if (typeof allowSpeech === "object") {
         return [
           allowSpeech.recording,
           allowSpeech.onRecordingChange,
-          typeof allowSpeech.recording === 'boolean',
+          typeof allowSpeech.recording === "boolean",
         ] as const;
       }
 
@@ -42,11 +42,11 @@ export default function useSpeech(
     React.useState<PermissionState | null>(null);
 
   React.useEffect(() => {
-    if (typeof navigator !== 'undefined' && 'permissions' in navigator) {
+    if (typeof navigator !== "undefined" && "permissions" in navigator) {
       let lastPermission: PermissionStatus | null = null;
 
       (navigator as any).permissions
-        .query({ name: 'microphone' })
+        .query({ name: "microphone" })
         .then((permissionStatus: PermissionStatus) => {
           setPermissionState(permissionStatus.state);
 
@@ -68,7 +68,7 @@ export default function useSpeech(
   }, []);
 
   // Convert permission state to a simple type
-  const mergedAllowSpeech = SpeechRecognition && permissionState !== 'denied';
+  const mergedAllowSpeech = SpeechRecognition && permissionState !== "denied";
 
   // ========================== Speech Events ==========================
   const recognitionRef = React.useRef<any | null>(null);

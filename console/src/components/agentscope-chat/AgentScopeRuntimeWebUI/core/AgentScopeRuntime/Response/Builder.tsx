@@ -1,17 +1,27 @@
-
 import { produce } from "immer";
-import { IAgentScopeRuntimeResponse, AgentScopeRuntimeRunStatus, IAgentScopeRuntimeMessage, IContent, AgentScopeRuntimeContentType, ITextContent, IImageContent, IDataContent, AgentScopeRuntimeMessageType } from "../types";
-import { uuid } from '@/components/agentscope-chat';
+import {
+  IAgentScopeRuntimeResponse,
+  AgentScopeRuntimeRunStatus,
+  IAgentScopeRuntimeMessage,
+  IContent,
+  AgentScopeRuntimeContentType,
+  ITextContent,
+  IImageContent,
+  IDataContent,
+  AgentScopeRuntimeMessageType,
+} from "../types";
+import { uuid } from "@/components/agentscope-chat";
 
 class AgentScopeRuntimeResponseBuilder {
-
   static mergeToolMessages(messages: IAgentScopeRuntimeMessage[]) {
     const bufferMessagesMap = new Map<string, IDataContent>();
     let resMessages: IAgentScopeRuntimeMessage[] = [];
 
     for (const message of messages) {
-
-      if (AgentScopeRuntimeResponseBuilder.maybeToolInput(message) && message.content?.length) {
+      if (
+        AgentScopeRuntimeResponseBuilder.maybeToolInput(message) &&
+        message.content?.length
+      ) {
         const content = message.content[0] as IDataContent<{
           name: string;
           call_id?: string;
@@ -19,8 +29,10 @@ class AgentScopeRuntimeResponseBuilder {
         const key = content.data.call_id || content.data.name;
         bufferMessagesMap.set(key, content);
         resMessages.push(message);
-
-      } else if (AgentScopeRuntimeResponseBuilder.maybeToolOutput(message) && message.content?.length) {
+      } else if (
+        AgentScopeRuntimeResponseBuilder.maybeToolOutput(message) &&
+        message.content?.length
+      ) {
         const content = message.content[0] as IDataContent<{
           name: string;
           call_id?: string;
@@ -29,8 +41,7 @@ class AgentScopeRuntimeResponseBuilder {
         const bufferContent = bufferMessagesMap.get(key);
 
         if (bufferContent) {
-
-          resMessages = resMessages.map(i => {
+          resMessages = resMessages.map((i) => {
             if (!AgentScopeRuntimeResponseBuilder.maybeToolInput(i)) return i;
             const preContent = i.content[0] as IDataContent<{
               name: string;
@@ -49,13 +60,10 @@ class AgentScopeRuntimeResponseBuilder {
       } else {
         resMessages.push(message);
       }
-
     }
 
     return resMessages;
-
   }
-
 
   static maybeToolOutput(message: IAgentScopeRuntimeMessage) {
     return [
@@ -90,14 +98,17 @@ class AgentScopeRuntimeResponseBuilder {
     ].includes(data.status);
   }
 
-
   data: IAgentScopeRuntimeResponse;
 
-  constructor({ id, status, created_at }: Pick<IAgentScopeRuntimeResponse, 'id' | 'status' | 'created_at'>) {
+  constructor({
+    id,
+    status,
+    created_at,
+  }: Pick<IAgentScopeRuntimeResponse, "id" | "status" | "created_at">) {
     this.data = {
       id: id,
       output: [],
-      object: 'response',
+      object: "response",
       status: status || AgentScopeRuntimeRunStatus.Created,
       created_at: created_at || Date.now(),
     };
@@ -114,12 +125,11 @@ class AgentScopeRuntimeResponseBuilder {
 
   handleMessage(data: IAgentScopeRuntimeMessage) {
     this.data = produce(this.data, (draft) => {
-
       if (!draft.output) {
         draft.output = [];
       }
 
-      const existingIndex = draft.output.findIndex(msg => msg.id === data.id);
+      const existingIndex = draft.output.findIndex((msg) => msg.id === data.id);
 
       if (existingIndex >= 0) {
         const existingContent = draft.output[existingIndex].content;
@@ -135,10 +145,10 @@ class AgentScopeRuntimeResponseBuilder {
 
   handleContent(data: IContent) {
     this.data = produce(this.data, (draft) => {
-      const msg = draft.output.find(m => m.id === data.msg_id);
+      const msg = draft.output.find((m) => m.id === data.msg_id);
 
       if (!msg) {
-        console.warn('Message not found for content:', data.msg_id);
+        console.warn("Message not found for content:", data.msg_id);
         return;
       }
 
@@ -150,10 +160,15 @@ class AgentScopeRuntimeResponseBuilder {
         const lastContent = msg.content[msg.content.length - 1];
 
         if (lastContent && lastContent.delta) {
-          if (data.type === AgentScopeRuntimeContentType.TEXT && lastContent.type === AgentScopeRuntimeContentType.TEXT) {
+          if (
+            data.type === AgentScopeRuntimeContentType.TEXT &&
+            lastContent.type === AgentScopeRuntimeContentType.TEXT
+          ) {
             (lastContent as ITextContent).text += (data as ITextContent).text;
           } else if (data.type === AgentScopeRuntimeContentType.IMAGE) {
-            (lastContent as IImageContent).image_url = (data as IImageContent).image_url;
+            (lastContent as IImageContent).image_url = (
+              data as IImageContent
+            ).image_url;
           } else if (data.type === AgentScopeRuntimeContentType.DATA) {
             (lastContent as IDataContent).data = (data as IDataContent).data;
           }
@@ -161,7 +176,6 @@ class AgentScopeRuntimeResponseBuilder {
           msg.content.push(data);
         }
       } else {
-
         if (msg.content.length > 0) {
           Object.assign(msg.content[msg.content.length - 1], data);
         } else {
@@ -180,21 +194,26 @@ class AgentScopeRuntimeResponseBuilder {
         type: AgentScopeRuntimeMessageType.ERROR,
         content: [],
         id: uuid(),
-        role: 'assistant',
+        role: "assistant",
         code: data.code,
-        message: typeof data.message === 'string' ? data.message : JSON.stringify(data.message),
-      })
+        message:
+          typeof data.message === "string"
+            ? data.message
+            : JSON.stringify(data.message),
+      });
     });
   }
 
-  handle(data: IAgentScopeRuntimeResponse | IAgentScopeRuntimeMessage | IContent) {
-
-    if (data.object === 'response') {
+  handle(
+    data: IAgentScopeRuntimeResponse | IAgentScopeRuntimeMessage | IContent,
+  ) {
+    if (data.object === "response") {
       this.handleResponse(data);
-    } else if (data.object === 'message') {
-      if (data.type === AgentScopeRuntimeMessageType.HEARTBEAT) return this.data;
+    } else if (data.object === "message") {
+      if (data.type === AgentScopeRuntimeMessageType.HEARTBEAT)
+        return this.data;
       this.handleMessage(data);
-    } else if (data.object === 'content') {
+    } else if (data.object === "content") {
       this.handleContent(data);
     } else {
       this.handleError(data);
@@ -208,10 +227,10 @@ class AgentScopeRuntimeResponseBuilder {
       if (AgentScopeRuntimeResponseBuilder.maybeGenerating(draft)) {
         draft.status = AgentScopeRuntimeRunStatus.Canceled;
       }
-      draft.output.forEach(msg => {
+      draft.output.forEach((msg) => {
         if (AgentScopeRuntimeResponseBuilder.maybeGenerating(msg)) {
           msg.status = AgentScopeRuntimeRunStatus.Canceled;
-          msg.content.forEach(content => {
+          msg.content.forEach((content) => {
             if (AgentScopeRuntimeResponseBuilder.maybeGenerating(content)) {
               content.status = AgentScopeRuntimeRunStatus.Canceled;
             }
@@ -222,9 +241,6 @@ class AgentScopeRuntimeResponseBuilder {
 
     return this.data;
   }
-
 }
-
-
 
 export default AgentScopeRuntimeResponseBuilder;

@@ -530,10 +530,11 @@ def save_config(config: Config, config_path: Optional[Path] = None) -> None:
     """Save the config to the file."""
     if config_path is None:
         config_path = get_config_path()
+    config_path = Path(config_path)
     config_path.parent.mkdir(parents=True, exist_ok=True)
     with open(config_path, "w", encoding="utf-8") as file:
         json.dump(
-            config.model_dump(mode="json", by_alias=True),
+            config.model_dump(mode="json", by_alias=True, exclude_none=True),
             file,
             indent=2,
             ensure_ascii=False,

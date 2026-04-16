@@ -1,17 +1,17 @@
-import { IAgentScopeRuntimeWebUISessionAPI } from '@/components/agentscope-chat';
-import { IAgentScopeRuntimeWebUISession } from '../../core/types/ISessions';
+import { IAgentScopeRuntimeWebUISessionAPI } from "@/components/agentscope-chat";
+import { IAgentScopeRuntimeWebUISession } from "../../core/types/ISessions";
 
 class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
   private lsKey: string;
   private sessionList: IAgentScopeRuntimeWebUISession[];
 
   constructor() {
-    this.lsKey = 'agent-scope-runtime-webui-sessions';
+    this.lsKey = "agent-scope-runtime-webui-sessions";
     this.sessionList = [];
   }
 
   async getSessionList() {
-    this.sessionList = JSON.parse(localStorage.getItem(this.lsKey) || '[]');
+    this.sessionList = JSON.parse(localStorage.getItem(this.lsKey) || "[]");
     return [...this.sessionList];
   }
 

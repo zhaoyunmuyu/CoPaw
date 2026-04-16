@@ -1637,6 +1637,7 @@ def import_pool_skill_from_hub(
     bundle_url: str,
     version: str = "",
     target_name: str | None = None,
+    working_dir: Path | None = None,
 ) -> HubInstallResult:
     if not bundle_url or not _is_http_url(bundle_url):
         raise ValueError("bundle_url must be a valid http(s) URL")
@@ -1651,7 +1652,7 @@ def import_pool_skill_from_hub(
     if normalized_target:
         name = _sanitize_skill_dir_name(normalized_target)
 
-    pool_service = SkillPoolService()
+    pool_service = SkillPoolService(working_dir=working_dir)
     created = pool_service.create_skill(
         name=name,
         content=content,

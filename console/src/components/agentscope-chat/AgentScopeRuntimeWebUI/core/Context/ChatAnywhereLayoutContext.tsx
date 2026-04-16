@@ -5,9 +5,8 @@ export const ChatAnyWhereLayoutContext = createContext<{
   toggleCollapsed: () => void;
 }>({
   collapsed: false,
-  toggleCollapsed: () => { },
+  toggleCollapsed: () => {},
 });
-
 
 export function ChatAnyWhereLayoutContextProvider(props: {
   children: React.ReactNode | React.ReactNode[];
@@ -15,15 +14,20 @@ export function ChatAnyWhereLayoutContextProvider(props: {
   const [collapsed, setCollapsed] = useState(false);
 
   const toggleCollapsed = useCallback(() => {
-    setCollapsed(prev => !prev);
+    setCollapsed((prev) => !prev);
   }, []);
 
-  const value = useMemo(() => ({
-    collapsed,
-    toggleCollapsed,
-  }), [collapsed, toggleCollapsed]);
+  const value = useMemo(
+    () => ({
+      collapsed,
+      toggleCollapsed,
+    }),
+    [collapsed, toggleCollapsed],
+  );
 
-  return <ChatAnyWhereLayoutContext.Provider value={value}>
-    {props.children}
-  </ChatAnyWhereLayoutContext.Provider>;
+  return (
+    <ChatAnyWhereLayoutContext.Provider value={value}>
+      {props.children}
+    </ChatAnyWhereLayoutContext.Provider>
+  );
 }

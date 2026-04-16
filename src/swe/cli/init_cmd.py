@@ -204,14 +204,14 @@ def init_cmd(
             else:
                 mark_telemetry_collected(WORKING_DIR, opted_out=True)
 
-    # --- Copy init config files (config.json and providers.json templates) ---
-    # default tenant: use md_files templates
+    # --- Copy init config files (config.json template only) ---
+    # default tenant: use md_files templates (config.json only, no providers.json)
     # non-default tenant: copy from default tenant directory
     if is_default_tenant:
         from ..agents.utils import copy_init_config_files
 
         click.echo("\n=== Initial Configuration Files ===")
-        config_copied, providers_copied = copy_init_config_files(
+        config_copied, _ = copy_init_config_files(
             tenant_id=tenant_id,
             force=force,
             skip_existing=False,
@@ -222,12 +222,6 @@ def init_cmd(
             )
         else:
             click.echo("✓ config.json already exists or not copied")
-        if providers_copied:
-            click.echo(
-                "✓ Copied providers.json template (model provider settings)",
-            )
-        else:
-            click.echo("✓ providers.json already exists or not copied")
     else:
         # Non-default tenant: copy from default tenant
         click.echo("\n=== Copying from default tenant ===")
@@ -253,10 +247,10 @@ def init_cmd(
                 skip_existing=False,
             )
         if providers_result.get("seeded"):
-            click.echo("✓ Copied providers.json from default tenant")
+            click.echo("✓ Copied providers directory from default tenant")
         else:
             click.echo(
-                "⚠ Failed to copy providers.json from default tenant, "
+                "⚠ Failed to copy providers directory from default tenant, "
                 "skipping",
             )
 

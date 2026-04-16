@@ -1,5 +1,4 @@
-import { XMarkdownProps } from '@ant-design/x-markdown';
-
+import { XMarkdownProps } from "@ant-design/x-markdown";
 
 export interface MarkdownProps {
   /**
@@ -11,7 +10,7 @@ export interface MarkdownProps {
    * @description 光标样式类型，支持点状、下划线或布尔值控制
    * @descriptionEn Cursor style type, supports dot, underline, or boolean control
    */
-  cursor?: boolean | 'dot' | 'underline';
+  cursor?: boolean | "dot" | "underline";
   /**
    * @description 基础字体大小，影响整个Markdown内容的字体大小
    * @descriptionEn Base font size that affects the font size of the entire Markdown content
@@ -32,7 +31,7 @@ export interface MarkdownProps {
   /**
    * @description 是否禁用图片渲染
    * @descriptionEn Whether to disable image rendering
-  */
+   */
   disableImage?: boolean;
 
   /**
@@ -47,15 +46,14 @@ export interface MarkdownProps {
    */
   typing?: boolean | number;
 
-
   /**
    * @description 组件的CSS类名
    * @descriptionEn CSS class name for the component
    */
   className?: string;
   animation?: boolean;
-  
-  components?: XMarkdownProps['components'];
+
+  components?: XMarkdownProps["components"];
   citations?: {
     title?: string;
     url?: string;
@@ -83,12 +81,11 @@ export interface MarkdownProps {
   >;
 }
 
-
 export interface InnerMarkdownXProps extends XMarkdownProps {
   /**
    * @description 光标样式类型，支持点状、下划线或布尔值控制
    * @descriptionEn Cursor style type, supports dot, underline, or boolean control
    */
-  cursor?: MarkdownProps['cursor'];
-  animation?: MarkdownProps['animation'];
+  cursor?: MarkdownProps["cursor"];
+  animation?: MarkdownProps["animation"];
 }

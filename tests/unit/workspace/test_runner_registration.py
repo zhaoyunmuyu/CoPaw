@@ -1,6 +1,31 @@
 # -*- coding: utf-8 -*-
 """Regression tests for workspace runner registration."""
 
+import subprocess
+import sys
+
+
+def test_tenant_initializer_import_does_not_load_workspace_runtime():
+    """Importing tenant_initializer should not eagerly load workspace.py."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import importlib, sys; "
+                "importlib.import_module('swe.app.workspace.tenant_initializer'); "
+                "raise SystemExit("
+                "0 if 'swe.app.workspace.workspace' not in sys.modules else 1"
+                ")"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
 
 def test_runner_lazy_export_resolves_class():
     """AgentRunner package export should resolve to the concrete class."""

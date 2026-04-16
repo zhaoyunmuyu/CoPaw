@@ -1,12 +1,16 @@
 import { IVideo } from "./types";
 import { useProviderContext } from "..";
 import { useRef, useState, useCallback } from "react";
-import { SparkEnlargeLine, SparkPauseFill, SparkPlayFill } from "@agentscope-ai/icons";
+import {
+  SparkEnlargeLine,
+  SparkPauseFill,
+  SparkPlayFill,
+} from "@agentscope-ai/icons";
 import cls from "classnames";
 import { IconButton } from "@agentscope-ai/design";
 
 export default function Video(props: IVideo) {
-  const prefixCls = useProviderContext().getPrefixCls('assets-preview-video');
+  const prefixCls = useProviderContext().getPrefixCls("assets-preview-video");
   const { width = 1, height = 1, poster, src, ...rest } = props;
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -16,7 +20,9 @@ export default function Video(props: IVideo) {
   const formatTime = useCallback((seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    return `${mins.toString().padStart(2, "0")}:${secs
+      .toString()
+      .padStart(2, "0")}`;
   }, []);
 
   const handlePlayPause = useCallback(() => {
@@ -49,21 +55,24 @@ export default function Video(props: IVideo) {
     }
   }, []);
 
-  const handleEnlarge = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    event.stopPropagation();
-    const video = videoRef.current;
-    if (!video) return;
+  const handleEnlarge = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      event.stopPropagation();
+      const video = videoRef.current;
+      if (!video) return;
 
-    if (video.requestFullscreen) {
-      video.requestFullscreen();
-    } else if ((video as any).webkitRequestFullscreen) {
-      // Safari 兼容
-      (video as any).webkitRequestFullscreen();
-    } else if ((video as any).msRequestFullscreen) {
-      // IE11 兼容
-      (video as any).msRequestFullscreen();
-    }
-  }, []);
+      if (video.requestFullscreen) {
+        video.requestFullscreen();
+      } else if ((video as any).webkitRequestFullscreen) {
+        // Safari 兼容
+        (video as any).webkitRequestFullscreen();
+      } else if ((video as any).msRequestFullscreen) {
+        // IE11 兼容
+        (video as any).msRequestFullscreen();
+      }
+    },
+    [],
+  );
 
   return (
     <div
@@ -82,19 +91,23 @@ export default function Video(props: IVideo) {
         onTimeUpdate={handleTimeUpdate}
         onEnded={handleEnded}
       />
-      <div className={cls(`${prefixCls}-overlay`, {
-        [`${prefixCls}-overlay-playing`]: 1,
-        // [`${prefixCls}-overlay-paused`]: 1,
-      })} onClick={isPlaying ? handlePlayPause : handlePlayPause}>
+      <div
+        className={cls(`${prefixCls}-overlay`, {
+          [`${prefixCls}-overlay-playing`]: 1,
+          // [`${prefixCls}-overlay-paused`]: 1,
+        })}
+        onClick={isPlaying ? handlePlayPause : handlePlayPause}
+      >
         <div className={`${prefixCls}-play-btn`}>
-          {
-            isPlaying ? <SparkPauseFill /> : <SparkPlayFill />
-          }
+          {isPlaying ? <SparkPauseFill /> : <SparkPlayFill />}
         </div>
 
-
         <div className={`${prefixCls}-enlarge`} onClick={handleEnlarge}>
-          <IconButton bordered={false} size="small" icon={<SparkEnlargeLine />} />
+          <IconButton
+            bordered={false}
+            size="small"
+            icon={<SparkEnlargeLine />}
+          />
         </div>
       </div>
       <div className={`${prefixCls}-duration`}>

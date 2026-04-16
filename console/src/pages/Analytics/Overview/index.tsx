@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Row, Col, Card, Statistic, Table, Spin, DatePicker, Empty, Tag, Collapse } from "antd";
+import { Row, Col, Card, Statistic, Table, Spin, DatePicker, Empty, Tag, Collapse, Tooltip } from "antd";
 import {
   Users,
   MessageSquare,
@@ -45,7 +45,7 @@ export default function OverviewPage() {
     try {
       const data = await tracingApi.getOverview(
         dateRange[0].format("YYYY-MM-DD"),
-        dateRange[1].format("YYYY-MM-DD")
+        dateRange[1].format("YYYY-MM-DD"),
       );
       setStats(data);
     } catch (error) {
@@ -186,7 +186,9 @@ export default function OverviewPage() {
   if (!stats) {
     return (
       <div className={styles.empty}>
-        <Empty description={t("analytics.noData", "No analytics data available")} />
+        <Empty
+          description={t("analytics.noData", "No analytics data available")}
+        />
       </div>
     );
   }
@@ -197,7 +199,9 @@ export default function OverviewPage() {
         <h2>{t("analytics.overview", "Overview")}</h2>
         <RangePicker
           value={dateRange}
-          onChange={(dates) => dates && setDateRange(dates as [dayjs.Dayjs, dayjs.Dayjs])}
+          onChange={(dates) =>
+            dates && setDateRange(dates as [dayjs.Dayjs, dayjs.Dayjs])
+          }
         />
       </div>
 
@@ -206,11 +210,35 @@ export default function OverviewPage() {
           <Card>
             <Statistic
               title={t("analytics.users", "Users")}
+              valueRender={() => (
+                <Tooltip
+                  title={
+                    stats.online_user_ids && stats.online_user_ids.length > 0 ? (
+                      <div>
+                        <div style={{ marginBottom: 4, fontWeight: "bold" }}>在线用户:</div>
+                        {stats.online_user_ids.slice(0, 20).map((id) => (
+                          <div key={id} style={{ fontSize: 12 }}>{id}</div>
+                        ))}
+                        {stats.online_user_ids.length > 20 && (
+                          <div style={{ fontSize: 12, color: "#999" }}>
+                            ...及其他 {stats.online_user_ids.length - 20} 个用户
+                          </div>
+                        )}
+                      </div>
+                    ) : "暂无在线用户"
+                  }
+                  placement="bottom"
+                >
+                  <span style={{ cursor: "pointer", color: "#52c41a" }}>
+                    <Users size={20} style={{ marginRight: 8, verticalAlign: "middle" }} />
+                    {stats.online_users}
+                    <span style={{ fontSize: 14, color: "#999" }}> / {stats.total_users} ({stats.total_users > 0 ? Math.round((stats.online_users / stats.total_users) * 100) : 0}%)</span>
+                  </span>
+                </Tooltip>
+              )}
               value={stats.online_users}
-              suffix={<span style={{ fontSize: 14, color: "#999" }}> / {stats.total_users} ({stats.total_users > 0 ? Math.round((stats.online_users / stats.total_users) * 100) : 0}%)</span>}
-              prefix={<Users size={20} />}
-              valueStyle={{ color: "#52c41a" }}
             />
+            <div style={{ marginTop: 8, minHeight: 22 }} />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -220,6 +248,7 @@ export default function OverviewPage() {
               value={stats.total_sessions}
               prefix={<MessageSquare size={20} />}
             />
+            <div style={{ marginTop: 8, minHeight: 22 }} />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -230,6 +259,14 @@ export default function OverviewPage() {
               prefix={<Zap size={20} />}
               formatter={(v) => formatTokens(Number(v))}
             />
+            <div style={{ marginTop: 8, display: "flex", gap: 16, minHeight: 22 }}>
+              <span style={{ fontSize: 12, color: "#666" }}>
+                {t("analytics.inputTokens", "输入")}: {formatTokens(stats.input_tokens)}
+              </span>
+              <span style={{ fontSize: 12, color: "#666" }}>
+                {t("analytics.outputTokens", "输出")}: {formatTokens(stats.output_tokens)}
+              </span>
+            </div>
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -240,11 +277,16 @@ export default function OverviewPage() {
               prefix={<Clock size={20} />}
               formatter={(v) => formatDuration(Number(v))}
             />
+            <div style={{ marginTop: 8, minHeight: 22 }} />
           </Card>
         </Col>
       </Row>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }} className={styles.tableRow}>
+      <Row
+        gutter={[16, 16]}
+        style={{ marginTop: 16 }}
+        className={styles.tableRow}
+      >
         <Col xs={24} lg={12}>
           <Card
             className={styles.tableCard}
@@ -292,12 +334,17 @@ export default function OverviewPage() {
             title={
               <span>
                 <Plug size={16} style={{ marginRight: 8 }} />
-                {t("analytics.mcpToolCalls", "MCP Tool Calls")} ({stats.mcp_servers?.length || 0})
+                {t("analytics.mcpToolCalls", "MCP Tool Calls")} (
+                {stats.mcp_servers?.length || 0})
               </span>
             }
           >
             {stats.mcp_servers && stats.mcp_servers.length > 0 ? (
-              <Collapse defaultActiveKey={stats.mcp_servers.slice(0, 3).map((_, i) => `server-${i}`)}>
+              <Collapse
+                defaultActiveKey={stats.mcp_servers
+                  .slice(0, 3)
+                  .map((_, i) => `server-${i}`)}
+              >
                 {stats.mcp_servers.map((server, idx) => (
                   <Panel
                     key={`server-${idx}`}
@@ -307,7 +354,9 @@ export default function OverviewPage() {
                         <span style={{ marginLeft: 8 }}>
                           {server.tool_count} tools · {server.total_calls} calls
                           {server.error_count > 0 && (
-                            <Tag color="red" style={{ marginLeft: 8 }}>{server.error_count} errors</Tag>
+                            <Tag color="red" style={{ marginLeft: 8 }}>
+                              {server.error_count} errors
+                            </Tag>
                           )}
                         </span>
                       </span>
@@ -315,7 +364,9 @@ export default function OverviewPage() {
                   >
                     <Table
                       dataSource={server.tools}
-                      columns={mcpToolColumns.filter(col => col.key !== "mcp_server")}
+                      columns={mcpToolColumns.filter(
+                        (col) => col.key !== "mcp_server",
+                      )}
                       rowKey="tool_name"
                       size="small"
                       pagination={false}
@@ -324,7 +375,9 @@ export default function OverviewPage() {
                 ))}
               </Collapse>
             ) : (
-              <Empty description={t("analytics.noMCPTools", "No MCP tool calls")} />
+              <Empty
+                description={t("analytics.noMCPTools", "No MCP tool calls")}
+              />
             )}
           </Card>
         </Col>

@@ -30,6 +30,24 @@ export interface CronJobRequest {
   [key: string]: unknown;
 }
 
+export interface CronJobState {
+  next_run_at?: string | null;
+  last_run_at?: string | null;
+  last_status?: "success" | "error" | "running" | "skipped" | "cancelled" | null;
+  last_error?: string | null;
+}
+
+export interface CronTaskView {
+  visible_in_my_tasks: boolean;
+  chat_id?: string | null;
+  session_id?: string | null;
+  has_scheduled_result: boolean;
+  latest_scheduled_preview: string;
+  unread_execution_count: number;
+  last_scheduled_run_at?: string | null;
+  is_running: boolean;
+}
+
 export interface CronJobSpecInput {
   id: string;
   name: string;
@@ -43,13 +61,15 @@ export interface CronJobSpecInput {
   meta?: Record<string, unknown>;
 }
 
-export type CronJobSpecOutput = CronJobSpecInput;
+export interface CronJobSpecOutput extends CronJobSpecInput {
+  state?: CronJobState;
+  task?: CronTaskView | null;
+}
 
-export interface CronJobView extends CronJobSpecOutput {
-  // Extended view with runtime state
-  state?: unknown;
-  next_run_time?: number;
-  last_run_time?: number;
+export interface CronJobView {
+  spec: CronJobSpecOutput;
+  state?: CronJobState;
+  task?: CronTaskView | null;
 }
 
 export type CronJobSpecInputLegacy = Record<string, unknown>;

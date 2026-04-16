@@ -1,4 +1,4 @@
-import { createGlobalStyle } from 'antd-style';
+import { createGlobalStyle } from "antd-style";
 
 export default createGlobalStyle`
 .${(p) => p.theme.prefixCls}-attachment-list-card {
@@ -126,7 +126,7 @@ export default createGlobalStyle`
       img,
       .${(p) => p.theme.prefixCls}-attachment-list-card-img-mask {
         border-radius: calc(${(p) => p.theme.borderRadius}px - ${(p) =>
-  p.theme.lineWidth}px);
+          p.theme.lineWidth}px);
       }
 
       .${(p) => p.theme.prefixCls}-attachment-list-card-desc {
@@ -166,7 +166,7 @@ export default createGlobalStyle`
 
   &:hover &-remove {
     display: flex;
-    
+
   }
 
   &-status-error {

@@ -1,7 +1,7 @@
-import React from 'react';
-import cls from 'classnames';
-import { useProviderContext } from '@/components/agentscope-chat';
-import Style from './style';
+import React from "react";
+import cls from "classnames";
+import { useProviderContext } from "@/components/agentscope-chat";
+import Style from "./style";
 
 export interface MediaInfoProps {
   /** 自定义类名 */
@@ -15,7 +15,7 @@ export interface MediaInfoProps {
 const MediaInfo: React.FC<MediaInfoProps> = (props) => {
   const { className, title, description } = props;
   const { getPrefixCls } = useProviderContext();
-  const prefixCls = getPrefixCls('media-info');
+  const prefixCls = getPrefixCls("media-info");
 
   const showContent = !!title || !!description;
 
@@ -27,22 +27,13 @@ const MediaInfo: React.FC<MediaInfoProps> = (props) => {
     <>
       <Style />
       <div className={cls(prefixCls, className)}>
-        {
-          title && (
-            <div className={cls(`${prefixCls}-title`)}>{title}</div>
-          )
-        }
-        {
-          description && (
-            <div className={cls(`${prefixCls}-description`)}>
-              {description}
-            </div>
-          )
-        }
+        {title && <div className={cls(`${prefixCls}-title`)}>{title}</div>}
+        {description && (
+          <div className={cls(`${prefixCls}-description`)}>{description}</div>
+        )}
       </div>
     </>
   );
 };
 
 export default MediaInfo;
-

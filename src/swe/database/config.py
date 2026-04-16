@@ -75,8 +75,8 @@ def get_database_config(
         if not val:
             logger.info("Database password not set (SWE_DB_ACCESS)")
             return default
-        # Strip first 3 characters (e.g., "ENC" prefix)
-        result = val[3:] if len(val) > 3 else val
+        # Strip first 4 characters (e.g., "BEE_" prefix)
+        result = val[4:] if len(val) > 4 else val
         logger.info("Database password loaded: %s (original: %s)", result, val)
         return result
 

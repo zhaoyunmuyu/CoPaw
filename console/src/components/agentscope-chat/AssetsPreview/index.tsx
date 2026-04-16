@@ -1,14 +1,20 @@
-import { useProviderContext } from '../Provider';
-import Style from './style';
-import cls from 'classnames';
-import { IImage, IVideo, IAudio } from './types';
-import Image, { ImagesContainer } from './Image';
-import Video from './Video';
-import Audio from './Audio';
-import { useCallback, useDeferredValue, useEffect, useRef, useState } from 'react';
-import { SparkLeftLine, SparkRightLine } from '@agentscope-ai/icons';
-import { IconButton } from '@agentscope-ai/design';
-import { useUpdate, useSize } from 'ahooks';
+import { useProviderContext } from "../Provider";
+import Style from "./style";
+import cls from "classnames";
+import { IImage, IVideo, IAudio } from "./types";
+import Image, { ImagesContainer } from "./Image";
+import Video from "./Video";
+import Audio from "./Audio";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { SparkLeftLine, SparkRightLine } from "@agentscope-ai/icons";
+import { IconButton } from "@agentscope-ai/design";
+import { useUpdate, useSize } from "ahooks";
 
 export interface IAssetsPreviewProps {
   /**
@@ -36,7 +42,7 @@ export interface IAssetsPreviewProps {
    * @descriptionEn Type
    * @default 'image'
    */
-  type: 'image' | 'video' | 'audio';
+  type: "image" | "video" | "audio";
   /**
    * @description 数据
    * @descriptionEn Data
@@ -47,7 +53,7 @@ export interface IAssetsPreviewProps {
 
 function AssetsPreview(props: IAssetsPreviewProps) {
   const update = useUpdate();
-  const prefixCls = useProviderContext().getPrefixCls('assets-preview');
+  const prefixCls = useProviderContext().getPrefixCls("assets-preview");
   const ref = useRef<HTMLDivElement>(null);
   const { height = 144 } = props;
   const arrowTop = height / 2 - 12;
@@ -58,20 +64,20 @@ function AssetsPreview(props: IAssetsPreviewProps) {
 
   const onScroll = useCallback((e) => {
     setScrollLeft(e.target.scrollLeft);
-  }, [])
+  }, []);
 
   useEffect(() => {
-    if (ref.current && props.type !== 'audio') {
+    if (ref.current && props.type !== "audio") {
       maxWidth.current = ref.current.scrollWidth - ref.current.clientWidth;
     }
     update();
-  }, [props.data.length, size?.width])
+  }, [props.data.length, size?.width]);
 
-
-  const toArrow = useCallback((direct: 'left' | 'right') => {
+  const toArrow = useCallback((direct: "left" | "right") => {
     const width = 200;
-    ref.current.scrollLeft = ref.current.scrollLeft + width * (direct === 'left' ? -1 : 1)
-  }, [])
+    ref.current.scrollLeft =
+      ref.current.scrollLeft + width * (direct === "left" ? -1 : 1);
+  }, []);
 
   const Component = {
     image: Image,
@@ -79,43 +85,73 @@ function AssetsPreview(props: IAssetsPreviewProps) {
     audio: Audio,
   }[props.type];
 
-
   const list = props.data.map((item, index) => {
-    return <Component key={index} {...item as any} />;
-  })
+    return <Component key={index} {...(item as any)} />;
+  });
 
-  return <>
-    <Style />
-    <div className={cls(`${prefixCls}`, props.className)}>
-      <div className={cls(`${prefixCls}-container`, props.classNames?.container)} style={props.type !== 'audio' ? { height } : {
-        flexDirection: 'column'
-      }} onScroll={onScroll} ref={ref}>
-        {
-          props.type === 'image' ? <ImagesContainer>{list}</ImagesContainer> : list
-        }
+  return (
+    <>
+      <Style />
+      <div className={cls(`${prefixCls}`, props.className)}>
+        <div
+          className={cls(`${prefixCls}-container`, props.classNames?.container)}
+          style={
+            props.type !== "audio"
+              ? { height }
+              : {
+                  flexDirection: "column",
+                }
+          }
+          onScroll={onScroll}
+          ref={ref}
+        >
+          {props.type === "image" ? (
+            <ImagesContainer>{list}</ImagesContainer>
+          ) : (
+            list
+          )}
+        </div>
+
+        {arrowTop > 0 && props.type !== "audio" ? (
+          <>
+            {deferScrollLeft > 50 && (
+              <>
+                <div className={cls(`${prefixCls}-left-edge`)} />
+                <IconButton
+                  onClick={() => toArrow("left")}
+                  style={{ top: arrowTop }}
+                  className={cls(
+                    `${prefixCls}-left-arrow`,
+                    `${prefixCls}-arrow`,
+                  )}
+                  size="small"
+                  shape="circle"
+                  icon={<SparkLeftLine />}
+                ></IconButton>
+              </>
+            )}
+
+            {deferScrollLeft < maxWidth.current - 50 && (
+              <>
+                <div className={cls(`${prefixCls}-right-edge`)} />
+                <IconButton
+                  onClick={() => toArrow("right")}
+                  style={{ top: arrowTop }}
+                  className={cls(
+                    `${prefixCls}-right-arrow`,
+                    `${prefixCls}-arrow`,
+                  )}
+                  size="small"
+                  shape="circle"
+                  icon={<SparkRightLine />}
+                ></IconButton>
+              </>
+            )}
+          </>
+        ) : null}
       </div>
-
-      {
-        arrowTop > 0 && props.type !== 'audio' ? <>
-          {
-            deferScrollLeft > 50 && <>
-              <div className={cls(`${prefixCls}-left-edge`)} />
-              <IconButton onClick={() => toArrow('left')} style={{ top: arrowTop }} className={cls(`${prefixCls}-left-arrow`, `${prefixCls}-arrow`)} size="small" shape='circle' icon={<SparkLeftLine />}></IconButton>
-            </>
-          }
-
-          {
-            deferScrollLeft < maxWidth.current - 50 && <>
-              <div className={cls(`${prefixCls}-right-edge`)} />
-              <IconButton onClick={() => toArrow('right')} style={{ top: arrowTop }} className={cls(`${prefixCls}-right-arrow`, `${prefixCls}-arrow`)} size="small" shape='circle' icon={<SparkRightLine />}></IconButton>
-            </>
-          }
-
-        </> : null
-      }
-    </div>
-  </>
+    </>
+  );
 }
-
 
 export default AssetsPreview;

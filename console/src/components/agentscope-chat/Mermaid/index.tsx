@@ -1,14 +1,14 @@
-import { Image } from '@agentscope-ai/design';
-import { useAsyncEffect } from 'ahooks';
-import { theme as AntdTheme } from 'antd';
-import { kebabCase } from 'lodash';
-import { MermaidConfig, Mermaid as MermaidInstance } from 'mermaid';
-import React, { useEffect, useId, useMemo, useState } from 'react';
-import { useProviderContext } from '@/components/agentscope-chat';
-import { createGlobalStyle } from 'antd-style';
+import { Image } from "@agentscope-ai/design";
+import { useAsyncEffect } from "ahooks";
+import { theme as AntdTheme } from "antd";
+import { kebabCase } from "lodash";
+import { MermaidConfig, Mermaid as MermaidInstance } from "mermaid";
+import React, { useEffect, useId, useMemo, useState } from "react";
+import { useProviderContext } from "@/components/agentscope-chat";
+import { createGlobalStyle } from "antd-style";
 
 const Style = createGlobalStyle`
-.${p => p.theme.prefixCls}-mermaid {
+.${(p) => p.theme.prefixCls}-mermaid {
   &-preview img {
     background: ${(p) => p.theme.colorBgBase};
   }
@@ -19,10 +19,9 @@ const Style = createGlobalStyle`
 let mermaidPromise: Promise<MermaidInstance | undefined>;
 const genMermaidPromise = async () => {
   if (mermaidPromise) return mermaidPromise;
-  mermaidPromise = import('mermaid').then(module => module.default);
+  mermaidPromise = import("mermaid").then((module) => module.default);
   return mermaidPromise;
-}
-
+};
 
 export interface IMermaidProps {
   /**
@@ -45,19 +44,19 @@ export interface IMermaidProps {
 export default function Mermaid(props: IMermaidProps) {
   const { content, width, height } = props;
   const { theme, getPrefixCls } = useProviderContext();
-  const prefixCls = getPrefixCls('mermaid');
+  const prefixCls = getPrefixCls("mermaid");
 
   const mermaidConfig: MermaidConfig = useMemo(
     () => ({
-      theme: theme?.algorithm === AntdTheme.darkAlgorithm ? 'dark' : 'default',
-      securityLevel: 'loose',
+      theme: theme?.algorithm === AntdTheme.darkAlgorithm ? "dark" : "default",
+      securityLevel: "loose",
 
       startOnLoad: false,
     }),
     [theme?.algorithm, theme?.token.fontFamily],
   );
 
-  const [renderedContent, setRenderedContent] = useState('');
+  const [renderedContent, setRenderedContent] = useState("");
   const [blobUrl, setBlobUrl] = useState<string>();
 
   const id = useId();
@@ -76,29 +75,26 @@ export default function Mermaid(props: IMermaidProps) {
         const { svg } = await mermaidInstance.render(mermaidId, content);
         setRenderedContent(svg);
       } else {
-        throw new Error('Invalid Mermaid syntax');
+        throw new Error("Invalid Mermaid syntax");
       }
     } catch (error) {
-      if (!renderedContent) console.error('Mermaid parse error: ', error);
-      setRenderedContent(renderedContent || '');
+      if (!renderedContent) console.error("Mermaid parse error: ", error);
+      setRenderedContent(renderedContent || "");
     }
   }, [content, mermaidConfig]);
 
-
   useEffect(() => {
     if (renderedContent) {
-      const blob = new Blob([renderedContent], { type: 'image/svg+xml' });
+      const blob = new Blob([renderedContent], { type: "image/svg+xml" });
       const url = URL.createObjectURL(blob);
       setBlobUrl(url);
       return () => {
         URL.revokeObjectURL(url);
       };
-
     }
   }, [renderedContent]);
 
   if (!blobUrl) return null;
-
 
   return (
     <>
@@ -106,11 +102,11 @@ export default function Mermaid(props: IMermaidProps) {
       <Image
         className={prefixCls}
         src={blobUrl}
-        alt={'mermaid'}
+        alt={"mermaid"}
         width={width}
         height={height}
         preview={{
-          rootClassName: `${prefixCls}-preview`
+          rootClassName: `${prefixCls}-preview`,
         }}
       />
     </>

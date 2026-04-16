@@ -7,7 +7,23 @@ This module provides unified workspace management including:
 - ServiceDescriptor: Declarative service configuration
 """
 
-from .workspace import Workspace
-from .service_manager import ServiceManager, ServiceDescriptor
-
 __all__ = ["Workspace", "ServiceManager", "ServiceDescriptor"]
+
+
+def __getattr__(name: str):
+    if name == "Workspace":
+        from .workspace import Workspace as _Workspace
+
+        return _Workspace
+    if name in {"ServiceManager", "ServiceDescriptor"}:
+        from .service_manager import (
+            ServiceDescriptor as _ServiceDescriptor,
+            ServiceManager as _ServiceManager,
+        )
+
+        exports = {
+            "ServiceManager": _ServiceManager,
+            "ServiceDescriptor": _ServiceDescriptor,
+        }
+        return exports[name]
+    raise AttributeError(name)

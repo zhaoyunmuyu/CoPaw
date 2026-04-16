@@ -1,10 +1,10 @@
-import { LeftOutlined, RightOutlined } from '@ant-design/icons';
-import { Button, type UploadProps } from 'antd';
-import classnames from 'classnames';
-import { CSSMotionList } from 'rc-motion';
-import React from 'react';
-import type { Attachment } from '..';
-import FileListCard from './FileListCard';
+import { LeftOutlined, RightOutlined } from "@ant-design/icons";
+import { Button, type UploadProps } from "antd";
+import classnames from "classnames";
+import { CSSMotionList } from "rc-motion";
+import React from "react";
+import type { Attachment } from "..";
+import FileListCard from "./FileListCard";
 
 export interface FileListProps {
   /**
@@ -31,7 +31,7 @@ export interface FileListProps {
    * @description 文件列表的溢出处理方式，影响滚动和布局行为
    * @descriptionEn Overflow handling method for file list, affects scrolling and layout behavior
    */
-  overflow?: 'scrollX' | 'scrollY' | 'wrap';
+  overflow?: "scrollX" | "scrollY" | "wrap";
   /**
    * @description 上传组件的属性配置，用于控制上传行为
    * @descriptionEn Upload component props configuration for controlling upload behavior
@@ -63,7 +63,7 @@ export interface FileListProps {
    * @description 渲染类型，目前仅支持默认渲染模式
    * @descriptionEn Render type, currently only supports default render mode
    */
-  renderType?: 'default',
+  renderType?: "default";
 }
 
 const TOLERANCE = 1;
@@ -105,15 +105,20 @@ export default function FileList(props: FileListProps) {
       return;
     }
 
-    if (overflow === 'scrollX') {
+    if (overflow === "scrollX") {
       setPingStart(Math.abs(containerEle.scrollLeft) >= TOLERANCE);
       setPingEnd(
-        containerEle.scrollWidth - containerEle.clientWidth - Math.abs(containerEle.scrollLeft) >=
-        TOLERANCE,
+        containerEle.scrollWidth -
+          containerEle.clientWidth -
+          Math.abs(containerEle.scrollLeft) >=
+          TOLERANCE,
       );
-    } else if (overflow === 'scrollY') {
+    } else if (overflow === "scrollY") {
       setPingStart(containerEle.scrollTop !== 0);
-      setPingEnd(containerEle.scrollHeight - containerEle.clientHeight !== containerEle.scrollTop);
+      setPingEnd(
+        containerEle.scrollHeight - containerEle.clientHeight !==
+          containerEle.scrollTop,
+      );
     }
   };
 
@@ -127,7 +132,7 @@ export default function FileList(props: FileListProps) {
     if (containerEle) {
       containerEle.scrollTo({
         left: containerEle.scrollLeft + offset * containerEle.clientWidth,
-        behavior: 'smooth',
+        behavior: "smooth",
       });
     }
   };
@@ -185,7 +190,7 @@ export default function FileList(props: FileListProps) {
         }}
       </CSSMotionList>
 
-      {overflow === 'scrollX' && (
+      {overflow === "scrollX" && (
         <>
           <Button
             size="small"

@@ -51,4 +51,4 @@ export interface IAudio {
    * @default ''
    */
   src: string;
-} 
+}

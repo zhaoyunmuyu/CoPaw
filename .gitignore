@@ -84,6 +84,8 @@ logs/
 *.log
 
 # vibe coding
+AGENTS.md
+CLAUDE.md
 .claude
 .codex
 *.tmp
@@ -106,3 +108,4 @@ src/.hypothesis/
 
 # github actions
 .github/
+.gitnexus

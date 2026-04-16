@@ -495,6 +495,10 @@ class AgentRunner(Runner):
             await agent.register_mcp_clients()
             agent.set_console_output_enabled(enabled=False)
 
+            # Setup skill detector for tracing
+            if trace_id:
+                agent.setup_skill_detector(trace_id)
+
             logger.debug(
                 f"Agent Query msgs {msgs}",
             )

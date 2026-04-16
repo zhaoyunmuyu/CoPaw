@@ -1,1 +1,1 @@
-export { default, type IOperateCardProps } from './OperateCard';
+export { default, type IOperateCardProps } from "./OperateCard";

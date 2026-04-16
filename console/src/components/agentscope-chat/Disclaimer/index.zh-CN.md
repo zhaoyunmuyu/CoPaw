@@ -13,7 +13,6 @@ description: 免责声明
 
 <Install>import { Disclaimer } from '@agentscope-ai/chat'</Install>
 
-
 #### 免责声明示例
 
 以下是此组件的示例和变体

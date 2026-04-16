@@ -1,14 +1,18 @@
-import React, { useMemo, useContext } from 'react';
-import cls from 'classnames';
-import { IChatAnywhereConfigOnUpload } from '@/components/agentscope-chat/ChatAnywhere/hooks/types';
-import { Attachments, Sender, useProviderContext } from '@/components/agentscope-chat';
-import { SendHeaderContext } from '@/components/agentscope-chat/Sender/SenderHeader';
-import MediaUpload from '../Upload';
-import MediaInfo from '../Info';
-import { GetProp } from 'antd';
-import Style from './style';
+import React, { useMemo, useContext } from "react";
+import cls from "classnames";
+import { IChatAnywhereConfigOnUpload } from "@/components/agentscope-chat/ChatAnywhere/hooks/types";
+import {
+  Attachments,
+  Sender,
+  useProviderContext,
+} from "@/components/agentscope-chat";
+import { SendHeaderContext } from "@/components/agentscope-chat/Sender/SenderHeader";
+import MediaUpload from "../Upload";
+import MediaInfo from "../Info";
+import { GetProp } from "antd";
+import Style from "./style";
 
-type AttachedFiles = GetProp<typeof Attachments, 'items'>;
+type AttachedFiles = GetProp<typeof Attachments, "items">;
 
 export interface SenderHeaderProps {
   className?: string;
@@ -18,10 +22,15 @@ export interface SenderHeaderProps {
 }
 
 const SenderHeader: React.FC<SenderHeaderProps> = (props) => {
-  const { className, onUpload = [], attachedFiles = [[]], onFileChange } = props;
+  const {
+    className,
+    onUpload = [],
+    attachedFiles = [[]],
+    onFileChange,
+  } = props;
   const { getPrefixCls } = useProviderContext();
   const { focus, enableFocusExpand } = useContext(SendHeaderContext);
-  const prefixCls = getPrefixCls('aigc-sender-header');
+  const prefixCls = getPrefixCls("aigc-sender-header");
 
   const open = useMemo(() => {
     if (attachedFiles.flat().length > 0) {
@@ -45,10 +54,7 @@ const SenderHeader: React.FC<SenderHeaderProps> = (props) => {
   return (
     <>
       <Style />
-      <Sender.Header
-        closable={false}
-        open={open}
-      >
+      <Sender.Header closable={false} open={open}>
         <div className={cls(prefixCls, className)} tabIndex={0}>
           {onUpload?.map((item, index) => {
             const { title, description, maxCount = 1, ...restProps } = item;
@@ -60,44 +66,44 @@ const SenderHeader: React.FC<SenderHeaderProps> = (props) => {
                   <MediaUpload
                     key={`upload-${index}`}
                     className={cls({
-                      [`${prefixCls}-upload-hidden`]: fileList.length >= maxCount,
+                      [`${prefixCls}-upload-hidden`]:
+                        fileList.length >= maxCount,
                     })}
                     maxCount={maxCount}
                     fileList={fileList}
                     onChange={(info) => {
                       if (item.beforeUpload && info.file.status) {
-                        onFileChange(index, info.fileList)
+                        onFileChange(index, info.fileList);
                       }
 
                       if (!item.beforeUpload) {
-                        onFileChange(index, info.fileList)
+                        onFileChange(index, info.fileList);
                       }
                     }}
                     showUploadList={false}
                     {...restProps}
                   />
                 }
-                {
-                  fileList.length > 0 && (
-                    <Attachments
-                      key={`attachments-${index}`}
-                      items={fileList}
-                      onChange={(info) => onFileChange(index, info.fileList)}
-                    />
-                  )
-                }
-                {
-                  maxCount === 1 && (
-                    <MediaInfo key={`info-${index}`} title={title} description={description} />
-                  )
-                }
+                {fileList.length > 0 && (
+                  <Attachments
+                    key={`attachments-${index}`}
+                    items={fileList}
+                    onChange={(info) => onFileChange(index, info.fileList)}
+                  />
+                )}
+                {maxCount === 1 && (
+                  <MediaInfo
+                    key={`info-${index}`}
+                    title={title}
+                    description={description}
+                  />
+                )}
               </>
             );
           })}
         </div>
       </Sender.Header>
     </>
-    
   );
 };
 

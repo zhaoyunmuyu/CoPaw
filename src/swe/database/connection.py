@@ -47,11 +47,9 @@ class DatabaseConnection:
     async def connect(self) -> None:
         """Create connection pool."""
         if not AIOMYSQL_AVAILABLE:
-            logger.debug(
-                "aiomysql not available, skipping database connection",
+            raise RuntimeError(
+                "aiomysql is not installed. Please install it with: pip install aiomysql",
             )
-            self._connected = False
-            return
 
         if self._pool is not None:
             return

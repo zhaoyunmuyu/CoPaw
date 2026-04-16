@@ -1,4 +1,5 @@
 import { getApiUrl } from "../config";
+import { buildAuthHeaders } from "../authHeaders";
 
 export interface LoginResponse {
   token: string;
@@ -42,7 +43,9 @@ export const authApi = {
   },
 
   getStatus: async (): Promise<AuthStatusResponse> => {
-    const res = await fetch(getApiUrl("/auth/status"));
+    const res = await fetch(getApiUrl("/auth/status"), {
+      headers: buildAuthHeaders(),
+    });
     if (!res.ok) throw new Error("Failed to check auth status");
     return res.json();
   },

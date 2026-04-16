@@ -1,37 +1,43 @@
 import React, { useContext, useState } from "react";
-import { useProviderContext } from '@/components/agentscope-chat';
+import { useProviderContext } from "@/components/agentscope-chat";
 import { isMobileHook } from "../Layout";
 import { useChatAnywhere } from "../hooks/ChatAnywhereProvider";
 import { useSessionList } from "../hooks/useSessionList";
-import Style from './style';
+import Style from "./style";
 import { IconButton } from "@agentscope-ai/design";
-import { SparkOperateLeftLine, SparkOperateRightLine } from "@agentscope-ai/icons";
+import {
+  SparkOperateLeftLine,
+  SparkOperateRightLine,
+} from "@agentscope-ai/icons";
 
 export default function () {
   const { getPrefixCls } = useProviderContext();
-  const prefixCls = getPrefixCls('chat-anywhere-header');
-  const uiConfig = useChatAnywhere(v => v.uiConfig)
-  const {
-    sessionListShow,
-    setSessionListShow
-  } = useSessionList();
+  const prefixCls = getPrefixCls("chat-anywhere-header");
+  const uiConfig = useChatAnywhere((v) => v.uiConfig);
+  const { sessionListShow, setSessionListShow } = useSessionList();
   const isMobile = isMobileHook();
 
-  return <>
-    <Style />
-    <div className={prefixCls}>
-      {
-        isMobile && <IconButton
-          style={{ marginLeft: 12 }}
-          bordered={false}
-          onClick={() => setSessionListShow(!sessionListShow)}
-          icon={
-            sessionListShow ? <SparkOperateLeftLine /> : <SparkOperateRightLine />
-          }>
-        </IconButton>
-      }
+  return (
+    <>
+      <Style />
+      <div className={prefixCls}>
+        {isMobile && (
+          <IconButton
+            style={{ marginLeft: 12 }}
+            bordered={false}
+            onClick={() => setSessionListShow(!sessionListShow)}
+            icon={
+              sessionListShow ? (
+                <SparkOperateLeftLine />
+              ) : (
+                <SparkOperateRightLine />
+              )
+            }
+          ></IconButton>
+        )}
 
-      {uiConfig.header}
-    </div>
-  </>
+        {uiConfig.header}
+      </div>
+    </>
+  );
 }

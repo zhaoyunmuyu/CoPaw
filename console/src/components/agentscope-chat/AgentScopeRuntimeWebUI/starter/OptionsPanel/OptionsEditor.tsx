@@ -1,32 +1,40 @@
-import React, { useEffect } from 'react';
-import { Form, Input, ColorPicker, Flex, Splitter, Divider, InputNumber, Select } from 'antd';
-import { createStyles } from 'antd-style';
-import { Button, IconButton, Switch } from '@agentscope-ai/design'
-import { SparkDeleteLine, SparkPlusLine } from '@agentscope-ai/icons';
-import FormItem from './FormItem';
-import defaultConfig from './defaultConfig';
+import React, { useEffect } from "react";
+import {
+  Form,
+  Input,
+  ColorPicker,
+  Flex,
+  Splitter,
+  Divider,
+  InputNumber,
+  Select,
+} from "antd";
+import { createStyles } from "antd-style";
+import { Button, IconButton, Switch } from "@agentscope-ai/design";
+import { SparkDeleteLine, SparkPlusLine } from "@agentscope-ai/icons";
+import FormItem from "./FormItem";
+import defaultConfig from "./defaultConfig";
 
 const useStyles = createStyles(({ token, css }) => ({
   container: {
-    height: '100%',
-    display: 'flex',
-    flexDirection: 'column',
+    height: "100%",
+    display: "flex",
+    flexDirection: "column",
   },
 
   form: {
     height: 0,
     flex: 1,
-    padding: '8px 16px 16px 16px',
-    overflow: 'auto',
+    padding: "8px 16px 16px 16px",
+    overflow: "auto",
   },
   actions: {
     padding: 16,
-    display: 'flex',
+    display: "flex",
     borderTop: `1px solid ${token.colorBorderSecondary}`,
-    justifyContent: 'flex-end',
+    justifyContent: "flex-end",
     gap: 16,
-  }
-
+  },
 }));
 
 interface OptionsEditorProps {
@@ -34,13 +42,9 @@ interface OptionsEditorProps {
   onChange?: any;
 }
 
-const OptionsEditor: React.FC<OptionsEditorProps> = ({
-  value,
-  onChange,
-}) => {
+const OptionsEditor: React.FC<OptionsEditorProps> = ({ value, onChange }) => {
   const { styles } = useStyles();
   const [form] = Form.useForm();
-
 
   const handleSave = () => {
     form.validateFields().then((values) => {
@@ -60,102 +64,126 @@ const OptionsEditor: React.FC<OptionsEditorProps> = ({
         layout="vertical"
         initialValues={value}
       >
-
-
         <Divider orientation="left">General</Divider>
 
-        <FormItem name={['theme', 'locale']} label="Language">
+        <FormItem name={["theme", "locale"]} label="Language">
           <Select
             options={[
-              { label: '中文', value: 'cn' },
-              { label: 'English', value: 'en' },
+              { label: "中文", value: "cn" },
+              { label: "English", value: "en" },
             ]}
           />
         </FormItem>
 
         <Divider orientation="left">Theme</Divider>
 
-        <FormItem name={['theme', 'colorPrimary']} label="colorPrimary" normalize={value => value.toHexString()}>
+        <FormItem
+          name={["theme", "colorPrimary"]}
+          label="colorPrimary"
+          normalize={(value) => value.toHexString()}
+        >
           <ColorPicker />
         </FormItem>
 
-        <FormItem name={['theme', 'colorBgBase']} label="colorBgBase" normalize={value => value.toHexString()}>
+        <FormItem
+          name={["theme", "colorBgBase"]}
+          label="colorBgBase"
+          normalize={(value) => value.toHexString()}
+        >
           <ColorPicker />
         </FormItem>
 
-        <FormItem name={['theme', 'colorTextBase']} label="colorTextBase" normalize={value => value.toHexString()}>
+        <FormItem
+          name={["theme", "colorTextBase"]}
+          label="colorTextBase"
+          normalize={(value) => value.toHexString()}
+        >
           <ColorPicker />
         </FormItem>
 
-        <FormItem name={['theme', 'darkMode']} label="darkMode" >
+        <FormItem name={["theme", "darkMode"]} label="darkMode">
           <Switch />
         </FormItem>
 
-        <FormItem name={['theme', 'leftHeader', 'logo']} label="leftHeader.logo" >
+        <FormItem
+          name={["theme", "leftHeader", "logo"]}
+          label="leftHeader.logo"
+        >
           <Input />
         </FormItem>
 
-        <FormItem name={['theme', 'leftHeader', 'title']} label="leftHeader.title" >
+        <FormItem
+          name={["theme", "leftHeader", "title"]}
+          label="leftHeader.title"
+        >
           <Input />
         </FormItem>
 
         <Divider orientation="left">Sender</Divider>
 
-
-        <FormItem name={['sender', 'disclaimer']} label="disclaimer" >
+        <FormItem name={["sender", "disclaimer"]} label="disclaimer">
           <Input />
         </FormItem>
 
-
-        <FormItem name={['sender', 'attachments']} label="attachments" >
+        <FormItem name={["sender", "attachments"]} label="attachments">
           <Switch />
         </FormItem>
 
-
-        <FormItem name={['sender', 'maxLength']} label="maxLength" >
+        <FormItem name={["sender", "maxLength"]} label="maxLength">
           <InputNumber min={1000} />
         </FormItem>
 
         <Divider orientation="left">Welcome</Divider>
 
-
-        <FormItem name={['welcome', 'greeting']} label="greeting" >
+        <FormItem name={["welcome", "greeting"]} label="greeting">
           <Input />
         </FormItem>
 
-        <FormItem name={['welcome', 'description']} label="description" >
+        <FormItem name={["welcome", "description"]} label="description">
           <Input />
         </FormItem>
 
-        <FormItem name={['welcome', 'avatar']} label="avatar" >
+        <FormItem name={["welcome", "avatar"]} label="avatar">
           <Input />
         </FormItem>
 
-
-        <FormItem name={['welcome', 'prompts']} isList label="prompts" >
+        <FormItem name={["welcome", "prompts"]} isList label="prompts">
           {(fields, { add, remove }) => {
-            return <div>
-              {fields.map(field => {
-                return <Flex key={field.key} gap={6}>
-                  <Form.Item style={{ flex: 1 }} key={field.key} name={[field.name, 'value']}>
-                    <Input />
-                  </Form.Item>
-                  <IconButton icon={<SparkPlusLine />} onClick={() => add({})}></IconButton>
-                  <IconButton icon={<SparkDeleteLine />} onClick={() => remove(field.name)}></IconButton>
-                </Flex>
-              })}
-            </div>
+            return (
+              <div>
+                {fields.map((field) => {
+                  return (
+                    <Flex key={field.key} gap={6}>
+                      <Form.Item
+                        style={{ flex: 1 }}
+                        key={field.key}
+                        name={[field.name, "value"]}
+                      >
+                        <Input />
+                      </Form.Item>
+                      <IconButton
+                        icon={<SparkPlusLine />}
+                        onClick={() => add({})}
+                      ></IconButton>
+                      <IconButton
+                        icon={<SparkDeleteLine />}
+                        onClick={() => remove(field.name)}
+                      ></IconButton>
+                    </Flex>
+                  );
+                })}
+              </div>
+            );
           }}
         </FormItem>
 
-
         <Divider orientation="left">API</Divider>
 
-        <FormItem name={['api', 'baseURL']} label="baseURL" >
+        <FormItem name={["api", "baseURL"]} label="baseURL">
           <Input />
         </FormItem>
 
-        <FormItem name={['api', 'token']} label="token" >
+        <FormItem name={["api", "token"]} label="token">
           <Input />
         </FormItem>
       </Form>
@@ -171,4 +199,3 @@ const OptionsEditor: React.FC<OptionsEditorProps> = ({
 };
 
 export default OptionsEditor;
-

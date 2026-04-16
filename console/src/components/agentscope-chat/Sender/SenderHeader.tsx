@@ -1,8 +1,8 @@
-import { CloseOutlined } from '@ant-design/icons';
-import { Button } from 'antd';
-import classNames from 'classnames';
-import CSSMotion, { type MotionEventHandler } from 'rc-motion';
-import * as React from 'react';
+import { CloseOutlined } from "@ant-design/icons";
+import { Button } from "antd";
+import classNames from "classnames";
+import CSSMotion, { type MotionEventHandler } from "rc-motion";
+import * as React from "react";
 
 export interface SendHeaderContextProps {
   /**
@@ -22,9 +22,11 @@ export interface SendHeaderContextProps {
   enableFocusExpand?: boolean;
 }
 
-export const SendHeaderContext = React.createContext<SendHeaderContextProps>({} as any);
+export const SendHeaderContext = React.createContext<SendHeaderContextProps>(
+  {} as any,
+);
 
-export type SemanticType = 'header' | 'content';
+export type SemanticType = "header" | "content";
 
 export interface SenderHeaderProps {
   /**

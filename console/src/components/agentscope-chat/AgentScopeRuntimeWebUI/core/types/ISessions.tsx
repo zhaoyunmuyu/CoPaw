@@ -1,5 +1,4 @@
-import { IAgentScopeRuntimeWebUIMessage } from '@/components/agentscope-chat';
-
+import { IAgentScopeRuntimeWebUIMessage } from "@/components/agentscope-chat";
 
 export interface IAgentScopeRuntimeWebUISession {
   /**

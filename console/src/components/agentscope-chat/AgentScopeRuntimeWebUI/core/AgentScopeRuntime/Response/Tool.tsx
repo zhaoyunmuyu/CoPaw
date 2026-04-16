@@ -60,6 +60,7 @@ const Tool = React.memo(function ({
   const title = content[0].data.summary || defaultTitle;
   const input = content[0]?.data?.arguments;
   const output = content[1]?.data?.output;
+  const outputSummary = content[1]?.data?.output_summary;
 
   let node;
 
@@ -75,6 +76,7 @@ const Tool = React.memo(function ({
         subTitle={defaultTitle}
         input={input}
         output={output}
+        outputSummary={outputSummary}
       ></ToolCall>
     );
   }

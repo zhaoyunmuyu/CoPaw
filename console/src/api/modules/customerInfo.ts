@@ -15,13 +15,13 @@ import { agentApi } from "./agent";
 
 export interface CustomerInfoRequest {
   inputParams: {
-    userId: string,
-    sysId: string,
-    bbk: string,
-    orgCode: string,
-    orgLvl: string,
-    positionId: string,
-  }
+    userId: string;
+    sysId: string;
+    bbk: string;
+    orgCode: string;
+    orgLvl: string;
+    positionId: string;
+  };
 }
 
 /**
@@ -47,9 +47,9 @@ export interface CustomerInfoResponse {
   errorMsg?: string;
   body: {
     output: {
-      result: CustomerInfoData
-    }
-  }
+      result: CustomerInfoData;
+    };
+  };
 }
 
 /**
@@ -123,18 +123,18 @@ export async function fetchCustomerInfo(
   request: CustomerInfoRequest,
 ): Promise<CustomerInfoResponse | null> {
   try {
-    const baseUrl = window.__env__.baseUrl || ""
-    const isDev = baseUrl === 'yourapi'
-    const env = isDev ? 'dev' : 'prd'
+    const baseUrl = window.__env__.baseUrl || "";
+    const isDev = baseUrl === "yourapi";
+    const env = isDev ? "dev" : "prd";
     // TODO: 替换为真实的 API Key
-    const apiKey = isDev ? 'xxxx' : 'your-api-key'
+    const apiKey = isDev ? "xxxx" : "your-api-key";
     // TODO: 替换为真实的 API 地址
-    const apiUrl = `${baseUrl}/openapi/${env}/yourapi`
+    const apiUrl = `${baseUrl}/openapi/${env}/yourapi`;
     const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "api-key": apiKey
+        "api-key": apiKey,
       },
       body: JSON.stringify(request),
     });
@@ -151,7 +151,6 @@ export async function fetchCustomerInfo(
     return null;
   }
 }
-
 
 /** Mock 延迟时间（毫秒） */
 const MOCK_DELAY = 500;

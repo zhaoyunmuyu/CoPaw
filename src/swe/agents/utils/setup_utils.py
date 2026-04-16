@@ -282,10 +282,14 @@ def copy_init_config_files(
     force: bool = False,
     skip_existing: bool = False,
 ) -> tuple[bool, bool]:
-    """Copy config.json and providers.json from md_files to tenant directories.
+    """Copy config.json from md_files to tenant directories.
 
-    This function copies the template configuration files to initialize
+    This function copies the template configuration file to initialize
     model, MCP, and channel settings for a tenant.
+
+    Note: providers.json is no longer copied from md_files. For default tenant,
+    providers are configured via the UI or CLI. For non-default tenants,
+    providers are copied from the default tenant's providers directory.
 
     Args:
         tenant_id: Tenant identifier for subdirectory isolation.
@@ -296,7 +300,7 @@ def copy_init_config_files(
 
     Returns:
         Tuple of (config_copied, providers_copied) indicating which files
-        were copied.
+        were copied. providers_copied is always False now.
     """
     import os
 
@@ -313,7 +317,7 @@ def copy_init_config_files(
     except OSError:
         pass
 
-    # Copy config.json
+    # Copy config.json only
     config_copied = _copy_single_file(
         md_files_dir / "config.json",
         working_dir / "config.json",
@@ -321,20 +325,10 @@ def copy_init_config_files(
         force,
     )
 
-    # Copy providers.json
-    dst_providers = secret_dir / "providers.json"
-    providers_copied = _copy_single_file(
-        md_files_dir / "providers.json",
-        dst_providers,
-        skip_existing,
-        force,
-    )
-
-    # Set secure permissions on providers.json
-    if providers_copied:
-        try:
-            os.chmod(dst_providers, 0o600)
-        except OSError:
-            pass
+    # providers.json is no longer copied from md_files
+    # - Default tenant: users configure providers via UI/CLI
+    # - Non-default tenants: providers are copied from default tenant's
+    #   providers directory (handled by TenantInitializer.seed_providers_from_default)
+    providers_copied = False
 
     return config_copied, providers_copied

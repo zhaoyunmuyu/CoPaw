@@ -1,11 +1,12 @@
-import React, { ReactNode } from 'react';
-import Style from './style';
-import { useProviderContext } from '../Provider';
-import { ConfigProvider, Image } from 'antd';
-import { Locale } from 'antd/es/locale';
-import { SparkCheckCircleFill } from '@agentscope-ai/icons';
-import Dot from '../Markdown/core/plugins/cursor/Dot';
-import Spin from './Spin';
+import React, { ReactNode } from "react";
+import Style from "./style";
+import { useProviderContext } from "../Provider";
+import { ConfigProvider, Image } from "antd";
+import { Locale } from "antd/es/locale";
+import { SparkCheckCircleFill } from "@agentscope-ai/icons";
+import Dot from "../Markdown/core/plugins/cursor/Dot";
+import Spin from "./Spin";
+import { imageGeneratorAnimation } from "@/assets/icons";
 
 export interface IImageGeneratorProps {
   /**
@@ -59,66 +60,83 @@ export interface IImageGeneratorProps {
   block?: boolean;
 }
 
-
 const ImageGenerator: React.FC<IImageGeneratorProps> = (props) => {
   const { getPrefixCls } = useProviderContext();
 
-  const prefixCls = getPrefixCls('image-generator');
-  const { block, skeletonText, width = 320, height = 320, src, loadingText = 'Painting...', doneText = 'Paint Completed' } = props;
+  const prefixCls = getPrefixCls("image-generator");
+  const {
+    block,
+    skeletonText,
+    width = 320,
+    height = 320,
+    src,
+    loadingText = "Painting...",
+    doneText = "Paint Completed",
+  } = props;
 
-  const skeleton = props.skeleton || <div className={`${prefixCls}-default-skeleton`} style={{ width: '100%', height: '100%' }}>
+  const skeleton = props.skeleton || (
     <div
-      className={`${prefixCls}-default-skeleton-bg`}
+      className={`${prefixCls}-default-skeleton`}
+      style={{ width: "100%", height: "100%" }}
     >
-      <Spin />
+      <div className={`${prefixCls}-default-skeleton-bg`}>
+        <Spin />
+      </div>
+      <div className={`${prefixCls}-default-skeleton-content`}>
+        <img
+          className={`${prefixCls}-default-skeleton-icon`}
+          src={imageGeneratorAnimation}
+        />
+        {skeletonText && (
+          <div className={`${prefixCls}-default-skeleton-text`}>
+            {skeletonText}
+          </div>
+        )}
+      </div>
     </div>
-    <div className={`${prefixCls}-default-skeleton-content`}>
-      <img
-        className={`${prefixCls}-default-skeleton-icon`}
-        src="/icons/image_generator.apng"
-      />
-      {
-        skeletonText && <div className={`${prefixCls}-default-skeleton-text`}>{skeletonText}</div>
-      }
-
-    </div>
-  </div>;
+  );
 
   const loading = !src;
 
-  const size: React.CSSProperties = block ? { aspectRatio: `${width}/${height}` } : { width, height };
+  const size: React.CSSProperties = block
+    ? { aspectRatio: `${width}/${height}` }
+    : { width, height };
 
-  return <>
-    <Style />
-    <div className={prefixCls}>
-      <div className={`${prefixCls}-text`}>
-        {
-          loading ? <Dot /> : <SparkCheckCircleFill className={`${prefixCls}-text-success`} />
-        }
-        {
-          loading ? <span style={{ paddingLeft: 20 }}>{loadingText}</span> : doneText
-        }
-      </div>
+  return (
+    <>
+      <Style />
+      <div className={prefixCls}>
+        <div className={`${prefixCls}-text`}>
+          {loading ? (
+            <Dot />
+          ) : (
+            <SparkCheckCircleFill className={`${prefixCls}-text-success`} />
+          )}
+          {loading ? (
+            <span style={{ paddingLeft: 20 }}>{loadingText}</span>
+          ) : (
+            doneText
+          )}
+        </div>
 
-      <div className={`${prefixCls}-wrapper`} style={size}>
-        {
-          loading ? skeleton : <ConfigProvider
-            locale={{
-              Image: { preview: '' }
-            } as Locale}
-          ><Image
-              width={'100%'}
-              height={'100%'}
-              src={src}
-            /></ConfigProvider>
-        }
+        <div className={`${prefixCls}-wrapper`} style={size}>
+          {loading ? (
+            skeleton
+          ) : (
+            <ConfigProvider
+              locale={
+                {
+                  Image: { preview: "" },
+                } as Locale
+              }
+            >
+              <Image width={"100%"} height={"100%"} src={src} />
+            </ConfigProvider>
+          )}
+        </div>
       </div>
-    </div>
-  </>
+    </>
+  );
 };
 
-
 export default ImageGenerator;
-
-
-

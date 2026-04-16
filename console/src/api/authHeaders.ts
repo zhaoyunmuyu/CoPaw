@@ -65,5 +65,15 @@ export function buildAuthHeaders(): Record<string, string> {
   }
   // ==================== userId 统一整改结束 ====================
 
+  // 5. Space（来自 iframe context）
+  if (iframeContext.space) {
+    headers["space"] = iframeContext.space;
+  }
+
+  // 6. Cookie（仅在用户变更时添加）
+  if (iframeContext.userChange) {
+    headers["x-header-cookie"] = document.cookie;
+  }
+
   return headers;
 }

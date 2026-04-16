@@ -15,15 +15,17 @@ import { useLocation, useNavigate } from "react-router-dom";
 import sessionApi from "./sessionApi";
 import defaultConfig, { getDefaultConfig } from "./OptionsPanel/defaultConfig";
 import { chatApi } from "../../api/modules/chat";
+import { cronJobApi } from "../../api/modules/cronjob";
 import { getApiUrl } from "../../api/config";
 import { buildAuthHeaders } from "../../api/authHeaders";
 import { providerApi } from "../../api/modules/provider";
-import type { ProviderInfo, ModelInfo } from "../../api/types";
+import type { ProviderInfo, ModelInfo, CronJobSpecOutput } from "../../api/types";
 import ModelSelector from "./ModelSelector";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAgentStore } from "../../stores/agentStore";
 // ==================== 组件引入方式变更 (Kun He) ====================
 import { useChatAnywhereInput } from "@/components/agentscope-chat";
+import DragUploadOverlay from "@/components/agentscope-chat/DragUploadOverlay";
 // ==================== 组件引入方式变更结束 ====================
 // ==================== userId 统一整改 (Kun He) ====================
 // 使用统一的 getUserId/getChannel helper
@@ -32,11 +34,18 @@ import { getUserId, getChannel } from "../../utils/identity";
 // ==================== 品牌主题 (Kun He) ====================
 import { useBrandTheme } from "../../contexts/BrandThemeContext";
 // ==================== 品牌主题结束 ====================
+// ==================== URL 导航参数 (Kun He, 2026-04-15) ====================
+import { useIframeStore } from "../../stores/iframeStore";
+// ==================== URL 导航参数结束 ====================
 import styles from "./index.module.less";
 import { IconButton } from "@agentscope-ai/design";
 import ChatActionGroup from "./components/ChatActionGroup";
 import ChatHeaderTitle from "./components/ChatHeaderTitle";
 import ChatSessionInitializer from "./components/ChatSessionInitializer";
+// ==================== 首页改版 (Kun He) ====================
+import WelcomeCenterLayout from "@/components/agentscope-chat/WelcomeCenterLayout";
+import ChatSidebar from "./components/ChatSidebar";
+// ==================== 首页改版结束 ====================
 import {
   toDisplayUrl,
   copyText,
@@ -47,8 +56,12 @@ import {
   type CopyableResponse,
   type RuntimeLoadingBridgeApi,
 } from "./utils";
+import { deriveChatTaskState } from "./taskJobs";
+import { shouldRefreshCurrentTaskMessages } from "./taskMessageRefresh";
 
 const CHAT_ATTACHMENT_MAX_MB = 10;
+const TASK_PAGE_POLL_MS = 10_000;
+const TASK_PENDING_POLL_MS = 2_000;
 
 interface SessionInfo {
   session_id?: string;
@@ -285,8 +298,11 @@ export default function ChatPage() {
     return match?.[1];
   }, [location.pathname]);
   const [showModelPrompt, setShowModelPrompt] = useState(false);
+  const [jobs, setJobs] = useState<CronJobSpecOutput[]>([]);
   const { selectedAgent } = useAgentStore();
   const [refreshKey, setRefreshKey] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounterRef = useRef(0);
   const runtimeLoadingBridgeRef = useRef<RuntimeLoadingBridgeApi | null>(null);
   const { message } = useAppMessage();
 
@@ -308,6 +324,8 @@ export default function ChatPage() {
   const lastSessionIdRef = useRef<string | null>(null);
   /** Tracks the stale auto-selected session ID that was skipped on init, so we can suppress its late-arriving onSessionSelected callback. */
   const staleAutoSelectedIdRef = useRef<string | null>(null);
+  const taskHadResultRef = useRef(false);
+  const previousCurrentTaskRef = useRef<CronJobSpecOutput | null>(null);
   const chatIdRef = useRef(chatId);
   const navigateRef = useRef(navigate);
   const chatRef = useRef<IAgentScopeRuntimeWebUIRef>(null);
@@ -397,6 +415,55 @@ export default function ChatPage() {
     };
   }, []);
 
+  // ==================== URL 导航参数 (Kun He, 2026-04-15) ====================
+  // 处理 iframe URL 传递的 sessionId/taskId 参数，自动跳转到对应聊天页面
+  // sessionId: 直接导航到 /chat/:sessionId
+  // taskId: 查找 task.chat_id 后导航
+  const sessionIdRef = useRef<string | null>(null);
+  const taskIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const store = useIframeStore.getState();
+    const { sessionId, taskId } = store;
+
+    // 只在首次加载时处理，避免重复导航
+    if (sessionId) {
+      sessionIdRef.current = sessionId;
+      taskIdRef.current = null; // sessionId 优先，忽略 taskId
+      store.clearNavigationParams();
+      console.info("[Chat] Navigating to sessionId:", sessionId);
+      navigate(`/chat/${sessionId}`, { replace: true });
+      return;
+    }
+
+    if (taskId) {
+      taskIdRef.current = taskId;
+      store.clearNavigationParams();
+      console.info("[Chat] taskId set, waiting for jobs:", taskId);
+    }
+  }, [navigate]);
+
+  // taskId 导航需要等待 jobs 加载完成
+  useEffect(() => {
+    if (!taskIdRef.current || jobs.length === 0) return;
+
+    const task = jobs.find((j) => j.id === taskIdRef.current);
+    const chatId = task?.task?.chat_id;
+
+    if (chatId) {
+      console.info("[Chat] Navigating from taskId to chatId:", {
+        taskId: taskIdRef.current,
+        chatId,
+      });
+      navigate(`/chat/${chatId}`, { replace: true });
+      taskIdRef.current = null;
+    } else {
+      console.warn("[Chat] taskId not found or no chat_id:", taskIdRef.current);
+      taskIdRef.current = null;
+    }
+  }, [jobs, navigate]);
+  // ==================== URL 导航参数结束 ====================
+
   // Setup multimodal capabilities tracking via custom hook
 
   // Refresh chat when selectedAgent changes
@@ -412,6 +479,133 @@ export default function ChatPage() {
     }
     prevSelectedAgentRef.current = selectedAgent;
   }, [selectedAgent]);
+
+  const refreshJobs = useCallback(async () => {
+    try {
+      const nextJobs = await cronJobApi.listCronJobs();
+      setJobs(Array.isArray(nextJobs) ? nextJobs : []);
+    } catch {
+      setJobs([]);
+    }
+  }, []);
+
+  const { tasks, currentTask } = useMemo(
+    () => deriveChatTaskState(jobs, chatId),
+    [jobs, chatId],
+  );
+
+  useEffect(() => {
+    void refreshJobs();
+
+    const handleFocusRefresh = () => {
+      void refreshJobs();
+    };
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState === "visible") {
+        void refreshJobs();
+      }
+    };
+
+    window.addEventListener("focus", handleFocusRefresh);
+    document.addEventListener("visibilitychange", handleVisibilityRefresh);
+
+    return () => {
+      window.removeEventListener("focus", handleFocusRefresh);
+      document.removeEventListener("visibilitychange", handleVisibilityRefresh);
+    };
+  }, [refreshJobs]);
+
+  useEffect(() => {
+    const pollMs =
+      currentTask?.task?.has_scheduled_result === false
+        ? TASK_PENDING_POLL_MS
+        : TASK_PAGE_POLL_MS;
+
+    const intervalId = window.setInterval(() => {
+      void refreshJobs();
+    }, pollMs);
+
+    return () => window.clearInterval(intervalId);
+  }, [currentTask?.task?.has_scheduled_result, refreshJobs]);
+
+  useEffect(() => {
+    const hadResult = Boolean(currentTask?.task?.has_scheduled_result);
+    if (hadResult && !taskHadResultRef.current) {
+      setRefreshKey((prev) => prev + 1);
+    }
+    taskHadResultRef.current = hadResult;
+  }, [currentTask?.task?.has_scheduled_result]);
+
+  useEffect(() => {
+    if (!currentTask?.id) return;
+    if ((currentTask.task?.unread_execution_count || 0) <= 0) return;
+
+    setJobs((prev) =>
+      prev.map((job) =>
+        job.id === currentTask.id && job.task
+          ? {
+              ...job,
+              task: {
+                ...job.task,
+                unread_execution_count: 0,
+              },
+            }
+          : job,
+      ),
+    );
+    void cronJobApi.markTaskRead(currentTask.id).catch(() => {});
+  }, [currentTask?.id, currentTask?.task?.unread_execution_count]);
+
+  const handleTaskOpen = useCallback(
+    async (task: CronJobSpecOutput) => {
+      const taskChatId = task.task?.chat_id;
+      if (!taskChatId) return;
+
+      setJobs((prev) =>
+        prev.map((job) =>
+          job.id === task.id && job.task
+            ? {
+                ...job,
+                task: {
+                  ...job.task,
+                  unread_execution_count: 0,
+                },
+              }
+            : job,
+        ),
+      );
+
+      navigate(`/chat/${taskChatId}`, { replace: true });
+
+      try {
+        await cronJobApi.markTaskRead(task.id);
+      } catch {
+        void refreshJobs();
+      }
+    },
+    [navigate, refreshJobs],
+  );
+
+  useEffect(() => {
+    const previousTask = previousCurrentTaskRef.current;
+    previousCurrentTaskRef.current = currentTask;
+
+    if (
+      !shouldRefreshCurrentTaskMessages({
+        previousTask,
+        currentTask,
+      })
+    ) {
+      return;
+    }
+
+    void chatRef.current?.refreshSession?.();
+  }, [
+    currentTask?.id,
+    currentTask?.task?.has_scheduled_result,
+    currentTask?.task?.last_scheduled_run_at,
+    currentTask?.task?.unread_execution_count,
+  ]);
 
   const copyResponse = useCallback(
     async (response: CopyableResponse) => {
@@ -550,6 +744,54 @@ export default function ChatPage() {
     [multimodalCaps, t],
   );
 
+  // ==================== Drag & drop file upload (Kun He) ====================
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types.includes("Files")) {
+      dragCounterRef.current += 1;
+      if (dragCounterRef.current === 1) {
+        setIsDragging(true);
+      }
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current === 0) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDragging(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    for (const file of files) {
+      document.dispatchEvent(
+        new CustomEvent("pasteFile", {
+          detail: { file },
+        }),
+      );
+    }
+  }, []);
+
+  const handleDragOverlayClose = useCallback(() => {
+    dragCounterRef.current = 0;
+    setIsDragging(false);
+  }, []);
+  // ==================== Drag & drop end ====================
+
   const options = useMemo(() => {
     const i18nConfig = getDefaultConfig(t);
     const commandSuggestions: CommandSuggestion[] = [
@@ -608,6 +850,19 @@ export default function ChatPage() {
           ? `${import.meta.env.BASE_URL}${brandTheme.avatar.replace(/^\//, "")}`
           : undefined,
         // ==================== 品牌主题结束 ====================
+        // ==================== 首页改版 (Kun He) ====================
+        // 使用自定义欢迎页渲染，替代默认 WelcomePrompts
+        render: ({ greeting, onSubmit }) => (
+          <WelcomeCenterLayout
+            greeting={
+              typeof greeting === "string"
+                ? greeting
+                : "你好，你的专属小龙虾，前来报到！"
+            }
+            onSubmit={(data) => onSubmit(data)}
+          />
+        ),
+        // ==================== 首页改版结束 ====================
       },
       sender: {
         ...(i18nConfig as any)?.sender,
@@ -699,21 +954,76 @@ export default function ChatPage() {
     } as unknown as IAgentScopeRuntimeWebUIOptions;
   }, [customFetch, copyResponse, handleFileUpload, t, isDark, multimodalCaps]);
 
+  // ==================== 首页改版 (Kun He) ====================
+  // 新建聊天：通过 chatRef 调用后端 createSession API
+  const handleCreateSessionFromSidebar = useCallback(async () => {
+    const newId = await chatRef.current?.createSession?.();
+    if (newId) {
+      navigate(`/chat/${newId}`, { replace: true });
+    } else {
+      navigate("/chat", { replace: true });
+    }
+  }, [navigate]);
+  // ==================== 首页改版结束 ====================
+
   return (
     <div
       style={{
         height: "100%",
         width: "100%",
         display: "flex",
-        flexDirection: "column",
+        flexDirection: "row",
       }}
     >
-      <div className={styles.chatMessagesArea}>
+      {/* ==================== 首页改版 (Kun He) ==================== */}
+      {/* 聊天专用侧栏：支持折叠为64px工具条 */}
+      <ChatSidebar
+        tasks={tasks}
+        onCreateSession={handleCreateSessionFromSidebar}
+        onTaskClick={handleTaskOpen}
+      />
+      {/* ==================== 首页改版结束 ==================== */}
+      <div
+        className={styles.chatMessagesArea}
+        style={{ flex: 1, minWidth: 0, position: "relative" }}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
         <AgentScopeRuntimeWebUI
           ref={chatRef}
           key={refreshKey}
           options={options}
         />
+        {currentTask && !currentTask.task?.has_scheduled_result && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none',
+              zIndex: 2,
+            }}
+          >
+            <div
+              style={{
+                padding: '10px 18px',
+                borderRadius: 999,
+                background: 'rgba(255,255,255,0.92)',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+                color: '#1f1f1f',
+                fontSize: 14,
+                fontWeight: 500,
+              }}
+            >
+              任务执行中
+            </div>
+          </div>
+        )}
+        <DragUploadOverlay visible={isDragging} onClose={handleDragOverlayClose} />
       </div>
 
       <Modal

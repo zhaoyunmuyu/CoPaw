@@ -14,8 +14,10 @@ function extractPlainText(value: any): string | null {
   if (typeof value === "string") {
     const trimmed = value.trim();
     if (!trimmed) return value;
-    if ((trimmed.startsWith("[") && trimmed.endsWith("]")) ||
-        (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
+    if (
+      (trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+      (trimmed.startsWith("{") && trimmed.endsWith("}"))
+    ) {
       try {
         return extractPlainText(JSON.parse(trimmed));
       } catch {
@@ -77,9 +79,6 @@ function Block(props: {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const timer = useRef<NodeJS.Timeout | null>(null);
 
-  // Show content area when:
-  // 1. expanded is true (show full content)
-  // 2. OR summary exists and expanded is false (show summary)
   const showContent = expanded || (summary && !expanded);
   const displayContent = summary && !expanded ? summary : contentString;
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from "react";
 
 const useTyping = ({ content, typing }) => {
   const [index, setIndex] = useState(0);
@@ -6,9 +6,12 @@ const useTyping = ({ content, typing }) => {
 
   useEffect(() => {
     if (typing) {
-      timer.current = setInterval(() => {
-        setIndex((v) => v + 1);
-      }, typeof typing === 'number' ? typing : 5);
+      timer.current = setInterval(
+        () => {
+          setIndex((v) => v + 1);
+        },
+        typeof typing === "number" ? typing : 5,
+      );
     } else {
       timer.current && clearInterval(timer.current);
     }
@@ -20,6 +23,5 @@ const useTyping = ({ content, typing }) => {
 
   return content.slice(0, index);
 };
-
 
 export default useTyping;

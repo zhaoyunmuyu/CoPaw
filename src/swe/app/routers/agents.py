@@ -322,13 +322,20 @@ async def create_agent(
         tools=ToolsConfig(),
     )
 
+    if request.skill_names is None:
+        from ...agents.skills_manager import read_skill_pool_manifest
+
+        manifest = read_skill_pool_manifest(working_dir=tenant_dir)
+        initial_skill_names = sorted(manifest.get("skills", {}))
+    else:
+        initial_skill_names = request.skill_names
+
     # Initialize workspace with default files
     _initialize_agent_workspace(
         workspace_dir,
         agent_config,
-        skill_names=(
-            request.skill_names if request.skill_names is not None else []
-        ),
+        skill_names=initial_skill_names,
+        working_dir=tenant_dir,
     )
 
     # Save agent configuration to workspace/agent.json
@@ -666,12 +673,35 @@ def _ensure_default_heartbeat_md(workspace_dir: Path, language: str) -> None:
         f.write(content.strip())
 
 
+def _resolve_workspace_language(
+    agent_config: AgentProfileConfig,
+    *,
+    working_dir: Path | None = None,
+) -> str:
+    """Resolve scaffold language from agent config, then tenant config."""
+    language = getattr(agent_config, "language", None)
+    if language:
+        return language
+
+    if working_dir is not None:
+        try:
+            config = load_config(Path(working_dir).expanduser() / "config.json")
+            tenant_language = getattr(config.agents, "language", None)
+            if tenant_language:
+                return tenant_language
+        except Exception:  # noqa: E722
+            pass
+
+    return "zh"
+
+
 def _initialize_agent_workspace(  # pylint: disable=too-many-branches
     workspace_dir: Path,
-    agent_config: AgentProfileConfig,  # pylint: disable=unused-argument
+    agent_config: AgentProfileConfig,
     *,
     skill_names: list[str] | None = None,
     builtin_qa_md_seed: bool = False,
+    working_dir: Path | None = None,
 ) -> None:
     """Initialize agent workspace (similar to swe init --defaults).
 
@@ -686,18 +716,18 @@ def _initialize_agent_workspace(  # pylint: disable=too-many-branches
             HEARTBEAT from the normal language pack, and **omit** BOOTSTRAP.md
             so bootstrap mode never triggers.
     """
-    from ...config import load_config as load_global_config
-
     workspace_dir = Path(workspace_dir).expanduser()
+    workspace_dir.mkdir(parents=True, exist_ok=True)
 
     # Create essential subdirectories
     (workspace_dir / "sessions").mkdir(exist_ok=True)
     (workspace_dir / "memory").mkdir(exist_ok=True)
     (workspace_dir / "skills").mkdir(exist_ok=True)
 
-    # Get language from global config
-    config = load_global_config()
-    language = config.agents.language or "zh"
+    language = _resolve_workspace_language(
+        agent_config,
+        working_dir=working_dir,
+    )
 
     package_agents_root = Path(__file__).parent.parent.parent / "agents"
     md_files_dir = package_agents_root / "md_files" / language
@@ -727,7 +757,7 @@ def _initialize_agent_workspace(  # pylint: disable=too-many-branches
             reconcile_workspace_manifest,
         )
 
-        pool_dir = get_skill_pool_dir()
+        pool_dir = get_skill_pool_dir(working_dir=working_dir)
         skills_dir = workspace_dir / "skills"
         for name in skill_names:
             source = pool_dir / name

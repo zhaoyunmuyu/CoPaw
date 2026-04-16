@@ -32,6 +32,15 @@ class TestMinimalStartup:
         # LocalModelManager should not be in module namespace
         assert not hasattr(app_module, "LocalModelManager")
 
+    def test_lifespan_shutdown_does_not_handle_local_model_servers(self):
+        """Application shutdown should not manage removed local runtimes."""
+        from swe.app._app import lifespan
+        import inspect
+
+        source = inspect.getsource(lifespan)
+
+        assert "local model server" not in source.lower()
+
     def test_migration_functions_not_imported_in_startup(self):
         """Migration functions should not be imported in _app.py."""
         import swe.app._app as app_module
@@ -359,23 +368,14 @@ class TestOnDemandSubsystemInitialization:
             # This test verifies the pattern exists
             pass
 
-    async def test_local_model_manager_initializes_on_demand(self):
-        """LocalModelManager initializes on first use."""
-        from swe.local_models.manager import LocalModelManager
+    def test_local_model_router_is_compatibility_shell(self):
+        """Local model router should not import the removed runtime manager."""
+        import swe.app.routers.local_models as local_models_router
+        import inspect
 
-        # Remove any existing instance
-        if hasattr(LocalModelManager, "_instance"):
-            delattr(LocalModelManager, "_instance")
+        source = inspect.getsource(local_models_router)
 
-        # get_instance should create instance on first call
-        with patch.object(
-            LocalModelManager,
-            "__init__",
-            return_value=None,
-        ) as _mock_init:
-            # Note: Due to singleton pattern, actual testing would need more setup
-            # This test verifies the pattern exists
-            pass
+        assert "LocalModelManager" not in source
 
 
 class TestStartupLogging:

@@ -1,4 +1,4 @@
-import { createGlobalStyle } from 'antd-style';
+import { createGlobalStyle } from "antd-style";
 
 const IndexStyle = createGlobalStyle`
 .${(p) => p.theme.prefixCls}-sender {
@@ -134,7 +134,7 @@ const IndexStyle = createGlobalStyle`
       vertical-align: top;
     }
 
-    
+
   }
 }
 

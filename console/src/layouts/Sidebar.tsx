@@ -172,6 +172,12 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       label: t("nav.heartbeat"),
     },
     {
+      key: "cases-management",
+      icon: <SparkFileTxtLine size={18} />,
+      path: "/cases-management",
+      label: t("nav.casesManagement", "案例管理"),
+    },
+    {
       key: "workspace",
       icon: <SparkLocalFileLine size={18} />,
       path: "/workspace",
@@ -274,6 +280,12 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       label: t("nav.analyticsTraces", "Traces"),
     },
     {
+      key: "analytics-skills",
+      icon: <SparkMagicWandLine size={18} />,
+      path: "/analytics/skills",
+      label: t("nav.analyticsSkills", "Skills"),
+    },
+    {
       key: "instance-overview",
       icon: <SparkAdvancedMonitoringLine size={18} />,
       path: "/instance/overview",
@@ -330,6 +342,11 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
           key: "heartbeat",
           label: collapsed ? null : t("nav.heartbeat"),
           icon: <SparkVoiceChat01Line size={16} />,
+        },
+        {
+          key: "cases-management",
+          label: collapsed ? null : t("nav.casesManagement", "案例管理"),
+          icon: <SparkFileTxtLine size={16} />,
         },
       ],
     },
@@ -434,6 +451,11 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
           label: collapsed ? null : t("nav.analyticsTraces", "Traces"),
           icon: <SparkFileTxtLine size={16} />,
         },
+        {
+          key: "analytics-skills",
+          label: collapsed ? null : t("nav.analyticsSkills", "Skills"),
+          icon: <SparkMagicWandLine size={16} />,
+        },
       ],
     },
     {
@@ -457,7 +479,9 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
         },
         {
           key: "instance-operation-logs",
-          label: collapsed ? null : t("nav.instanceOperationLogs", "Operation Logs"),
+          label: collapsed
+            ? null
+            : t("nav.instanceOperationLogs", "Operation Logs"),
           icon: <SparkAuditLogLine size={16} />,
         },
       ],

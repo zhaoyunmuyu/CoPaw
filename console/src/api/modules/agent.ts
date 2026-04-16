@@ -1,5 +1,10 @@
 import { request } from "../request";
-import type { AgentRequest, AgentInitRequest, AgentsRunningConfig, AgentInitResponse } from "../types/agent";
+import type {
+  AgentRequest,
+  AgentInitRequest,
+  AgentsRunningConfig,
+  AgentInitResponse,
+} from "../types/agent";
 
 // Agent API
 export const agentApi = {

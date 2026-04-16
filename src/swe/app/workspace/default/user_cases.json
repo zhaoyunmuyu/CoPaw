@@ -1,0 +1,11 @@
+{
+  "user_cases": {
+    "default": [
+      "case-deposit-maturity",
+      "case-fund-sales",
+      "case-market-monitor",
+      "case-insurance-plan",
+      "case-daily-report"
+    ]
+  }
+}

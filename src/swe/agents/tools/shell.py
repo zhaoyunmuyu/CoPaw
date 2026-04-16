@@ -20,6 +20,7 @@ from agentscope.tool import ToolResponse
 from ...security.tenant_path_boundary import (
     is_path_within_tenant_with_base,
     get_current_tenant_root,
+    get_current_tool_base_dir,
     TenantPathBoundaryError,
 )
 
@@ -196,7 +197,8 @@ def _resolve_cwd(cwd: Optional[Path]) -> Path:
     """Resolve and validate the working directory against tenant boundary.
 
     Args:
-        cwd: The requested working directory, or None to use tenant root.
+        cwd: The requested working directory, or None to default to the current
+             agent workspace when available, otherwise the tenant workspace root.
 
     Returns:
         The resolved working directory path.
@@ -208,7 +210,7 @@ def _resolve_cwd(cwd: Optional[Path]) -> Path:
     tenant_root = get_current_tenant_root()
 
     if cwd is None:
-        return tenant_root
+        return get_current_tool_base_dir()
 
     # Resolve the cwd and validate it's within tenant root
     resolved_cwd = cwd.resolve()
@@ -432,7 +434,8 @@ async def execute_shell_command(
             Default is 60 seconds.
         cwd (`Optional[Path]`, defaults to `None`):
             The working directory for the command execution.
-            If None, defaults to the current tenant workspace.
+            If None, defaults to the current agent workspace when available and
+            otherwise falls back to the tenant workspace root.
 
     Returns:
         `ToolResponse`:
