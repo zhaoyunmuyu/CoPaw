@@ -966,6 +966,34 @@ class SkillScannerConfig(BaseModel):
     )
 
 
+class ProcessLimitsConfig(BaseModel):
+    """Tenant-scoped subprocess process-limit policy."""
+
+    enabled: bool = False
+    shell: bool = True
+    mcp_stdio: bool = True
+    cpu_time_limit_seconds: int | None = Field(default=None, ge=1)
+    memory_max_mb: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_enabled_policy(self) -> "ProcessLimitsConfig":
+        """Reject enabled policies that cannot enforce anything."""
+        if not self.enabled:
+            return self
+        if not self.shell and not self.mcp_stdio:
+            raise ValueError(
+                "enabled process_limits policy must target shell or mcp_stdio",
+            )
+        if (
+            self.cpu_time_limit_seconds is None
+            and self.memory_max_mb is None
+        ):
+            raise ValueError(
+                "enabled process_limits policy requires at least one limit",
+            )
+        return self
+
+
 class SecurityConfig(BaseModel):
     """Top-level ``security`` section in config.json."""
 
@@ -973,6 +1001,9 @@ class SecurityConfig(BaseModel):
     file_guard: FileGuardConfig = Field(default_factory=FileGuardConfig)
     skill_scanner: SkillScannerConfig = Field(
         default_factory=SkillScannerConfig,
+    )
+    process_limits: ProcessLimitsConfig = Field(
+        default_factory=ProcessLimitsConfig,
     )
 
 

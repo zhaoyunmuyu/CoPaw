@@ -19,6 +19,7 @@ from agentscope.tool import Toolkit
 from anyio import ClosedResourceError
 from pydantic import BaseModel
 
+from ..app.mcp.stdio_launcher import build_tenant_aware_stdio_launch_config
 from .command_handler import CommandHandler
 from .hooks import BootstrapHook, MemoryCompactionHook
 from .model_factory import create_model_and_formatter
@@ -710,14 +711,30 @@ class SWEAgent(ToolGuardMixin, ReActAgent):
 
         try:
             if transport == "stdio":
+                command = rebuild_info.get("command")
+                if not isinstance(command, str) or not command:
+                    return None
+                launch_config = build_tenant_aware_stdio_launch_config(
+                    command,
+                    rebuild_info.get("args", []),
+                    rebuild_info.get("env", {}),
+                    rebuild_info.get("cwd"),
+                )
                 rebuilt_client = StdIOStatefulClient(
                     name=name,
-                    command=rebuild_info.get("command"),
-                    args=rebuild_info.get("args", []),
-                    env=rebuild_info.get("env", {}),
-                    cwd=rebuild_info.get("cwd"),
+                    command=launch_config.launch_command,
+                    args=launch_config.launch_args,
+                    env=launch_config.env,
+                    cwd=launch_config.cwd,
                 )
-                setattr(rebuilt_client, "_swe_rebuild_info", rebuild_info)
+                setattr(
+                    rebuilt_client, "_swe_rebuild_info", {
+                        **rebuild_info,
+                        "launch_command": launch_config.launch_command,
+                        "launch_args": launch_config.launch_args,
+                        "launch_diagnostic": launch_config.diagnostic,
+                    },
+                )
                 return rebuilt_client
 
             raw_headers = rebuild_info.get("headers") or {}

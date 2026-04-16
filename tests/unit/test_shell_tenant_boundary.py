@@ -10,6 +10,7 @@ Tests cover:
 """
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Generator
 from unittest.mock import patch
@@ -17,6 +18,8 @@ from unittest.mock import patch
 import pytest
 
 from swe.config.context import tenant_context
+from swe.config.config import Config
+from swe.config.utils import save_config
 from swe.agents.tools.shell import (
     _extract_path_tokens,
     _validate_shell_paths,
@@ -61,13 +64,43 @@ def other_tenant_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def mock_working_dir(
-    temp_tenant_dir: Path, other_tenant_dir: Path
+    temp_tenant_dir: Path, other_tenant_dir: Path,
 ) -> Generator[Path, None, None]:
     """Mock WORKING_DIR to use temporary directory."""
     parent_dir = temp_tenant_dir.parent
     with patch("swe.constant.WORKING_DIR", parent_dir):
         with patch("swe.security.tenant_path_boundary.WORKING_DIR", parent_dir):
-            yield parent_dir
+            with patch("swe.config.utils.WORKING_DIR", parent_dir):
+                yield parent_dir
+
+
+def _write_process_limit_config(
+    base_dir: Path,
+    tenant_id: str,
+    *,
+    enabled: bool,
+    shell: bool = True,
+    cpu_time_limit_seconds: int | None = None,
+    memory_max_mb: int | None = None,
+) -> None:
+    tenant_dir = base_dir / tenant_id
+    tenant_dir.mkdir(parents=True, exist_ok=True)
+    save_config(
+        Config.model_validate(
+            {
+                "security": {
+                    "process_limits": {
+                        "enabled": enabled,
+                        "shell": shell,
+                        "mcp_stdio": True,
+                        "cpu_time_limit_seconds": cpu_time_limit_seconds,
+                        "memory_max_mb": memory_max_mb,
+                    },
+                },
+            },
+        ),
+        tenant_dir / "config.json",
+    )
 
 
 # =============================================================================
@@ -225,7 +258,7 @@ class TestValidateShellPaths:
             assert result is None
 
     def test_validate_shell_paths_uses_workspace_dir_as_base(
-        self, mock_working_dir: Path
+        self, mock_working_dir: Path,
     ):
         tenant_dir = mock_working_dir / "test_tenant"
         workspace_root = tenant_dir / "workspaces"
@@ -267,7 +300,7 @@ class TestValidateShellPaths:
         tenant_dir = mock_working_dir / "test_tenant"
         with tenant_context(tenant_id="test_tenant"):
             result = _validate_shell_paths(
-                "cat ../other_tenant/secret.txt", base_dir=tenant_dir
+                "cat ../other_tenant/secret.txt", base_dir=tenant_dir,
             )
             assert result is not None
             assert "outside the allowed workspace" in result
@@ -281,7 +314,7 @@ class TestValidateShellPaths:
             assert "outside the allowed workspace" in result
 
     def test_relative_path_against_cwd_within_tenant_allowed(
-        self, mock_working_dir: Path
+        self, mock_working_dir: Path,
     ):
         """Should allow relative paths that resolve within tenant when using cwd."""
         tenant_dir = mock_working_dir / "test_tenant"
@@ -299,7 +332,7 @@ class TestValidateShellPaths:
         with tenant_context(tenant_id="test_tenant"):
             result = _validate_shell_paths(
                 'bash -c "cat /etc/passwd"',
-                base_dir=tenant_dir
+                base_dir=tenant_dir,
             )
             assert result is not None
             assert "code execution flags" in result
@@ -369,7 +402,7 @@ class TestResolveCwd:
             assert result == expected
 
     def test_resolve_cwd_defaults_to_workspace_dir_when_present(
-        self, mock_working_dir: Path
+        self, mock_working_dir: Path,
     ):
         tenant_dir = mock_working_dir / "test_tenant"
         workspace_dir = tenant_dir / "workspaces" / "agent_a"
@@ -493,3 +526,173 @@ class TestExecuteShellCommand:
             result = await execute_shell_command('bash -c "echo hello"')
 
             assert "code execution flags" in result.content[0]["text"]
+
+    @pytest.mark.asyncio
+    async def test_disabled_process_limit_policy_does_not_inject_preexec(
+        self,
+        mock_working_dir: Path,
+    ):
+        """Disabled tenant process limits preserve current shell launch behavior."""
+        from swe.agents.tools.shell import execute_shell_command
+
+        _write_process_limit_config(
+            mock_working_dir,
+            "test_tenant",
+            enabled=False,
+        )
+
+        captured = {}
+
+        class _FakeProcess:
+            returncode = 0
+
+            async def communicate(self):
+                return b"ok\n", b""
+
+        async def _fake_create_subprocess_shell(*args, **kwargs):
+            captured["preexec_fn"] = kwargs.get("preexec_fn")
+            return _FakeProcess()
+
+        with patch(
+            "swe.agents.tools.shell.asyncio.create_subprocess_shell",
+            side_effect=_fake_create_subprocess_shell,
+        ):
+            with tenant_context(tenant_id="test_tenant"):
+                result = await execute_shell_command("echo ok")
+
+        assert result.content[0]["text"] == "ok"
+        assert captured["preexec_fn"] is None
+
+    @pytest.mark.asyncio
+    async def test_shell_process_limit_lookup_is_tenant_scoped(
+        self,
+        mock_working_dir: Path,
+    ):
+        """Shell subprocess launch must use the active tenant's config."""
+        from swe.agents.tools.shell import execute_shell_command
+
+        _write_process_limit_config(
+            mock_working_dir,
+            "tenant-a",
+            enabled=True,
+            shell=True,
+            cpu_time_limit_seconds=2,
+        )
+        _write_process_limit_config(
+            mock_working_dir,
+            "tenant-b",
+            enabled=True,
+            shell=False,
+            cpu_time_limit_seconds=2,
+        )
+
+        captured = {}
+
+        class _FakeProcess:
+            returncode = 0
+
+            async def communicate(self):
+                return b"tenant\n", b""
+
+        async def _fake_create_subprocess_shell(*args, **kwargs):
+            captured["preexec_fn"] = kwargs.get("preexec_fn")
+            return _FakeProcess()
+
+        with patch(
+            "swe.agents.tools.shell.asyncio.create_subprocess_shell",
+            side_effect=_fake_create_subprocess_shell,
+        ):
+            with tenant_context(tenant_id="tenant-a"):
+                await execute_shell_command("echo tenant")
+            assert captured["preexec_fn"] is not None
+
+            with tenant_context(tenant_id="tenant-b"):
+                await execute_shell_command("echo tenant")
+
+        assert captured["preexec_fn"] is None
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(sys.platform == "win32", reason="Unix-only rlimit test")
+    async def test_reports_cpu_limit_exceeded_for_shell_command(
+        self,
+        mock_working_dir: Path,
+    ):
+        """CPU-bound subprocesses should surface a normalized process-limit failure."""
+        from swe.agents.tools.shell import execute_shell_command
+
+        _write_process_limit_config(
+            mock_working_dir,
+            "test_tenant",
+            enabled=True,
+            shell=True,
+            cpu_time_limit_seconds=1,
+        )
+
+        with tenant_context(tenant_id="test_tenant"):
+            result = await execute_shell_command(
+                'python -c "while True: pass"',
+                timeout=10,
+            )
+
+        assert "exceeded configured process limits" in result.content[0]["text"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(sys.platform == "win32", reason="Unix-only rlimit test")
+    async def test_reports_memory_limit_exceeded_for_shell_command(
+        self,
+        mock_working_dir: Path,
+    ):
+        """Memory-limit failures should surface a normalized process-limit error."""
+        from swe.agents.tools.shell import execute_shell_command
+
+        _write_process_limit_config(
+            mock_working_dir,
+            "test_tenant",
+            enabled=True,
+            shell=True,
+            memory_max_mb=64,
+        )
+
+        class _FakeProcess:
+            returncode = 1
+
+            async def communicate(self):
+                return b"", b"MemoryError"
+
+        async def _fake_create_subprocess_shell(*args, **kwargs):
+            return _FakeProcess()
+
+        with patch(
+            "swe.agents.tools.shell.asyncio.create_subprocess_shell",
+            side_effect=_fake_create_subprocess_shell,
+        ):
+            with tenant_context(tenant_id="test_tenant"):
+                result = await execute_shell_command("echo hello", timeout=10)
+
+        assert "exceeded configured process limits" in result.content[0]["text"]
+
+    @pytest.mark.asyncio
+    async def test_shell_unsupported_platform_returns_diagnostic(
+        self,
+        mock_working_dir: Path,
+    ):
+        """Unsupported platforms should fail open with a clear diagnostic."""
+        from swe.agents.tools.shell import execute_shell_command
+
+        _write_process_limit_config(
+            mock_working_dir,
+            "test_tenant",
+            enabled=True,
+            shell=True,
+            cpu_time_limit_seconds=2,
+        )
+
+        with patch(
+            "swe.security.process_limits._supports_unix_rlimits",
+            return_value=False,
+        ):
+            with tenant_context(tenant_id="test_tenant"):
+                result = await execute_shell_command("echo hello")
+
+        assert "hello" in result.content[0]["text"]
+        assert "not enforced on this platform" in result.content[0]["text"]
