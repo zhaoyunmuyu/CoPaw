@@ -1,56 +1,44 @@
 # -*- coding: utf-8 -*-
-"""Cron management module.
+"""Lazy exports for the crons package."""
 
-Provides scheduled task execution with Redis-coordinated leadership
-for multi-instance deployments.
-"""
 from __future__ import annotations
 
-from .coordination import (
-    CoordinationConfig,
-    CronCoordination,
-    AgentLease,
-    ExecutionLock,
-    ReloadPublisher,
-    ReloadSubscriber,
-    CronCoordinationError,
-    DefinitionLockTimeoutError,
-    LeaseLostError,
-    RedisNotAvailableError,
-    REDIS_AVAILABLE,
-)
-from .manager import CronManager
-from .models import (
-    CronJobSpec,
-    CronJobState,
-    CronJobView,
-    JobsFile,
-    ScheduleSpec,
-    DispatchSpec,
-    DispatchTarget,
-)
+from importlib import import_module
 
-__all__ = [
-    # Coordination
-    "CoordinationConfig",
-    "CronCoordination",
-    "AgentLease",
-    "ExecutionLock",
-    "ReloadPublisher",
-    "ReloadSubscriber",
-    "CronCoordinationError",
-    "DefinitionLockTimeoutError",
-    "LeaseLostError",
-    "RedisNotAvailableError",
-    "REDIS_AVAILABLE",
-    # Manager
-    "CronManager",
-    # Models
-    "CronJobSpec",
-    "CronJobState",
-    "CronJobView",
-    "JobsFile",
-    "ScheduleSpec",
-    "DispatchSpec",
-    "DispatchTarget",
-]
+_EXPORTS = {
+    "CoordinationConfig": (".coordination", "CoordinationConfig"),
+    "CronCoordination": (".coordination", "CronCoordination"),
+    "AgentLease": (".coordination", "AgentLease"),
+    "ExecutionLock": (".coordination", "ExecutionLock"),
+    "ReloadPublisher": (".coordination", "ReloadPublisher"),
+    "ReloadSubscriber": (".coordination", "ReloadSubscriber"),
+    "CronCoordinationError": (".coordination", "CronCoordinationError"),
+    "DefinitionLockTimeoutError": (
+        ".coordination",
+        "DefinitionLockTimeoutError",
+    ),
+    "LeaseLostError": (".coordination", "LeaseLostError"),
+    "RedisNotAvailableError": (".coordination", "RedisNotAvailableError"),
+    "REDIS_AVAILABLE": (".coordination", "REDIS_AVAILABLE"),
+    "CronManager": (".manager", "CronManager"),
+    "CronJobSpec": (".models", "CronJobSpec"),
+    "CronJobState": (".models", "CronJobState"),
+    "CronJobView": (".models", "CronJobView"),
+    "JobsFile": (".models", "JobsFile"),
+    "ScheduleSpec": (".models", "ScheduleSpec"),
+    "DispatchSpec": (".models", "DispatchSpec"),
+    "DispatchTarget": (".models", "DispatchTarget"),
+}
+
+__all__ = list(_EXPORTS)
+
+
+def __getattr__(name: str):
+    if name not in _EXPORTS:
+        raise AttributeError(name)
+
+    module_name, attr_name = _EXPORTS[name]
+    module = import_module(module_name, __name__)
+    value = getattr(module, attr_name)
+    globals()[name] = value
+    return value

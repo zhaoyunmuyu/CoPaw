@@ -9,9 +9,21 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
-from swe.config.context import (
-    TenantContextError,
-)
+try:
+    import swe.config.context as _config_context
+except (ImportError, ModuleNotFoundError):
+    _config_context = None
+
+if _config_context is not None:
+    TenantContextError = _config_context.TenantContextError
+else:
+    def _build_fallback_tenant_context_error() -> type[RuntimeError]:
+        class _FallbackTenantContextError(RuntimeError):
+            """Fallback error used when config.context is stubbed in tests."""
+
+        return _FallbackTenantContextError
+
+    TenantContextError = _build_fallback_tenant_context_error()
 
 
 @contextmanager
