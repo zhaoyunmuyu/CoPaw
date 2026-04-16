@@ -89,7 +89,26 @@ class ZhaohuConfig(BaseChannelConfig):
     extract_url: str = Field(
         default_factory=lambda: EnvVarLoader.get_str(
             "SWE_ZHAOHU_EXTRACT_URL",
-            "http://wplus-slots.paas.cmbchina.cn/api/extract/slots",
+            "",
+        ),
+    )
+    # Cron 任务完成通知 W+ 跳转配置
+    cron_task_menu_id: str = Field(
+        default_factory=lambda: EnvVarLoader.get_str(
+            "SWE_ZHAOHU_CRON_TASK_MENU_ID",
+            "",
+        ),
+    )
+    cron_task_error_page: str = Field(
+        default_factory=lambda: EnvVarLoader.get_str(
+            "SWE_ZHAOHU_CRON_TASK_ERROR_PAGE",
+            "",
+        ),
+    )
+    cron_task_sys_id: str = Field(
+        default_factory=lambda: EnvVarLoader.get_str(
+            "SWE_ZHAOHU_CRON_TASK_SYS_ID",
+            "",
         ),
     )
 

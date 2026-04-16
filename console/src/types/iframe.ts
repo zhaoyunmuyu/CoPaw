@@ -150,4 +150,9 @@ export interface IframeContext {
   positionId: string | null;
   /** 用户是否变更 */
   userChange: boolean;
+  /** ==================== URL 导航参数 (Kun He, 2026-04-15) ==================== **/
+  /** 会话 ID，用于直接导航到 /chat/:sessionId */
+  sessionId: string | null;
+  /** 任务 ID，用于查找 task.chat_id 后导航 */
+  taskId: string | null;
 }

@@ -32,7 +32,7 @@ const ChatSessionInitializer: React.FC = () => {
     }
     // Intentionally exclude currentSessionId from deps: only react to URL / session list changes.
     // currentSessionId is read via ref to avoid circular triggers.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [chatId, sessions, setCurrentSessionId]);
 
   return null;

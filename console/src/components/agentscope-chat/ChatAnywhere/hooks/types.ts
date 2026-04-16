@@ -170,7 +170,7 @@ export interface IChatAnywhereConfigOnInput {
    * @description 提交前的验证函数
    * @descriptionEn Validation function before submission
    */
-  beforeSubmit?: () => Promise<Boolean>;
+  beforeSubmit?: () => Promise<boolean>;
   /**
    * @description 输入框的占位符文本
    * @descriptionEn Placeholder text for the input field
