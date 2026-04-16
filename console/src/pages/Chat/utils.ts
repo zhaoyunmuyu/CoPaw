@@ -73,18 +73,28 @@ export function extractUserMessageText(m: any): string {
 // Clipboard utilities
 // ---------------------------------------------------------------------------
 
-/** Copy text to clipboard with fallback for non-secure contexts. */
+/** Copy text to clipboard with fallback for blocked permissions or non-secure contexts. */
 export async function copyText(text: string): Promise<void> {
-  if (navigator.clipboard && window.isSecureContext) {
-    await navigator.clipboard.writeText(text);
-    return;
+  if (!text) return;
+
+  // Try Clipboard API first
+  if (navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Clipboard API blocked or failed, fallback to execCommand
+    }
   }
 
+  // Fallback using execCommand
   const textarea = document.createElement("textarea");
   textarea.value = text;
   textarea.setAttribute("readonly", "");
-  textarea.style.position = "absolute";
+  textarea.style.position = "fixed";
   textarea.style.left = "-9999px";
+  textarea.style.top = "-9999px";
+  textarea.style.opacity = "0";
   document.body.appendChild(textarea);
 
   let copied = false;
