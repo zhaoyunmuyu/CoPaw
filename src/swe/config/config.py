@@ -842,6 +842,11 @@ def _default_builtin_tools() -> Dict[str, BuiltinToolConfig]:
             enabled=True,
             description="Get llm token usage",
         ),
+        "copy_file_to_static": BuiltinToolConfig(
+            name="copy_file_to_static",
+            enabled=True,
+            description="copy file to static",
+        ),
     }
 
 
