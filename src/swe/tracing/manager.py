@@ -300,7 +300,7 @@ class TraceManager:
         logger.debug("Started trace: %s", trace_id)
         return trace_id
 
-    def setup_skill_detector(
+    async def setup_skill_detector(
         self,
         trace_id: str,
         enabled_skills: list[str],
@@ -308,7 +308,8 @@ class TraceManager:
         """Set up skill invocation detector for a trace.
 
         This should be called after start_trace() to enable skill
-        detection during the trace.
+        detection during the trace. Also performs Layer 0 detection
+        on the user message if available.
 
         Args:
             trace_id: Trace identifier
@@ -351,6 +352,31 @@ class TraceManager:
                 trace_id,
                 len(enabled_skills),
             )
+
+            # Layer 0: Detect skill from user message
+            if ctx.trace and ctx.trace.user_message:
+                skill, confidence = detector.detect_from_user_message(
+                    ctx.trace.user_message,
+                )
+                if skill and confidence >= 0.7:
+                    # Emit skill invocation event for conversational skill
+                    await self.emit_skill_invocation(
+                        trace_id=trace_id,
+                        skill_name=skill,
+                        user_id=ctx.user_id,
+                        session_id=ctx.session_id,
+                        channel=ctx.channel,
+                        skill_input={
+                            "trigger": "user_message",
+                            "confidence": confidence,
+                            "user_message": ctx.trace.user_message,
+                        },
+                    )
+                    logger.debug(
+                        "Layer 0 detected skill '%s' from user message (confidence: %.2f)",
+                        skill,
+                        confidence,
+                    )
         except Exception as e:
             logger.debug("Failed to setup skill detector: %s", e)
 
@@ -427,8 +453,6 @@ class TraceManager:
         tool_input: Optional[dict[str, Any]] = None,
         start_time: Optional[datetime] = None,
         mcp_server: Optional[str] = None,
-        skill_names: Optional[list[str]] = None,
-        skill_weights: Optional[dict[str, float]] = None,
     ) -> str:
         """Emit a new span event.
 
@@ -443,12 +467,10 @@ class TraceManager:
             model_name: Optional model name
             input_tokens: Optional input token count
             tool_name: Optional tool name
-            skill_name: Optional skill name (for backward compatibility)
+            skill_name: Optional skill name
             tool_input: Optional tool input (will be sanitized)
             start_time: Optional start time
             mcp_server: Optional MCP server name if this is an MCP tool
-            skill_names: Optional list of skills claiming this tool call
-            skill_weights: Optional weight distribution for multi-skill attribution
 
         Returns:
             Span ID
@@ -485,8 +507,6 @@ class TraceManager:
             input_tokens=input_tokens,
             tool_name=tool_name,
             skill_name=skill_name,
-            skill_names=skill_names,
-            skill_weights=skill_weights,
             tool_input=tool_input,
             mcp_server=mcp_server,
         )
@@ -702,8 +722,6 @@ class TraceManager:
         """
         # Determine skill attribution using detector
         ctx = get_current_trace()
-        skill_names: Optional[list[str]] = None
-        skill_weights: Optional[dict[str, float]] = None
         primary_skill: Optional[str] = None
 
         if ctx and ctx.trace_id == trace_id:
@@ -711,13 +729,11 @@ class TraceManager:
                 # Use the detector if available on context
                 detector = getattr(ctx, "skill_detector", None)
                 if detector:
-                    primary_skill, skill_weights = await detector.on_tool_call(
+                    primary_skill, _ = await detector.on_tool_call(
                         tool_name=tool_name,
                         tool_input=tool_input or {},
                         mcp_server=mcp_server,
                     )
-                    if skill_weights:
-                        skill_names = list(skill_weights.keys())
                 else:
                     # Fallback to registry-based attribution
                     from ..agents.skill_tool_registry import (
@@ -731,9 +747,7 @@ class TraceManager:
                     all_skills = list(set(active_skills + declared_skills))
 
                     if all_skills:
-                        skill_names = sorted(all_skills)
-                        skill_weights = registry.calculate_weights(all_skills)
-                        primary_skill = skill_names[0]
+                        primary_skill = sorted(all_skills)[0]
             except Exception as e:
                 logger.debug("Failed to resolve skill attribution: %s", e)
 
@@ -748,8 +762,6 @@ class TraceManager:
             tool_input=tool_input,
             mcp_server=mcp_server,
             skill_name=primary_skill,
-            skill_names=skill_names,
-            skill_weights=skill_weights,
         )
 
     async def emit_tool_call_end(

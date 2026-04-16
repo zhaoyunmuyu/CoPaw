@@ -801,3 +801,207 @@ class TestEdgeCases:
             {"path": "/data/file.pdf"},
         )
         assert skill2 == "pdf"
+
+
+# =============================================================================
+# Layer 0 User Message Detection Tests
+# =============================================================================
+
+
+class TestUserMessageDetection:
+    """Tests for Layer 0 user message detection."""
+
+    def test_detect_from_user_message_with_trigger_keywords(self):
+        """Test detection from user message with trigger keywords."""
+        # Create a custom feature with trigger keywords
+        custom_feature = SkillFeature(
+            skill_name="黄金产品问答",
+            trigger_keywords=["黄金", "金价", "金条"],
+            is_conversational=True,
+        )
+        inferencer = SkillFeatureInferencer(
+            builtin_features={"黄金产品问答": custom_feature},
+        )
+
+        detector = SkillInvocationDetector(inferencer=inferencer)
+        detector.set_enabled_skills(["黄金产品问答"])
+
+        skill, confidence = detector.detect_from_user_message(
+            "黄金定期利率多少？",
+        )
+
+        assert skill == "黄金产品问答"
+        assert confidence >= 0.7
+
+    def test_detect_from_user_message_with_no_match(self):
+        """Test detection when user message doesn't match any skill."""
+        custom_feature = SkillFeature(
+            skill_name="黄金产品问答",
+            trigger_keywords=["黄金", "金价"],
+        )
+        inferencer = SkillFeatureInferencer(
+            builtin_features={"黄金产品问答": custom_feature},
+        )
+
+        detector = SkillInvocationDetector(inferencer=inferencer)
+        detector.set_enabled_skills(["黄金产品问答"])
+
+        skill, confidence = detector.detect_from_user_message(
+            "今天天气怎么样？",
+        )
+
+        assert skill is None
+        assert confidence == 0.0
+
+    def test_detect_from_user_message_clears_on_reset(self):
+        """Test that reset clears message detection cache."""
+        custom_feature = SkillFeature(
+            skill_name="test_skill",
+            trigger_keywords=["keyword"],
+        )
+        inferencer = SkillFeatureInferencer(
+            builtin_features={"test_skill": custom_feature},
+        )
+
+        detector = SkillInvocationDetector(inferencer=inferencer)
+        detector.set_enabled_skills(["test_skill"])
+
+        # Detect from message
+        detector.detect_from_user_message("keyword test")
+        assert detector._message_detected_skill == "test_skill"
+
+        # Reset should clear cache
+        detector.reset()
+        assert detector._message_detected_skill is None
+        assert detector._message_detected_confidence == 0.0
+
+
+class TestMcpServerInference:
+    """Tests for MCP server-based inference."""
+
+    def test_infer_skill_from_mcp_server(self):
+        """Test inferring skill from MCP server name."""
+        custom_feature = SkillFeature(
+            skill_name="filesystem_skill",
+            mcp_servers=["filesystem"],
+        )
+        inferencer = SkillFeatureInferencer(
+            builtin_features={"filesystem_skill": custom_feature},
+        )
+
+        skill, confidence = inferencer.infer_skill_from_mcp_server(
+            "filesystem",
+            ["filesystem_skill"],
+        )
+
+        assert skill == "filesystem_skill"
+        assert confidence >= 0.85
+
+    def test_infer_skill_from_mcp_server_no_match(self):
+        """Test MCP server inference with no matching skill."""
+        custom_feature = SkillFeature(
+            skill_name="filesystem_skill",
+            mcp_servers=["filesystem"],
+        )
+        inferencer = SkillFeatureInferencer(
+            builtin_features={"filesystem_skill": custom_feature},
+        )
+
+        skill, confidence = inferencer.infer_skill_from_mcp_server(
+            "unknown_server",
+            ["filesystem_skill"],
+        )
+
+        assert skill is None
+        assert confidence == 0.0
+
+    @pytest.mark.asyncio
+    async def test_mcp_server_detection_in_tool_call(self):
+        """Test MCP server detection during tool call."""
+        custom_feature = SkillFeature(
+            skill_name="filesystem_skill",
+            mcp_servers=["filesystem"],
+        )
+        inferencer = SkillFeatureInferencer(
+            builtin_features={"filesystem_skill": custom_feature},
+        )
+
+        detector = SkillInvocationDetector(inferencer=inferencer)
+        detector.set_enabled_skills(["filesystem_skill"])
+
+        # Call tool with MCP server
+        skill, weights = await detector.on_tool_call(
+            "mcp_read_file",
+            {"path": "/some/path"},
+            mcp_server="filesystem",
+        )
+
+        assert skill == "filesystem_skill"
+        assert weights.get("filesystem_skill", 0) >= 0.85
+
+
+class TestInferencerUserMessageMethods:
+    """Tests for SkillFeatureInferencer user message methods."""
+
+    def test_infer_from_user_message_trigger_keywords(self):
+        """Test inference with trigger keywords (high confidence)."""
+        feature = SkillFeature(
+            skill_name="test_skill",
+            trigger_keywords=["keyword1", "keyword2"],
+        )
+        inferencer = SkillFeatureInferencer(
+            builtin_features={"test_skill": feature},
+        )
+
+        skill, confidence = inferencer.infer_skill_from_user_message(
+            "This has keyword1 in it",
+            ["test_skill"],
+        )
+
+        assert skill == "test_skill"
+        assert confidence >= 0.7
+
+    def test_infer_from_user_message_multiple_keywords(self):
+        """Test that multiple keyword matches increase confidence."""
+        feature = SkillFeature(
+            skill_name="test_skill",
+            trigger_keywords=["kw1", "kw2", "kw3"],
+        )
+        inferencer = SkillFeatureInferencer(
+            builtin_features={"test_skill": feature},
+        )
+
+        # Single keyword match
+        _, conf1 = inferencer.infer_skill_from_user_message(
+            "kw1 test",
+            ["test_skill"],
+        )
+
+        # Multiple keyword matches
+        _, conf2 = inferencer.infer_skill_from_user_message(
+            "kw1 and kw2 and kw3 test",
+            ["test_skill"],
+        )
+
+        assert conf2 >= conf1
+
+    def test_infer_from_user_message_description_keywords(self):
+        """Test inference with description keywords."""
+        feature = SkillFeature(
+            skill_name="test_skill",
+            description_keywords=["finance", "money", "bank"],
+            is_conversational=True,
+        )
+        inferencer = SkillFeatureInferencer(
+            builtin_features={"test_skill": feature},
+        )
+
+        skill, confidence = inferencer.infer_skill_from_user_message(
+            "How do I open a bank account?",
+            ["test_skill"],
+        )
+
+        assert skill == "test_skill"
+        # Description keywords should have lower confidence than trigger keywords
+        assert confidence >= 0.4
+        assert confidence <= 0.85

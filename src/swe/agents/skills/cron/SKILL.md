@@ -5,9 +5,6 @@ metadata:
   builtin_skill_version: "1.1"
   swe:
     emoji: "⏰"
-  swe:
-    uses_tools:
-      - execute_shell_command
 ---
 
 # Cron（定时任务管理）

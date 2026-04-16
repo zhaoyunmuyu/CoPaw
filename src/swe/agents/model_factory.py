@@ -775,15 +775,23 @@ def _wrap_model_with_tracing(
     provider_id: str,
     model: ChatModelBase,
 ) -> ChatModelBase:
-    """Wrap model with tracing or token recording."""
+    """Wrap model with tracing and token recording.
+
+    Always applies TokenRecordingModelWrapper for token usage tracking.
+    When tracing is enabled, wraps with TracingModelWrapper on top.
+    """
+    # Always wrap with token recording first
+    wrapped = TokenRecordingModelWrapper(provider_id, model)
+
+    # Then optionally wrap with tracing
     if has_trace_manager():
         try:
             trace_mgr = get_trace_manager()
             if trace_mgr.enabled:
-                return TracingModelWrapper(provider_id, model)
+                return TracingModelWrapper(provider_id, wrapped)
         except RuntimeError:
             pass
-    return TokenRecordingModelWrapper(provider_id, model)
+    return wrapped
 
 
 def create_model_and_formatter(

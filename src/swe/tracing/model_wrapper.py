@@ -110,6 +110,18 @@ class TracingModelWrapper:
                 **kwargs,
             )
 
+            # Handle streaming response
+            if isinstance(result, AsyncGenerator):
+                if span_id:
+                    return self._wrap_stream(
+                        result,
+                        trace_ctx,
+                        trace_mgr,
+                        span_id,
+                    )
+                # No span_id, just return the stream without tracing
+                return result
+
             # Extract token usage
             input_tokens, output_tokens = self._extract_tokens(result)
 
@@ -140,6 +152,67 @@ class TracingModelWrapper:
                         trace_error,
                     )
             raise
+
+    async def _wrap_stream(
+        self,
+        stream: AsyncGenerator,
+        trace_ctx,
+        trace_mgr,
+        span_id: str,
+    ) -> AsyncGenerator[ChatResponse, None]:
+        """Wrap streaming response to collect token usage."""
+        last_usage = None
+        async for chunk in stream:
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage:
+                last_usage = chunk_usage
+            yield chunk
+
+        # Extract tokens from stream usage
+        input_tokens, output_tokens = self._extract_stream_tokens(last_usage)
+
+        # Emit LLM_OUTPUT event
+        if span_id:
+            await self._emit_llm_end(
+                trace_ctx,
+                trace_mgr,
+                span_id,
+                input_tokens,
+                output_tokens,
+            )
+
+    def _extract_stream_tokens(self, usage: Any) -> tuple[int, int]:
+        """Extract token counts from stream usage."""
+        input_tokens = 0
+        output_tokens = 0
+
+        # Try to get usage from stream chunks
+        if usage is None:
+            # Unwrap to get actual model's _last_usage
+            model = self._model
+            inner_model = getattr(model, "_model", None)
+            if inner_model is not None:
+                model = inner_model
+            usage = getattr(model, "_last_usage", None)
+
+        if usage:
+            if hasattr(usage, "input_tokens"):
+                input_tokens = usage.input_tokens or 0
+            elif isinstance(usage, dict):
+                input_tokens = usage.get(
+                    "input_tokens",
+                    usage.get("prompt_tokens", 0),
+                )
+
+            if hasattr(usage, "output_tokens"):
+                output_tokens = usage.output_tokens or 0
+            elif isinstance(usage, dict):
+                output_tokens = usage.get(
+                    "output_tokens",
+                    usage.get("completion_tokens", 0),
+                )
+
+        return input_tokens, output_tokens
 
     async def _call_model(
         self,
@@ -205,149 +278,40 @@ class TracingModelWrapper:
         """
         input_tokens = 0
         output_tokens = 0
+        usage = None
 
-        # Try to get usage from result
-        usage = getattr(result, "usage", None)
+        # 1. Check result.metadata.usage
+        metadata = getattr(result, "metadata", None)
+        if metadata and isinstance(metadata, dict):
+            usage = metadata.get("usage")
+
+        # 2. Check result.usage directly
         if usage is None:
-            # Try to get from raw response
+            usage = getattr(result, "usage", None)
+
+        # 3. Try to get from raw response
+        if usage is None:
             raw = getattr(result, "raw", None)
             if raw:
                 usage = getattr(raw, "usage", None)
                 if usage is None and isinstance(raw, dict):
                     usage = raw.get("usage")
 
-        if usage:
-            # Handle different usage formats
-            if hasattr(usage, "input_tokens"):
-                input_tokens = usage.input_tokens or 0
-            elif isinstance(usage, dict):
-                input_tokens = usage.get(
-                    "input_tokens",
-                    usage.get("prompt_tokens", 0),
-                )
-
-            if hasattr(usage, "output_tokens"):
-                output_tokens = usage.output_tokens or 0
-            elif isinstance(usage, dict):
-                output_tokens = usage.get(
-                    "output_tokens",
-                    usage.get("completion_tokens", 0),
-                )
-
-        return input_tokens, output_tokens
-
-    def __getattr__(self, name: str) -> Any:
-        """Delegate attribute access to wrapped model."""
-        return getattr(self._model, name)
-
-    # Support for streaming responses
-    async def stream(
-        self,
-        messages: Sequence[dict],
-        tools: Optional[Sequence[dict]] = None,
-        tool_choice: Optional[Union[str, dict]] = None,
-        **kwargs: Any,
-    ) -> AsyncGenerator:
-        """Stream from the wrapped model with tracing.
-
-        Args:
-            messages: Chat messages
-            tools: Optional tools for function calling
-            tool_choice: Optional tool choice
-            **kwargs: Additional arguments
-
-        Yields:
-            Chunks from the model stream
-        """
-        # Check if tracing is enabled
-        try:
-            trace_mgr = get_trace_manager()
-            if not trace_mgr.enabled:
-                async for chunk in self._model.stream(
-                    messages,
-                    tools,
-                    tool_choice,
-                    **kwargs,
-                ):
-                    yield chunk
-                return
-        except RuntimeError:
-            async for chunk in self._model.stream(
-                messages,
-                tools,
-                tool_choice,
-                **kwargs,
-            ):
-                yield chunk
-            return
-
-        # Get trace context
-        trace_ctx = get_current_trace()
-        if trace_ctx is None:
-            async for chunk in self._model.stream(
-                messages,
-                tools,
-                tool_choice,
-                **kwargs,
-            ):
-                yield chunk
-            return
-
-        # Emit LLM_INPUT event
-        span_id = await self._emit_llm_start(trace_ctx, trace_mgr)
-
-        last_usage = None
-        try:
-            async for chunk in self._model.stream(
-                messages,
-                tools,
-                tool_choice,
-                **kwargs,
-            ):
-                # Track usage from stream chunks
-                chunk_usage = getattr(chunk, "usage", None)
-                if chunk_usage:
-                    last_usage = chunk_usage
-                yield chunk
-
-            # Extract final usage
-            input_tokens, output_tokens = self._extract_stream_tokens(
-                last_usage,
-            )
-
-            # Emit LLM_OUTPUT event
-            if span_id:
-                await self._emit_llm_end(
-                    trace_ctx,
-                    trace_mgr,
-                    span_id,
-                    input_tokens,
-                    output_tokens,
-                )
-
-        except Exception as e:
-            if span_id:
-                try:
-                    await trace_mgr.update_span(
-                        span_id=span_id,
-                        trace_id=trace_ctx.trace_id,
-                        error=str(e),
-                    )
-                except Exception as trace_error:
-                    logger.warning(
-                        "Failed to record error in trace: %s",
-                        trace_error,
-                    )
-            raise
-
-    def _extract_stream_tokens(self, usage: Any) -> tuple[int, int]:
-        """Extract token counts from stream usage."""
+        # 4. Try to get from model's _last_usage (fallback for providers
+        # that don't return usage in stream chunks)
+        # Note: self._model may be another wrapper, so we need to unwrap
         if usage is None:
+            model = self._model
+            # Unwrap TokenRecordingModelWrapper if present
+            inner_model = getattr(model, "_model", None)
+            if inner_model is not None:
+                model = inner_model
+            usage = getattr(model, "_last_usage", None)
+
+        if not usage:
             return 0, 0
 
-        input_tokens = 0
-        output_tokens = 0
-
+        # Handle different usage formats
         if hasattr(usage, "input_tokens"):
             input_tokens = usage.input_tokens or 0
         elif isinstance(usage, dict):
@@ -365,3 +329,7 @@ class TracingModelWrapper:
             )
 
         return input_tokens, output_tokens
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate attribute access to wrapped model."""
+        return getattr(self._model, name)

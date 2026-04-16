@@ -54,7 +54,6 @@
     "analyticsSessions": "Session Analytics",
     "analyticsMessages": "User Messages",
     "analyticsTraces": "Conversation Analytics",
-    "analyticsSkills": "Skill Attribution",
     "instance": "Instance",
     "instanceOverview": "Overview",
     "instanceInstances": "Instances",

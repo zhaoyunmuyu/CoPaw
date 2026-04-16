@@ -189,8 +189,9 @@ def build_skill_tool_registry(
 ) -> SkillToolRegistry:
     """Build skill-tool registry from enabled workspace skills.
 
-    This function reads SKILL.md files for each enabled skill and extracts
-    the `uses_tools` declaration from the frontmatter metadata.
+    This function reads SKILL.md files for each enabled skill and extracts:
+    1. The `uses_tools` declaration from the frontmatter metadata
+    2. Skill features (trigger keywords, file extensions, MCP servers, etc.)
 
     Args:
         workspace_dir: Workspace directory containing skills
@@ -199,15 +200,20 @@ def build_skill_tool_registry(
     Returns:
         Populated SkillToolRegistry
     """
+    from .skill_feature_extractor import get_skill_feature_extractor
+    from .skill_feature_inferencer import get_skill_feature_inferencer
     from .skills_manager import get_workspace_skills_dir
 
     registry = get_skill_tool_registry()
     registry.clear()
 
     skills_dir = get_workspace_skills_dir(workspace_dir)
+    extractor = get_skill_feature_extractor()
+    inferencer = get_skill_feature_inferencer()
 
     for skill_name in enabled_skills:
-        skill_md = skills_dir / skill_name / "SKILL.md"
+        skill_dir = skills_dir / skill_name
+        skill_md = skill_dir / "SKILL.md"
         if not skill_md.exists():
             continue
 
@@ -226,9 +232,32 @@ def build_skill_tool_registry(
                     len(uses_tools),
                     uses_tools,
                 )
+
+            # Extract skill features for inference
+            features = extractor.extract_from_content(content, skill_name)
+
+            # Build and register SkillFeature
+            existing_feature = inferencer.get_feature(skill_name)
+            skill_feature = extractor.build_skill_feature(
+                skill_name,
+                features,
+                existing_feature,
+            )
+            inferencer.register_feature(skill_feature)
+
+            logger.debug(
+                "Registered feature for skill '%s': %d keywords, %d extensions, "
+                "%d mcp_servers, conversational=%s",
+                skill_name,
+                len(skill_feature.keywords),
+                len(skill_feature.file_extensions),
+                len(skill_feature.mcp_servers),
+                skill_feature.is_conversational,
+            )
+
         except Exception as e:
             logger.debug(
-                "Failed to parse uses_tools for skill '%s': %s",
+                "Failed to parse skill '%s': %s",
                 skill_name,
                 e,
             )
