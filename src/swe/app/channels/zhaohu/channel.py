@@ -573,10 +573,12 @@ class ZhaohuChannel(BaseChannel):
         pc_params2 = url_quote(
             base64.b64encode(pc_params_str.encode()).decode(),
         )
+        pc_web_config = "eyJuYW1lIjoi6LSi5a%2BMVysiLCJ5c3RBdXRoIjoidHJ1ZSJ9"
 
         # Build final URL
         url = (
             f"CMBMobileOA:///?pcSysId={self.cron_task_sys_id}"
+            f"&pcWebConfig={pc_web_config}"
             f"&pcParams={pc_params2}"
         )
 
@@ -616,7 +618,7 @@ class ZhaohuChannel(BaseChannel):
                 "type": "content",
                 "list": [
                     {
-                        "type": 3,
+                        "type": [3],
                         "content": "点击跳转小助claw版查看",
                         "style": 1,
                         "action": 3,
@@ -988,6 +990,14 @@ class ZhaohuChannel(BaseChannel):
 
         # Query tasks from CronManager
         tasks: list = []
+        logger.info(
+            "zhaohu _query_task_progress: workspace=%s, cron_manager=%s, "
+            "workspace_dir=%s, user_id=%s",
+            self._workspace is not None,
+            self._workspace.cron_manager if self._workspace else None,
+            self._workspace.workspace_dir if self._workspace else None,
+            user_id,
+        )
         if self._workspace and self._workspace.cron_manager:
             try:
                 raw_tasks = await self._workspace.cron_manager.query_user_tasks_by_date(

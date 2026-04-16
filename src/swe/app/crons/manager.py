@@ -578,22 +578,16 @@ class CronManager:  # pylint: disable=too-many-public-methods
 
         Args:
             jobs: List of all jobs
-            user_id: User's sapId/tenant_id
+            user_id: User's sapId
 
         Returns:
-            List of jobs belonging to the user
+            List of jobs with tenant_id matching user_id
         """
         user_jobs = []
         for job in jobs:
             # Check tenant_id match
             if job.tenant_id and job.tenant_id == user_id:
                 user_jobs.append(job)
-                continue
-            # Check dispatch.target.user_id match
-            if job.dispatch and job.dispatch.target:
-                target_user_id = job.dispatch.target.user_id
-                if target_user_id == user_id:
-                    user_jobs.append(job)
         return user_jobs
 
     def _calculate_run_times_on_date(
@@ -729,7 +723,31 @@ class CronManager:  # pylint: disable=too-many-public-methods
             List of task info dicts with job_id, task_name, status, etc.
         """
         jobs = await self.list_jobs()
+        # pylint: disable=protected-access
+        repo_path = getattr(self._repo, "_path", "unknown")
+        # pylint: enable=protected-access
+        logger.info(
+            "query_user_tasks_by_date: list_jobs returned %d total jobs, "
+            "user_id=%s, repo_path=%s",
+            len(jobs),
+            user_id,
+            repo_path,
+        )
+        for job in jobs:
+            logger.info(
+                "query_user_tasks_by_date: job.id=%s, job.tenant_id=%s, "
+                "job.name=%s, job.enabled=%s",
+                job.id,
+                job.tenant_id,
+                job.name,
+                job.enabled,
+            )
         user_jobs = self._filter_jobs_by_user(jobs, user_id)
+        logger.info(
+            "query_user_tasks_by_date: filtered %d jobs for user_id=%s",
+            len(user_jobs),
+            user_id,
+        )
         tasks: list[Dict[str, Any]] = []
 
         for job in user_jobs:
