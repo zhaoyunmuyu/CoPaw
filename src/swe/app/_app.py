@@ -297,7 +297,7 @@ async def lifespan(
             traceback.format_exc(),
         )
 
-    # --- Initialize instance module ---
+    # --- Initialize instance module config---
     from .instance.router import init_instance_module
 
     init_instance_module(db_connection)
