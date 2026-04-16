@@ -25,6 +25,10 @@ class SkillFeature:
         keywords: Trigger keywords in user messages or tool inputs
         tools_hint: Tools likely used by this skill
         tool_patterns: Patterns for matching tool sequences
+        trigger_keywords: Explicit trigger keywords from SKILL.md
+        description_keywords: Auto-extracted keywords from description
+        mcp_servers: MCP server names this skill uses
+        is_conversational: Whether this is a conversational Q&A skill
     """
 
     skill_name: str
@@ -32,6 +36,11 @@ class SkillFeature:
     keywords: list[str] = field(default_factory=list)
     tools_hint: list[str] = field(default_factory=list)
     tool_patterns: list[list[str]] = field(default_factory=list)
+    # New fields for skill recognition enhancement
+    trigger_keywords: list[str] = field(default_factory=list)
+    description_keywords: list[str] = field(default_factory=list)
+    mcp_servers: list[str] = field(default_factory=list)
+    is_conversational: bool = False
 
 
 # Built-in skill features for legacy skill support
@@ -275,6 +284,132 @@ class SkillFeatureInferencer:
             SkillFeature if exists, None otherwise
         """
         return self._features.get(skill_name)
+
+    def _count_keyword_matches(
+        self,
+        keywords: list[str],
+        message_lower: str,
+    ) -> int:
+        """Count how many keywords match the message."""
+        return sum(1 for kw in keywords if kw.lower() in message_lower)
+
+    def _update_best_match(
+        self,
+        skill_name: str,
+        confidence: float,
+        best_skill: Optional[str],
+        best_confidence: float,
+    ) -> tuple[Optional[str], float]:
+        """Update best match if confidence is higher."""
+        if confidence > best_confidence:
+            return skill_name, confidence
+        return best_skill, best_confidence
+
+    def infer_skill_from_user_message(
+        self,
+        user_message: str,
+        enabled_skills: list[str],
+    ) -> tuple[Optional[str], float]:
+        """Infer skill attribution from user message (Layer 0).
+
+        Matches user message against trigger_keywords and description_keywords
+        to identify conversational Q&A skills.
+
+        Args:
+            user_message: User's message text
+            enabled_skills: List of currently enabled skills
+
+        Returns:
+            Tuple of (skill_name, confidence) or (None, 0.0)
+        """
+        message_lower = user_message.lower()
+        best_skill: Optional[str] = None
+        best_confidence = 0.0
+
+        for skill_name in enabled_skills:
+            feature = self._features.get(skill_name)
+            if not feature:
+                continue
+
+            # Check explicit trigger keywords (high confidence)
+            if feature.trigger_keywords:
+                trigger_matches = self._count_keyword_matches(
+                    feature.trigger_keywords,
+                    message_lower,
+                )
+                if trigger_matches > 0:
+                    confidence = min(0.95, 0.7 + trigger_matches * 0.1)
+                    best_skill, best_confidence = self._update_best_match(
+                        skill_name,
+                        confidence,
+                        best_skill,
+                        best_confidence,
+                    )
+                    continue
+
+            # Check auto-extracted keywords
+            keyword_matches = 0
+            if feature.keywords:
+                keyword_matches = self._count_keyword_matches(
+                    feature.keywords,
+                    message_lower,
+                )
+
+            if keyword_matches > 0:
+                confidence = min(0.85, 0.4 + keyword_matches * 0.15)
+                best_skill, best_confidence = self._update_best_match(
+                    skill_name,
+                    confidence,
+                    best_skill,
+                    best_confidence,
+                )
+                continue
+
+            # Check description_keywords if available
+            if feature.description_keywords:
+                desc_matches = self._count_keyword_matches(
+                    feature.description_keywords,
+                    message_lower,
+                )
+                if desc_matches > 0:
+                    confidence = min(0.75, 0.35 + desc_matches * 0.12)
+                    best_skill, best_confidence = self._update_best_match(
+                        skill_name,
+                        confidence,
+                        best_skill,
+                        best_confidence,
+                    )
+
+        return best_skill, best_confidence
+
+    def infer_skill_from_mcp_server(
+        self,
+        mcp_server: str,
+        enabled_skills: list[str],
+    ) -> tuple[Optional[str], float]:
+        """Infer skill attribution from MCP server name.
+
+        Args:
+            mcp_server: MCP server name used in tool call
+            enabled_skills: List of currently enabled skills
+
+        Returns:
+            Tuple of (skill_name, confidence) or (None, 0.0)
+        """
+        server_lower = mcp_server.lower()
+
+        for skill_name in enabled_skills:
+            feature = self._features.get(skill_name)
+            if not feature:
+                continue
+
+            # Check if any MCP server matches
+            if feature.mcp_servers:
+                for registered_server in feature.mcp_servers:
+                    if registered_server.lower() == server_lower:
+                        return skill_name, 0.85
+
+        return None, 0.0
 
 
 # Global instance

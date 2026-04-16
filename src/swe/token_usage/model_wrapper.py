@@ -23,6 +23,40 @@ class TokenRecordingModelWrapper(ChatModelBase):
         self._model = model
         self._provider_id = provider_id
 
+    def _extract_usage(self, result: ChatResponse) -> ChatUsage | None:
+        """Extract usage from result using same logic as old version.
+
+        Args:
+            result: Model response
+
+        Returns:
+            ChatUsage or None
+        """
+        usage = None
+
+        # 1. Check result.metadata.usage
+        metadata = getattr(result, "metadata", None)
+        if metadata and isinstance(metadata, dict):
+            usage = metadata.get("usage")
+
+        # 2. Check result.usage directly
+        if usage is None:
+            usage = getattr(result, "usage", None)
+
+        # 3. Try to get from raw response
+        if usage is None:
+            raw = getattr(result, "raw", None)
+            if raw:
+                usage = getattr(raw, "usage", None)
+                if usage is None and isinstance(raw, dict):
+                    usage = raw.get("usage")
+
+        # 4. Try to get from model's _last_usage (fallback)
+        if usage is None:
+            usage = getattr(self._model, "_last_usage", None)
+
+        return usage
+
     async def _record_usage(self, usage: ChatUsage | None) -> None:
         if usage is None:
             return
@@ -55,7 +89,10 @@ class TokenRecordingModelWrapper(ChatModelBase):
 
         if isinstance(result, AsyncGenerator):
             return self._wrap_stream(result)
-        await self._record_usage(getattr(result, "usage", None))
+
+        # Extract usage using same logic as old version
+        usage = self._extract_usage(result)
+        await self._record_usage(usage)
         return result
 
     async def _wrap_stream(
@@ -67,4 +104,13 @@ class TokenRecordingModelWrapper(ChatModelBase):
             if getattr(chunk, "usage", None) is not None:
                 last_usage = chunk.usage
             yield chunk
+
+        # Try model's _last_usage if no usage from stream
+        if last_usage is None:
+            last_usage = getattr(self._model, "_last_usage", None)
+
         await self._record_usage(last_usage)
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate attribute access to wrapped model."""
+        return getattr(self._model, name)

@@ -103,6 +103,10 @@ class SkillInvocationDetector:
         self._idle_counters: dict[str, int] = {}
         self._recent_tools: list[str] = []
 
+        # Layer 0: User message detection cache
+        self._message_detected_skill: Optional[str] = None
+        self._message_detected_confidence: float = 0.0
+
     def set_enabled_skills(self, skills: list[str]) -> None:
         """Set the list of enabled skills.
 
@@ -111,6 +115,40 @@ class SkillInvocationDetector:
         """
         self._enabled_skills = set(skills)
         logger.debug("Enabled skills set: %s", skills)
+
+    def detect_from_user_message(
+        self,
+        user_message: str,
+    ) -> tuple[Optional[str], float]:
+        """Layer 0: Detect skill from user message content.
+
+        This method should be called at the start of a trace, before any
+        tool calls are made. The result is cached for use during tool
+        call detection.
+
+        Args:
+            user_message: User's message text
+
+        Returns:
+            Tuple of (skill_name, confidence) or (None, 0.0)
+        """
+        enabled_skills = list(self._enabled_skills)
+
+        skill, confidence = self._inferencer.infer_skill_from_user_message(
+            user_message,
+            enabled_skills,
+        )
+
+        if skill:
+            self._message_detected_skill = skill
+            self._message_detected_confidence = confidence
+            logger.debug(
+                "Layer 0 detected skill '%s' from user message (confidence: %.2f)",
+                skill,
+                confidence,
+            )
+
+        return skill, confidence
 
     def set_tracing_context(
         self,
@@ -251,9 +289,11 @@ class SkillInvocationDetector:
         """Infer skill attribution for tools without explicit declarations.
 
         Uses multiple layers:
-        1. Feature matching (file extensions, keywords)
-        2. Tool sequence patterns
-        3. Tool-skill hints
+        0. Cached user message detection (if available)
+        1. MCP server matching
+        2. Feature matching (file extensions, keywords)
+        3. Tool sequence patterns
+        4. Tool-skill hints
 
         Args:
             tool_name: Tool name
@@ -264,6 +304,28 @@ class SkillInvocationDetector:
             Tuple of (primary_skill, weights)
         """
         enabled_skills = list(self._enabled_skills)
+
+        # Layer 0: Check cached user message detection
+        if (
+            self._message_detected_skill
+            and self._message_detected_confidence >= 0.7
+        ):
+            skill = self._message_detected_skill
+            confidence = self._message_detected_confidence
+            await self._ensure_skill_active(skill, confidence, tool_name)
+            self._context_manager.record_tool_call(tool_name, mcp_server)
+            return skill, {skill: confidence}
+
+        # Layer 1: MCP server matching
+        if mcp_server:
+            skill, confidence = self._inferencer.infer_skill_from_mcp_server(
+                mcp_server,
+                enabled_skills,
+            )
+            if skill and confidence >= 0.8:
+                await self._ensure_skill_active(skill, confidence, tool_name)
+                self._context_manager.record_tool_call(tool_name, mcp_server)
+                return skill, {skill: confidence}
 
         # Layer 2: Feature matching
         skill, confidence = self._inferencer.infer_skill_from_tool_input(
@@ -559,6 +621,9 @@ class SkillInvocationDetector:
         self._idle_counters.clear()
         self._recent_tools.clear()
         self._context_manager.clear()
+        # Clear Layer 0 cache
+        self._message_detected_skill = None
+        self._message_detected_confidence = 0.0
 
 
 # Global detector instance (per-request, should be reset)

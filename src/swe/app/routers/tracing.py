@@ -16,7 +16,6 @@ from fastapi.responses import StreamingResponse
 from ...tracing import get_trace_manager, has_trace_manager
 from ...tracing.models import (
     OverviewStats,
-    SkillToolsStats,
     TraceDetail,
     TraceDetailWithTimeline,
     SessionStats,
@@ -801,81 +800,3 @@ async def get_trace_timeline(trace_id: str) -> TraceDetailWithTimeline:
         raise HTTPException(status_code=404, detail="Trace not found")
 
     return detail
-
-
-@router.get("/skills/{skill_name}/tools", response_model=SkillToolsStats)
-async def get_skill_tools_stats(
-    skill_name: str,
-    start_date: Optional[str] = Query(
-        None,
-        description="Start date (YYYY-MM-DD)",
-    ),
-    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
-) -> SkillToolsStats:
-    """Get tools used by a specific skill.
-
-    Returns statistics about which tools are used by the skill,
-    including MCP tools and attribution confidence.
-
-    Args:
-        skill_name: Skill identifier
-        start_date: Start date filter
-        end_date: End date filter
-
-    Returns:
-        Skill tools statistics
-    """
-    try:
-        manager = get_trace_manager()
-        store = manager.store
-    except RuntimeError:
-        return SkillToolsStats(skill_name=skill_name)
-
-    start = _parse_date(start_date, "start_date")
-    end = _parse_date(end_date, "end_date", add_day=True)
-
-    return await store.get_skill_tools_stats(skill_name, start, end)
-
-
-@router.get("/skills/attribution", response_model=dict)
-async def get_skill_attribution(
-    tool_name: Optional[str] = Query(
-        None,
-        description="Filter by tool name",
-    ),
-    start_date: Optional[str] = Query(
-        None,
-        description="Start date (YYYY-MM-DD)",
-    ),
-    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
-) -> dict:
-    """Get skill-tool attribution details.
-
-    Returns how tools are attributed to skills, including
-    multi-skill attribution weights and confidence levels.
-
-    Args:
-        tool_name: Optional filter by tool name
-        start_date: Start date filter
-        end_date: End date filter
-
-    Returns:
-        Tool attribution details
-    """
-    try:
-        manager = get_trace_manager()
-        store = manager.store
-    except RuntimeError:
-        return {"attributions": []}
-
-    start = _parse_date(start_date, "start_date")
-    end = _parse_date(end_date, "end_date", add_day=True)
-
-    attributions = await store.get_tool_skill_attributions(
-        tool_name=tool_name,
-        start_date=start,
-        end_date=end,
-    )
-    return {
-        "attributions": [a.model_dump() for a in attributions],
-    }

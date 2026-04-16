@@ -79,14 +79,6 @@ class Span(BaseModel):
         default=None,
         description="Skill name for skill events",
     )
-    skill_names: Optional[list[str]] = Field(
-        default=None,
-        description="List of skill names that claim ownership of this tool call",
-    )
-    skill_weights: Optional[dict[str, float]] = Field(
-        default=None,
-        description="Weight distribution for multi-skill attribution (sum = 1.0)",
-    )
     mcp_server: Optional[str] = Field(
         default=None,
         description="MCP server name if this tool is from MCP",
@@ -389,40 +381,6 @@ class TraceDetailWithTimeline(BaseModel):
     total_llm_calls: int = 0
 
 
-class SkillToolAttribution(BaseModel):
-    """Skill attribution for a tool call."""
-
-    skill_name: str
-    calls: int = 0
-    weight: float = 0.0
-    confidence: float = 1.0
-
-
-class ToolAttributionDetail(BaseModel):
-    """Detailed attribution for a tool."""
-
-    tool_name: str
-    total_calls: int = 0
-    skill_attribution: dict[str, SkillToolAttribution] = Field(
-        default_factory=dict,
-    )
-    ambiguous_calls: int = 0
-    avg_confidence: float = 1.0
-
-
-class SkillToolsStats(BaseModel):
-    """Statistics for tools used by a skill."""
-
-    skill_name: str
-    total_calls: int = 0
-    avg_duration_ms: int = 0
-    success_rate: float = 1.0
-    tools_used: list[dict[str, Any]] = Field(default_factory=list)
-    mcp_servers_used: list[str] = Field(default_factory=list)
-    trigger_reasons: dict[str, int] = Field(default_factory=dict)
-    avg_confidence: float = 1.0
-
-
 class UserListItem(BaseModel):
     """User list item with stats."""
 
@@ -444,6 +402,8 @@ class TraceListItem(BaseModel):
     start_time: datetime
     duration_ms: Optional[int] = None
     total_tokens: int = 0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
     model_name: Optional[str] = None
     status: str
     skills_count: int = 0

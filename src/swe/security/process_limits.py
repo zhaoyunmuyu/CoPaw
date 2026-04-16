@@ -27,7 +27,15 @@ def _supports_unix_rlimits() -> bool:
         and resource is not None
         and hasattr(resource, "setrlimit")
         and hasattr(resource, "RLIMIT_CPU")
+    )
+
+
+def _supports_memory_rlimit(scope: ProcessLimitScope) -> bool:
+    """Return True when ``RLIMIT_AS`` is usable for the given scope."""
+    return (
+        resource is not None
         and hasattr(resource, "RLIMIT_AS")
+        and not (scope == "shell" and sys.platform == "darwin")
     )
 
 
@@ -41,6 +49,7 @@ class CurrentProcessLimitPolicy:
     cpu_time_limit_seconds: int | None
     memory_max_mb: int | None
     should_enforce: bool
+    should_enforce_memory_limit: bool = True
     diagnostic: str | None = None
 
     @property
@@ -67,13 +76,19 @@ class CurrentProcessLimitPolicy:
         rlimit_cpu = self.rlimit_cpu
         rlimit_as = self.rlimit_as
 
+        should_enforce_memory_limit = self.should_enforce_memory_limit
+
         def _apply_limits() -> None:
             if cpu_time_limit_seconds is not None and rlimit_cpu is not None:
                 resource.setrlimit(
                     rlimit_cpu,
                     (cpu_time_limit_seconds, cpu_time_limit_seconds),
                 )
-            if memory_max_bytes is not None and rlimit_as is not None:
+            if (
+                should_enforce_memory_limit
+                and memory_max_bytes is not None
+                and rlimit_as is not None
+            ):
                 resource.setrlimit(
                     rlimit_as,
                     (memory_max_bytes, memory_max_bytes),
@@ -89,7 +104,9 @@ def resolve_current_process_limit_policy(
     tenant_id = get_current_tenant_id()
     config = load_config(get_tenant_config_path(tenant_id))
     process_limits = config.security.process_limits
-    scope_enabled = process_limits.shell if scope == "shell" else process_limits.mcp_stdio
+    scope_enabled = (
+        process_limits.shell if scope == "shell" else process_limits.mcp_stdio
+    )
     enabled = bool(process_limits.enabled and scope_enabled)
     cpu_time_limit_seconds = process_limits.cpu_time_limit_seconds
     memory_max_mb = process_limits.memory_max_mb
@@ -102,6 +119,7 @@ def resolve_current_process_limit_policy(
             cpu_time_limit_seconds=cpu_time_limit_seconds,
             memory_max_mb=memory_max_mb,
             should_enforce=False,
+            should_enforce_memory_limit=False,
         )
 
     if not _supports_unix_rlimits():
@@ -117,8 +135,24 @@ def resolve_current_process_limit_policy(
             cpu_time_limit_seconds=cpu_time_limit_seconds,
             memory_max_mb=memory_max_mb,
             should_enforce=False,
+            should_enforce_memory_limit=False,
             diagnostic=diagnostic,
         )
+
+    should_enforce_memory_limit = bool(
+        memory_max_mb is not None and _supports_memory_rlimit(scope),
+    )
+    should_enforce = bool(
+        cpu_time_limit_seconds is not None or should_enforce_memory_limit,
+    )
+    diagnostic = None
+    if memory_max_mb is not None and not should_enforce_memory_limit:
+        diagnostic = (
+            f"Tenant process limits for {scope} are enabled for tenant "
+            f"{tenant_id or 'default'}, but memory limits are not "
+            "enforced on this platform."
+        )
+        logger.warning(diagnostic)
 
     return CurrentProcessLimitPolicy(
         tenant_id=tenant_id,
@@ -126,6 +160,7 @@ def resolve_current_process_limit_policy(
         enabled=True,
         cpu_time_limit_seconds=cpu_time_limit_seconds,
         memory_max_mb=memory_max_mb,
-        should_enforce=True,
+        should_enforce=should_enforce,
+        should_enforce_memory_limit=should_enforce_memory_limit,
+        diagnostic=diagnostic,
     )
-

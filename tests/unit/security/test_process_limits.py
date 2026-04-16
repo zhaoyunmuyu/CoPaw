@@ -87,7 +87,9 @@ def test_process_limits_config_defaults_to_disabled() -> None:
 def test_resolve_current_process_limit_policy_uses_current_tenant_config(
     tmp_path: Path,
 ) -> None:
-    from swe.security.process_limits import resolve_current_process_limit_policy
+    from swe.security.process_limits import (
+        resolve_current_process_limit_policy,
+    )
 
     _write_tenant_config(
         tmp_path,
@@ -122,7 +124,9 @@ def test_resolve_current_process_limit_policy_uses_current_tenant_config(
 
 
 def test_resolved_policy_builds_unix_preexec_fn(tmp_path: Path) -> None:
-    from swe.security.process_limits import resolve_current_process_limit_policy
+    from swe.security.process_limits import (
+        resolve_current_process_limit_policy,
+    )
 
     _write_tenant_config(
         tmp_path,
@@ -139,7 +143,9 @@ def test_resolved_policy_builds_unix_preexec_fn(tmp_path: Path) -> None:
         with tenant_context(tenant_id="tenant-a"):
             policy = resolve_current_process_limit_policy("shell")
 
-        with patch("swe.security.process_limits.resource.setrlimit") as mock_setrlimit:
+        with patch(
+            "swe.security.process_limits.resource.setrlimit",
+        ) as mock_setrlimit:
             preexec_fn = policy.build_preexec_fn()
             assert preexec_fn is not None
             preexec_fn()
@@ -150,8 +156,43 @@ def test_resolved_policy_builds_unix_preexec_fn(tmp_path: Path) -> None:
     ]
 
 
+def test_shell_policy_skips_memory_rlimit_on_macos(tmp_path: Path) -> None:
+    from swe.security.process_limits import (
+        resolve_current_process_limit_policy,
+    )
+
+    _write_tenant_config(
+        tmp_path,
+        "tenant-a",
+        enabled=True,
+        cpu_time_limit_seconds=3,
+        memory_max_mb=64,
+    )
+
+    with patch("swe.constant.WORKING_DIR", tmp_path), patch(
+        "swe.config.utils.WORKING_DIR",
+        tmp_path,
+    ), patch("swe.security.process_limits.sys.platform", "darwin"):
+        with tenant_context(tenant_id="tenant-a"):
+            policy = resolve_current_process_limit_policy("shell")
+
+        with patch(
+            "swe.security.process_limits.resource.setrlimit",
+        ) as mock_setrlimit:
+            preexec_fn = policy.build_preexec_fn()
+            assert preexec_fn is not None
+            preexec_fn()
+
+    assert mock_setrlimit.call_args_list == [
+        call(policy.rlimit_cpu, (3, 3)),
+    ]
+    assert "memory" in (policy.diagnostic or "").lower()
+
+
 def test_resolved_policy_reports_unsupported_platform(tmp_path: Path) -> None:
-    from swe.security.process_limits import resolve_current_process_limit_policy
+    from swe.security.process_limits import (
+        resolve_current_process_limit_policy,
+    )
 
     _write_tenant_config(
         tmp_path,

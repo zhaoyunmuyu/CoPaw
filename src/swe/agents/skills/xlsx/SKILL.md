@@ -4,12 +4,6 @@ description: "Use this skill any time a spreadsheet file is the primary input or
 license: Proprietary. LICENSE.txt has complete terms
 metadata:
   builtin_skill_version: "1.0"
-  swe:
-    uses_tools:
-      - execute_shell_command
-      - read_file
-      - write_file
-      - edit_file
 ---
 
 > **Important:** All `scripts/` paths are relative to this skill directory.
