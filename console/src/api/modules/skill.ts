@@ -2,6 +2,8 @@ import { request } from "../request";
 import { getApiUrl } from "../config";
 import { buildAuthHeaders } from "../authHeaders";
 import type {
+  BroadcastDefaultAgentsResponse,
+  BroadcastTenantListResponse,
   BuiltinImportSpec,
   HubInstallTaskResponse,
   HubSkillSpec,
@@ -35,6 +37,7 @@ export function invalidateSkillCache(options?: {
   agentId?: string;
   workspaces?: boolean;
   pool?: boolean;
+  broadcastTenants?: boolean;
 }): void {
   // Clear all skill-related cache entries
   for (const key of Array.from(apiCache.keys())) {
@@ -50,6 +53,8 @@ export function invalidateSkillCache(options?: {
     if (options.pool && key === "/skills/pool") {
       apiCache.delete(key);
     } else if (options.workspaces && key === "/skills/workspaces") {
+      apiCache.delete(key);
+    } else if (options.broadcastTenants && key === "/skills/pool/broadcast/tenants") {
       apiCache.delete(key);
     } else if (options.agentId && key === `/skills?agent=${options.agentId}`) {
       apiCache.delete(key);
@@ -141,6 +146,31 @@ export const skillApi = {
     setCache(cacheKey, data);
     return data;
   },
+
+  listBroadcastTenants: async () => {
+    const cacheKey = "/skills/pool/broadcast/tenants";
+    const cached = getCached<BroadcastTenantListResponse>(cacheKey);
+    if (cached) return cached;
+
+    const data = await request<BroadcastTenantListResponse>(
+      "/skills/pool/broadcast/tenants",
+    );
+    setCache(cacheKey, data);
+    return data;
+  },
+
+  broadcastPoolSkillsToDefaultAgents: (payload: {
+    skill_names: string[];
+    target_tenant_ids: string[];
+    overwrite: boolean;
+  }) =>
+    request<BroadcastDefaultAgentsResponse>(
+      "/skills/pool/broadcast/default-agents",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    ),
 
   refreshSkills: async (agentId?: string) => {
     const opts: RequestInit = { method: "POST" };

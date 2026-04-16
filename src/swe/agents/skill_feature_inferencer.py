@@ -73,20 +73,6 @@ BUILTIN_SKILL_FEATURES: dict[str, SkillFeature] = {
             ["read_file", "execute_shell_command"],
         ],
     ),
-    "browser_cdp": SkillFeature(
-        skill_name="browser_cdp",
-        file_extensions=[],
-        keywords=["cdp", "chrome devtools", "远程调试", "connect_cdp"],
-        tools_hint=["browser_use", "desktop_screenshot"],
-        tool_patterns=[],
-    ),
-    "browser_visible": SkillFeature(
-        skill_name="browser_visible",
-        file_extensions=[],
-        keywords=["可见浏览器", "headed", "真实窗口", "有界面的浏览器"],
-        tools_hint=["browser_use", "desktop_screenshot"],
-        tool_patterns=[],
-    ),
     "cron": SkillFeature(
         skill_name="cron",
         file_extensions=[],

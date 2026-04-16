@@ -19,6 +19,7 @@ from agentscope.tool import Toolkit
 from anyio import ClosedResourceError
 from pydantic import BaseModel
 
+from ..app.mcp.stdio_launcher import build_tenant_aware_stdio_launch_config
 from .command_handler import CommandHandler
 from .hooks import BootstrapHook, MemoryCompactionHook
 from .model_factory import create_model_and_formatter
@@ -45,13 +46,14 @@ from .tools import (
     set_user_timezone,
     write_file,
     create_memory_search_tool,
+    copy_file_to_static,
 )
 from .utils import process_file_and_media_blocks_in_message
 from ..utils.fs_text import sanitize_text_for_json
 from ..constant import (
     WORKING_DIR,
 )
-from ..agents.memory import BaseMemoryManager
+from ..agents.memory.base_memory_manager import BaseMemoryManager
 
 if TYPE_CHECKING:
     from ..config.config import AgentProfileConfig
@@ -238,22 +240,14 @@ class SWEAgent(ToolGuardMixin, ReActAgent):
             "get_current_time": get_current_time,
             "set_user_timezone": set_user_timezone,
             "get_token_usage": get_token_usage,
+            "copy_file_to_static": copy_file_to_static,
         }
-
-        multimodal = get_active_model_supports_multimodal()
 
         # Register only enabled tools
         for tool_name, tool_func in tool_functions.items():
             # If tool not in config, enable by default (backward compatibility)
             if not enabled_tools.get(tool_name, True):
                 logger.debug("Skipped disabled tool: %s", tool_name)
-                continue
-
-            if tool_name in ("view_image", "view_video") and not multimodal:
-                logger.debug(
-                    "Skipped %s — model does not support multimodal",
-                    tool_name,
-                )
                 continue
 
             # Get async_execution setting (default to False for backward
@@ -700,14 +694,32 @@ class SWEAgent(ToolGuardMixin, ReActAgent):
 
         try:
             if transport == "stdio":
+                command = rebuild_info.get("command")
+                if not isinstance(command, str) or not command:
+                    return None
+                launch_config = build_tenant_aware_stdio_launch_config(
+                    command,
+                    rebuild_info.get("args", []),
+                    rebuild_info.get("env", {}),
+                    rebuild_info.get("cwd"),
+                )
                 rebuilt_client = StdIOStatefulClient(
                     name=name,
-                    command=rebuild_info.get("command"),
-                    args=rebuild_info.get("args", []),
-                    env=rebuild_info.get("env", {}),
-                    cwd=rebuild_info.get("cwd"),
+                    command=launch_config.launch_command,
+                    args=launch_config.launch_args,
+                    env=launch_config.env,
+                    cwd=launch_config.cwd,
                 )
-                setattr(rebuilt_client, "_swe_rebuild_info", rebuild_info)
+                setattr(
+                    rebuilt_client,
+                    "_swe_rebuild_info",
+                    {
+                        **rebuild_info,
+                        "launch_command": launch_config.launch_command,
+                        "launch_args": launch_config.launch_args,
+                        "launch_diagnostic": launch_config.diagnostic,
+                    },
+                )
                 return rebuilt_client
 
             raw_headers = rebuild_info.get("headers") or {}

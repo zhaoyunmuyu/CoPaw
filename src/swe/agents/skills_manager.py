@@ -1716,6 +1716,47 @@ class SkillService:
         )
         return skill_name
 
+    def replace_workspace_skill_from_dir(
+        self,
+        *,
+        skill_name: str,
+        source_dir: Path,
+        source: str = "customized",
+        config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        final_name = _normalize_skill_dir_name(skill_name)
+        target_dir = get_workspace_skills_dir(self.workspace_dir) / final_name
+
+        with _staged_skill_dir(final_name) as staged_dir:
+            _copy_skill_dir(source_dir, staged_dir)
+            _scan_skill_dir_or_raise(staged_dir, final_name)
+            _copy_skill_dir(staged_dir, target_dir)
+
+        def _update(payload: dict[str, Any]) -> None:
+            payload.setdefault("skills", {})
+            metadata = _build_skill_metadata(
+                final_name,
+                target_dir,
+                source=source,
+                protected=False,
+            )
+            payload["skills"][final_name] = {
+                "enabled": True,
+                "channels": ["all"],
+                "source": metadata["source"],
+                "config": dict(config or {}),
+                "metadata": metadata,
+                "requirements": metadata["requirements"],
+                "updated_at": _timestamp(),
+            }
+
+        _mutate_json(
+            get_workspace_skill_manifest_path(self.workspace_dir),
+            _default_workspace_manifest(),
+            _update,
+        )
+        return {"success": True, "name": final_name}
+
     def save_skill(
         self,
         *,
@@ -2365,7 +2406,9 @@ class SkillPoolService:
         if entry is None:
             return False
 
-        skill_dir = get_skill_pool_dir(working_dir=self.working_dir) / skill_name
+        skill_dir = (
+            get_skill_pool_dir(working_dir=self.working_dir) / skill_name
+        )
         if skill_dir.exists():
             shutil.rmtree(skill_dir)
 
@@ -2453,7 +2496,9 @@ class SkillPoolService:
             str(edit_target["mode"]) == "rename" and final_name != skill_name
         )
         keep_original = _is_pool_builtin_entry(entry) and is_rename
-        skill_dir = get_skill_pool_dir(working_dir=self.working_dir) / final_name
+        skill_dir = (
+            get_skill_pool_dir(working_dir=self.working_dir) / final_name
+        )
         old_skill_dir = (
             get_skill_pool_dir(working_dir=self.working_dir) / skill_name
         )
@@ -2540,7 +2585,9 @@ class SkillPoolService:
             return {"success": False, "reason": "not_found"}
 
         final_name = _normalize_skill_dir_name(target_name or skill_name)
-        target_dir = get_skill_pool_dir(working_dir=self.working_dir) / final_name
+        target_dir = (
+            get_skill_pool_dir(working_dir=self.working_dir) / final_name
+        )
         manifest = read_skill_pool_manifest(
             reconcile=False,
             working_dir=self.working_dir,
@@ -2596,6 +2643,45 @@ class SkillPoolService:
 
         return {"success": True, "name": final_name}
 
+    def replace_pool_skill_from_dir(
+        self,
+        *,
+        skill_name: str,
+        source_dir: Path,
+        source: str = "customized",
+        config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        final_name = _normalize_skill_dir_name(skill_name)
+        target_dir = (
+            get_skill_pool_dir(working_dir=self.working_dir) / final_name
+        )
+
+        with _staged_skill_dir(final_name) as staged_dir:
+            _copy_skill_dir(source_dir, staged_dir)
+            _scan_skill_dir_or_raise(staged_dir, final_name)
+            _copy_skill_dir(staged_dir, target_dir)
+
+        def _update(payload: dict[str, Any]) -> None:
+            payload.setdefault("skills", {})
+            entry = _build_skill_metadata(
+                final_name,
+                target_dir,
+                source=source,
+                protected=False,
+                compute_signature=source == "builtin",
+            )
+            if config is not None:
+                entry["config"] = dict(config)
+            payload["skills"][final_name] = entry
+
+        _mutate_json(
+            get_pool_skill_manifest_path(working_dir=self.working_dir),
+            _default_pool_manifest(),
+            _update,
+        )
+
+        return {"success": True, "name": final_name}
+
     def download_to_workspace(
         self,
         skill_name: str,
@@ -2612,7 +2698,9 @@ class SkillPoolService:
         if entry is None:
             return {"success": False, "reason": "not_found"}
 
-        source_dir = get_skill_pool_dir(working_dir=self.working_dir) / skill_name
+        source_dir = (
+            get_skill_pool_dir(working_dir=self.working_dir) / skill_name
+        )
         final_name = _normalize_skill_dir_name(target_name or skill_name)
         target_dir = get_workspace_skills_dir(workspace_dir) / final_name
         workspace_manifest = read_skill_manifest(

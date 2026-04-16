@@ -38,6 +38,23 @@ export interface WorkspaceSkillSummary {
   skills: SkillSpec[];
 }
 
+export interface BroadcastTenantListResponse {
+  tenant_ids: string[];
+}
+
+export interface BroadcastDefaultAgentTenantResult {
+  tenant_id: string;
+  success: boolean;
+  bootstrapped: boolean;
+  pool_updated: string[];
+  default_agent_updated: string[];
+  error?: string;
+}
+
+export interface BroadcastDefaultAgentsResponse {
+  results: BroadcastDefaultAgentTenantResult[];
+}
+
 export interface BuiltinImportSpec {
   name: string;
   description?: string;

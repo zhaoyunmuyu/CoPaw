@@ -25,13 +25,12 @@ import dayjs from "dayjs";
 import api from "../../../api";
 import { invalidateSkillCache } from "../../../api/modules/skill";
 import type {
+  BroadcastDefaultAgentTenantResult,
   BuiltinImportSpec,
   PoolSkillSpec,
-  WorkspaceSkillSummary,
 } from "../../../api/types";
 import { parseErrorDetail } from "../../../utils/error";
 import { handleScanError, checkScanWarnings } from "../../../utils/scanError";
-import { getAgentDisplayName } from "../../../utils/agentDisplayName";
 import {
   getSkillDisplaySource,
   getPoolBuiltinStatusLabel,
@@ -54,7 +53,7 @@ const SKILL_POOL_ZIP_MAX_MB = 100;
 function SkillPoolPage() {
   const { t } = useTranslation();
   const [skills, setSkills] = useState<PoolSkillSpec[]>([]);
-  const [workspaces, setWorkspaces] = useState<WorkspaceSkillSummary[]>([]);
+  const [broadcastTenantIds, setBroadcastTenantIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<PoolMode | null>(null);
   const [activeSkill, setActiveSkill] = useState<PoolSkillSpec | null>(null);
@@ -90,26 +89,22 @@ function SkillPoolPage() {
   const selectAllPool = () =>
     setSelectedPoolSkills(new Set(skills.map((s) => s.name)));
 
-  // Form state for create/edit drawer
   const [form] = Form.useForm();
   const [drawerContent, setDrawerContent] = useState("");
   const [showMarkdown, setShowMarkdown] = useState(true);
-
-  // Use ref to cache data and avoid unnecessary reloads
   const dataLoadedRef = useRef(false);
 
   const loadData = useCallback(async (forceReload = false) => {
-    // Skip if already loaded and not forcing reload
     if (dataLoadedRef.current && !forceReload) return;
 
     setLoading(true);
     try {
-      const [poolSkills, workspaceSummaries] = await Promise.all([
+      const [poolSkills, tenantResponse] = await Promise.all([
         api.listSkillPoolSkills(),
-        api.listSkillWorkspaces(),
+        api.listBroadcastTenants(),
       ]);
       setSkills(poolSkills);
-      setWorkspaces(workspaceSummaries);
+      setBroadcastTenantIds(tenantResponse.tenant_ids || []);
       dataLoadedRef.current = true;
     } catch (error) {
       message.error(
@@ -123,13 +118,13 @@ function SkillPoolPage() {
   const handleRefresh = useCallback(async () => {
     setLoading(true);
     try {
-      invalidateSkillCache({ pool: true, workspaces: true });
-      const [poolSkills, workspaceSummaries] = await Promise.all([
+      invalidateSkillCache({ pool: true, broadcastTenants: true });
+      const [poolSkills, tenantResponse] = await Promise.all([
         api.refreshSkillPool(),
-        api.listSkillWorkspaces(),
+        api.listBroadcastTenants(),
       ]);
       setSkills(poolSkills);
-      setWorkspaces(workspaceSummaries);
+      setBroadcastTenantIds(tenantResponse.tenant_ids || []);
       dataLoadedRef.current = true;
     } catch (error) {
       message.error(
@@ -239,136 +234,66 @@ function SkillPoolPage() {
 
   const handleBroadcast = async (
     broadcastSkillNames: string[],
-    targetWorkspaceIds: string[],
+    targetTenantIds: string[],
   ) => {
     try {
-      for (const skillName of broadcastSkillNames) {
-        let renameMap: Record<string, string> = {};
+      const result = await api.broadcastPoolSkillsToDefaultAgents({
+        skill_names: broadcastSkillNames,
+        target_tenant_ids: targetTenantIds,
+        overwrite: true,
+      });
 
-        while (true) {
-          try {
-            await api.downloadSkillPoolSkill({
-              skill_name: skillName,
-              targets: targetWorkspaceIds.map((workspace_id) => ({
-                workspace_id,
-                target_name: renameMap[workspace_id] || undefined,
-              })),
-            });
-            break;
-          } catch (error) {
-            if (handleScanError(error, t)) return;
-            const detail = parseErrorDetail(error);
-            const conflicts = Array.isArray(detail?.conflicts)
-              ? detail.conflicts
-              : [];
-            if (!conflicts.length) {
-              throw error;
-            }
+      const items = Array.isArray(result.results) ? result.results : [];
+      const succeeded = items.filter((item) => item.success);
+      const failed = items.filter((item) => !item.success);
 
-            // Separate builtin upgrades from regular conflicts.
-            const builtinUpgrades = conflicts.filter(
-              (c: { reason?: string }) => c.reason === "builtin_upgrade",
-            );
-            const regularConflicts = conflicts.filter(
-              (c: { reason?: string }) => c.reason !== "builtin_upgrade",
-            );
-
-            // Handle builtin upgrades: confirm overwrite
-            let needsOverwrite = false;
-            if (builtinUpgrades.length > 0) {
-              const confirmed = await new Promise<boolean>((resolve) => {
-                Modal.confirm({
-                  title: t("skills.builtinUpgradeTitle"),
-                  content: t("skills.builtinUpgradeContent", {
-                    name: skillName,
-                  }),
-                  okText: t("common.confirm"),
-                  cancelText: t("common.cancel"),
-                  onOk: () => resolve(true),
-                  onCancel: () => resolve(false),
-                });
-              });
-              if (!confirmed) return;
-              needsOverwrite = true;
-            }
-
-            // Handle regular conflicts: rename modal
-            if (regularConflicts.length > 0) {
-              const renameItems = regularConflicts
-                .map(
-                  (c: { workspace_id?: string; suggested_name?: string }) => {
-                    if (!c.workspace_id || !c.suggested_name) {
-                      return null;
-                    }
-                    const w = workspaces.find(
-                      (ws) => ws.agent_id === c.workspace_id,
-                    );
-                    const workspaceLabel = getAgentDisplayName(
-                      {
-                        id: c.workspace_id,
-                        name: w?.agent_name ?? "",
-                      },
-                      t,
-                    );
-                    return {
-                      key: c.workspace_id,
-                      label: workspaceLabel,
-                      suggested_name: c.suggested_name,
-                    };
-                  },
-                )
-                .filter(
-                  (
-                    item,
-                  ): item is {
-                    key: string;
-                    label: string;
-                    suggested_name: string;
-                  } => item !== null,
-                );
-
-              if (!renameItems.length && !needsOverwrite) {
-                throw error;
-              }
-
-              if (renameItems.length) {
-                const nextRenameMap = await showConflictRenameModal(
-                  renameItems.map((item) => ({
-                    ...item,
-                    suggested_name: renameMap[item.key] || item.suggested_name,
-                  })),
-                );
-                if (!nextRenameMap) return;
-                renameMap = { ...renameMap, ...nextRenameMap };
-              }
-            }
-
-            // No conflicts left to resolve but nothing actionable
-            if (!needsOverwrite && !regularConflicts.length) {
-              throw error;
-            }
-
-            // Retry: overwrite is safe — renamed targets use new
-            // names so won't be affected by the overwrite flag.
-            if (needsOverwrite) {
-              await api.downloadSkillPoolSkill({
-                skill_name: skillName,
-                targets: targetWorkspaceIds.map((workspace_id) => ({
-                  workspace_id,
-                  target_name: renameMap[workspace_id] || undefined,
-                })),
-                overwrite: true,
-              });
-              break;
-            }
-            // Only regular conflicts — renameMap already updated
-            // above; loop continues to retry with new names.
-          }
-        }
+      if (succeeded.length > 0) {
+        const lines = succeeded.map((item) => {
+          const suffix = item.bootstrapped
+            ? ` (${t("skillPool.broadcastBootstrapped")})`
+            : "";
+          return `• ${item.tenant_id}${suffix}`;
+        });
+        message.success(
+          t("skillPool.broadcastSuccess", { count: succeeded.length }),
+        );
+        Modal.confirm({
+          title: t("skillPool.broadcastResultTitle"),
+          content: (
+            <div style={{ display: "grid", gap: 8 }}>
+              <div>{t("skillPool.broadcastSuccessList")}</div>
+              <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+                {lines.join("\n")}
+              </pre>
+              {failed.length > 0 && (
+                <div>{t("skillPool.broadcastFailureInlineHint")}</div>
+              )}
+            </div>
+          ),
+          okText: t("common.close"),
+          cancelButtonProps: { style: { display: "none" } },
+        });
       }
-      message.success(t("skillPool.broadcastSuccess"));
+
+      if (failed.length > 0) {
+        const failureLines = failed.map(
+          (item: BroadcastDefaultAgentTenantResult) =>
+            `• ${item.tenant_id}: ${item.error || t("skillPool.broadcastFailed")}`,
+        );
+        Modal.confirm({
+          title: t("skillPool.broadcastPartialFailureTitle"),
+          content: (
+            <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+              {failureLines.join("\n")}
+            </pre>
+          ),
+          okText: t("common.close"),
+          cancelButtonProps: { style: { display: "none" } },
+        });
+      }
+
       closeModal();
-      invalidateSkillCache({ pool: true, workspaces: true });
+      invalidateSkillCache({ pool: true, broadcastTenants: true });
       await loadData(true);
       for (const skillName of broadcastSkillNames) {
         await checkScanWarnings(
@@ -418,7 +343,7 @@ function SkillPoolPage() {
         );
       }
       closeImportBuiltin();
-      invalidateSkillCache({ pool: true }); // Clear pool cache
+      invalidateSkillCache({ pool: true });
       await loadData(true);
     } catch (error) {
       const detail = parseErrorDetail(error);
@@ -435,11 +360,9 @@ function SkillPoolPage() {
                 <div key={item.skill_name}>
                   <strong>{item.skill_name}</strong>
                   {"  "}
-                  {t("skillPool.currentVersion")}:{" "}
-                  {item.current_version_text || "-"}
+                  {t("skillPool.currentVersion")}: {item.current_version_text || "-"}
                   {"  ->  "}
-                  {t("skillPool.sourceVersion")}:{" "}
-                  {item.source_version_text || "-"}
+                  {t("skillPool.sourceVersion")}: {item.source_version_text || "-"}
                 </div>
               ))}
             </div>
@@ -512,8 +435,8 @@ function SkillPoolPage() {
         savedAsNew
           ? `${t("common.create")}: ${result.name}`
           : mode === "edit"
-          ? t("common.save")
-          : t("common.create"),
+            ? t("common.save")
+            : t("common.create"),
       );
       closeDrawer();
       invalidateSkillCache({ pool: true });
@@ -562,7 +485,7 @@ function SkillPoolPage() {
       onOk: async () => {
         await api.deleteSkillPoolSkill(skill.name);
         message.success(t("skillPool.deletedFromPool"));
-        invalidateSkillCache({ pool: true }); // Clear pool cache
+        invalidateSkillCache({ pool: true });
         await loadData(true);
       },
     });
@@ -603,7 +526,7 @@ function SkillPoolPage() {
         } else {
           message.info(t("skillPool.noNewImports"));
         }
-        invalidateSkillCache({ pool: true }); // Clear pool cache
+        invalidateSkillCache({ pool: true });
         await loadData(true);
         if (result.count > 0 && Array.isArray(result.imported)) {
           for (const name of result.imported) {
@@ -631,13 +554,11 @@ function SkillPoolPage() {
           break;
         }
         const newRenames = await showConflictRenameModal(
-          conflicts.map(
-            (c: { skill_name?: string; suggested_name?: string }) => ({
-              key: c.skill_name || "",
-              label: c.skill_name || "",
-              suggested_name: c.suggested_name || "",
-            }),
-          ),
+          conflicts.map((c: { skill_name?: string; suggested_name?: string }) => ({
+            key: c.skill_name || "",
+            label: c.skill_name || "",
+            suggested_name: c.suggested_name || "",
+          })),
         );
         if (!newRenames) break;
         renameMap = { ...renameMap, ...newRenames };
@@ -655,7 +576,7 @@ function SkillPoolPage() {
       });
       message.success(`${t("common.create")}: ${result.name}`);
       closeImportModal();
-      invalidateSkillCache({ pool: true }); // Clear pool cache
+      invalidateSkillCache({ pool: true });
       await loadData(true);
       await checkScanWarnings(
         result.name,
@@ -864,7 +785,6 @@ function SkillPoolPage() {
         }
       />
 
-      {/* ---- Scrollable Content ---- */}
       <div className={styles.content}>
         {loading ? (
           <div className={styles.loading}>
@@ -906,6 +826,9 @@ function SkillPoolPage() {
                         <span className={styles.fileIcon}>
                           {getSkillVisual(skill.name, skill.content)}
                         </span>
+                        <div className={styles.titleRow}>
+                          <h3 className={styles.skillTitle}>{skill.name}</h3>
+                        </div>
                       </div>
                       <div className={styles.statusRow}>
                         <span className={styles.statusLabel}>
@@ -977,7 +900,7 @@ function SkillPoolPage() {
       <BroadcastModal
         open={mode === "broadcast"}
         skills={skills}
-        workspaces={workspaces}
+        tenantIds={broadcastTenantIds}
         initialSkillNames={broadcastInitialNames}
         onCancel={closeModal}
         onConfirm={handleBroadcast}
@@ -1054,11 +977,9 @@ function SkillPoolPage() {
 
           <Form.Item label={t("skills.config")}>
             <Input.TextArea
-              rows={4}
+              rows={6}
               value={configText}
-              onChange={(e) => {
-                setConfigText(e.target.value);
-              }}
+              onChange={(event) => setConfigText(event.target.value)}
               placeholder={t("skills.configPlaceholder")}
             />
           </Form.Item>

@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamable_http_client
 
+from ..mcp.stdio_launcher import build_tenant_aware_stdio_launch_config
 from .command_dispatch import (
     _get_last_user_text,
     _is_command,
@@ -138,14 +139,27 @@ async def _create_mcp_client_with_headers(
     }
 
     if client_config.transport == "stdio":
+        launch_config = build_tenant_aware_stdio_launch_config(
+            client_config.command,
+            client_config.args,
+            client_config.env,
+            client_config.cwd or None,
+        )
         client = StdIOStatefulClient(
             name=client_config.name,
-            command=client_config.command,
-            args=client_config.args,
-            env=client_config.env,
-            cwd=client_config.cwd or None,
+            command=launch_config.launch_command,
+            args=launch_config.launch_args,
+            env=launch_config.env,
+            cwd=launch_config.cwd,
         )
-        setattr(client, "_swe_rebuild_info", rebuild_info)
+        setattr(
+            client, "_swe_rebuild_info", {
+                **rebuild_info,
+                "launch_command": launch_config.launch_command,
+                "launch_args": launch_config.launch_args,
+                "launch_diagnostic": launch_config.diagnostic,
+            },
+        )
         setattr(client, "_swe_temp_client", True)
         return client
 
@@ -182,12 +196,14 @@ async def _create_mcp_client_with_headers(
 
     client.client = client_context
 
-    setattr(client, "_swe_rebuild_info", {
-        **rebuild_info,
-        "headers": merged_headers,
-        "_temp_client": True,
-        "_http_client": http_client,
-    })
+    setattr(
+        client, "_swe_rebuild_info", {
+            **rebuild_info,
+            "headers": merged_headers,
+            "_temp_client": True,
+            "_http_client": http_client,
+        },
+    )
     setattr(client, "_swe_temp_client", True)
 
     return client

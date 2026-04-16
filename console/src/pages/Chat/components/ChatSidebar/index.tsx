@@ -221,6 +221,12 @@ export default function ChatSidebar(props: ChatSidebarProps) {
   }, []);
 
   if (collapsed) {
+    // Calculate total unread execution count for badge
+    const unreadCount = tasks.reduce(
+      (sum, task) => sum + (task.task?.unread_execution_count || 0),
+      0,
+    );
+
     return (
       <>
         <Style />
@@ -230,7 +236,7 @@ export default function ChatSidebar(props: ChatSidebarProps) {
               activePanel={activePanel}
               onIconClick={handleIconClick}
               onNewChat={handleNewChat}
-              taskBadgeCount={tasks.length}
+              taskBadgeCount={unreadCount}
             />
           </div>
           <ExpandablePanel

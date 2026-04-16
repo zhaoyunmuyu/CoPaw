@@ -17,6 +17,10 @@ from typing import Optional
 from agentscope.message import TextBlock
 from agentscope.tool import ToolResponse
 
+from ...security.process_limits import (
+    CurrentProcessLimitPolicy,
+    resolve_current_process_limit_policy,
+)
 from ...security.tenant_path_boundary import (
     is_path_within_tenant_with_base,
     get_current_tenant_root,
@@ -216,11 +220,11 @@ def _resolve_cwd(cwd: Optional[Path]) -> Path:
     resolved_cwd = cwd.resolve()
     try:
         resolved_cwd.relative_to(tenant_root.resolve())
-    except ValueError:
+    except ValueError as exc:
         raise TenantPathBoundaryError(
             f"Working directory '{cwd}' is outside the tenant workspace boundary.",
             resolved_path=resolved_cwd,
-        )
+        ) from exc
 
     return resolved_cwd
 
@@ -267,6 +271,52 @@ def _collapse_embedded_newlines(cmd: str) -> str:
     if "\n" not in cmd:
         return cmd
     return cmd.replace("\r\n", " ").replace("\n", " ")
+
+
+def _normalize_process_limit_failure(
+    policy: CurrentProcessLimitPolicy,
+    returncode: int,
+    stderr_str: str,
+) -> str:
+    """Attach a normalized message when the subprocess hit process ceilings."""
+    if not policy.should_enforce or returncode == 0:
+        return stderr_str
+
+    lower_stderr = stderr_str.lower()
+    limit_hit = any(
+        phrase in lower_stderr
+        for phrase in (
+            "memoryerror",
+            "cannot allocate memory",
+            "out of memory",
+            "cpu time limit exceeded",
+        )
+    )
+    limit_hit = limit_hit or returncode in {
+        -signal.SIGKILL,
+        -signal.SIGXCPU,
+        128 + signal.SIGKILL,
+        128 + signal.SIGXCPU,
+    }
+    if not limit_hit:
+        return stderr_str
+
+    prefix = "Command exceeded configured process limits."
+    if stderr_str:
+        return f"{prefix}\n{stderr_str}"
+    return prefix
+
+
+def _append_process_limit_diagnostic(
+    response_text: str,
+    diagnostic: str | None,
+) -> str:
+    """Append unsupported-platform diagnostics to the response text."""
+    if not diagnostic:
+        return response_text
+    if response_text:
+        return f"{response_text}\n[process_limits]\n{diagnostic}"
+    return diagnostic
 
 
 def _sanitize_win_cmd(cmd: str) -> str:
@@ -448,7 +498,7 @@ async def execute_shell_command(
 
     # Intercept command and inject tenant isolation params if applicable
     from .shell_interceptor import intercept_command
-    cmd, was_intercepted = intercept_command(cmd)
+    cmd, _was_intercepted = intercept_command(cmd)
 
     # Validate and resolve the working directory against tenant boundary
     try:
@@ -483,6 +533,7 @@ async def execute_shell_command(
         env["PATH"] = python_bin_dir + os.pathsep + existing_path
     else:
         env["PATH"] = python_bin_dir
+    process_limit_policy = resolve_current_process_limit_policy("shell")
 
     try:
         if sys.platform == "win32":
@@ -502,6 +553,7 @@ async def execute_shell_command(
                 bufsize=0,
                 cwd=str(working_dir),
                 env=env,
+                preexec_fn=process_limit_policy.build_preexec_fn(),
                 start_new_session=True,
             )
 
@@ -560,6 +612,14 @@ async def execute_shell_command(
                     stdout_str = ""
                     stderr_str = stderr_suffix
 
+        effective_returncode = returncode if returncode is not None else -1
+        stderr_str = _normalize_process_limit_failure(
+            process_limit_policy,
+            effective_returncode,
+            stderr_str,
+        )
+        returncode = effective_returncode
+
         if returncode == 0:
             if stdout_str:
                 response_text = stdout_str
@@ -574,6 +634,11 @@ async def execute_shell_command(
             if stderr_str:
                 response_parts.append(f"\n[stderr]\n{stderr_str}")
             response_text = "".join(response_parts)
+
+        response_text = _append_process_limit_diagnostic(
+            response_text,
+            process_limit_policy.diagnostic,
+        )
 
         return ToolResponse(
             content=[

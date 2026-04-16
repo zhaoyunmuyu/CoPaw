@@ -52,7 +52,7 @@ from ...agents.skills_manager import (
     suggest_conflict_name,
     update_single_builtin,
 )
-from ...config.utils import get_tenant_working_dir_strict
+from ...config.utils import get_tenant_working_dir_strict, list_all_tenant_ids
 from ...security.skill_scanner import SkillScanError
 from ..utils import schedule_agent_reload
 
@@ -176,6 +176,31 @@ class DownloadFromPoolRequest(BaseModel):
     targets: list[PoolDownloadTarget] = Field(default_factory=list)
     all_workspaces: bool = False
     overwrite: bool = False
+
+
+class BroadcastTenantListResponse(BaseModel):
+    tenant_ids: list[str] = Field(default_factory=list)
+
+
+class BroadcastDefaultAgentsRequest(BaseModel):
+    skill_names: list[str] = Field(default_factory=list)
+    target_tenant_ids: list[str] = Field(default_factory=list)
+    overwrite: bool = False
+
+
+class BroadcastDefaultAgentTenantResult(BaseModel):
+    tenant_id: str
+    success: bool
+    bootstrapped: bool = False
+    pool_updated: list[str] = Field(default_factory=list)
+    default_agent_updated: list[str] = Field(default_factory=list)
+    error: str = ""
+
+
+class BroadcastDefaultAgentsResponse(BaseModel):
+    results: list[BroadcastDefaultAgentTenantResult] = Field(
+        default_factory=list,
+    )
 
 
 class SkillConfigRequest(BaseModel):
@@ -306,6 +331,137 @@ def _restore_workspace_skill(snapshot: dict[str, Any]) -> None:
     reconcile_workspace_manifest(workspace_dir)
     if backup_dir is not None:
         shutil.rmtree(Path(backup_dir).parent, ignore_errors=True)
+
+
+def _validate_target_tenant_id(tenant_id: str) -> str:
+    tenant_id = str(tenant_id or "").strip()
+    if not tenant_id:
+        raise ValueError("tenant_id is required")
+    if len(tenant_id) > 256:
+        raise ValueError(f"Invalid tenant ID format: {tenant_id}")
+    if ".." in tenant_id or "/" in tenant_id or "\\" in tenant_id:
+        raise ValueError(f"Invalid tenant ID format: {tenant_id}")
+    if any(ord(c) < 32 for c in tenant_id):
+        raise ValueError(f"Invalid tenant ID format: {tenant_id}")
+    return tenant_id
+
+
+def _read_pool_skill_entry(
+    *,
+    working_dir: Path,
+    skill_name: str,
+) -> tuple[dict[str, Any], Path]:
+    manifest = read_skill_pool_manifest(
+        reconcile=False,
+        working_dir=working_dir,
+    )
+    entry = manifest.get("skills", {}).get(skill_name)
+    if entry is None:
+        raise ValueError(f"Pool skill '{skill_name}' not found")
+    source_dir = get_skill_pool_dir(working_dir=working_dir) / skill_name
+    if not source_dir.exists():
+        raise ValueError(f"Pool skill '{skill_name}' content is missing")
+    return entry, source_dir
+
+
+def _broadcast_skills_to_tenant(
+    *,
+    source_working_dir: Path,
+    target_tenant_id: str,
+    skill_names: list[str],
+) -> BroadcastDefaultAgentTenantResult:
+    from ..workspace.tenant_initializer import TenantInitializer
+
+    target_working_dir = get_tenant_working_dir_strict(target_tenant_id)
+    initializer = TenantInitializer(
+        base_working_dir=source_working_dir.parent,
+        tenant_id=target_tenant_id,
+    )
+    was_bootstrapped = initializer.has_seeded_bootstrap()
+    if not was_bootstrapped:
+        initializer.ensure_seeded_bootstrap()
+
+    pool_service = SkillPoolService(working_dir=target_working_dir)
+    workspace_service = SkillService(
+        target_working_dir / "workspaces" / "default",
+    )
+
+    pool_updated: list[str] = []
+    default_updated: list[str] = []
+    for skill_name in skill_names:
+        entry, source_dir = _read_pool_skill_entry(
+            working_dir=source_working_dir,
+            skill_name=skill_name,
+        )
+        source = str(entry.get("source") or "customized")
+        config = entry.get("config") or {}
+        pool_service.replace_pool_skill_from_dir(
+            skill_name=skill_name,
+            source_dir=source_dir,
+            source=source,
+            config=config,
+        )
+        pool_updated.append(skill_name)
+        workspace_service.replace_workspace_skill_from_dir(
+            skill_name=skill_name,
+            source_dir=source_dir,
+            source=source,
+            config=config,
+        )
+        default_updated.append(skill_name)
+
+    return BroadcastDefaultAgentTenantResult(
+        tenant_id=target_tenant_id,
+        success=True,
+        bootstrapped=not was_bootstrapped,
+        pool_updated=pool_updated,
+        default_agent_updated=default_updated,
+    )
+
+
+async def _broadcast_default_agents(
+    *,
+    source_working_dir: Path,
+    target_tenant_ids: list[str],
+    skill_names: list[str],
+) -> BroadcastDefaultAgentsResponse:
+    results: list[BroadcastDefaultAgentTenantResult] = []
+    for tenant_id in target_tenant_ids:
+        try:
+            validated_tenant_id = _validate_target_tenant_id(tenant_id)
+            result = await asyncio.to_thread(
+                _broadcast_skills_to_tenant,
+                source_working_dir=source_working_dir,
+                target_tenant_id=validated_tenant_id,
+                skill_names=skill_names,
+            )
+            results.append(result)
+        except Exception as exc:
+            results.append(
+                BroadcastDefaultAgentTenantResult(
+                    tenant_id=str(tenant_id),
+                    success=False,
+                    error=str(exc),
+                ),
+            )
+    return BroadcastDefaultAgentsResponse(results=results)
+
+
+async def _ensure_source_pool_skills_exist(
+    *,
+    working_dir: Path,
+    skill_names: list[str],
+) -> None:
+    if not skill_names:
+        raise HTTPException(status_code=400, detail="No skill names provided")
+    for skill_name in skill_names:
+        try:
+            _read_pool_skill_entry(
+                working_dir=working_dir,
+                skill_name=skill_name,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 async def _request_workspace_dir(request: Request) -> Path:
@@ -1116,6 +1272,45 @@ async def import_pool_builtins(
     if result.get("conflicts") and not body.overwrite_conflicts:
         raise HTTPException(status_code=409, detail=result)
     return result
+
+
+@router.get(
+    "/pool/broadcast/tenants",
+    response_model=BroadcastTenantListResponse,
+)
+async def list_broadcast_tenants() -> BroadcastTenantListResponse:
+    return BroadcastTenantListResponse(tenant_ids=list_all_tenant_ids())
+
+
+@router.post(
+    "/pool/broadcast/default-agents",
+    response_model=BroadcastDefaultAgentsResponse,
+)
+async def broadcast_pool_skills_to_default_agents(
+    request: Request,
+    body: BroadcastDefaultAgentsRequest,
+) -> BroadcastDefaultAgentsResponse:
+    if not body.overwrite:
+        raise HTTPException(
+            status_code=400,
+            detail="overwrite=true is required for broadcast",
+        )
+    if not body.target_tenant_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No target tenant IDs provided",
+        )
+
+    source_working_dir = _request_tenant_working_dir(request)
+    await _ensure_source_pool_skills_exist(
+        working_dir=source_working_dir,
+        skill_names=body.skill_names,
+    )
+    return await _broadcast_default_agents(
+        source_working_dir=source_working_dir,
+        target_tenant_ids=body.target_tenant_ids,
+        skill_names=body.skill_names,
+    )
 
 
 @router.post("/pool/{skill_name}/update-builtin")

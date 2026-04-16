@@ -19,6 +19,10 @@
 | Instance | `src/swe/app/instance/service.py`, `src/swe/app/instance/store.py`, `src/swe/app/instance/router.py`, `src/swe/app/instance/models.py` | 实例状态与实例管理接口 |
 | Backup | `src/swe/app/backup/*.py` | 备份任务、S3 客户端、批处理、Worker 与任务存储 |
 
+补充说明：
+- Cron 执行链路会先绑定 tenant context，再进入 runner / tool 层，因此 tenant root `security.process_limits` 会沿同一上下文传播到 shell 与 MCP `stdio` 子进程启动点
+- 进程 CPU 时间/内存上限属于 launch-time 保护，和 Cron 自身的任务超时/调度超时是两套边界：前者限制单个子进程资源，后者限制整个任务 wall-clock 生命周期
+
 ## 基础支撑模块
 
 | 目录/文件 | 说明 |
