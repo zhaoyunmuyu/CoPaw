@@ -6,7 +6,6 @@ import {
   Input,
   Button,
   DatePicker,
-  Popover,
   Tooltip,
   message,
 } from "antd";
@@ -144,7 +143,7 @@ export default function MessagesPage() {
       title: t("analytics.traceId", "Trace ID"),
       dataIndex: "trace_id",
       key: "trace_id",
-      width: 280,
+      width: 200,
       ellipsis: true,
       render: (v) => (
         <Tooltip title={v}>
@@ -158,21 +157,21 @@ export default function MessagesPage() {
       title: t("analytics.userId", "User ID"),
       dataIndex: "user_id",
       key: "user_id",
-      width: 120,
+      width: 100,
       ellipsis: true,
     },
     {
       title: t("analytics.sessionId", "Session ID"),
       dataIndex: "session_id",
       key: "session_id",
-      width: 280,
+      width: 120,
       ellipsis: true,
     },
     {
       title: t("analytics.userMessage", "User Message"),
       dataIndex: "user_message",
       key: "user_message",
-      width: 180,
+      width: 380,
       render: (msg) => {
         if (!msg) return <span style={{ color: "#999" }}>-</span>;
         const truncated = truncateMessage(msg, 150);
@@ -180,13 +179,12 @@ export default function MessagesPage() {
           return <span className={styles.userMessage}>{msg}</span>;
         }
         return (
-          <Popover
-            content={<pre className={styles.messagePopover}>{msg}</pre>}
-            title={t("analytics.fullMessage", "Full Message")}
-            trigger="click"
+          <Tooltip
+            title={<pre className={styles.messagePopover}>{msg}</pre>}
+            overlayStyle={{ maxWidth: 500 }}
           >
             <span className={styles.userMessage}>{truncated}</span>
-          </Popover>
+          </Tooltip>
         );
       },
     },
@@ -216,7 +214,7 @@ export default function MessagesPage() {
       title: t("analytics.startTime", "Start Time"),
       dataIndex: "start_time",
       key: "start_time",
-      width: 180,
+      width: 150,
       render: (v) => dayjs(v).format("YYYY-MM-DD HH:mm:ss"),
     },
     {
