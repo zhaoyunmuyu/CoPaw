@@ -9,9 +9,57 @@ import { CodeBlock, IconButton } from "@agentscope-ai/design";
 import { copy } from "../../Util/copy";
 import { useRef, useState } from "react";
 
+function extractPlainText(value: any): string | null {
+  if (!value) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return value;
+    if ((trimmed.startsWith("[") && trimmed.endsWith("]")) ||
+        (trimmed.startsWith("{") && trimmed.endsWith("}"))) {
+      try {
+        return extractPlainText(JSON.parse(trimmed));
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const texts = value
+      .map((item) => extractPlainText(item))
+      .filter((item): item is string => !!item);
+    return texts.length ? texts.join("\n") : null;
+  }
+  if (value.type === "text" && typeof value.text === "string") {
+    return value.text;
+  }
+  if (typeof value.text === "string") {
+    return value.text;
+  }
+  if (Array.isArray(value.content)) {
+    return extractPlainText(value.content);
+  }
+  return null;
+}
+
+function stringifyContent(value: any) {
+  const plainText = extractPlainText(value);
+  if (plainText !== null) {
+    return {
+      contentString: plainText,
+      displayLanguage: "text" as const,
+    };
+  }
+  return {
+    contentString:
+      typeof value === "string" ? value : JSON.stringify(value, null, 2),
+    displayLanguage: "json" as const,
+  };
+}
+
 function Block(props: {
   title: string;
-  content: string | Record<string, any>;
+  content: any;
   summary?: string;
   expandEnabled?: boolean;
   defaultExpanded?: boolean;
@@ -22,13 +70,9 @@ function Block(props: {
   const {
     expandEnabled = false,
     defaultExpanded = true,
-    language = "json",
     summary,
   } = props;
-  const contentString =
-    typeof props.content === "string"
-      ? props.content
-      : JSON.stringify(props.content);
+  const { contentString, displayLanguage } = stringifyContent(props.content);
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(defaultExpanded);
   const timer = useRef<NodeJS.Timeout | null>(null);
@@ -86,7 +130,7 @@ function Block(props: {
         <div className={`${prefixCls}-tool-call-block-content`}>
           {/* @ts-ignore */}
           <CodeBlock
-            language={language}
+            language={props.language || displayLanguage}
             value={displayContent}
             readOnly={true}
             basicSetup={{ lineNumbers: false, foldGutter: false }}
@@ -115,13 +159,13 @@ export interface IToolCallProps {
    * @descriptionEn Tool Call Input
    * @default ''
    */
-  input: string | Record<string, any>;
+  input: any;
   /**
    * @description 工具调用输出
    * @descriptionEn Tool Call Output
    * @default ''
    */
-  output: string | Record<string, any>;
+  output: any;
   /**
    * @description 输出摘要
    * @descriptionEn Output Summary
@@ -168,7 +212,7 @@ export default function (props: IToolCallProps) {
               content={props.input}
               language={props.inputBlock?.language}
               expandEnabled={true}
-              defaultExpanded={true}
+              defaultExpanded={false}
             />
             <Block
               title="输出"
