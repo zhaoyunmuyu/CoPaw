@@ -1406,6 +1406,40 @@ class ZhaohuChannel(BaseChannel):
                 -1
             ].strip()
         text_values = await self.crit_answer(text_values)
+
+        # 构建消息块
+        message_blocks = [
+            {
+                "type": "txt",
+                "value": [
+                    {
+                        "type": "txt",
+                        "text": text_values,
+                    },
+                ],
+            },
+        ]
+
+        # 支持 link 类型消息
+        if meta.get("link_url"):
+            link_url = meta.get("link_url")
+            link_text = meta.get("link_text", "点击查看")
+            message_blocks.append(
+                {
+                    "type": "link",
+                    "value": [
+                        {
+                            "subtype": "2",
+                            "subvalue": link_url,
+                            "text": link_text,
+                        },
+                    ],
+                },
+            )
+
+        # 支持自定义 summary
+        notification_summary = meta.get("notification_summary") or summary
+
         payload = {
             "baseInfo": {
                 "sysId": self.sys_id,
@@ -1428,19 +1462,9 @@ class ZhaohuChannel(BaseChannel):
                 "batchId": meta.get("batch_id") or "",
             },
             "msgContent": {
-                "summary": summary,
-                "pushContent": summary,
-                "message": [
-                    {
-                        "type": "txt",
-                        "value": [
-                            {
-                                "type": "txt",
-                                "text": text_values,
-                            },
-                        ],
-                    },
-                ],
+                "summary": notification_summary,
+                "pushContent": notification_summary,
+                "message": message_blocks,
             },
         }
         return _clean_payload(payload)

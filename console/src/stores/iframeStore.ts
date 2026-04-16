@@ -51,6 +51,19 @@ interface IframeStore extends IframeContext {
    * @param authHeaders - 自定义 header 数组
    */
   setAuthHeaders: (authHeaders: AuthHeaderItem[]) => void;
+
+  /**
+   * ==================== URL 导航参数 (Kun He, 2026-04-15) ====================
+   * 设置导航参数（sessionId 和 taskId）
+   * @param sessionId - 会话 ID，直接导航
+   * @param taskId - 任务 ID，需要查找 chat_id
+   */
+  setNavigationParams: (sessionId: string | null, taskId: string | null) => void;
+
+  /**
+   * 清除导航参数（导航完成后调用，防止重复）
+   */
+  clearNavigationParams: () => void;
 }
 
 /** 初始状态 */
@@ -72,6 +85,8 @@ const initialState: IframeContext = {
   orgLvl: null,
   positionId: null,
   userChange: false,
+  sessionId: null,
+  taskId: null,
 };
 
 export const useIframeStore = create<IframeStore>()(
@@ -91,6 +106,12 @@ export const useIframeStore = create<IframeStore>()(
       clearContext: () => set(initialState),
 
       setAuthHeaders: (authHeaders) => set({ authHeaders }),
+
+      // ==================== URL 导航参数 (Kun He, 2026-04-15) ====================
+      setNavigationParams: (sessionId, taskId) =>
+        set({ sessionId, taskId }),
+
+      clearNavigationParams: () => set({ sessionId: null, taskId: null }),
     }),
     {
       name: "swe-iframe-context",
@@ -110,6 +131,7 @@ export const useIframeStore = create<IframeStore>()(
         orgLvl: state.orgLvl,
         positionId: state.positionId,
         userChange: state.userChange,
+        // 导航参数不需要持久化，只在首次加载时使用
       }),
       storage: {
         getItem: (name) => {

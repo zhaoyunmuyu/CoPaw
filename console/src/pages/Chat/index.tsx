@@ -34,6 +34,9 @@ import { getUserId, getChannel } from "../../utils/identity";
 // ==================== 品牌主题 (Kun He) ====================
 import { useBrandTheme } from "../../contexts/BrandThemeContext";
 // ==================== 品牌主题结束 ====================
+// ==================== URL 导航参数 (Kun He, 2026-04-15) ====================
+import { useIframeStore } from "../../stores/iframeStore";
+// ==================== URL 导航参数结束 ====================
 import styles from "./index.module.less";
 import { IconButton } from "@agentscope-ai/design";
 import ChatActionGroup from "./components/ChatActionGroup";
@@ -411,6 +414,55 @@ export default function ChatPage() {
       sessionApi.onSessionCreated = null;
     };
   }, []);
+
+  // ==================== URL 导航参数 (Kun He, 2026-04-15) ====================
+  // 处理 iframe URL 传递的 sessionId/taskId 参数，自动跳转到对应聊天页面
+  // sessionId: 直接导航到 /chat/:sessionId
+  // taskId: 查找 task.chat_id 后导航
+  const sessionIdRef = useRef<string | null>(null);
+  const taskIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const store = useIframeStore.getState();
+    const { sessionId, taskId } = store;
+
+    // 只在首次加载时处理，避免重复导航
+    if (sessionId) {
+      sessionIdRef.current = sessionId;
+      taskIdRef.current = null; // sessionId 优先，忽略 taskId
+      store.clearNavigationParams();
+      console.info("[Chat] Navigating to sessionId:", sessionId);
+      navigate(`/chat/${sessionId}`, { replace: true });
+      return;
+    }
+
+    if (taskId) {
+      taskIdRef.current = taskId;
+      store.clearNavigationParams();
+      console.info("[Chat] taskId set, waiting for jobs:", taskId);
+    }
+  }, [navigate]);
+
+  // taskId 导航需要等待 jobs 加载完成
+  useEffect(() => {
+    if (!taskIdRef.current || jobs.length === 0) return;
+
+    const task = jobs.find((j) => j.id === taskIdRef.current);
+    const chatId = task?.task?.chat_id;
+
+    if (chatId) {
+      console.info("[Chat] Navigating from taskId to chatId:", {
+        taskId: taskIdRef.current,
+        chatId,
+      });
+      navigate(`/chat/${chatId}`, { replace: true });
+      taskIdRef.current = null;
+    } else {
+      console.warn("[Chat] taskId not found or no chat_id:", taskIdRef.current);
+      taskIdRef.current = null;
+    }
+  }, [jobs, navigate]);
+  // ==================== URL 导航参数结束 ====================
 
   // Setup multimodal capabilities tracking via custom hook
 
@@ -800,18 +852,13 @@ export default function ChatPage() {
         // ==================== 品牌主题结束 ====================
         // ==================== 首页改版 (Kun He) ====================
         // 使用自定义欢迎页渲染，替代默认 WelcomePrompts
-        render: ({ greeting, prompts, onSubmit }) => (
+        render: ({ greeting, onSubmit }) => (
           <WelcomeCenterLayout
             greeting={
               typeof greeting === "string"
                 ? greeting
                 : "你好，你的专属小龙虾，前来报到！"
             }
-            prompts={prompts?.map((p) =>
-              typeof p === "string"
-                ? { label: p, value: p }
-                : { label: p.label || p.value, value: p.value },
-            )}
             onSubmit={(data) => onSubmit(data)}
           />
         ),
