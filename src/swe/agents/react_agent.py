@@ -50,6 +50,7 @@ from .tools import (
     view_video,
     write_file,
     create_memory_search_tool,
+    copy_file_to_static,
 )
 from .utils import process_file_and_media_blocks_in_message
 from ..utils.fs_text import sanitize_text_for_json
@@ -248,6 +249,7 @@ class SWEAgent(ToolGuardMixin, ReActAgent):
             "get_current_time": get_current_time,
             "set_user_timezone": set_user_timezone,
             "get_token_usage": get_token_usage,
+            "copy_file_to_static": copy_file_to_static,
         }
 
         multimodal = get_active_model_supports_multimodal()
