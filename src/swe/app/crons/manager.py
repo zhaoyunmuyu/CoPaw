@@ -1205,7 +1205,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
         用于在 PC 端招乎上跳转 W+ 并自动登录。
         """
         config = load_config()
-        zhaohu_config = config.zhaohu
+        zhaohu_config = config.channels.zhaohu
 
         # 获取配置
         menu_id = zhaohu_config.cron_task_menu_id or ""
@@ -1218,7 +1218,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
             "to": menu_id,
             "type": "toMenu",
             "queryParam": {
-                "sessionId": session_id,
+                "taskId": session_id,
                 "origin": "Y",
             },
         }
@@ -1261,7 +1261,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
             logger.debug("Skip notification: job %s is not agent type", job.id)
             return
 
-        session_id = job.dispatch.target.session_id
+        session_id = job.meta.get("task_chat_id")
         if not session_id:
             logger.debug("Skip notification: job %s has no session_id", job.id)
             return
