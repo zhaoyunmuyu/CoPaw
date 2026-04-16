@@ -35,8 +35,6 @@ from .skills_manager import (
 )
 from .tool_guard_mixin import ToolGuardMixin
 from .tools import (
-    browser_use,
-    desktop_screenshot,
     edit_file,
     execute_shell_command,
     get_current_time,
@@ -44,10 +42,7 @@ from .tools import (
     glob_search,
     grep_search,
     read_file,
-    send_file_to_user,
     set_user_timezone,
-    view_image,
-    view_video,
     write_file,
     create_memory_search_tool,
 )
@@ -240,11 +235,6 @@ class SWEAgent(ToolGuardMixin, ReActAgent):
             "edit_file": edit_file,
             "grep_search": grep_search,
             "glob_search": glob_search,
-            "browser_use": browser_use,
-            "desktop_screenshot": desktop_screenshot,
-            "view_image": view_image,
-            "view_video": view_video,
-            "send_file_to_user": send_file_to_user,
             "get_current_time": get_current_time,
             "set_user_timezone": set_user_timezone,
             "get_token_usage": get_token_usage,

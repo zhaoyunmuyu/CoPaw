@@ -219,7 +219,7 @@ export default function (props: IToolCallProps) {
               summary={outputSummary}
               language={props.outputBlock?.language}
               expandEnabled={!!outputSummary}
-              defaultExpanded={!outputSummary}
+              defaultExpanded={true}
             />
           </OperateCard.LineBody>
         ),

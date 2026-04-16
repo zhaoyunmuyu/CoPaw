@@ -827,33 +827,6 @@ def _default_builtin_tools() -> Dict[str, BuiltinToolConfig]:
             enabled=True,
             description="Find files matching a glob pattern",
         ),
-        "browser_use": BuiltinToolConfig(
-            name="browser_use",
-            enabled=True,
-            description="Browser automation and web interaction",
-        ),
-        "desktop_screenshot": BuiltinToolConfig(
-            name="desktop_screenshot",
-            enabled=True,
-            description="Capture desktop screenshots",
-        ),
-        "view_image": BuiltinToolConfig(
-            name="view_image",
-            enabled=True,
-            description="Load an image into LLM context for visual analysis",
-            display_to_user=False,
-        ),
-        "view_video": BuiltinToolConfig(
-            name="view_video",
-            enabled=True,
-            description="Load a video into LLM context for visual analysis",
-            display_to_user=False,
-        ),
-        "send_file_to_user": BuiltinToolConfig(
-            name="send_file_to_user",
-            enabled=True,
-            description="Send files to user",
-        ),
         "get_current_time": BuiltinToolConfig(
             name="get_current_time",
             enabled=True,
@@ -892,7 +865,7 @@ def build_qa_agent_tools_config() -> ToolsConfig:
     """Tools preset for builtin ``default_qa_agent`` (first workspace init).
 
     Only these are enabled: execute_shell_command, read_file, edit_file,
-    write_file, view_image. All other built-ins are disabled.
+    write_file. All other built-ins are disabled.
     """
     allow = frozenset(
         {
@@ -900,7 +873,6 @@ def build_qa_agent_tools_config() -> ToolsConfig:
             "read_file",
             "write_file",
             "edit_file",
-            "view_image",
         },
     )
     builtin_tools = {
