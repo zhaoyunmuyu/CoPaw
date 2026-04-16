@@ -607,6 +607,19 @@ export default function ChatPage() {
     currentTask?.task?.unread_execution_count,
   ]);
 
+  // Show toast when task has no scheduled result yet
+  const taskNoResultShownRef = useRef(false);
+  useEffect(() => {
+    if (currentTask && !currentTask.task?.has_scheduled_result) {
+      if (!taskNoResultShownRef.current) {
+        taskNoResultShownRef.current = true;
+        message.info("当前任务暂未启动，等下次收到提醒再来看看哟~");
+      }
+    } else {
+      taskNoResultShownRef.current = false;
+    }
+  }, [currentTask?.id, currentTask?.task?.has_scheduled_result]);
+
   const copyResponse = useCallback(
     async (response: CopyableResponse) => {
       try {
@@ -996,33 +1009,6 @@ export default function ChatPage() {
           key={refreshKey}
           options={options}
         />
-        {currentTask && !currentTask.task?.has_scheduled_result && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              pointerEvents: 'none',
-              zIndex: 2,
-            }}
-          >
-            <div
-              style={{
-                padding: '10px 18px',
-                borderRadius: 999,
-                background: 'rgba(255,255,255,0.92)',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
-                color: '#1f1f1f',
-                fontSize: 14,
-                fontWeight: 500,
-              }}
-            >
-              任务执行中
-            </div>
-          </div>
-        )}
         <DragUploadOverlay visible={isDragging} onClose={handleDragOverlayClose} />
       </div>
 
