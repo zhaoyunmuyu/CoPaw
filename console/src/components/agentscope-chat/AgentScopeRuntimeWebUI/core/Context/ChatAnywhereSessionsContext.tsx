@@ -9,6 +9,7 @@ import { useChatAnywhereOptions } from "./ChatAnywhereOptionsContext";
 import ReactDOM from "react-dom";
 import { useAsyncEffect } from "ahooks";
 import { emit } from "./useChatAnywhereEventEmitter";
+import { getInitialSessionId } from "@/pages/Chat/sessionApi/initialSessionSelection";
 import { shouldApplySessionLoadResult } from "@/pages/Chat/sessionApi/sessionRaceGuard";
 
 interface SessionApiWithIntent {
@@ -123,7 +124,12 @@ export function ChatAnywhereSessionsContextProvider(props: {
   useMount(async () => {
     const sessionList = await options.api.getSessionList();
     setSessions(sessionList);
-    setCurrentSessionId(sessionList?.[0]?.id);
+    setCurrentSessionId(
+      getInitialSessionId({
+        pathname: window.location.pathname,
+        sessionList,
+      }),
+    );
   });
 
   return (
