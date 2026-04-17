@@ -609,12 +609,11 @@ export default function ChatPage() {
           !isLoading
         ) {
           sessionReconnectingRef.current = true;
-          // 获取 session_id 用于 reconnect
-          const sessionId = chatHistory?.session_id || chatId;
-          console.info("[Chat] Session running, auto reconnect:", sessionId);
+          // 使用 chatId（UUID）作为 session_id，后端会正确处理
+          console.info("[Chat] Session running, auto reconnect:", chatId);
           emit({
             type: "handleReconnect",
-            data: { session_id: sessionId },
+            data: { session_id: chatId },
           });
         }
 
