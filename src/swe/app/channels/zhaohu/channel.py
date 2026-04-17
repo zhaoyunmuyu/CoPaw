@@ -6,12 +6,17 @@ Supports both outbound push and inbound message handling via callback.
 
 from __future__ import annotations
 
+import base64
+import json
 import re
 import logging
 import os
 import threading
 import time
+import uuid
+import asyncio
 from typing import Any, Dict, Optional, Union
+from urllib.parse import quote as url_quote
 
 import ssl
 
@@ -111,6 +116,13 @@ class ZhaohuChannel(BaseChannel):
         bot_prefix: str,
         user_query_url: str = "",
         extract_url: str = "",
+        oauth_url: str = "",
+        client_id: str = "",
+        client_secret: str = "",
+        custom_card_url: str = "",
+        cron_task_menu_id: str = "",
+        cron_task_error_page: str = "",
+        cron_task_sys_id: str = "",
         on_reply_sent: OnReplySent = None,
         show_tool_details: bool = True,
         filter_tool_messages: bool = False,
@@ -142,10 +154,23 @@ class ZhaohuChannel(BaseChannel):
         self.bot_prefix = bot_prefix or ""
         self.user_query_url = user_query_url or ""
         self.extract_url = extract_url or ""
+        self.oauth_url = oauth_url or ""
+        self.client_id = client_id or ""
+        self.client_secret = client_secret or ""
+        self.custom_card_url = custom_card_url or ""
+        self.cron_task_menu_id = cron_task_menu_id or ""
+        self.cron_task_error_page = cron_task_error_page or ""
+        self.cron_task_sys_id = cron_task_sys_id or ""
 
         # Message dedup: set of processed message IDs with timestamp
         self._processed_message_ids: Dict[str, float] = {}
         self._dedup_lock = threading.Lock()
+
+        # OAuth token cache: token string and creation timestamp
+        self._oauth_token: Optional[str] = None
+        self._oauth_token_created_at: Optional[float] = None
+        # Token validity: 90 minutes (5400 seconds)
+        self._token_validity_seconds = 90 * 60
 
     @classmethod
     def from_env(
@@ -173,6 +198,13 @@ class ZhaohuChannel(BaseChannel):
             bot_prefix=os.getenv("ZHAOHU_BOT_PREFIX", ""),
             user_query_url=os.getenv("ZHAOHU_USER_QUERY_URL", ""),
             extract_url=os.getenv("ZHAOHU_EXTRACT_URL", ""),
+            oauth_url=os.getenv("ZHAOHU_OAUTH_URL", ""),
+            client_id=os.getenv("ZHAOHU_CLIENT_ID", ""),
+            client_secret=os.getenv("ZHAOHU_CLIENT_SECRET", ""),
+            custom_card_url=os.getenv("ZHAOHU_CUSTOM_CARD_URL", ""),
+            cron_task_menu_id=os.getenv("ZHAOHU_CRON_TASK_MENU_ID", ""),
+            cron_task_error_page=os.getenv("ZHAOHU_CRON_TASK_ERROR_PAGE", ""),
+            cron_task_sys_id=os.getenv("ZHAOHU_CRON_TASK_SYS_ID", ""),
             on_reply_sent=on_reply_sent,
             dm_policy=os.getenv("ZHAOHU_DM_POLICY", "open"),
             group_policy=os.getenv("ZHAOHU_GROUP_POLICY", "open"),
@@ -209,6 +241,13 @@ class ZhaohuChannel(BaseChannel):
             bot_prefix=_get_str("bot_prefix"),
             user_query_url=_get_str("user_query_url"),
             extract_url=_get_str("extract_url"),
+            oauth_url=_get_str("oauth_url"),
+            client_id=_get_str("client_id"),
+            client_secret=_get_str("client_secret"),
+            custom_card_url=_get_str("custom_card_url"),
+            cron_task_menu_id=_get_str("cron_task_menu_id"),
+            cron_task_error_page=_get_str("cron_task_error_page"),
+            cron_task_sys_id=_get_str("cron_task_sys_id"),
             on_reply_sent=on_reply_sent,
             show_tool_details=show_tool_details,
             filter_tool_messages=filter_tool_messages,
@@ -294,6 +333,431 @@ class ZhaohuChannel(BaseChannel):
 
             self._processed_message_ids[msg_id] = now
             return True
+
+    async def _get_oauth_token(self) -> Optional[str]:
+        """Get OAuth token for Zhaohu API authentication.
+
+        Token is cached in memory with creation timestamp.
+        If token exists and is valid (less than 90 minutes old), return cached token.
+        If token is expired or missing, fetch new token via /oauth/token endpoint.
+
+        Returns:
+            OAuth token string, or None if fetch fails.
+        """
+        if not self.oauth_url or not self.client_id or not self.client_secret:
+            logger.warning(
+                "zhaohu oauth skipped: oauth_url, client_id, or client_secret not configured",
+            )
+            return None
+
+        now = time.time()
+
+        # Check if cached token is still valid
+        if (
+            self._oauth_token
+            and self._oauth_token_created_at
+            and (
+                now - self._oauth_token_created_at
+                < self._token_validity_seconds
+            )
+        ):
+            logger.debug(
+                "zhaohu oauth: using cached token (age=%.0f seconds)",
+                now - self._oauth_token_created_at,
+            )
+            return self._oauth_token
+
+        # Token expired or missing, fetch new token
+        logger.info(
+            "zhaohu oauth: fetching new token from %s",
+            self.oauth_url,
+        )
+
+        form_data = {
+            "grant_type": "client_credentials",
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+        }
+
+        timeout = httpx.Timeout(self.request_timeout, connect=10.0)
+        context = ssl.create_default_context()
+        context.options |= 0x4
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=timeout,
+                verify=context,
+            ) as client:
+                response = await client.post(
+                    self.oauth_url,
+                    data=form_data,  # form-data format
+                    headers={
+                        "Content-Type": "application/x-www-form-urlencoded",
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+
+            access_token = data.get("access_token")
+            if not access_token:
+                logger.warning(
+                    "zhaohu oauth: no access_token in response: %s",
+                    data,
+                )
+                return None
+
+            # Cache the token
+            self._oauth_token = access_token
+            self._oauth_token_created_at = now
+
+            logger.info(
+                "zhaohu oauth: new token obtained, expires_in=%s seconds",
+                data.get("expires_in"),
+            )
+            return access_token
+
+        except Exception:
+            logger.exception(
+                "zhaohu oauth: failed to fetch token from %s",
+                self.oauth_url,
+            )
+            return None
+
+    async def send_custom_card(
+        self,
+        to_id: str,
+        content: list,
+    ) -> tuple[int, str]:
+        """Send custom card message to Zhaohu user.
+
+        First obtains OAuth token (cached or fresh), then sends card via
+        /robot-service/single-message/custom-card endpoint.
+
+        Args:
+            to_id: Receiver's Zhaohu OpenID (user's openId)
+            content: Card content as JSONArray (structure TBD by caller)
+
+        Returns:
+            tuple (code, msg):
+                - code: 0 for success, non-zero for failure
+                - msg: Message ID on success, error description on failure
+        """
+        if not self.custom_card_url:
+            logger.warning(
+                "zhaohu send_custom_card skipped: custom_card_url not configured",
+            )
+            return (-1, "custom_card_url not configured")
+
+        if not to_id:
+            logger.warning("zhaohu send_custom_card skipped: to_id is empty")
+            return (-1, "to_id is empty")
+
+        if not content:
+            logger.warning("zhaohu send_custom_card skipped: content is empty")
+            return (-1, "content is empty")
+
+        # Get OAuth token
+        token = await self._get_oauth_token()
+        if not token:
+            logger.warning(
+                "zhaohu send_custom_card failed: unable to get OAuth token",
+            )
+            return (-1, "unable to get OAuth token")
+
+        # Build request payload
+        payload = {
+            "fromId": self.robot_open_id,
+            "toId": to_id,
+            "content": content,
+        }
+
+        headers = {
+            "Authorization": f"bearer {token}",
+            "Content-Type": "application/json",
+        }
+
+        timeout = httpx.Timeout(self.request_timeout, connect=10.0)
+        context = ssl.create_default_context()
+        context.options |= 0x4
+
+        logger.info(
+            "zhaohu send_custom_card: sending to toId=%s, content_count=%d",
+            to_id,
+            len(content),
+        )
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=timeout,
+                verify=context,
+            ) as client:
+                response = await client.post(
+                    self.custom_card_url,
+                    json=payload,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                data = response.json()
+
+            code = data.get("code", -1)
+            msg = data.get("msg", "")
+
+            if code == 0:
+                logger.info(
+                    "zhaohu send_custom_card: success, msgId=%s",
+                    msg,
+                )
+            else:
+                logger.warning(
+                    "zhaohu send_custom_card: failed, code=%d msg=%s",
+                    code,
+                    msg,
+                )
+
+            return (code, msg)
+
+        except Exception:
+            logger.exception(
+                "zhaohu send_custom_card: request failed to %s",
+                self.custom_card_url,
+            )
+            return (-1, "request failed")
+
+    def _build_claw_url(
+        self,
+        session_id: str,
+        task_id: Optional[str] = None,
+    ) -> str:
+        """Build claw URL for card navigation.
+
+        Generates a URL following the formula:
+        param = { errorPage, to: menuId, type: "toMenu",
+                  queryParam: {sessionId/taskId, origin: 'Y'} }
+        pcParams = encodeURIComponent(btoa(JSON.stringify(param)))
+        pcParams2 = encodeURIComponent(btoa('pcParams='+pcParams))
+        URL = CMBMobileOA:///?pcSysId=${sys_id}&pcParams={pcParams2}
+
+        Args:
+            session_id: Session ID for queryParam
+            task_id: Optional task ID (if provided, uses taskId instead of sessionId)
+
+        Returns:
+            Generated claw URL string
+        """
+        if not self.cron_task_menu_id or not self.cron_task_sys_id:
+            logger.warning(
+                "zhaohu _build_claw_url: missing cron_task_menu_id or "
+                "cron_task_sys_id, returning empty URL",
+            )
+            return ""
+
+        # Build param object
+        if task_id:
+            query_param = {"taskId": task_id, "origin": "Y"}
+        else:
+            query_param = {"sessionId": session_id, "origin": "Y"}
+
+        param = {
+            "errorPage": self.cron_task_error_page,
+            "to": self.cron_task_menu_id,
+            "type": "toMenu",
+            "queryParam": query_param,
+        }
+
+        # Encode: pcParams = encodeURIComponent(btoa(JSON.stringify(param)))
+        param_json = json.dumps(param, separators=(",", ":"))
+        pc_params = url_quote(base64.b64encode(param_json.encode()).decode())
+
+        # Encode: pcParams2 = encodeURIComponent(btoa('pcParams='+pcParams))
+        pc_params_str = f"pcParams={pc_params}"
+        pc_params2 = url_quote(
+            base64.b64encode(pc_params_str.encode()).decode(),
+        )
+        pc_web_config = "eyJuYW1lIjoi6LSi5a%2BMVysiLCJ5c3RBdXRoIjoidHJ1ZSJ9"
+
+        # Build final URL
+        url = (
+            f"CMBMobileOA:///?pcSysId={self.cron_task_sys_id}"
+            f"&pcWebConfig={pc_web_config}"
+            f"&pcParams={pc_params2}"
+        )
+
+        return url
+
+    def _build_task_initiated_card(
+        self,
+        task_content: str,
+        session_id: str,
+    ) -> list:
+        """Build card content for task initiated notification (Template 1).
+
+        Used when user message length > 10 (task assignment).
+
+        Args:
+            task_content: The original task content from user message
+            session_id: Session ID for generating claw URL
+
+        Returns:
+            Card content array for send_custom_card
+        """
+        # Generate claw URL for navigation
+        claw_url = self._build_claw_url(session_id)
+
+        # Template 1: Task initiated notification
+        card_content = [
+            {
+                "type": "content",
+                "list": [
+                    {
+                        "content": f"任务【{task_content}】已发起，任务处理完成我还会通知你的",
+                        "style": 5,
+                    },
+                ],
+            },
+            {
+                "type": "content",
+                "list": [
+                    {
+                        "type": [3],
+                        "content": "点击跳转小助claw版查看",
+                        "style": 1,
+                        "action": 3,
+                        "link": {
+                            "pcUrl": claw_url,
+                        },
+                    },
+                ],
+            },
+        ]
+        return card_content
+
+    def _build_task_progress_card(self, tasks: list) -> list:
+        """Build card content for task progress query (Template 2).
+
+        Used when user queries task progress with keywords.
+
+        Args:
+            tasks: List of task info dicts, each containing:
+                - task_name: Task name/description
+                - status: Task status ("completed", "in_progress", "pending")
+                - status_text: Status display text (e.g., "已完成", "进行中", "待开始")
+                - time_info: Time information (e.g., "已于8:30执行完成")
+                - result_url: URL to view task result (optional)
+
+        Returns:
+            Card content array for send_custom_card
+        """
+        total_tasks = len(tasks)
+
+        card_content: list[dict[str, object]] = []
+        # Title section
+        card_content.append(
+            {
+                "type": "title",
+                "content": f"今日任务进度({total_tasks})",
+            },
+        )
+
+        # Task containers
+        for task in tasks:
+            task_name = task.get("task_name", "未知任务")
+            status = task.get("status", "pending")
+            status_text = task.get("status_text", "待开始")
+            time_info = task.get("time_info", "")
+            job_id = task.get("job_id", "")
+
+            # Determine style and backgroundColor based on status
+            if status == "completed":
+                style = 3
+                background_color = 1
+            elif status == "in_progress":
+                style = 1
+                background_color = 2
+            else:  # pending
+                style = 4
+                background_color = 3
+
+            # Build task container list
+            task_list = [
+                # Task name row
+                {
+                    "type": "content",
+                    "list": [
+                        {
+                            "content": task_name,
+                            "style": 5,
+                        },
+                    ],
+                },
+                # Status and time row
+                {
+                    "type": "content",
+                    "list": [
+                        {
+                            "content": f"  {status_text}  ",
+                            "style": style,
+                            "backgroundColor": background_color,
+                            "fontSize": 1,
+                        },
+                        {
+                            "content": f"  {time_info}",
+                            "style": 5,
+                            "fontSize": 1,
+                        },
+                    ],
+                },
+            ]
+
+            # Operation row (view result button) - only for completed tasks
+            if status == "completed":
+                # Generate claw URL using job_id as task_id
+                result_url = self._build_claw_url(
+                    session_id="",
+                    task_id=job_id,
+                )
+                task_list.append(
+                    {
+                        "type": "operate",
+                        "list": [
+                            {
+                                "content": "查看结果",
+                                "style": 1,
+                                "action": 1,
+                                "disable": 0,
+                                "link": result_url,
+                            },
+                        ],
+                    },
+                )
+
+            task_container = {
+                "type": "container",
+                "style": 0,
+                "list": task_list,
+            }
+            card_content.append(task_container)
+
+        # If no tasks, add empty container message
+        if total_tasks == 0:
+            card_content.append(
+                {
+                    "type": "container",
+                    "style": 0,
+                    "list": [
+                        {
+                            "type": "content",
+                            "list": [
+                                {
+                                    "content": "暂无任务",
+                                    "style": 5,
+                                },
+                            ],
+                        },
+                    ],
+                },
+            )
+
+        return card_content
 
     async def _query_user_info(self, open_id: str) -> Optional[Dict[str, Any]]:
         """Query user info to convert openId to sapId.
@@ -489,31 +953,180 @@ class ZhaohuChannel(BaseChannel):
 
         self._enqueue(native)
 
-    async def process_callback_message(self, callback_body: Any) -> None:
-        """Process callback message: query user, call LLM, send response.
+    # Task progress query keywords
+    _TASK_PROGRESS_KEYWORDS = frozenset(
+        [
+            "我的任务进度",
+            "任务进度",
+            "查看任务进度",
+        ],
+    )
 
-        This method is called in the background after the callback response
-        is returned to the caller. It handles the complete flow:
-        1. Query user info (openId → sapId)
-        2. Build AgentRequest and call LLM
-        3. Send response via push_url
+    async def _query_task_progress(
+        self,
+        user_id: str,
+        open_id: str,
+    ) -> bool:
+        """Query scheduled task progress for the user and send card (Template 2).
+
+        Queries all tasks for the user on today's date from CronManager.
+
+        Args:
+            user_id: User's sapId
+            open_id: User's openId (for sending message)
+
+        Returns:
+            True if card sent successfully, False otherwise
         """
+        from datetime import datetime, timezone
+
+        logger.info(
+            "zhaohu _query_task_progress: querying for user_id=%s",
+            user_id,
+        )
+
+        # Get today's date
+        today = datetime.now(timezone.utc)
+
+        # Query tasks from CronManager
+        tasks: list = []
+        logger.info(
+            "zhaohu _query_task_progress: workspace=%s, cron_manager=%s, "
+            "workspace_dir=%s, user_id=%s",
+            self._workspace is not None,
+            self._workspace.cron_manager if self._workspace else None,
+            self._workspace.workspace_dir if self._workspace else None,
+            user_id,
+        )
+        if self._workspace and self._workspace.cron_manager:
+            try:
+                raw_tasks = await self._workspace.cron_manager.query_user_tasks_by_date(
+                    user_id,
+                    today,
+                )
+                # Convert to format expected by _build_task_progress_card
+                for raw_task in raw_tasks:
+                    tasks.append(
+                        {
+                            "task_name": raw_task.get("task_name", "未知任务"),
+                            "status": raw_task.get("status", "pending"),
+                            "status_text": raw_task.get("status_text", "待开始"),
+                            "time_info": raw_task.get("time_info", ""),
+                            "result_url": raw_task.get("result_url", ""),
+                        },
+                    )
+                logger.info(
+                    "zhaohu _query_task_progress: found %d tasks for user_id=%s",
+                    len(tasks),
+                    user_id,
+                )
+            except Exception:
+                logger.exception(
+                    "zhaohu _query_task_progress: failed to query tasks for user_id=%s",
+                    user_id,
+                )
+
+        # Build and send card using Template 2 (task progress card)
+        card_content = self._build_task_progress_card(tasks)
+        code, msg = await self.send_custom_card(open_id, card_content)
+
+        if code == 0:
+            logger.info(
+                "zhaohu _query_task_progress: card sent successfully, msgId=%s",
+                msg,
+            )
+            return True
+        else:
+            logger.warning(
+                "zhaohu _query_task_progress: card send failed, code=%d msg=%s",
+                code,
+                msg,
+            )
+            return False
+
+    async def _run_task_llm_async(
+        self,
+        request: Any,
+        session_id: str,
+        task_content: str,
+    ) -> None:
+        """Run LLM task asynchronously in background.
+
+        This method runs as a background task after the card is sent to user.
+        The LLM processes the task content via Runner.stream_query, which
+        automatically saves the session state to file after completion.
+
+        Args:
+            request: AgentRequest for the task session
+            session_id: Unique task session ID
+            task_content: Task content/description
+        """
+        from agentscope_runtime.engine.schemas.agent_schemas import RunStatus
+
+        logger.info(
+            "zhaohu _run_task_llm_async: starting for sessionId=%s, task_len=%d",
+            session_id,
+            len(task_content),
+        )
+
+        response_text = ""
+        try:
+            # self._process calls Runner.stream_query, which:
+            # 1. Loads session state
+            # 2. Processes the request through LLM
+            # 3. Saves session state to file in finally block
+            async for event in self._process(request):
+                obj = getattr(event, "object", None)
+                status = getattr(event, "status", None)
+                if obj == "message" and status == RunStatus.Completed:
+                    # Extract text from the completed message
+                    parts = self._message_to_content_parts(event)
+                    for part in parts:
+                        if hasattr(part, "text") and part.text:
+                            response_text += part.text
+                        elif hasattr(part, "refusal") and part.refusal:
+                            response_text += part.refusal
+
+            if response_text:
+                logger.info(
+                    "zhaohu _run_task_llm_async: completed for sessionId=%s, "
+                    "response_len=%d, session saved",
+                    session_id,
+                    len(response_text),
+                )
+                # Notification placeholder: send result to user when needed
+            else:
+                logger.warning(
+                    "zhaohu _run_task_llm_async: no response for sessionId=%s",
+                    session_id,
+                )
+
+        except Exception:
+            logger.exception(
+                "zhaohu _run_task_llm_async: failed for sessionId=%s",
+                session_id,
+            )
+
+    async def process_callback_message(self, callback_body: Any) -> None:
+        """Process callback message: query user, route by message type."""
         from ....config.context import (
             set_current_user_id,
             set_current_tenant_id,
             reset_current_user_id,
             reset_current_tenant_id,
-            get_current_workspace_dir,
         )
 
-        msg_id = getattr(callback_body, "msg_id", "") or ""
-        from_id = getattr(callback_body, "from_id", "") or ""
-        to_id = getattr(callback_body, "to_id", "") or ""
-        group_id = getattr(callback_body, "group_id", None)
-        group_name = getattr(callback_body, "group_name", None)
-        msg_type = getattr(callback_body, "msg_type", "") or ""
-        msg_content = getattr(callback_body, "msg_content", "") or ""
-        timestamp = getattr(callback_body, "timestamp", 0)
+        # Extract callback fields
+        (
+            msg_id,
+            from_id,
+            to_id,
+            group_id,
+            group_name,
+            msg_type,
+            msg_content,
+            timestamp,
+        ) = self._extract_callback_fields(callback_body)
 
         logger.info(
             "zhaohu processing: msgId=%s fromId=%s text=%s",
@@ -522,18 +1135,73 @@ class ZhaohuChannel(BaseChannel):
             msg_content[:50] if msg_content else "",
         )
 
-        # Query user info to get sapId from openId
+        # Query user info
         user_info = await self._query_user_info(from_id)
         sap_id = (user_info or {}).get("sapId") or ""
         yst_id = (user_info or {}).get("ystId") or ""
         user_name = (user_info or {}).get("userName") or ""
 
-        # Set user context for session state loading
+        # Set user context
         tenant_token = set_current_tenant_id(sap_id)
         user_token = set_current_user_id(sap_id)
-        is_group = group_id is not None
 
-        # Build meta for send path
+        # Build meta
+        meta = self._build_callback_meta(
+            yst_id,
+            from_id,
+            to_id,
+            group_id,
+            group_name,
+            msg_type,
+            timestamp,
+            user_name,
+        )
+
+        try:
+            await self._route_message(
+                msg_id,
+                from_id,
+                sap_id,
+                yst_id,
+                msg_content,
+                meta,
+            )
+        except Exception:
+            logger.exception("zhaohu LLM processing failed: msgId=%s", msg_id)
+            await self.send(yst_id, "抱歉，处理您的消息时发生错误，请稍后重试。", meta)
+        finally:
+            reset_current_tenant_id(tenant_token)
+            reset_current_user_id(user_token)
+
+    def _extract_callback_fields(self, callback_body: Any) -> tuple:
+        """Extract fields from callback body.
+
+        Returns:
+            tuple: (msg_id, from_id, to_id, group_id, group_name, msg_type, msg_content, timestamp)
+        """
+        return (
+            getattr(callback_body, "msg_id", "") or "",
+            getattr(callback_body, "from_id", "") or "",
+            getattr(callback_body, "to_id", "") or "",
+            getattr(callback_body, "group_id", None),
+            getattr(callback_body, "group_name", None),
+            getattr(callback_body, "msg_type", "") or "",
+            getattr(callback_body, "msg_content", "") or "",
+            getattr(callback_body, "timestamp", 0),
+        )
+
+    def _build_callback_meta(
+        self,
+        yst_id: str,
+        from_id: str,
+        to_id: str,
+        group_id: Optional[int],
+        group_name: Optional[str],
+        msg_type: str,
+        timestamp: int,
+        user_name: str,
+    ) -> Dict[str, Any]:
+        """Build metadata dict for callback message."""
         meta: Dict[str, Any] = {
             "send_addr": yst_id,
             "open_id": from_id,
@@ -542,66 +1210,176 @@ class ZhaohuChannel(BaseChannel):
             "group_name": group_name,
             "msg_type": msg_type,
             "timestamp": timestamp,
-            "is_group": is_group,
+            "is_group": group_id is not None,
         }
-        try:
-            if user_name:
-                meta["user_name"] = user_name
+        if user_name:
+            meta["user_name"] = user_name
+        return meta
 
-            # Build content parts
-            content_parts = [
-                TextContent(type=ContentType.TEXT, text=msg_content),
-            ]
+    async def _route_message(
+        self,
+        msg_id: str,
+        from_id: str,
+        sap_id: str,
+        yst_id: str,
+        msg_content: str,
+        meta: Dict[str, Any],
+    ) -> None:
+        """Route message by content type."""
+        msg_content_stripped = msg_content.strip()
+        msg_content_len = len(msg_content_stripped)
 
-            # Build session_id for conversation continuity
-            session_id = self.resolve_session_id(sap_id, meta)
-
+        # Case 1: Task progress query
+        if msg_content_stripped in self._TASK_PROGRESS_KEYWORDS:
             logger.info(
-                "zhaohu session: sessionId=%s userId=%s working_dir=%s",
-                session_id,
+                "zhaohu message type: task_progress_query, content=%s",
+                msg_content_stripped,
+            )
+            await self._query_task_progress(sap_id, from_id)
+            return
+
+        # Case 2: Task assignment
+        if msg_content_len > 10:
+            await self._handle_task_assignment(
                 sap_id,
-                get_current_workspace_dir(),
-            )
-
-            # Build AgentRequest
-            request = self.build_agent_request_from_user_content(
-                channel_id=self.channel,
-                sender_id=sap_id,
-                session_id=session_id,
-                content_parts=content_parts,
-                channel_meta=meta,
-            )
-            request.channel_meta = meta
-
-            # Process through LLM and collect response
-            # Note: self._process (Runner.query_handler) will load/save session state
-
-            response_text = ""
-            await self.get_llm_response(
-                meta,
-                msg_id,
-                request,
-                response_text,
-                yst_id,
-            )
-
-        except Exception:
-            logger.exception(
-                "zhaohu LLM processing failed: msgId=%s",
-                msg_id,
-            )
-
-            # Send error message
-            await self.send(
-                yst_id,
-                "抱歉，处理您的消息时发生错误，请稍后重试。",
+                from_id,
+                msg_content_stripped,
                 meta,
             )
+            return
 
-        finally:
-            # Always restore user context
-            reset_current_tenant_id(tenant_token)
-            reset_current_user_id(user_token)
+        # Case 3: Casual chat
+        await self._handle_casual_chat(
+            msg_id,
+            sap_id,
+            yst_id,
+            msg_content,
+            msg_content_len,
+            meta,
+        )
+
+    async def _handle_task_assignment(
+        self,
+        sap_id: str,
+        from_id: str,
+        task_content: str,
+        meta: Dict[str, Any],
+    ) -> None:
+        """Handle task assignment (Case 2): create new session and process task.
+
+        Creates a new unique session for the task, runs LLM asynchronously
+        to process the task content, and sends a card notification to user.
+
+        This is NOT creating a scheduled cron job - it's creating a new
+        conversation session to handle the user's task request.
+
+        Args:
+            sap_id: User's sapId
+            from_id: User's openId (for sending card)
+            task_content: Task description/content from user message
+            meta: Channel metadata
+        """
+        logger.info(
+            "zhaohu message type: task_assignment, content_len=%d",
+            len(task_content),
+        )
+
+        # Generate unique sessionID for this task session
+        task_session_id = f"zhaohu:task:{sap_id}:{uuid.uuid4().hex[:8]}"
+        logger.info(
+            "zhaohu task session: sessionId=%s userId=%s",
+            task_session_id,
+            sap_id,
+        )
+
+        # Build AgentRequest for the new session
+        content_parts = [TextContent(type=ContentType.TEXT, text=task_content)]
+        task_request = self.build_agent_request_from_user_content(
+            channel_id=self.channel,
+            sender_id=sap_id,
+            session_id=task_session_id,
+            content_parts=content_parts,
+            channel_meta=meta,
+        )
+        task_request.channel_meta = meta
+
+        # Launch async LLM task in the new session
+        asyncio.create_task(
+            self._run_task_llm_async(
+                task_request,
+                task_session_id,
+                task_content,
+            ),
+        )
+
+        # Send card notification to user
+        card_content = self._build_task_initiated_card(
+            task_content,
+            task_session_id,
+        )
+        code, msg = await self.send_custom_card(from_id, card_content)
+
+        if code == 0:
+            logger.info(
+                "zhaohu _handle_task_assignment: card sent successfully, msgId=%s",
+                msg,
+            )
+        else:
+            logger.warning(
+                "zhaohu _handle_task_assignment: card send failed, "
+                "code=%d msg=%s, fallback to text",
+                code,
+                msg,
+            )
+
+    async def _handle_casual_chat(
+        self,
+        msg_id: str,
+        sap_id: str,
+        yst_id: str,
+        msg_content: str,
+        msg_content_len: int,
+        meta: Dict[str, Any],
+    ) -> None:
+        """Handle casual chat (Case 3): proceed with LLM flow."""
+        from ....config.context import get_current_workspace_dir
+
+        logger.info(
+            "zhaohu message type: casual_chat, content_len=%d",
+            msg_content_len,
+        )
+
+        # Build content parts
+        content_parts = [TextContent(type=ContentType.TEXT, text=msg_content)]
+
+        # Build session_id
+        session_id = self.resolve_session_id(sap_id, meta)
+        logger.info(
+            "zhaohu session: sessionId=%s userId=%s working_dir=%s",
+            session_id,
+            sap_id,
+            get_current_workspace_dir(),
+        )
+
+        # Build AgentRequest
+        request = self.build_agent_request_from_user_content(
+            channel_id=self.channel,
+            sender_id=sap_id,
+            session_id=session_id,
+            content_parts=content_parts,
+            channel_meta=meta,
+        )
+        request.channel_meta = meta
+
+        # Process through LLM
+        response_text = ""
+        await self.get_llm_response(
+            meta,
+            msg_id,
+            request,
+            response_text,
+            yst_id,
+        )
 
     async def get_llm_response(
         self,

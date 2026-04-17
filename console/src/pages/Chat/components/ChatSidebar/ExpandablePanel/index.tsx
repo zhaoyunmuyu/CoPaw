@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { CronJobSpecOutput } from '@/api/types';
 import type { IAgentScopeRuntimeWebUISession } from '@/components/agentscope-chat';
+import { useChatAnywhereSessionsState } from '@/components/agentscope-chat';
 import { TasksIconSmall, HistoryIconSmall } from '../CollapsedToolbar/icons';
 import Style from './style';
 
@@ -149,13 +150,16 @@ function HistoryContent({
   onClose: () => void;
 }) {
   const navigate = useNavigate();
+  const { setSessionLoading } = useChatAnywhereSessionsState();
 
   const handleSessionClick = useCallback(
     (sessionId: string) => {
+      // 先设置 loading 状态，避免导航后闪现欢迎页
+      setSessionLoading(true);
       navigate(`/chat/${sessionId}`, { replace: true });
       onClose();
     },
-    [navigate, onClose],
+    [navigate, onClose, setSessionLoading],
   );
 
   return (

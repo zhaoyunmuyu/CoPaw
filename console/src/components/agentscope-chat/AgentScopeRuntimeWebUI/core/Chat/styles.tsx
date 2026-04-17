@@ -18,6 +18,13 @@ export default createGlobalStyle`
     justify-content: center;
     height: 100%;
   }
+
+  &-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+  }
 }
 
 

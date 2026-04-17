@@ -111,6 +111,30 @@ class ZhaohuConfig(BaseChannelConfig):
             "",
         ),
     )
+    oauth_url: str = Field(
+        default_factory=lambda: EnvVarLoader.get_str(
+            "SWE_ZHAOHU_OAUTH_URL",
+            "",
+        ),
+    )
+    client_id: str = Field(
+        default_factory=lambda: EnvVarLoader.get_str(
+            "SWE_ZHAOHU_CLIENT_ID",
+            "",
+        ),
+    )
+    client_secret: str = Field(
+        default_factory=lambda: EnvVarLoader.get_str(
+            "SWE_ZHAOHU_CLIENT_SECRET",
+            "",
+        ),
+    )
+    custom_card_url: str = Field(
+        default_factory=lambda: EnvVarLoader.get_str(
+            "SWE_ZHAOHU_CUSTOM_CARD_URL",
+            "",
+        ),
+    )
 
 
 class ConsoleConfig(BaseChannelConfig):
@@ -870,7 +894,7 @@ def build_qa_agent_tools_config() -> ToolsConfig:
     """Tools preset for builtin ``default_qa_agent`` (first workspace init).
 
     Only these are enabled: execute_shell_command, read_file, edit_file,
-    write_file, view_image. All other built-ins are disabled.
+    write_file. All other built-ins are disabled.
     """
     allow = frozenset(
         {
@@ -878,7 +902,6 @@ def build_qa_agent_tools_config() -> ToolsConfig:
             "read_file",
             "write_file",
             "edit_file",
-            "view_image",
         },
     )
     builtin_tools = {

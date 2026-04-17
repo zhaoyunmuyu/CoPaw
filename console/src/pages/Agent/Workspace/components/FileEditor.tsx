@@ -6,6 +6,7 @@ import { XMarkdown } from "@ant-design/x-markdown";
 import { useTranslation } from "react-i18next";
 import { useAppMessage } from "../../../../hooks/useAppMessage";
 import { stripFrontmatter } from "../../../../utils/markdown";
+import { copyToClipboard } from "../../../../utils/clipboard";
 import styles from "../index.module.less";
 
 interface FileEditorProps {
@@ -37,26 +38,11 @@ export const FileEditor: React.FC<FileEditorProps> = ({
     [fileContent],
   );
 
-  const copyToClipboard = async () => {
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(fileContent);
-        message.success(t("common.copied"));
-      } else {
-        const textArea = document.createElement("textarea");
-        textArea.value = fileContent;
-        textArea.style.position = "fixed";
-        textArea.style.left = "-999999px";
-        textArea.style.top = "-999999px";
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        document.execCommand("copy");
-        textArea.remove();
-        message.success(t("common.copied"));
-      }
-    } catch (err) {
-      console.error("Failed to copy text: ", err);
+  const handleCopyToClipboard = async () => {
+    const success = await copyToClipboard(fileContent);
+    if (success) {
+      message.success(t("common.copied"));
+    } else {
       message.error(t("common.copyFailed"));
     }
   };
@@ -111,7 +97,7 @@ export const FileEditor: React.FC<FileEditorProps> = ({
                     <Button
                       icon={<CopyOutlined />}
                       type="text"
-                      onClick={copyToClipboard}
+                      onClick={handleCopyToClipboard}
                       className={styles.copyButton}
                     />
                   </div>

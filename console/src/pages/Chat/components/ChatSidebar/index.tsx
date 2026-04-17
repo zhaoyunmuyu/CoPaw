@@ -13,6 +13,7 @@ import {
   buildHistorySessions,
   type HistorySession,
 } from './historySessions';
+import { useChatAnywhereSessionsState } from '@/components/agentscope-chat';
 
 function HistoryIcon() {
   return (
@@ -142,6 +143,7 @@ export default function ChatSidebar(props: ChatSidebarProps) {
   const toolbarRef = useRef<HTMLDivElement>(null);
   // Guide image preview state
   const [guidePreviewVisible, setGuidePreviewVisible] = useState(false);
+  const { setSessionLoading } = useChatAnywhereSessionsState();
 
   const currentChatId = location.pathname.match(/^\/chat\/(.+)$/)?.[1] || null;
 
@@ -181,9 +183,11 @@ export default function ChatSidebar(props: ChatSidebarProps) {
 
   const handleSessionClick = useCallback(
     (sessionId: string) => {
+      // 先设置 loading 状态，避免导航后闪现欢迎页
+      setSessionLoading(true);
       navigate(`/chat/${sessionId}`, { replace: true });
     },
-    [navigate],
+    [navigate, setSessionLoading],
   );
 
   const handleNewTopic = useCallback(() => {

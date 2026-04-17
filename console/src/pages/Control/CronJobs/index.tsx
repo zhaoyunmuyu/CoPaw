@@ -12,12 +12,14 @@ import {
 } from "./components";
 import { parseCron, serializeCron } from "./components/parseCron";
 import { PageHeader } from "@/components/PageHeader";
+import { useAppMessage } from "../../../hooks/useAppMessage";
 import styles from "./index.module.less";
 
 type CronJob = CronJobSpecOutput;
 
 function CronJobsPage() {
   const { t } = useTranslation();
+  const { message } = useAppMessage();
   const {
     jobs,
     loading,
@@ -195,6 +197,8 @@ function CronJobsPage() {
     onExecuteNow: handleExecuteNow,
     onEdit: handleEdit,
     onDelete: handleDelete,
+    onCopySuccess: () => message.success(t("common.copied")),
+    onCopyError: () => message.error(t("common.copyFailed")),
     t,
   });
 

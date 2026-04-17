@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import type { CSSProperties } from "react";
 import { useAppMessage } from "../../hooks/useAppMessage";
 import { stripFrontmatter } from "../../utils/markdown";
+import { copyToClipboard } from "../../utils/clipboard";
 import styles from "./index.module.less";
 
 interface MarkdownCopyProps {
@@ -74,7 +75,7 @@ export function MarkdownCopy({
     }
   }, [editable, textareaProps.disabled, showMarkdown]);
 
-  const copyToClipboard = async () => {
+  const copyToClipboardHandler = async () => {
     const contentToCopy =
       localShowMarkdown && !(editable && !textareaProps.disabled)
         ? content
@@ -86,21 +87,11 @@ export function MarkdownCopy({
 
     setIsCopying(true);
     try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(contentToCopy);
+      const success = await copyToClipboard(contentToCopy);
+      if (success) {
         message.success(t("common.copied"));
       } else {
-        const textArea = document.createElement("textarea");
-        textArea.value = contentToCopy;
-        textArea.style.position = "fixed";
-        textArea.style.left = "-999999px";
-        textArea.style.top = "-999999px";
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        document.execCommand("copy");
-        textArea.remove();
-        message.success(t("common.copied"));
+        message.error(t("common.copyFailed"));
       }
     } catch (err) {
       console.error("Failed to copy text: ", err);
@@ -166,7 +157,7 @@ export function MarkdownCopy({
             <Button
               icon={<CopyOutlined />}
               {...defaultCopyButtonProps}
-              onClick={copyToClipboard}
+              onClick={copyToClipboardHandler}
               loading={isCopying}
             />
           </div>

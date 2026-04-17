@@ -562,6 +562,248 @@ class CronManager:  # pylint: disable=too-many-public-methods
     def get_state(self, job_id: str) -> CronJobState:
         return self._states.get(job_id, CronJobState())
 
+    def _filter_jobs_by_user(
+        self,
+        jobs: list[CronJobSpec],
+        user_id: str,
+    ) -> list[CronJobSpec]:
+        """Filter jobs that belong to the given user.
+
+        Args:
+            jobs: List of all jobs
+            user_id: User's sapId
+
+        Returns:
+            List of jobs with tenant_id matching user_id
+        """
+        user_jobs = []
+        for job in jobs:
+            # Check tenant_id match
+            if job.tenant_id and job.tenant_id == user_id:
+                user_jobs.append(job)
+        return user_jobs
+
+    def _calculate_run_times_on_date(
+        self,
+        job: CronJobSpec,
+        date: datetime,
+    ) -> list[datetime]:
+        """Calculate all scheduled run times for a job on a given date.
+
+        Args:
+            job: The cron job specification
+            date: The date to calculate run times for
+
+        Returns:
+            List of scheduled run times on that date
+        """
+        trigger = self._build_trigger(job)
+
+        start_of_day = date.replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        if start_of_day.tzinfo is None:
+            start_of_day = start_of_day.replace(tzinfo=timezone.utc)
+
+        run_times: list[datetime] = []
+        next_fire = trigger.get_next_fire_time(None, start_of_day)
+        safety_limit = 20
+
+        while next_fire and len(run_times) < safety_limit:
+            fire_date = next_fire.date()
+            query_date = date.date()
+            if fire_date == query_date:
+                run_times.append(next_fire)
+                next_fire = trigger.get_next_fire_time(next_fire, next_fire)
+            elif fire_date > query_date:
+                break
+            else:
+                next_fire = trigger.get_next_fire_time(next_fire, next_fire)
+
+        return run_times
+
+    def _determine_task_status(
+        self,
+        scheduled_time: datetime,
+        state: CronJobState,
+        date: datetime,
+    ) -> str:
+        """Determine task status based on schedule and execution state.
+
+        Args:
+            scheduled_time: The scheduled execution time
+            state: The job's current state
+            date: The query date
+
+        Returns:
+            Status string: "completed", "in_progress", "pending", "error", "cancelled"
+        """
+        now = datetime.now(timezone.utc)
+        last_run = state.last_run_at
+
+        if state.last_status == "running":
+            return "in_progress"
+        if scheduled_time > now:
+            return "pending"
+        if last_run and last_run.date() == date.date():
+            if state.last_status == "success":
+                return "completed"
+            if state.last_status in ("error", "cancelled"):
+                return state.last_status
+            return "in_progress"
+        return "pending"
+
+    def _build_task_status_display(
+        self,
+        task_status: str,
+        scheduled_time: Optional[datetime],
+        last_run: Optional[datetime],
+    ) -> tuple[str, str]:
+        """Build status_text and time_info for display.
+
+        Args:
+            task_status: The task status
+            scheduled_time: Scheduled execution time
+            last_run: Last actual run time
+
+        Returns:
+            Tuple of (status_text, time_info)
+        """
+        status_map = {
+            "completed": ("已完成", "已执行完成"),
+            "in_progress": ("进行中", "任务执行中"),
+            "pending": ("待开始", "等待执行"),
+            "error": ("执行失败", "执行失败"),
+            "cancelled": ("已取消", "任务已取消"),
+        }
+
+        if task_status not in status_map:
+            return ("未知", "")
+
+        status_text, default_info = status_map[task_status]
+
+        if task_status == "completed" and last_run:
+            time_info = f"{last_run.strftime('%H:%M')}已完成"
+        elif task_status == "in_progress" and last_run:
+            time_info = f"{last_run.strftime('%H:%M')}已启动"
+        elif task_status == "error" and last_run:
+            time_info = f"{last_run.strftime('%H:%M')}执行失败"
+        elif task_status == "pending" and scheduled_time:
+            time_info = f"将于{scheduled_time.strftime('%H:%M')}执行"
+        else:
+            time_info = default_info
+
+        return (status_text, time_info)
+
+    async def query_user_tasks_by_date(
+        self,
+        user_id: str,
+        date: datetime,
+    ) -> list[Dict[str, Any]]:
+        """Query all tasks for a user on a specific date.
+
+        This method finds all jobs that belong to the user and calculates
+        their scheduled run times and current status for the given date.
+
+        Args:
+            user_id: User's sapId/tenant_id
+            date: The date to query tasks for
+
+        Returns:
+            List of task info dicts with job_id, task_name, status, etc.
+        """
+        jobs = await self.list_jobs()
+        # pylint: disable=protected-access
+        repo_path = getattr(self._repo, "_path", "unknown")
+        # pylint: enable=protected-access
+        logger.info(
+            "query_user_tasks_by_date: list_jobs returned %d total jobs, "
+            "user_id=%s, repo_path=%s",
+            len(jobs),
+            user_id,
+            repo_path,
+        )
+        for job in jobs:
+            logger.info(
+                "query_user_tasks_by_date: job.id=%s, job.tenant_id=%s, "
+                "job.name=%s, job.enabled=%s",
+                job.id,
+                job.tenant_id,
+                job.name,
+                job.enabled,
+            )
+        user_jobs = self._filter_jobs_by_user(jobs, user_id)
+        logger.info(
+            "query_user_tasks_by_date: filtered %d jobs for user_id=%s",
+            len(user_jobs),
+            user_id,
+        )
+        tasks: list[Dict[str, Any]] = []
+
+        for job in user_jobs:
+            if not job.enabled:
+                continue
+
+            state = self.get_state(job.id)
+
+            try:
+                run_times = self._calculate_run_times_on_date(job, date)
+
+                for scheduled_time in run_times:
+                    task_status = self._determine_task_status(
+                        scheduled_time,
+                        state,
+                        date,
+                    )
+                    status_text, time_info = self._build_task_status_display(
+                        task_status,
+                        scheduled_time,
+                        state.last_run_at,
+                    )
+
+                    tasks.append(
+                        {
+                            "job_id": job.id,
+                            "task_name": job.name,
+                            "status": task_status,
+                            "status_text": status_text,
+                            "scheduled_time": scheduled_time,
+                            "last_run_at": state.last_run_at,
+                            "last_status": state.last_status,
+                            "time_info": time_info,
+                            "result_url": "",
+                        },
+                    )
+
+            except Exception as e:
+                logger.warning(
+                    "Failed to calculate scheduled time for job %s: %s",
+                    job.id,
+                    repr(e),
+                )
+                tasks.append(
+                    {
+                        "job_id": job.id,
+                        "task_name": job.name,
+                        "status": "pending",
+                        "status_text": "待开始",
+                        "scheduled_time": None,
+                        "last_run_at": state.last_run_at,
+                        "last_status": state.last_status,
+                        "time_info": "等待执行",
+                        "result_url": "",
+                    },
+                )
+
+        tasks.sort(
+            key=lambda t: t.get("scheduled_time")
+            or datetime.max.replace(tzinfo=timezone.utc),
+        )
+        return tasks
+
     # ----- write/control -----
 
     async def create_or_replace_job(self, spec: CronJobSpec) -> None:

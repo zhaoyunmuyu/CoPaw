@@ -3,9 +3,9 @@ import type { ColumnsType } from "antd/es/table";
 import type { MenuProps } from "antd";
 import type { CronJobSpecOutput } from "../../../../api/types";
 import { CopyOutlined, MoreOutlined } from "@ant-design/icons";
-import { useAppMessage } from "../../../../hooks/useAppMessage";
 import { TFunction } from "i18next";
 import { parseCron } from "./parseCron";
+import { copyToClipboard } from "../../../../utils/clipboard";
 import styles from "../index.module.less";
 
 type CronJob = CronJobSpecOutput;
@@ -15,38 +15,22 @@ interface ColumnHandlers {
   onExecuteNow: (job: CronJob) => void;
   onEdit: (job: CronJob) => void;
   onDelete: (jobId: string) => void;
+  onCopySuccess: () => void;
+  onCopyError: () => void;
   t: TFunction;
 }
-
-const createCopyToClipboard = (t: TFunction) => async (text: string) => {
-  const { message } = useAppMessage();
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-      message.success(t("common.copied"));
-    } else {
-      const textArea = document.createElement("textarea");
-      textArea.value = text;
-      textArea.style.position = "fixed";
-      textArea.style.left = "-999999px";
-      textArea.style.top = "-999999px";
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-      document.execCommand("copy");
-      textArea.remove();
-      message.success(t("common.copied"));
-    }
-  } catch (err) {
-    console.error("Failed to copy text: ", err);
-    message.error(t("common.copyFailed"));
-  }
-};
 
 export const createColumns = (
   handlers: ColumnHandlers,
 ): ColumnsType<CronJob> => {
-  const copyToClipboard = createCopyToClipboard(handlers.t);
+  const handleCopy = async (text: string) => {
+    const success = await copyToClipboard(text);
+    if (success) {
+      handlers.onCopySuccess();
+    } else {
+      handlers.onCopyError();
+    }
+  };
 
   return [
     {
@@ -221,7 +205,7 @@ export const createColumns = (
                   size="small"
                   onClick={(e) => {
                     e.stopPropagation();
-                    copyToClipboard(fullText);
+                    handleCopy(fullText);
                   }}
                   className={styles.copyButton}
                 />
