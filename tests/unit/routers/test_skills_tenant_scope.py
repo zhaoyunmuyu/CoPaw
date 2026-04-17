@@ -92,6 +92,60 @@ def _write_workspace_scaffold(workspace_dir: Path) -> None:
         )
 
 
+def _set_workspace_skill_state(
+    workspace_dir: Path,
+    skill_name: str,
+    *,
+    enabled: bool,
+    description: str,
+) -> None:
+    _write_workspace_scaffold(workspace_dir)
+    _write_skill(
+        get_workspace_skills_dir(workspace_dir) / skill_name,
+        description,
+    )
+    reconcile_workspace_manifest(workspace_dir)
+
+    manifest_path = get_workspace_skill_manifest_path(workspace_dir)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["skills"][skill_name]["enabled"] = enabled
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def _workspace_skill_enabled(workspace_dir: Path, skill_name: str) -> bool:
+    manifest = json.loads(
+        get_workspace_skill_manifest_path(workspace_dir).read_text(
+            encoding="utf-8",
+        ),
+    )
+    return bool(manifest["skills"][skill_name]["enabled"])
+
+
+def _stub_agent_request(
+    monkeypatch,
+    *,
+    workspace_dir: Path,
+    agent_id: str,
+    tenant_id: str,
+) -> None:
+    async def fake_get_agent_for_request(request):
+        del request
+        return SimpleNamespace(
+            workspace_dir=str(workspace_dir),
+            agent_id=agent_id,
+            tenant_id=tenant_id,
+        )
+
+    monkeypatch.setitem(
+        sys.modules,
+        "swe.app.agent_context",
+        SimpleNamespace(get_agent_for_request=fake_get_agent_for_request),
+    )
+
+
 def test_list_pool_skills_passes_tenant_working_dir(
     monkeypatch,
     tmp_path: Path,
@@ -546,3 +600,232 @@ def test_broadcast_pool_skills_rejects_missing_source_skill(
         assert "missing-skill" in str(exc.detail)
     else:
         raise AssertionError("expected HTTPException")
+
+
+def test_enable_skill_reload_stays_with_current_tenant_runtime(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    tenant_a_default = tmp_path / "tenant-a" / "workspaces" / "default"
+    tenant_b_default = tmp_path / "tenant-b" / "workspaces" / "default"
+    _set_workspace_skill_state(
+        tenant_a_default,
+        "docx",
+        enabled=False,
+        description="tenant-a docx",
+    )
+    _set_workspace_skill_state(
+        tenant_b_default,
+        "docx",
+        enabled=False,
+        description="tenant-b docx",
+    )
+    _stub_agent_request(
+        monkeypatch,
+        workspace_dir=tenant_a_default,
+        agent_id="default",
+        tenant_id="tenant-a",
+    )
+
+    reload_calls: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(
+        skills_router,
+        "schedule_agent_reload",
+        lambda request, agent_id, tenant_id=None: reload_calls.append(
+            (agent_id, tenant_id),
+        ),
+    )
+
+    result = asyncio.run(
+        skills_router.enable_skill(_request("tenant-a"), "docx"),
+    )
+
+    assert result["enabled"] is True
+    assert _workspace_skill_enabled(tenant_a_default, "docx") is True
+    assert _workspace_skill_enabled(tenant_b_default, "docx") is False
+    assert reload_calls == [("default", "tenant-a")]
+
+
+def test_disable_skill_reload_does_not_target_other_agents(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    default_workspace = tmp_path / "tenant-a" / "workspaces" / "default"
+    qa_workspace = tmp_path / "tenant-a" / "workspaces" / "qa"
+    _set_workspace_skill_state(
+        default_workspace,
+        "docx",
+        enabled=True,
+        description="default docx",
+    )
+    _set_workspace_skill_state(
+        qa_workspace,
+        "docx",
+        enabled=True,
+        description="qa docx",
+    )
+    _stub_agent_request(
+        monkeypatch,
+        workspace_dir=default_workspace,
+        agent_id="default",
+        tenant_id="tenant-a",
+    )
+
+    reload_calls: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(
+        skills_router,
+        "schedule_agent_reload",
+        lambda request, agent_id, tenant_id=None: reload_calls.append(
+            (agent_id, tenant_id),
+        ),
+    )
+
+    result = asyncio.run(
+        skills_router.disable_skill(_request("tenant-a"), "docx"),
+    )
+
+    assert result["disabled"] is True
+    assert _workspace_skill_enabled(default_workspace, "docx") is False
+    assert _workspace_skill_enabled(qa_workspace, "docx") is True
+    assert reload_calls == [("default", "tenant-a")]
+
+
+def test_batch_enable_skills_reloads_once_for_current_tenant_agent(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    default_workspace = tmp_path / "tenant-a" / "workspaces" / "default"
+    qa_workspace = tmp_path / "tenant-a" / "workspaces" / "qa"
+    _set_workspace_skill_state(
+        default_workspace,
+        "docx",
+        enabled=False,
+        description="default docx",
+    )
+    _set_workspace_skill_state(
+        default_workspace,
+        "excel",
+        enabled=False,
+        description="default excel",
+    )
+    _set_workspace_skill_state(
+        qa_workspace,
+        "docx",
+        enabled=False,
+        description="qa docx",
+    )
+    _stub_agent_request(
+        monkeypatch,
+        workspace_dir=default_workspace,
+        agent_id="default",
+        tenant_id="tenant-a",
+    )
+
+    reload_calls: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(
+        skills_router,
+        "schedule_agent_reload",
+        lambda request, agent_id, tenant_id=None: reload_calls.append(
+            (agent_id, tenant_id),
+        ),
+    )
+
+    result = asyncio.run(
+        skills_router.batch_enable_skills(
+            _request("tenant-a"),
+            ["docx", "excel"],
+        ),
+    )
+
+    assert result["results"]["docx"]["success"] is True
+    assert result["results"]["excel"]["success"] is True
+    assert _workspace_skill_enabled(default_workspace, "docx") is True
+    assert _workspace_skill_enabled(default_workspace, "excel") is True
+    assert _workspace_skill_enabled(qa_workspace, "docx") is False
+    assert reload_calls == [("default", "tenant-a")]
+
+
+def test_batch_disable_skills_without_success_does_not_reload(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    default_workspace = tmp_path / "tenant-a" / "workspaces" / "default"
+    _write_workspace_scaffold(default_workspace)
+    reconcile_workspace_manifest(default_workspace)
+    _stub_agent_request(
+        monkeypatch,
+        workspace_dir=default_workspace,
+        agent_id="default",
+        tenant_id="tenant-a",
+    )
+
+    reload_calls: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(
+        skills_router,
+        "schedule_agent_reload",
+        lambda request, agent_id, tenant_id=None: reload_calls.append(
+            (agent_id, tenant_id),
+        ),
+    )
+
+    result = asyncio.run(
+        skills_router.batch_disable_skills(
+            _request("tenant-a"),
+            ["missing-skill"],
+        ),
+    )
+
+    assert result["results"]["missing-skill"]["success"] is False
+    assert not reload_calls
+
+
+def test_batch_disable_skills_does_not_reload_other_tenants(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    tenant_a_default = tmp_path / "tenant-a" / "workspaces" / "default"
+    tenant_a_qa = tmp_path / "tenant-a" / "workspaces" / "qa"
+    tenant_b_default = tmp_path / "tenant-b" / "workspaces" / "default"
+    _set_workspace_skill_state(
+        tenant_a_default,
+        "docx",
+        enabled=True,
+        description="tenant-a default docx",
+    )
+    _set_workspace_skill_state(
+        tenant_a_qa,
+        "docx",
+        enabled=True,
+        description="tenant-a qa docx",
+    )
+    _set_workspace_skill_state(
+        tenant_b_default,
+        "docx",
+        enabled=True,
+        description="tenant-b default docx",
+    )
+    _stub_agent_request(
+        monkeypatch,
+        workspace_dir=tenant_a_default,
+        agent_id="default",
+        tenant_id="tenant-a",
+    )
+
+    reload_calls: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(
+        skills_router,
+        "schedule_agent_reload",
+        lambda request, agent_id, tenant_id=None: reload_calls.append(
+            (agent_id, tenant_id),
+        ),
+    )
+
+    result = asyncio.run(
+        skills_router.batch_disable_skills(_request("tenant-a"), ["docx"]),
+    )
+
+    assert result["results"]["docx"]["success"] is True
+    assert _workspace_skill_enabled(tenant_a_default, "docx") is False
+    assert _workspace_skill_enabled(tenant_a_qa, "docx") is True
+    assert _workspace_skill_enabled(tenant_b_default, "docx") is True
+    assert reload_calls == [("default", "tenant-a")]
