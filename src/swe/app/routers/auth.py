@@ -7,6 +7,12 @@ import os
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from ..agent_context import get_agent_for_request
+from ..crons.auth_state import (
+    ensure_user_info_from_access_token,
+    extract_access_token_from_cookie,
+    get_auth_snapshot,
+)
 from ..auth import (
     authenticate,
     has_registered_users,
@@ -118,6 +124,47 @@ class UpdateProfileRequest(BaseModel):
     current_password: str
     new_username: str | None = None
     new_password: str | None = None
+
+
+class CronAuthConfigureRequest(BaseModel):
+    cookie: str
+
+
+@router.post("/cron-auth")
+async def configure_cron_auth(
+    req: CronAuthConfigureRequest,
+    request: Request,
+):
+    """Configure cron auth state for the current workspace."""
+    cookie_header = req.cookie.strip()
+    if not cookie_header:
+        raise HTTPException(status_code=400, detail="cookie is required")
+
+    try:
+        access_token = extract_access_token_from_cookie(cookie_header)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    workspace = await get_agent_for_request(request)
+    ensured = ensure_user_info_from_access_token(
+        access_token,
+        cookie_header=cookie_header,
+        tenant_id=workspace.tenant_id,
+        workspace_dir=workspace.workspace_dir,
+    )
+    snapshot = get_auth_snapshot(
+        tenant_id=workspace.tenant_id,
+        workspace_dir=workspace.workspace_dir,
+    )
+    return {
+        "configured": snapshot.configured,
+        "user_info_status": (
+            "reused" if ensured.reused else "refreshed"
+        ),
+        "user_info_expires_at": snapshot.user_info_expires_at,
+        "auth_token_expires_at": snapshot.auth_token_expires_at,
+        "has_auth_token": snapshot.has_auth_token,
+    }
 
 
 @router.post("/update-profile")

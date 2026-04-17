@@ -45,7 +45,9 @@ from ...tracing import (
     get_trace_manager,
 )
 from ...tracing.models import TraceStatus
-from ...config.context import get_current_passthrough_headers
+from ...config.context import (
+    get_current_passthrough_headers,
+)
 
 if TYPE_CHECKING:
     from ...agents.memory import BaseMemoryManager
@@ -478,10 +480,21 @@ class AgentRunner(Runner):
             )
 
             # Create MCP clients directly from agent config for this request
-            passthrough_headers = get_current_passthrough_headers()
+            auth_token = getattr(request, "auth_token", None)
+            cookie_header = getattr(request, "cookie", None)
+            passthrough_headers = dict[str, str](get_current_passthrough_headers() or {})
+            existing_header_names = {
+                key.lower() for key in passthrough_headers
+            }
+            if auth_token and "authorization" not in existing_header_names:
+                passthrough_headers["Authorization"] = (
+                    f"Bearer {auth_token}"
+                )
+            if cookie_header and "cookie" not in existing_header_names:
+                passthrough_headers["cookie"] = cookie_header
             mcp_clients = await _build_and_connect_mcp_clients(
                 agent_config.mcp,
-                passthrough_headers=passthrough_headers,
+                passthrough_headers=passthrough_headers or None,
             )
 
             agent = SWEAgent(
@@ -494,6 +507,13 @@ class AgentRunner(Runner):
                     "user_id": user_id,
                     "channel": channel,
                     "agent_id": self.agent_id,
+                    **(
+                        {
+                            "auth_token": auth_token,
+                        }
+                        if auth_token
+                        else {}
+                    ),
                     **(
                         {
                             "forced_tool_call_json": json.dumps(
