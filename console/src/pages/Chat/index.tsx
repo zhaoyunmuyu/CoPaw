@@ -57,7 +57,7 @@ import {
   type CopyableResponse,
   type RuntimeLoadingBridgeApi,
 } from "./utils";
-import { deriveChatTaskState } from "./taskJobs";
+import { deriveChatTaskState, shouldMarkTaskReadOnOpen } from "./taskJobs";
 import { shouldRefreshCurrentTaskMessages } from "./taskMessageRefresh";
 
 const CHAT_ATTACHMENT_MAX_MB = 10;
@@ -552,6 +552,7 @@ export default function ChatPage() {
   useEffect(() => {
     if (!currentTask?.id) return;
     if ((currentTask.task?.unread_execution_count || 0) <= 0) return;
+    if (!shouldMarkTaskReadOnOpen(currentTask)) return;
 
     setJobs((prev) =>
       prev.map((job) =>
@@ -574,31 +575,96 @@ export default function ChatPage() {
       const taskChatId = task.task?.chat_id;
       if (!taskChatId) return;
 
-      setJobs((prev) =>
-        prev.map((job) =>
-          job.id === task.id && job.task
-            ? {
-                ...job,
-                task: {
-                  ...job.task,
-                  unread_execution_count: 0,
-                },
-              }
-            : job,
-        ),
-      );
+      if (shouldMarkTaskReadOnOpen(task)) {
+        setJobs((prev) =>
+          prev.map((job) =>
+            job.id === task.id && job.task
+              ? {
+                  ...job,
+                  task: {
+                    ...job.task,
+                    unread_execution_count: 0,
+                  },
+                }
+              : job,
+          ),
+        );
+      }
 
       // 先设置 loading 状态，避免导航后闪现欢迎页
       setSessionLoading(true);
       navigate(`/chat/${taskChatId}`, { replace: true });
 
-      try {
-        await cronJobApi.markTaskRead(task.id);
-      } catch {
-        void refreshJobs();
+      if (shouldMarkTaskReadOnOpen(task)) {
+        try {
+          await cronJobApi.markTaskRead(task.id);
+        } catch {
+          void refreshJobs();
+        }
       }
     },
     [navigate, refreshJobs, setSessionLoading],
+  );
+
+  const handleTaskResume = useCallback(
+    async (task: CronJobSpecOutput) => {
+      setJobs((prev) =>
+        prev.map((job) =>
+          job.id === task.id
+            ? {
+                ...job,
+                enabled: true,
+                task: job.task
+                  ? {
+                      ...job.task,
+                      is_paused: false,
+                      pause_reason: null,
+                      auto_paused_at: null,
+                      unread_execution_count: 0,
+                    }
+                  : job.task,
+              }
+            : job,
+        ),
+      );
+
+      try {
+        await cronJobApi.resumeCronJob(task.id);
+        message.success("任务已恢复");
+        void refreshJobs();
+      } catch {
+        message.error("恢复失败");
+        void refreshJobs();
+      }
+    },
+    [message, refreshJobs],
+  );
+
+  const handleTaskDelete = useCallback(
+    (task: CronJobSpecOutput) => {
+      Modal.confirm({
+        title: "删除暂停任务",
+        content: `确认删除任务“${task.name || task.id}”？`,
+        okText: "删除",
+        okType: "danger",
+        cancelText: "取消",
+        onOk: async () => {
+          setJobs((prev) => prev.filter((job) => job.id !== task.id));
+          if (task.task?.chat_id && task.task.chat_id === chatIdRef.current) {
+            navigate("/chat", { replace: true });
+          }
+          try {
+            await cronJobApi.deleteCronJob(task.id);
+            message.success("任务已删除");
+            void refreshJobs();
+          } catch {
+            message.error("删除失败");
+            void refreshJobs();
+          }
+        },
+      });
+    },
+    [message, navigate, refreshJobs],
   );
 
   useEffect(() => {
@@ -1009,6 +1075,8 @@ export default function ChatPage() {
         tasks={tasks}
         onCreateSession={handleCreateSessionFromSidebar}
         onTaskClick={handleTaskOpen}
+        onTaskResume={handleTaskResume}
+        onTaskDelete={handleTaskDelete}
       />
       {/* ==================== 首页改版结束 ==================== */}
       <div

@@ -34,6 +34,9 @@ from .models import CronJobSpec, CronJobState, CronTaskView, JobsFile
 from .repo.base import BaseJobRepository
 
 HEARTBEAT_JOB_ID = "_heartbeat"
+AUTO_PAUSE_UNREAD_THRESHOLD = 3
+AUTO_PAUSE_REASON = "auto_unread_threshold"
+MANUAL_PAUSE_REASON = "manual"
 
 logger = logging.getLogger(__name__)
 _T = TypeVar("_T")
@@ -872,10 +875,10 @@ class CronManager:  # pylint: disable=too-many-public-methods
         """
         async with self._lock:
             _, job, _ = await self._mutate_jobs_file_locked(
-                lambda jobs_file: self._set_job_enabled_in_jobs_file(
+                lambda jobs_file: self._set_job_paused_in_jobs_file(
                     jobs_file,
                     job_id,
-                    enabled=False,
+                    reason=MANUAL_PAUSE_REASON,
                 ),
             )
             if job is None:
@@ -899,10 +902,9 @@ class CronManager:  # pylint: disable=too-many-public-methods
         """
         async with self._lock:
             _, job, _ = await self._mutate_jobs_file_locked(
-                lambda jobs_file: self._set_job_enabled_in_jobs_file(
+                lambda jobs_file: self._set_job_resumed_in_jobs_file(
                     jobs_file,
                     job_id,
-                    enabled=True,
                 ),
             )
             if job is None:
@@ -1000,6 +1002,9 @@ class CronManager:  # pylint: disable=too-many-public-methods
             ),
             last_scheduled_run_at=meta.get("task_last_scheduled_run_at"),
             is_running=state.last_status == "running",
+            is_paused=bool(meta.get("pause_reason")),
+            pause_reason=meta.get("pause_reason"),
+            auto_paused_at=meta.get("auto_paused_at"),
         )
 
     # ----- callbacks -----
@@ -1318,6 +1323,84 @@ class CronManager:  # pylint: disable=too-many-public-methods
             return True, updated
         return False, None
 
+    def _set_job_paused_in_jobs_file(
+        self,
+        jobs_file: JobsFile,
+        job_id: str,
+        *,
+        reason: str,
+        auto_paused_at: Optional[datetime] = None,
+        unread_count_at_pause: Optional[int] = None,
+    ) -> tuple[bool, Optional[CronJobSpec]]:
+        for index, job in enumerate(jobs_file.jobs):
+            if job.id != job_id:
+                continue
+            meta = dict(job.meta or {})
+            changed = False
+            if job.enabled:
+                changed = True
+            if meta.get("pause_reason") != reason:
+                meta["pause_reason"] = reason
+                changed = True
+            if (
+                auto_paused_at is not None
+                and meta.get("auto_paused_at") != auto_paused_at
+            ):
+                meta["auto_paused_at"] = auto_paused_at
+                changed = True
+            if (
+                unread_count_at_pause is not None
+                and meta.get("unread_count_at_pause") != unread_count_at_pause
+            ):
+                meta["unread_count_at_pause"] = unread_count_at_pause
+                changed = True
+            if not changed:
+                return False, job
+            updated = job.model_copy(
+                update={
+                    "enabled": False,
+                    "meta": meta,
+                },
+            )
+            jobs_file.jobs[index] = updated
+            return True, updated
+        return False, None
+
+    def _set_job_resumed_in_jobs_file(
+        self,
+        jobs_file: JobsFile,
+        job_id: str,
+    ) -> tuple[bool, Optional[CronJobSpec]]:
+        for index, job in enumerate(jobs_file.jobs):
+            if job.id != job_id:
+                continue
+            meta = dict(job.meta or {})
+            changed = False
+            if not job.enabled:
+                changed = True
+            if int(meta.get("task_unread_execution_count", 0) or 0) != 0:
+                meta["task_unread_execution_count"] = 0
+                changed = True
+            for key in (
+                "pause_reason",
+                "auto_paused_at",
+                "unread_count_at_pause",
+            ):
+                if key in meta:
+                    meta.pop(key, None)
+                    changed = True
+            if not changed:
+                return False, job
+            updated = job.model_copy(
+                update={
+                    "enabled": True,
+                    "meta": meta,
+                },
+            )
+            jobs_file.jobs[index] = updated
+            return True, updated
+        return False, None
+
     def _disable_invalid_jobs_in_jobs_file(
         self,
         jobs_file: JobsFile,
@@ -1414,13 +1497,20 @@ class CronManager:  # pylint: disable=too-many-public-methods
             creator_user_id,
         )
         async with self._lock:
-            await self._mutate_jobs_file_locked(
+            _, auto_paused, _ = await self._mutate_jobs_file_locked(
                 lambda jobs_file: self._apply_task_execution_success(
                     jobs_file,
                     job.id,
                     preview,
                 ),
             )
+            if (
+                auto_paused
+                and self._started
+                and self._scheduler is not None
+                and self._scheduler.get_job(job.id)
+            ):
+                self._scheduler.pause_job(job.id)
 
     async def _load_task_preview_text(
         self,
@@ -1451,12 +1541,28 @@ class CronManager:  # pylint: disable=too-many-public-methods
             meta = dict(job.meta or {})
             meta["task_has_scheduled_result"] = True
             meta["task_last_scheduled_preview"] = preview[:10]
-            meta["task_unread_execution_count"] = (
+            unread_count = (
                 int(meta.get("task_unread_execution_count", 0) or 0) + 1
             )
+            meta["task_unread_execution_count"] = unread_count
             meta["task_last_scheduled_run_at"] = datetime.now(timezone.utc)
-            jobs_file.jobs[index] = job.model_copy(update={"meta": meta})
-            return True, True
+            updated = job.model_copy(update={"meta": meta})
+            auto_paused = False
+            if unread_count >= AUTO_PAUSE_UNREAD_THRESHOLD and job.enabled:
+                auto_paused = True
+                meta["pause_reason"] = AUTO_PAUSE_REASON
+                meta["auto_paused_at"] = meta["task_last_scheduled_run_at"]
+                meta["unread_count_at_pause"] = unread_count
+                updated = job.model_copy(
+                    update={
+                        "enabled": False,
+                        "meta": meta,
+                    },
+                )
+                jobs_file.jobs[index] = updated
+                return True, auto_paused
+            jobs_file.jobs[index] = updated
+            return True, auto_paused
         return False, False
 
     def _build_wplus_link(self, session_id: str) -> str:

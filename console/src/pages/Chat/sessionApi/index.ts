@@ -693,6 +693,15 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
             this.onSessionIdResolved?.(tempId, realId);
           }
         });
+      } else {
+        const tempId = session.id!;
+        await this.getSessionList().then(() => {
+          const { list, realId } = resolveRealId(this.sessionList, tempId);
+          this.sessionList = list;
+          if (realId) {
+            this.onSessionIdResolved?.(tempId, realId);
+          }
+        });
       }
     } else {
       const tempId = session.id!;

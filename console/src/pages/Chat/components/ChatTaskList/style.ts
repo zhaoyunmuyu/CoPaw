@@ -55,6 +55,19 @@ export default createGlobalStyle`
     &:hover {
       background-color: rgba(0, 0, 0, 0.02);
     }
+
+    &--paused {
+      padding-left: 8px;
+      padding-right: 8px;
+      margin-left: -8px;
+      margin-right: -8px;
+      border-radius: 10px;
+    }
+
+    &--auto-paused {
+      background:
+        linear-gradient(90deg, rgba(223, 146, 33, 0.12), rgba(223, 146, 33, 0.04));
+    }
   }
 
   &-item-header {
@@ -88,10 +101,71 @@ export default createGlobalStyle`
     text-align: center;
   }
 
+  &-item-action {
+    flex-shrink: 0;
+    height: 24px;
+    padding: 0 10px;
+    border: none;
+    border-radius: 999px;
+    background: rgba(55, 105, 252, 0.1);
+    color: ${DESIGN_TOKENS.colorPrimary};
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 24px;
+    cursor: pointer;
+    transition:
+      background-color 0.15s ease,
+      color 0.15s ease;
+
+    &:hover {
+      background: rgba(55, 105, 252, 0.16);
+    }
+
+    &--delete {
+      background: rgba(254, 40, 66, 0.1);
+      color: ${DESIGN_TOKENS.colorBadgeRed};
+
+      &:hover {
+        background: rgba(254, 40, 66, 0.16);
+      }
+    }
+  }
+
+  &-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &-item-status {
+    margin-bottom: 4px;
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 600;
+
+    &--auto {
+      color: #A15C07;
+    }
+
+    &--manual {
+      color: ${DESIGN_TOKENS.colorTextMuted};
+    }
+  }
+
   &-item-subtitle {
     font-size: 12px;
     line-height: 16px;
     color: ${DESIGN_TOKENS.colorTextMuted};
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &-item-next-run {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 16px;
+    color: ${DESIGN_TOKENS.colorTextSecondary};
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

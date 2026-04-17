@@ -14,6 +14,7 @@ import {
   type HistorySession,
 } from './historySessions';
 import { useChatAnywhereSessionsState } from '@/components/agentscope-chat';
+import { formatListTime } from '../../listTimeFormat';
 
 function HistoryIcon() {
   return (
@@ -120,20 +121,13 @@ export interface ChatSidebarProps {
   tasks: CronJobSpecOutput[];
   onCreateSession?: () => void;
   onTaskClick?: (task: CronJobSpecOutput) => void;
-}
-
-function formatTime(raw: string | null | undefined): string {
-  if (!raw) return '';
-  const date = new Date(raw);
-  if (isNaN(date.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate(),
-  )} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  onTaskResume?: (task: CronJobSpecOutput) => void;
+  onTaskDelete?: (task: CronJobSpecOutput) => void;
 }
 
 export default function ChatSidebar(props: ChatSidebarProps) {
-  const { tasks, onCreateSession, onTaskClick } = props;
+  const { tasks, onCreateSession, onTaskClick, onTaskResume, onTaskDelete } =
+    props;
   const navigate = useNavigate();
   const location = useLocation();
   const [historyCollapsed, setHistoryCollapsed] = useState(false);
@@ -243,15 +237,17 @@ export default function ChatSidebar(props: ChatSidebarProps) {
               taskBadgeCount={unreadCount}
             />
           </div>
-          <ExpandablePanel
-            visible={activePanel === 'tasks'}
-            type="tasks"
-            onClose={handleClosePanel}
-            tasks={tasks}
-            sessions={sessions}
-            onTaskClick={handleTaskOpen}
-            toolbarRef={toolbarRef}
-          />
+            <ExpandablePanel
+              visible={activePanel === 'tasks'}
+              type="tasks"
+              onClose={handleClosePanel}
+              tasks={tasks}
+              sessions={sessions}
+              onTaskClick={handleTaskOpen}
+              onTaskResume={onTaskResume}
+              onTaskDelete={onTaskDelete}
+              toolbarRef={toolbarRef}
+            />
           <ExpandablePanel
             visible={activePanel === 'history'}
             type="history"
@@ -282,7 +278,12 @@ export default function ChatSidebar(props: ChatSidebarProps) {
       <div className="chat-sidebar-wrapper">
         <div className="chat-sidebar">
           <div className="chat-sidebar-content">
-            <ChatTaskList tasks={tasks} onTaskClick={handleTaskOpen} />
+            <ChatTaskList
+              tasks={tasks}
+              onTaskClick={handleTaskOpen}
+              onTaskResume={onTaskResume}
+              onTaskDelete={onTaskDelete}
+            />
 
             <div className="chat-sidebar-history">
               <div
@@ -315,7 +316,7 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                       {session.name || '新会话'}
                     </div>
                     <div className="chat-sidebar-history-item-time">
-                      {formatTime((session as any).createdAt)}
+                      {formatListTime((session as any).createdAt)}
                     </div>
                   </div>
                 ))}

@@ -46,6 +46,9 @@ export interface CronTaskView {
   unread_execution_count: number;
   last_scheduled_run_at?: string | null;
   is_running: boolean;
+  is_paused?: boolean;
+  pause_reason?: "manual" | "auto_unread_threshold" | null;
+  auto_paused_at?: string | null;
 }
 
 export interface CronJobSpecInput {
