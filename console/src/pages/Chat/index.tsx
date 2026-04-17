@@ -1,10 +1,13 @@
 // ==================== 组件引入方式变更 (Kun He) ====================
 import {
-  AgentScopeRuntimeWebUI,
+  AgentScopeRuntimeWebUILayout,
+  AgentScopeRuntimeWebUIComposedProvider,
   IAgentScopeRuntimeWebUIOptions,
   type IAgentScopeRuntimeWebUIRef,
   useChatAnywhereSessionsState,
 } from "@/components/agentscope-chat";
+import AgentScopeRuntimeRequestCard from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Request/Card";
+import AgentScopeRuntimeResponseCard from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Card";
 // ==================== 组件引入方式变更结束 ====================
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Modal, Result, Tooltip } from "antd";
@@ -1060,86 +1063,93 @@ export default function ChatPage() {
   }, [navigate]);
   // ==================== 首页改版结束 ====================
 
-  return (
-    <div
-      style={{
-        height: "100%",
-        width: "100%",
-        display: "flex",
-        flexDirection: "row",
-      }}
-    >
-      {/* ==================== 首页改版 (Kun He) ==================== */}
-      {/* 聊天专用侧栏：支持折叠为64px工具条 */}
-      <ChatSidebar
-        tasks={tasks}
-        onCreateSession={handleCreateSessionFromSidebar}
-        onTaskClick={handleTaskOpen}
-        onTaskResume={handleTaskResume}
-        onTaskDelete={handleTaskDelete}
-      />
-      {/* ==================== 首页改版结束 ==================== */}
-      <div
-        className={styles.chatMessagesArea}
-        style={{ flex: 1, minWidth: 0, position: "relative" }}
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
-      >
-        <AgentScopeRuntimeWebUI
-          ref={chatRef}
-          key={refreshKey}
-          options={options}
-        />
-        <DragUploadOverlay visible={isDragging} onClose={handleDragOverlayClose} />
-      </div>
+  // 定义 cards 配置（与 AgentScopeRuntimeWebUI 内部一致）
+  const cards = useMemo(() => {
+    return {
+      AgentScopeRuntimeRequestCard,
+      AgentScopeRuntimeResponseCard,
+      ...options.cards,
+    };
+  }, [options.cards]);
 
-      <Modal
-        open={showModelPrompt}
-        closable={false}
-        footer={null}
-        width={480}
-        styles={{
-          content: isDark
-            ? { background: "#1f1f1f", boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }
-            : undefined,
+  return (
+    <AgentScopeRuntimeWebUIComposedProvider options={options} cards={cards}>
+      <div
+        style={{
+          height: "100%",
+          width: "100%",
+          display: "flex",
+          flexDirection: "row",
         }}
       >
-        <Result
-          icon={<ExclamationCircleOutlined style={{ color: "#faad14" }} />}
-          title={
-            <span
-              style={{ color: isDark ? "rgba(255,255,255,0.88)" : undefined }}
-            >
-              {t("modelConfig.promptTitle")}
-            </span>
-          }
-          subTitle={
-            <span
-              style={{ color: isDark ? "rgba(255,255,255,0.55)" : undefined }}
-            >
-              {t("modelConfig.promptMessage")}
-            </span>
-          }
-          extra={[
-            <Button key="skip" onClick={() => setShowModelPrompt(false)}>
-              {t("modelConfig.skipButton")}
-            </Button>,
-            <Button
-              key="configure"
-              type="primary"
-              icon={<SettingOutlined />}
-              onClick={() => {
-                setShowModelPrompt(false);
-                navigate("/models");
-              }}
-            >
-              {t("modelConfig.configureButton")}
-            </Button>,
-          ]}
+        {/* ==================== 首页改版 (Kun He) ==================== */}
+        {/* 聊天专用侧栏：支持折叠为64px工具条 */}
+        <ChatSidebar
+          tasks={tasks}
+          onCreateSession={handleCreateSessionFromSidebar}
+          onTaskClick={handleTaskOpen}
+          onTaskResume={handleTaskResume}
+          onTaskDelete={handleTaskDelete}
         />
-      </Modal>
-    </div>
+        {/* ==================== 首页改版结束 ==================== */}
+          <div
+            className={styles.chatMessagesArea}
+            style={{ flex: 1, minWidth: 0, position: "relative" }}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+          >
+            <AgentScopeRuntimeWebUILayout ref={chatRef} key={refreshKey} />
+            <DragUploadOverlay visible={isDragging} onClose={handleDragOverlayClose} />
+          </div>
+
+        <Modal
+          open={showModelPrompt}
+          closable={false}
+          footer={null}
+          width={480}
+          styles={{
+            content: isDark
+              ? { background: "#1f1f1f", boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }
+              : undefined,
+          }}
+        >
+          <Result
+            icon={<ExclamationCircleOutlined style={{ color: "#faad14" }} />}
+            title={
+              <span
+                style={{ color: isDark ? "rgba(255,255,255,0.88)" : undefined }}
+              >
+                {t("modelConfig.promptTitle")}
+              </span>
+            }
+            subTitle={
+              <span
+                style={{ color: isDark ? "rgba(255,255,255,0.55)" : undefined }}
+              >
+                {t("modelConfig.promptMessage")}
+              </span>
+            }
+            extra={[
+              <Button key="skip" onClick={() => setShowModelPrompt(false)}>
+                {t("modelConfig.skipButton")}
+              </Button>,
+              <Button
+                key="configure"
+                type="primary"
+                icon={<SettingOutlined />}
+                onClick={() => {
+                  setShowModelPrompt(false);
+                  navigate("/models");
+                }}
+              >
+                {t("modelConfig.configureButton")}
+              </Button>,
+            ]}
+          />
+        </Modal>
+      </div>
+    </AgentScopeRuntimeWebUIComposedProvider>
   );
 }

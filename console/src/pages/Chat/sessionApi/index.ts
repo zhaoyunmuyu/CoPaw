@@ -506,6 +506,12 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     this.sessionListRequest = (async () => {
       try {
         const allowPreferredSelection = this.sessionList.length === 0;
+
+        // 先保存当前的本地临时会话（未同步到后端的），避免被覆盖
+        const currentTempSessions = this.sessionList.filter(
+          (s) => isLocalTimestamp(s.id) && !(s as ExtendedSession).realId
+        );
+
         const [chats, jobsResult] = await Promise.all([
           api.listChats(),
           cronJobApi.listCronJobs().catch(() => null),
@@ -525,7 +531,7 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
         const filteredList = filterStaleTaskSessions(newList, activeTaskJobIds);
 
         this.sessionList = filteredList.map((s) => {
-          const existing = this.sessionList.find(
+          const existing = currentTempSessions.find(
             (e) =>
               (e as ExtendedSession).sessionId ===
               (s as ExtendedSession).sessionId,
@@ -534,6 +540,23 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
             ? { ...s, id: existing.id, realId: existing.realId }
             : s;
         });
+
+        // 保留未同步的临时会话（后端没有对应的 session_id）
+        const backendSessionIds = new Set(
+          filteredList.map((s) => (s as ExtendedSession).sessionId)
+        );
+        const unsyncedTempSessions = currentTempSessions.filter(
+          (s) => !backendSessionIds.has(s.id)
+        );
+        // 将未同步的临时会话保留在列表头部
+        if (unsyncedTempSessions.length > 0) {
+          this.sessionList = [
+            ...unsyncedTempSessions,
+            ...this.sessionList.filter(
+              (s) => !unsyncedTempSessions.includes(s)
+            ),
+          ];
+        }
 
         this.sessionList = applyPreferredSessionSelection({
           sessions: this.sessionList,
@@ -688,8 +711,8 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
         const tempId = existing.id;
         this.getSessionList().then(() => {
           const { list, realId } = resolveRealId(this.sessionList, tempId);
-          this.sessionList = list;
           if (realId) {
+            this.sessionList = list;
             this.onSessionIdResolved?.(tempId, realId);
           }
         });
@@ -718,6 +741,21 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
   }
 
   async createSession(session: Partial<IAgentScopeRuntimeWebUISession>) {
+    // 检测已有空白会话：messages 为空且 name 为空或"新会话"
+    const existingEmptySession = this.sessionList.find((s) => {
+      const isEmptyMessages = !s.messages || s.messages.length === 0;
+      const isEmptyName = !s.name || s.name === DEFAULT_SESSION_NAME;
+      return isEmptyMessages && isEmptyName;
+    });
+
+    // 如果已有空白会话，直接返回它（不创建新的）
+    if (existingEmptySession) {
+      this.updateWindowVariables(existingEmptySession as ExtendedSession);
+      this.onSessionCreated?.(existingEmptySession.id!);
+      return [...this.sessionList];
+    }
+
+    // 否则创建新会话
     session.id = Date.now().toString();
 
     // ==================== userId 统一整改 (Kun He) ====================
@@ -727,13 +765,17 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
       sessionId: session.id,
       userId: getUserId(),
       channel: getChannel(),
+      createdAt: new Date().toISOString(),
+      name: session.name || DEFAULT_SESSION_NAME,
+      messages: [],
+      meta: {},
     } as ExtendedSession;
     // ==================== userId 统一整改结束 ====================
 
     this.updateWindowVariables(extended);
-    // this.sessionList.unshift(extended);
+    this.sessionList.unshift(extended);
     this.onSessionCreated?.(session.id);
-    return this.sessionList;
+    return [...this.sessionList];
   }
 
   async removeSession(session: Partial<IAgentScopeRuntimeWebUISession>) {
