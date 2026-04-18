@@ -118,14 +118,15 @@ class TraceStore:
 
         query = """
             INSERT INTO swe_tracing_traces (
-                trace_id, user_id, session_id, channel, start_time,
+                trace_id, source_id, user_id, session_id, channel, start_time,
                 end_time, duration_ms, model_name, total_input_tokens,
                 total_output_tokens, total_tokens, tools_used, skills_used,
                 status, error, user_message
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         params = (
             trace.trace_id,
+            trace.source_id,
             trace.user_id,
             trace.session_id,
             trace.channel,
@@ -217,15 +218,16 @@ class TraceStore:
 
         query = """
             INSERT INTO swe_tracing_spans (
-                span_id, trace_id, parent_span_id, name, event_type,
+                span_id, trace_id, source_id, parent_span_id, name, event_type,
                 start_time, end_time, duration_ms, user_id, session_id, channel,
                 model_name, input_tokens, output_tokens, tool_name, skill_name, mcp_server,
                 tool_input, tool_output, error, metadata
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         params = (
             span.span_id,
             span.trace_id,
+            span.source_id,
             span.parent_span_id,
             span.name,
             span.event_type.value
@@ -244,7 +246,7 @@ class TraceStore:
             span.skill_name,
             span.mcp_server,
             json.dumps(span.tool_input) if span.tool_input else None,
-            span.output,
+            span.tool_output,
             span.error,
             json.dumps(span.metadata) if span.metadata else None,
         )
@@ -318,11 +320,11 @@ class TraceStore:
 
         query = """
             INSERT INTO swe_tracing_spans (
-                span_id, trace_id, parent_span_id, name, event_type,
+                span_id, trace_id, source_id, parent_span_id, name, event_type,
                 start_time, end_time, duration_ms, user_id, session_id, channel,
                 model_name, input_tokens, output_tokens, tool_name, skill_name, mcp_server,
                 tool_input, tool_output, error, metadata
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         params_list = []
         for span in spans:
@@ -330,6 +332,7 @@ class TraceStore:
                 (
                     span.span_id,
                     span.trace_id,
+                    span.source_id,
                     span.parent_span_id,
                     span.name,
                     span.event_type.value
@@ -398,12 +401,14 @@ class TraceStore:
 
     async def get_overview_stats(
         self,
+        source_id: str,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
     ) -> OverviewStats:
         """Get overview statistics.
 
         Args:
+            source_id: Source identifier (required)
             start_date: Start date filter
             end_date: End date filter
 
@@ -421,18 +426,38 @@ class TraceStore:
             end_date = datetime.now() + timedelta(days=1)  # Include today
 
         # Basic stats
-        total_users = await self._db_get_total_users(start_date, end_date)
-        online_users, online_user_ids = await self._db_get_online_users()
-        token_row = await self._db_get_token_stats(start_date, end_date)
-
-        # Distribution stats
-        model_distribution = await self._db_get_model_distribution(
+        total_users = await self._db_get_total_users(
+            source_id,
             start_date,
             end_date,
         )
-        top_tools = await self._db_get_top_tools(start_date, end_date)
-        top_skills = await self._db_get_top_skills(start_date, end_date)
+        online_users, online_user_ids = await self._db_get_online_users(
+            source_id,
+        )
+        token_row = await self._db_get_token_stats(
+            source_id,
+            start_date,
+            end_date,
+        )
+
+        # Distribution stats
+        model_distribution = await self._db_get_model_distribution(
+            source_id,
+            start_date,
+            end_date,
+        )
+        top_tools = await self._db_get_top_tools(
+            source_id,
+            start_date,
+            end_date,
+        )
+        top_skills = await self._db_get_top_skills(
+            source_id,
+            start_date,
+            end_date,
+        )
         top_mcp_tools, mcp_servers = await self._db_get_mcp_stats(
+            source_id,
             start_date,
             end_date,
         )
@@ -451,6 +476,7 @@ class TraceStore:
 
     async def get_users(
         self,
+        source_id: str,
         page: int = 1,
         page_size: int = 20,
         user_id: Optional[str] = None,
@@ -460,6 +486,7 @@ class TraceStore:
         """Get list of users with stats.
 
         Args:
+            source_id: Source identifier (required)
             page: Page number
             page_size: Page size
             user_id: Filter by user ID
@@ -469,8 +496,8 @@ class TraceStore:
         Returns:
             Tuple of (users list, total count)
         """
-        where_clauses: list[str] = []
-        params: list[Any] = []
+        where_clauses: list[str] = ["source_id = %s"]
+        params: list[Any] = [source_id]
         if user_id:
             where_clauses.append("user_id LIKE %s")
             params.append(f"%{user_id}%")
@@ -481,7 +508,7 @@ class TraceStore:
             where_clauses.append("start_time <= %s")
             params.append(end_date)
 
-        where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+        where_sql = " AND ".join(where_clauses)
 
         # Get total count
         count_query = f"""
@@ -501,8 +528,9 @@ class TraceStore:
                    SUM(t.total_tokens) as total_tokens,
                    MAX(t.start_time) as last_active,
                    (SELECT COUNT(*) FROM swe_tracing_spans s
-                    WHERE s.trace_id IN (
-                        SELECT trace_id FROM swe_tracing_traces WHERE user_id = t.user_id
+                    WHERE s.source_id = %s
+                    AND s.trace_id IN (
+                        SELECT trace_id FROM swe_tracing_traces WHERE user_id = t.user_id AND source_id = %s
                     )
                     AND s.event_type = 'skill_invocation') as total_skills
             FROM swe_tracing_traces t
@@ -511,7 +539,7 @@ class TraceStore:
             ORDER BY last_active DESC
             LIMIT %s OFFSET %s
         """
-        params.extend([page_size, offset])
+        params.extend([source_id, source_id, page_size, offset])
         rows = await self.db.fetch_all(query, tuple(params))
         users = [
             UserListItem(
@@ -528,6 +556,7 @@ class TraceStore:
 
     async def _get_user_model_usage(
         self,
+        source_id: str,
         user_id: str,
         start_date: datetime,
         end_date: datetime,
@@ -539,14 +568,14 @@ class TraceStore:
                    SUM(total_output_tokens) as output_tokens,
                    SUM(total_tokens) as total_tokens
             FROM swe_tracing_traces
-            WHERE user_id = %s AND start_time >= %s AND start_time <= %s
+            WHERE source_id = %s AND user_id = %s AND start_time >= %s AND start_time <= %s
                   AND model_name IS NOT NULL
             GROUP BY model_name
             ORDER BY count DESC
         """
         model_rows = await self.db.fetch_all(
             model_query,
-            (user_id, start_date, end_date),
+            (source_id, user_id, start_date, end_date),
         )
         return [
             ModelUsage(
@@ -561,6 +590,7 @@ class TraceStore:
 
     async def _get_user_tool_usage(
         self,
+        source_id: str,
         user_id: str,
         start_date: datetime,
         end_date: datetime,
@@ -571,7 +601,7 @@ class TraceStore:
                    AVG(duration_ms) as avg_duration,
                    SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) as error_count
             FROM swe_tracing_spans
-            WHERE user_id = %s AND start_time >= %s AND start_time <= %s
+            WHERE source_id = %s AND user_id = %s AND start_time >= %s AND start_time <= %s
               AND event_type = 'tool_call_end'
               AND tool_name IS NOT NULL
             GROUP BY tool_name
@@ -579,7 +609,7 @@ class TraceStore:
         """
         tool_rows = await self.db.fetch_all(
             tool_query,
-            (user_id, start_date, end_date),
+            (source_id, user_id, start_date, end_date),
         )
         return [
             ToolUsage(
@@ -593,6 +623,7 @@ class TraceStore:
 
     async def _get_user_skill_usage(
         self,
+        source_id: str,
         user_id: str,
         start_date: datetime,
         end_date: datetime,
@@ -602,7 +633,7 @@ class TraceStore:
             SELECT skill_name, COUNT(*) as count,
                    AVG(duration_ms) as avg_duration
             FROM swe_tracing_spans
-            WHERE user_id = %s AND start_time >= %s AND start_time <= %s
+            WHERE source_id = %s AND user_id = %s AND start_time >= %s AND start_time <= %s
               AND event_type = 'skill_invocation'
               AND skill_name IS NOT NULL
             GROUP BY skill_name
@@ -610,7 +641,7 @@ class TraceStore:
         """
         skill_rows = await self.db.fetch_all(
             skill_query,
-            (user_id, start_date, end_date),
+            (source_id, user_id, start_date, end_date),
         )
         return [
             SkillUsage(
@@ -649,6 +680,7 @@ class TraceStore:
 
     async def get_user_stats(
         self,
+        source_id: str,
         user_id: str,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
@@ -656,6 +688,7 @@ class TraceStore:
         """Get statistics for a specific user.
 
         Args:
+            source_id: Source identifier (required)
             user_id: User identifier
             start_date: Start date filter
             end_date: End date filter
@@ -678,25 +711,28 @@ class TraceStore:
                 SUM(total_tokens) as total_tokens,
                 AVG(duration_ms) as avg_duration
             FROM swe_tracing_traces
-            WHERE user_id = %s AND start_time >= %s AND start_time <= %s
+            WHERE source_id = %s AND user_id = %s AND start_time >= %s AND start_time <= %s
         """
         stats_row = await self.db.fetch_one(
             stats_query,
-            (user_id, start_date, end_date),
+            (source_id, user_id, start_date, end_date),
         )
 
         # Get usage data in parallel
         model_usage = await self._get_user_model_usage(
+            source_id,
             user_id,
             start_date,
             end_date,
         )
         tools_used = await self._get_user_tool_usage(
+            source_id,
             user_id,
             start_date,
             end_date,
         )
         skills_used = await self._get_user_skill_usage(
+            source_id,
             user_id,
             start_date,
             end_date,
@@ -712,6 +748,7 @@ class TraceStore:
 
     async def get_traces(
         self,
+        source_id: str,
         page: int = 1,
         page_size: int = 20,
         user_id: Optional[str] = None,
@@ -723,6 +760,7 @@ class TraceStore:
         """Get list of traces.
 
         Args:
+            source_id: Source identifier (required)
             page: Page number
             page_size: Page size
             user_id: Filter by user ID
@@ -734,8 +772,8 @@ class TraceStore:
         Returns:
             Tuple of (traces list, total count)
         """
-        where_clauses: list[str] = []
-        params: list[Any] = []
+        where_clauses: list[str] = ["source_id = %s"]
+        params: list[Any] = [source_id]
 
         if user_id:
             where_clauses.append("user_id = %s")
@@ -753,7 +791,7 @@ class TraceStore:
             where_clauses.append("start_time <= %s")
             params.append(end_date)
 
-        where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+        where_sql = " AND ".join(where_clauses)
 
         # Get total count
         count_query = f"SELECT COUNT(*) as total FROM swe_tracing_traces WHERE {where_sql}"
@@ -763,7 +801,7 @@ class TraceStore:
         # Get traces
         offset = (page - 1) * page_size
         query = f"""
-            SELECT trace_id, user_id, session_id, channel, start_time,
+            SELECT trace_id, source_id, user_id, session_id, channel, start_time,
                    duration_ms, total_tokens, total_input_tokens, total_output_tokens,
                    model_name, status,
                    JSON_LENGTH(skills_used) as skills_count
@@ -777,6 +815,7 @@ class TraceStore:
         traces = [
             TraceListItem(
                 trace_id=row["trace_id"],
+                source_id=row["source_id"],
                 user_id=row["user_id"],
                 session_id=row["session_id"],
                 channel=row["channel"],
@@ -1072,6 +1111,7 @@ class TraceStore:
 
     async def get_sessions(
         self,
+        source_id: str,
         page: int = 1,
         page_size: int = 20,
         user_id: Optional[str] = None,
@@ -1082,6 +1122,7 @@ class TraceStore:
         """Get list of sessions with stats.
 
         Args:
+            source_id: Source identifier (required)
             page: Page number
             page_size: Page size
             user_id: Filter by user ID
@@ -1092,8 +1133,8 @@ class TraceStore:
         Returns:
             Tuple of (sessions list, total count)
         """
-        where_clauses: list[str] = []
-        params: list[Any] = []
+        where_clauses: list[str] = ["source_id = %s"]
+        params: list[Any] = [source_id]
 
         if user_id:
             where_clauses.append("user_id = %s")
@@ -1108,7 +1149,7 @@ class TraceStore:
             where_clauses.append("start_time <= %s")
             params.append(end_date)
 
-        where_sql = " AND ".join(where_clauses) if where_clauses else "1=1"
+        where_sql = " AND ".join(where_clauses)
 
         # Get total count of unique sessions
         count_query = f"""
@@ -1130,7 +1171,8 @@ class TraceStore:
                    MIN(t.start_time) as first_active,
                    MAX(t.start_time) as last_active,
                    (SELECT COUNT(*) FROM swe_tracing_spans s
-                    WHERE s.session_id = t.session_id
+                    WHERE s.source_id = %s
+                    AND s.session_id = t.session_id
                     AND s.event_type = 'skill_invocation') as total_skills
             FROM swe_tracing_traces t
             WHERE {where_sql}
@@ -1138,7 +1180,7 @@ class TraceStore:
             ORDER BY last_active DESC
             LIMIT %s OFFSET %s
         """
-        params.extend([page_size, offset])
+        params.extend([source_id, page_size, offset])
         rows = await self.db.fetch_all(query, tuple(params))
         sessions = [
             SessionListItem(
@@ -1157,6 +1199,7 @@ class TraceStore:
 
     async def get_session_stats(
         self,
+        source_id: str,
         session_id: str,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
@@ -1164,6 +1207,7 @@ class TraceStore:
         """Get statistics for a specific session.
 
         Args:
+            source_id: Source identifier (required)
             session_id: Session identifier
             start_date: Start date filter
             end_date: End date filter
@@ -1177,6 +1221,7 @@ class TraceStore:
             end_date = datetime.now()
 
         stats_row = await self._db_get_session_basic_stats(
+            source_id,
             session_id,
             start_date,
             end_date,
@@ -1190,21 +1235,25 @@ class TraceStore:
 
         # Get distribution stats
         model_usage = await self._db_get_session_model_usage(
+            source_id,
             session_id,
             start_date,
             end_date,
         )
         tools_used = await self._db_get_session_tools(
+            source_id,
             session_id,
             start_date,
             end_date,
         )
         skills_used = await self._db_get_session_skills(
+            source_id,
             session_id,
             start_date,
             end_date,
         )
         mcp_tools_used = await self._db_get_session_mcp_tools(
+            source_id,
             session_id,
             start_date,
             end_date,
@@ -1231,6 +1280,7 @@ class TraceStore:
 
     async def get_user_messages(
         self,
+        source_id: str,
         page: int = 1,
         page_size: int = 20,
         user_id: Optional[str] = None,
@@ -1243,6 +1293,7 @@ class TraceStore:
         """Get user messages with token info for cost analysis.
 
         Args:
+            source_id: Source identifier (required)
             page: Page number
             page_size: Page size
             user_id: Filter by user ID
@@ -1260,8 +1311,12 @@ class TraceStore:
         if end_date is None:
             end_date = datetime.now()
 
-        where_clauses = ["start_time >= %s", "start_time <= %s"]
-        params: list[Any] = [start_date, end_date]
+        where_clauses = [
+            "source_id = %s",
+            "start_time >= %s",
+            "start_time <= %s",
+        ]
+        params: list[Any] = [source_id, start_date, end_date]
 
         if user_id:
             where_clauses.append("user_id = %s")
@@ -1283,7 +1338,7 @@ class TraceStore:
         # Get messages
         if export:
             sql_query = f"""
-                SELECT trace_id, user_id, session_id, channel, user_message,
+                SELECT trace_id, source_id, user_id, session_id, channel, user_message,
                        total_input_tokens, total_output_tokens, model_name,
                        start_time, duration_ms
                 FROM swe_tracing_traces
@@ -1294,7 +1349,7 @@ class TraceStore:
         else:
             offset = (page - 1) * page_size
             sql_query = f"""
-                SELECT trace_id, user_id, session_id, channel, user_message,
+                SELECT trace_id, source_id, user_id, session_id, channel, user_message,
                        total_input_tokens, total_output_tokens, model_name,
                        start_time, duration_ms
                 FROM swe_tracing_traces
@@ -1308,6 +1363,7 @@ class TraceStore:
         messages = [
             UserMessageItem(
                 trace_id=row["trace_id"],
+                source_id=row["source_id"],
                 user_id=row["user_id"],
                 session_id=row["session_id"],
                 channel=row["channel"],
@@ -1358,6 +1414,7 @@ class TraceStore:
 
     async def _db_get_total_users(
         self,
+        source_id: str,
         start_date: datetime,
         end_date: datetime,
     ) -> int:
@@ -1365,13 +1422,16 @@ class TraceStore:
         query = """
             SELECT COUNT(DISTINCT user_id) as total_users
             FROM swe_tracing_traces
-            WHERE start_time >= %s AND start_time <= %s
+            WHERE source_id = %s AND start_time >= %s AND start_time <= %s
         """
-        row = await self.db.fetch_one(query, (start_date, end_date))
+        row = await self.db.fetch_one(query, (source_id, start_date, end_date))
         result = row["total_users"] if row else 0
         return result
 
-    async def _db_get_online_users(self) -> tuple[int, list[str]]:
+    async def _db_get_online_users(
+        self,
+        source_id: str,
+    ) -> tuple[int, list[str]]:
         """Get online users count and IDs (active in last 5 minutes).
 
         Returns:
@@ -1380,15 +1440,16 @@ class TraceStore:
         query = """
             SELECT DISTINCT user_id
             FROM swe_tracing_spans
-            WHERE start_time >= %s AND user_id IS NOT NULL AND user_id != ''
+            WHERE source_id = %s AND start_time >= %s AND user_id IS NOT NULL AND user_id != ''
         """
         online_threshold = datetime.now() - timedelta(minutes=5)
-        rows = await self.db.fetch_all(query, (online_threshold,))
+        rows = await self.db.fetch_all(query, (source_id, online_threshold))
         user_ids = [row["user_id"] for row in rows if row["user_id"]]
         return len(user_ids), user_ids
 
     async def _db_get_token_stats(
         self,
+        source_id: str,
         start_date: datetime,
         end_date: datetime,
     ) -> Optional[dict]:
@@ -1402,12 +1463,16 @@ class TraceStore:
                 COUNT(DISTINCT session_id) as total_sessions,
                 AVG(duration_ms) as avg_duration
             FROM swe_tracing_traces
-            WHERE start_time >= %s AND start_time <= %s
+            WHERE source_id = %s AND start_time >= %s AND start_time <= %s
         """
-        return await self.db.fetch_one(query, (start_date, end_date))
+        return await self.db.fetch_one(
+            query,
+            (source_id, start_date, end_date),
+        )
 
     async def _db_get_model_distribution(
         self,
+        source_id: str,
         start_date: datetime,
         end_date: datetime,
     ) -> list[ModelUsage]:
@@ -1418,12 +1483,15 @@ class TraceStore:
                    SUM(total_output_tokens) as output_tokens,
                    SUM(total_tokens) as total_tokens
             FROM swe_tracing_traces
-            WHERE start_time >= %s AND start_time <= %s AND model_name IS NOT NULL
+            WHERE source_id = %s AND start_time >= %s AND start_time <= %s AND model_name IS NOT NULL
             GROUP BY model_name
             ORDER BY count DESC
             LIMIT 10
         """
-        rows = await self.db.fetch_all(query, (start_date, end_date))
+        rows = await self.db.fetch_all(
+            query,
+            (source_id, start_date, end_date),
+        )
         return [
             ModelUsage(
                 model_name=row["model_name"],
@@ -1437,6 +1505,7 @@ class TraceStore:
 
     async def _db_get_top_tools(
         self,
+        source_id: str,
         start_date: datetime,
         end_date: datetime,
     ) -> list[ToolUsage]:
@@ -1446,7 +1515,7 @@ class TraceStore:
                    AVG(duration_ms) as avg_duration,
                    SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) as error_count
             FROM swe_tracing_spans
-            WHERE start_time >= %s AND start_time <= %s
+            WHERE source_id = %s AND start_time >= %s AND start_time <= %s
               AND event_type = 'tool_call_end'
               AND tool_name IS NOT NULL
               AND mcp_server IS NULL
@@ -1454,7 +1523,10 @@ class TraceStore:
             ORDER BY count DESC
             LIMIT 10
         """
-        rows = await self.db.fetch_all(query, (start_date, end_date))
+        rows = await self.db.fetch_all(
+            query,
+            (source_id, start_date, end_date),
+        )
         return [
             ToolUsage(
                 tool_name=row["tool_name"],
@@ -1467,6 +1539,7 @@ class TraceStore:
 
     async def _db_get_top_skills(
         self,
+        source_id: str,
         start_date: datetime,
         end_date: datetime,
     ) -> list[SkillUsage]:
@@ -1475,14 +1548,17 @@ class TraceStore:
             SELECT skill_name, COUNT(*) as count,
                    AVG(duration_ms) as avg_duration
             FROM swe_tracing_spans
-            WHERE start_time >= %s AND start_time <= %s
+            WHERE source_id = %s AND start_time >= %s AND start_time <= %s
               AND event_type = 'skill_invocation'
               AND skill_name IS NOT NULL
             GROUP BY skill_name
             ORDER BY count DESC
             LIMIT 10
         """
-        rows = await self.db.fetch_all(query, (start_date, end_date))
+        rows = await self.db.fetch_all(
+            query,
+            (source_id, start_date, end_date),
+        )
         return [
             SkillUsage(
                 skill_name=row["skill_name"],
@@ -1569,6 +1645,7 @@ class TraceStore:
 
     async def _db_get_mcp_stats(
         self,
+        source_id: str,
         start_date: datetime,
         end_date: datetime,
     ) -> tuple[list[MCPToolUsage], list[MCPServerUsage]]:
@@ -1579,7 +1656,7 @@ class TraceStore:
                    AVG(duration_ms) as avg_duration,
                    SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) as error_count
             FROM swe_tracing_spans
-            WHERE start_time >= %s AND start_time <= %s
+            WHERE source_id = %s AND start_time >= %s AND start_time <= %s
               AND event_type = 'tool_call_end'
               AND mcp_server IS NOT NULL
             GROUP BY tool_name, mcp_server
@@ -1588,7 +1665,7 @@ class TraceStore:
         """
         mcp_tool_rows = await self.db.fetch_all(
             mcp_tool_query,
-            (start_date, end_date),
+            (source_id, start_date, end_date),
         )
         top_mcp_tools = [
             MCPToolUsage(
@@ -1602,12 +1679,17 @@ class TraceStore:
         ]
 
         # Get MCP server statistics
-        mcp_servers = await self._db_get_mcp_servers(start_date, end_date)
+        mcp_servers = await self._db_get_mcp_servers(
+            source_id,
+            start_date,
+            end_date,
+        )
 
         return top_mcp_tools, mcp_servers
 
     async def _db_get_mcp_servers(
         self,
+        source_id: str,
         start_date: datetime,
         end_date: datetime,
     ) -> list[MCPServerUsage]:
@@ -1619,18 +1701,22 @@ class TraceStore:
                    AVG(duration_ms) as avg_duration,
                    SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) as error_count
             FROM swe_tracing_spans
-            WHERE start_time >= %s AND start_time <= %s
+            WHERE source_id = %s AND start_time >= %s AND start_time <= %s
               AND event_type = 'tool_call_end'
               AND mcp_server IS NOT NULL
             GROUP BY mcp_server
             ORDER BY total_calls DESC
         """
-        server_rows = await self.db.fetch_all(query, (start_date, end_date))
+        server_rows = await self.db.fetch_all(
+            query,
+            (source_id, start_date, end_date),
+        )
 
         mcp_servers = []
         for server_row in server_rows:
             server_name = server_row["mcp_server"]
             tools = await self._db_get_server_tools(
+                source_id,
                 start_date,
                 end_date,
                 server_name,
@@ -1650,6 +1736,7 @@ class TraceStore:
 
     async def _db_get_server_tools(
         self,
+        source_id: str,
         start_date: datetime,
         end_date: datetime,
         server_name: str,
@@ -1660,7 +1747,7 @@ class TraceStore:
                    AVG(duration_ms) as avg_duration,
                    SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) as error_count
             FROM swe_tracing_spans
-            WHERE start_time >= %s AND start_time <= %s
+            WHERE source_id = %s AND start_time >= %s AND start_time <= %s
               AND event_type = 'tool_call_end'
               AND mcp_server = %s
             GROUP BY tool_name, mcp_server
@@ -1668,7 +1755,7 @@ class TraceStore:
         """
         rows = await self.db.fetch_all(
             query,
-            (start_date, end_date, server_name),
+            (source_id, start_date, end_date, server_name),
         )
         return [
             MCPToolUsage(
@@ -1683,6 +1770,7 @@ class TraceStore:
 
     async def _db_get_session_basic_stats(
         self,
+        source_id: str,
         session_id: str,
         start_date: datetime,
         end_date: datetime,
@@ -1700,16 +1788,17 @@ class TraceStore:
                 MIN(start_time) as first_active,
                 MAX(start_time) as last_active
             FROM swe_tracing_traces
-            WHERE session_id = %s AND start_time >= %s AND start_time <= %s
+            WHERE source_id = %s AND session_id = %s AND start_time >= %s AND start_time <= %s
             GROUP BY user_id, channel
         """
         return await self.db.fetch_one(
             query,
-            (session_id, start_date, end_date),
+            (source_id, session_id, start_date, end_date),
         )
 
     async def _db_get_session_model_usage(
         self,
+        source_id: str,
         session_id: str,
         start_date: datetime,
         end_date: datetime,
@@ -1721,14 +1810,14 @@ class TraceStore:
                    SUM(total_output_tokens) as output_tokens,
                    SUM(total_tokens) as total_tokens
             FROM swe_tracing_traces
-            WHERE session_id = %s AND start_time >= %s AND start_time <= %s
+            WHERE source_id = %s AND session_id = %s AND start_time >= %s AND start_time <= %s
                   AND model_name IS NOT NULL
             GROUP BY model_name
             ORDER BY count DESC
         """
         rows = await self.db.fetch_all(
             query,
-            (session_id, start_date, end_date),
+            (source_id, session_id, start_date, end_date),
         )
         return [
             ModelUsage(
@@ -1743,6 +1832,7 @@ class TraceStore:
 
     async def _db_get_session_tools(
         self,
+        source_id: str,
         session_id: str,
         start_date: datetime,
         end_date: datetime,
@@ -1753,7 +1843,7 @@ class TraceStore:
                    AVG(duration_ms) as avg_duration,
                    SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) as error_count
             FROM swe_tracing_spans
-            WHERE session_id = %s AND start_time >= %s AND start_time <= %s
+            WHERE source_id = %s AND session_id = %s AND start_time >= %s AND start_time <= %s
               AND event_type = 'tool_call_end'
               AND tool_name IS NOT NULL
               AND mcp_server IS NULL
@@ -1762,7 +1852,7 @@ class TraceStore:
         """
         rows = await self.db.fetch_all(
             query,
-            (session_id, start_date, end_date),
+            (source_id, session_id, start_date, end_date),
         )
         return [
             ToolUsage(
@@ -1776,6 +1866,7 @@ class TraceStore:
 
     async def _db_get_session_mcp_tools(
         self,
+        source_id: str,
         session_id: str,
         start_date: datetime,
         end_date: datetime,
@@ -1786,7 +1877,7 @@ class TraceStore:
                    AVG(duration_ms) as avg_duration,
                    SUM(CASE WHEN error IS NOT NULL THEN 1 ELSE 0 END) as error_count
             FROM swe_tracing_spans
-            WHERE session_id = %s AND start_time >= %s AND start_time <= %s
+            WHERE source_id = %s AND session_id = %s AND start_time >= %s AND start_time <= %s
               AND event_type = 'tool_call_end'
               AND mcp_server IS NOT NULL
             GROUP BY tool_name, mcp_server
@@ -1794,7 +1885,7 @@ class TraceStore:
         """
         rows = await self.db.fetch_all(
             query,
-            (session_id, start_date, end_date),
+            (source_id, session_id, start_date, end_date),
         )
         return [
             MCPToolUsage(
@@ -1809,6 +1900,7 @@ class TraceStore:
 
     async def _db_get_session_skills(
         self,
+        source_id: str,
         session_id: str,
         start_date: datetime,
         end_date: datetime,
@@ -1818,7 +1910,7 @@ class TraceStore:
             SELECT skill_name, COUNT(*) as count,
                    AVG(duration_ms) as avg_duration
             FROM swe_tracing_spans
-            WHERE session_id = %s AND start_time >= %s AND start_time <= %s
+            WHERE source_id = %s AND session_id = %s AND start_time >= %s AND start_time <= %s
               AND event_type = 'skill_invocation'
               AND skill_name IS NOT NULL
             GROUP BY skill_name
@@ -1826,7 +1918,7 @@ class TraceStore:
         """
         rows = await self.db.fetch_all(
             query,
-            (session_id, start_date, end_date),
+            (source_id, session_id, start_date, end_date),
         )
         return [
             SkillUsage(
@@ -1843,6 +1935,7 @@ class TraceStore:
         """Convert database row to Trace model."""
         return Trace(
             trace_id=row["trace_id"],
+            source_id=row["source_id"],
             user_id=row["user_id"],
             session_id=row["session_id"],
             channel=row["channel"],
@@ -1870,6 +1963,7 @@ class TraceStore:
         return Span(
             span_id=row["span_id"],
             trace_id=row["trace_id"],
+            source_id=row["source_id"],
             parent_span_id=row["parent_span_id"],
             name=row["name"],
             event_type=EventType(row["event_type"]),

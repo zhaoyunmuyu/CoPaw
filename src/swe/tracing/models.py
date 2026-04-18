@@ -41,6 +41,7 @@ class Span(BaseModel):
 
     span_id: str = Field(description="Unique span identifier")
     trace_id: str = Field(description="Parent trace identifier")
+    source_id: str = Field(description="Source identifier for data isolation")
     parent_span_id: Optional[str] = Field(
         default=None,
         description="Parent span identifier for nested operations",
@@ -111,6 +112,7 @@ class Trace(BaseModel):
     model_config = ConfigDict(use_enum_values=True)
 
     trace_id: str = Field(description="Unique trace identifier")
+    source_id: str = Field(description="Source identifier for data isolation")
     user_id: str = Field(description="User identifier")
     session_id: str = Field(description="Session identifier")
     channel: str = Field(description="Channel identifier")
@@ -396,6 +398,7 @@ class TraceListItem(BaseModel):
     """Trace list item."""
 
     trace_id: str
+    source_id: str
     user_id: str
     session_id: str
     channel: str
@@ -445,6 +448,7 @@ class UserMessageItem(BaseModel):
     """User message with token info for cost analysis."""
 
     trace_id: str
+    source_id: str
     user_id: str
     session_id: str
     channel: str

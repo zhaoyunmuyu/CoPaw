@@ -433,12 +433,25 @@ class AgentRunner(Runner):
                         "channel",
                         DEFAULT_CHANNEL,
                     )
+                    source_id_for_trace = getattr(
+                        request,
+                        "source_id",
+                        None,
+                    ) or getattr(
+                        request,
+                        "channel_meta",
+                        {},
+                    ).get(
+                        "source_id",
+                        "default",
+                    )
                     user_message = _get_last_user_text(msgs)
 
                     trace_id = await trace_mgr.start_trace(
                         user_id=user_id_for_trace,
                         session_id=session_id_for_trace,
                         channel=channel_for_trace,
+                        source_id=source_id_for_trace,
                         user_message=user_message,
                     )
             except Exception as e:

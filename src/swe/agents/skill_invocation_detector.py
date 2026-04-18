@@ -69,6 +69,7 @@ class SkillInvocationDetector:
         user_id: str = "",
         session_id: str = "",
         channel: str = "",
+        source_id: str = "",
         idle_threshold: int = 3,
     ) -> None:
         """Initialize the detector.
@@ -82,6 +83,7 @@ class SkillInvocationDetector:
             user_id: User identifier
             session_id: Session identifier
             channel: Channel identifier
+            source_id: Source identifier for data isolation
             idle_threshold: Number of non-skill tool calls before ending skill
         """
         self._registry = registry or get_skill_tool_registry()
@@ -92,6 +94,7 @@ class SkillInvocationDetector:
         self._user_id = user_id
         self._session_id = session_id
         self._channel = channel
+        self._source_id = source_id
 
         # Configuration
         self._idle_threshold = idle_threshold
@@ -528,6 +531,7 @@ class SkillInvocationDetector:
                     user_id=self._user_id,
                     session_id=self._session_id,
                     channel=self._channel,
+                    source_id=self._source_id,
                     skill_input={
                         "trigger_tool": trigger_tool,
                         "trigger_reason": trigger_reason,

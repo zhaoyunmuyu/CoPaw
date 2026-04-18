@@ -28,6 +28,7 @@ class TracingHook:
         user_id: str,
         session_id: str,
         channel: str,
+        source_id: str,
     ):
         """Initialize tracing hook.
 
@@ -36,11 +37,13 @@ class TracingHook:
             user_id: User identifier
             session_id: Session identifier
             channel: Channel identifier
+            source_id: Source identifier for data isolation
         """
         self.trace_id = trace_id
         self.user_id = user_id
         self.session_id = session_id
         self.channel = channel
+        self.source_id = source_id
         self._current_llm_span_id: Optional[str] = None
         self._current_tool_span_id: Optional[str] = None
         self._tool_spans: dict[str, str] = {}  # tool_call_id -> span_id
@@ -74,6 +77,7 @@ class TracingHook:
                 user_id=self.user_id,
                 session_id=self.session_id,
                 channel=self.channel,
+                source_id=self.source_id,
             )
             self._current_llm_span_id = span_id
             return span_id
@@ -145,6 +149,7 @@ class TracingHook:
                 trace_id=self.trace_id,
                 tool_name=tool_name,
                 tool_input=tool_input,
+                source_id=self.source_id,
                 user_id=self.user_id,
                 session_id=self.session_id,
                 channel=self.channel,
@@ -222,6 +227,7 @@ class TracingHook:
             span_id = await manager.emit_skill_invocation(
                 trace_id=self.trace_id,
                 skill_name=skill_name,
+                source_id=self.source_id,
                 user_id=self.user_id,
                 session_id=self.session_id,
                 channel=self.channel,

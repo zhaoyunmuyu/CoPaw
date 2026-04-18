@@ -90,6 +90,11 @@ async def post_console_chat(
         native_payload = _extract_session_and_payload(request_data)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+    # Inject source_id from header for data isolation
+    source_id = request.headers.get("X-Source-Id", "default")
+    native_payload["meta"]["source_id"] = source_id
+
     session_id = console_channel.resolve_session_id(
         sender_id=native_payload["sender_id"],
         channel_meta=native_payload["meta"],

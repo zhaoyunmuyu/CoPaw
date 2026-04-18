@@ -34,11 +34,13 @@ class TraceContext:
         user_id: str,
         session_id: str,
         channel: str,
+        source_id: str,
     ):
         self.trace_id = trace_id
         self.user_id = user_id
         self.session_id = session_id
         self.channel = channel
+        self.source_id = source_id
         self.start_time = datetime.now()
         self.trace: Optional[Trace] = None
         self._span_stack: list[str] = []
@@ -246,6 +248,7 @@ class TraceManager:
         user_id: str,
         session_id: str,
         channel: str,
+        source_id: str,
         trace_id: Optional[str] = None,
         user_message: Optional[str] = None,
     ) -> str:
@@ -255,6 +258,7 @@ class TraceManager:
             user_id: User identifier
             session_id: Session identifier
             channel: Channel identifier
+            source_id: Source identifier for data isolation
             trace_id: Optional trace ID (generated if not provided)
             user_message: Optional user's input message
 
@@ -275,6 +279,7 @@ class TraceManager:
 
         trace = Trace(
             trace_id=trace_id,
+            source_id=source_id,
             user_id=user_id,
             session_id=session_id,
             channel=channel,
@@ -287,7 +292,7 @@ class TraceManager:
         self._active_traces[trace_id] = trace
 
         # Create context
-        ctx = TraceContext(trace_id, user_id, session_id, channel)
+        ctx = TraceContext(trace_id, user_id, session_id, channel, source_id)
         ctx.trace = trace
         set_current_trace(ctx)
 
@@ -333,6 +338,7 @@ class TraceManager:
                 user_id=ctx.user_id,
                 session_id=ctx.session_id,
                 channel=ctx.channel,
+                source_id=ctx.source_id,
             )
             detector.set_enabled_skills(enabled_skills)
 
@@ -427,6 +433,7 @@ class TraceManager:
         trace_id: str,
         event_type: EventType,
         name: str,
+        source_id: str,
         user_id: str = "",
         session_id: str = "",
         channel: str = "",
@@ -445,6 +452,7 @@ class TraceManager:
             trace_id: Trace identifier
             event_type: Event type
             name: Span name
+            source_id: Source identifier for data isolation
             user_id: User identifier
             session_id: Session identifier
             channel: Channel identifier
@@ -481,6 +489,7 @@ class TraceManager:
         span = Span(
             span_id=span_id,
             trace_id=trace_id,
+            source_id=source_id,
             parent_span_id=parent_span_id,
             name=name,
             event_type=event_type,
@@ -630,6 +639,7 @@ class TraceManager:
         trace_id: str,
         model_name: str,
         input_tokens: int,
+        source_id: str,
         user_id: str = "",
         session_id: str = "",
         channel: str = "",
@@ -640,6 +650,7 @@ class TraceManager:
             trace_id: Trace identifier
             model_name: Model name
             input_tokens: Input token count
+            source_id: Source identifier for data isolation
             user_id: User identifier
             session_id: Session identifier
             channel: Channel identifier
@@ -651,6 +662,7 @@ class TraceManager:
             trace_id=trace_id,
             event_type=EventType.LLM_INPUT,
             name=f"llm_call_{model_name}",
+            source_id=source_id,
             user_id=user_id,
             session_id=session_id,
             channel=channel,
@@ -685,6 +697,7 @@ class TraceManager:
         trace_id: str,
         tool_name: str,
         tool_input: Optional[dict[str, Any]],
+        source_id: str,
         user_id: str = "",
         session_id: str = "",
         channel: str = "",
@@ -700,6 +713,7 @@ class TraceManager:
             trace_id: Trace identifier
             tool_name: Tool name
             tool_input: Tool input
+            source_id: Source identifier for data isolation
             user_id: User identifier
             session_id: Session identifier
             channel: Channel identifier
@@ -746,6 +760,7 @@ class TraceManager:
             user_id=user_id,
             session_id=session_id,
             channel=channel,
+            source_id=source_id,
             tool_name=tool_name,
             tool_input=tool_input,
             mcp_server=mcp_server,
@@ -796,6 +811,7 @@ class TraceManager:
         self,
         trace_id: str,
         skill_name: str,
+        source_id: str,
         user_id: str = "",
         session_id: str = "",
         channel: str = "",
@@ -806,6 +822,7 @@ class TraceManager:
         Args:
             trace_id: Trace identifier
             skill_name: Skill name
+            source_id: Source identifier for data isolation
             user_id: User identifier
             session_id: Session identifier
             channel: Channel identifier
@@ -818,6 +835,7 @@ class TraceManager:
             trace_id=trace_id,
             event_type=EventType.SKILL_INVOCATION,
             name=f"skill_{skill_name}",
+            source_id=source_id,
             user_id=user_id,
             session_id=session_id,
             channel=channel,
