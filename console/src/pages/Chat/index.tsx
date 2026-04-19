@@ -47,6 +47,9 @@ import ChatSessionInitializer from "./components/ChatSessionInitializer";
 import WelcomeCenterLayout from "@/components/agentscope-chat/WelcomeCenterLayout";
 import ChatSidebar from "./components/ChatSidebar";
 // ==================== 首页改版结束 ====================
+// ==================== 自定义工具渲染器 (customToolRenderConfig) ====================
+import CopyFileToStatic from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/customToolRenders/CopyFileToStatic";
+// ==================== 自定义工具渲染器结束 ====================
 import {
   toDisplayUrl,
   copyText,
@@ -964,6 +967,11 @@ export default function ChatPage() {
           });
         },
       },
+      // ==================== 自定义工具渲染器 ====================
+      customToolRenderConfig: {
+        copy_file_to_static: CopyFileToStatic,
+      },
+      // ==================== 自定义工具渲染器结束 ====================
       actions: {
         list: [
           {
