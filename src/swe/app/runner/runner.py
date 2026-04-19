@@ -619,6 +619,8 @@ class AgentRunner(Runner):
                     f"session_id={session_id}",
                 )
 
+            _was_cancelled = False
+
             try:
                 await self.session.load_session_state(
                     session_id=session_id,
@@ -656,6 +658,7 @@ class AgentRunner(Runner):
                     logger.warning("Failed to end trace: %s", trace_err)
 
         except asyncio.CancelledError as exc:
+            _was_cancelled = True
             logger.info(f"query_handler: {session_id} cancelled!")
             # End trace with cancelled status
             if trace_id and has_trace_manager():
@@ -728,6 +731,7 @@ class AgentRunner(Runner):
             )
             if (
                 agent_config.running.suggestions.enabled
+                and not _was_cancelled
                 and agent is not None
                 and query
                 and chat is not None  # 确保 chat 存在，使用 chat.id 作为 suggestions 存储键
