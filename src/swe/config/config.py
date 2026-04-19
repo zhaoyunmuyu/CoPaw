@@ -367,7 +367,7 @@ class SuggestionConfig(BaseModel):
         default=True,
         description="是否启用猜你想问功能",
     )
-    max_suggestions: ißnt = Field(
+    max_suggestions: int = Field(
         default=3,
         ge=1,
         le=5,
