@@ -48,12 +48,13 @@ export interface BrandThemeConfig {
  */
 export const DEFAULT_THEME: BrandThemeConfig = {
   source: "default",
-  brandName: "金葵花RM小助Claw版",
+  // TODO
+  brandName: "SWE",
   logo: "/logo.png",
   darkLogo: "/logo.png",
   primaryColor: "#3769FC",
   favicon: "/swe-symbol.png",
-  avatar: "/logo-center.png",
+  avatar: "/logo.png",
 };
 
 /**
@@ -68,46 +69,42 @@ export const BRAND_THEMES: Record<string, BrandThemeConfig> = {
 
   ruice: {
     source: "ruice",
-    brandName: "睿策小助Claw版",
-    // TODO: 合并代码后修改为: /logo-ruice.png
+    brandName: "睿策Claw版",
     logo: "/logo.png",
     darkLogo: "/logo.png",
     primaryColor: "#3769FC", //睿策
     favicon: "/swe-symbol.png",
-    avatar: "/logo-center.png",
+    avatar: "/logo.png",
   },
 
   CMSJY: {
     source: "CMSJY",
-    brandName: "远程RM小助Claw版",
-    // TODO: 合并代码后修改为: /logo-cms.png
+    brandName: "远程Claw版",
     logo: "/logo.png",
     darkLogo: "/logo.png",
     primaryColor: "#3769FC", // 远程RM
     favicon: "/swe-symbol.png",
-    avatar: "/logo-center.png",
+    avatar: "/logo.png",
   },
 
   UPPCLAW: {
     source: "UPPCLAW",
-    brandName: "智像小助Claw",
-    // TODO: 合并代码后修改为: /logo-zx.png
+    brandName: "智像Claw",
     logo: "/logo.png",
     darkLogo: "/logo.png",
     primaryColor: "#3769FC", // 智像
     favicon: "/swe-symbol.png",
-    avatar: "/logo-center.png",
+    avatar: "/logo.png",
   },
 
   copilotClaw: {
     source: "copilotClaw",
-    brandName: "数据赋能小助CLAW",
-    // TODO: 合并代码后修改为: /logo-copilot.png
+    brandName: "数据赋能CLAW",
     logo: "/logo.png",
     darkLogo: "/logo.png",
     primaryColor: "#3769FC", // 数据赋能
     favicon: "/swe-symbol.png",
-    avatar: "/logo-center.png",
+    avatar: "/logo.png",
   },
 };
 

@@ -12,7 +12,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def schedule_agent_reload(request: "Request", agent_id: str) -> None:
+def schedule_agent_reload(
+    request: "Request",
+    agent_id: str,
+    tenant_id: str | None = None,
+) -> None:
     """Schedule an agent reload in background (non-blocking).
 
     This is a common pattern used across multiple endpoints to reload
@@ -26,11 +30,16 @@ def schedule_agent_reload(request: "Request", agent_id: str) -> None:
     Args:
         request: FastAPI request object (must have multi_agent_manager)
         agent_id: Agent ID to reload
+        tenant_id: Optional tenant scope for the agent runtime identity
 
     Example:
         >>> from swe.app.utils import schedule_agent_reload
         >>> save_agent_config(workspace.agent_id, agent_config)
-        >>> schedule_agent_reload(request, workspace.agent_id)
+        >>> schedule_agent_reload(
+        ...     request,
+        ...     workspace.agent_id,
+        ...     tenant_id=workspace.tenant_id,
+        ... )
     """
     # Extract manager before creating background task (defensive)
     manager: "MultiAgentManager" = getattr(
@@ -48,10 +57,11 @@ def schedule_agent_reload(request: "Request", agent_id: str) -> None:
 
     async def reload_in_background():
         try:
-            await manager.reload_agent(agent_id)
+            await manager.reload_agent(agent_id, tenant_id=tenant_id)
         except Exception as e:
             logger.warning(
-                f"Background reload failed for agent '{agent_id}': {e}",
+                "Background reload failed for agent "
+                f"'{agent_id}' (tenant={tenant_id}): {e}",
                 exc_info=True,
             )
 

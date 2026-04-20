@@ -211,6 +211,7 @@ def build_skill_tool_registry(
     extractor = get_skill_feature_extractor()
     inferencer = get_skill_feature_inferencer()
 
+    processed_skills = 0
     for skill_name in enabled_skills:
         skill_dir = skills_dir / skill_name
         skill_md = skill_dir / "SKILL.md"
@@ -254,6 +255,7 @@ def build_skill_tool_registry(
                 len(skill_feature.mcp_servers),
                 skill_feature.is_conversational,
             )
+            processed_skills += 1
 
         except Exception as e:
             logger.debug(
@@ -263,9 +265,10 @@ def build_skill_tool_registry(
             )
 
     logger.info(
-        "Built skill-tool registry: %d skills, %d unique tools",
+        "Built skill-tool registry: %d/%d skills processed, %d with explicit tool declarations",
+        processed_skills,
+        len(enabled_skills),
         registry.skill_count,
-        registry.tool_count,
     )
 
     return registry

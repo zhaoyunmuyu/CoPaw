@@ -12,6 +12,11 @@ import api, {
   type Message,
 } from "../../../api";
 import { cronJobApi } from "../../../api/modules/cronjob";
+import type {
+  ChatRuntimeRequestCardData,
+  ChatRuntimeResponseCardData,
+} from "../messageMeta";
+import { resolveGroupTimestamp, resolveMessageTimestamp } from "../messageMeta";
 import { toDisplayUrl } from "../utils";
 import { applyPreferredSessionSelection } from "./preferredSession";
 import { shouldNotifySessionSelected } from "./sessionRaceGuard";
@@ -173,6 +178,9 @@ const toOutputMessage = (msg: Message): OutputMessage => ({
 /** Build a user card (AgentScopeRuntimeRequestCard) from a user message. */
 function buildUserCard(msg: Message): IAgentScopeRuntimeWebUIMessage {
   const contentParts = contentToRequestParts(msg.content);
+  const timestamp = resolveMessageTimestamp({
+    timestamp: msg.timestamp,
+  });
   return {
     id: (msg.id as string) || generateId(),
     role: "user",
@@ -187,7 +195,10 @@ function buildUserCard(msg: Message): IAgentScopeRuntimeWebUIMessage {
               content: contentParts,
             },
           ],
-        },
+          headerMeta: {
+            timestamp,
+          },
+        } as unknown as ChatRuntimeRequestCardData,
       },
     ],
   };
@@ -200,6 +211,11 @@ function buildUserCard(msg: Message): IAgentScopeRuntimeWebUIMessage {
 const buildResponseCard = (
   outputMessages: OutputMessage[],
 ): IAgentScopeRuntimeWebUIMessage => {
+  const timestamp = resolveGroupTimestamp(
+    outputMessages.map((message) => ({
+      timestamp: message.timestamp,
+    })),
+  );
   const now = Math.floor(Date.now() / 1000);
   const maxSeq = outputMessages.reduce(
     (max, m) => Math.max(max, m.sequence_number || 0),
@@ -227,7 +243,10 @@ const buildResponseCard = (
           error: null,
           completed_at: now,
           usage: null,
-        },
+          headerMeta: {
+            timestamp,
+          },
+        } as unknown as ChatRuntimeResponseCardData,
       },
     ],
     msgStatus: "finished",
@@ -412,6 +431,11 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
   onSessionCreated: ((sessionId: string) => void) | null = null;
 
   /**
+   * 临时会话（未同步到后端的），等消息发送完成后使用真实UUID创建历史记录
+   */
+  private pendingSession: ExtendedSession | null = null;
+
+  /**
    * When reconnecting to a running conversation, the backend history may not
    * include the latest user message (it's only persisted after generation
    * completes). If generating, look up the cached text from sessionStorage
@@ -500,17 +524,58 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     return s?.realId ?? null;
   }
 
+  /**
+   * 获取当前的临时会话ID（用于发送消息时作为 session_id）
+   */
+  getPendingSessionId(): string | null {
+    return this.pendingSession?.id ?? null;
+  }
+
+  /**
+   * 清除临时会话（消息发送完成后调用）
+   */
+  clearPendingSession(): void {
+    this.pendingSession = null;
+  }
+
+  /**
+   * 消息发送完成后，创建真实会话记录并更新URL
+   * @param realId 后端返回的真实UUID
+   * @param name 会话名称（可选，默认使用临时会话的名称）
+   */
+  async createSessionFromPending(realId: string, name?: string): Promise<void> {
+    if (!this.pendingSession) return;
+
+    const session: ExtendedSession = {
+      id: realId,
+      sessionId: this.pendingSession.sessionId,
+      userId: this.pendingSession.userId,
+      channel: this.pendingSession.channel,
+      name: name || this.pendingSession.name || DEFAULT_SESSION_NAME,
+      messages: [],
+      meta: this.pendingSession.meta || {},
+      createdAt: this.pendingSession.createdAt,
+    };
+
+    // 添加到历史列表
+    this.sessionList.unshift(session);
+
+    // 触发回调更新URL
+    this.onSessionIdResolved?.(this.pendingSession.id, realId);
+
+    // 清除临时会话
+    this.pendingSession = null;
+
+    // 更新 window 变量
+    this.updateWindowVariables(session);
+  }
+
   async getSessionList() {
     if (this.sessionListRequest) return this.sessionListRequest;
 
     this.sessionListRequest = (async () => {
       try {
         const allowPreferredSelection = this.sessionList.length === 0;
-
-        // 先保存当前的本地临时会话（未同步到后端的），避免被覆盖
-        const currentTempSessions = this.sessionList.filter(
-          (s) => isLocalTimestamp(s.id) && !(s as ExtendedSession).realId
-        );
 
         const [chats, jobsResult] = await Promise.all([
           api.listChats(),
@@ -530,33 +595,30 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
           .reverse();
         const filteredList = filterStaleTaskSessions(newList, activeTaskJobIds);
 
-        this.sessionList = filteredList.map((s) => {
-          const existing = currentTempSessions.find(
-            (e) =>
-              (e as ExtendedSession).sessionId ===
-              (s as ExtendedSession).sessionId,
+        // 如果匹配，创建真实会话记录并触发回调
+        if (this.pendingSession) {
+          const matchedBackendSession = filteredList.find(
+            (s) => (s as ExtendedSession).sessionId === this.pendingSession!.sessionId
           ) as ExtendedSession | undefined;
-          return existing?.realId
-            ? { ...s, id: existing.id, realId: existing.realId }
-            : s;
-        });
 
-        // 保留未同步的临时会话（后端没有对应的 session_id）
-        const backendSessionIds = new Set(
-          filteredList.map((s) => (s as ExtendedSession).sessionId)
-        );
-        const unsyncedTempSessions = currentTempSessions.filter(
-          (s) => !backendSessionIds.has(s.id)
-        );
-        // 将未同步的临时会话保留在列表头部
-        if (unsyncedTempSessions.length > 0) {
-          this.sessionList = [
-            ...unsyncedTempSessions,
-            ...this.sessionList.filter(
-              (s) => !unsyncedTempSessions.includes(s)
-            ),
-          ];
+          if (matchedBackendSession) {
+            // 后端已创建会话，使用真实UUID
+            const realId = matchedBackendSession.id;
+            const tempId = this.pendingSession.id;
+
+            // 触发回调更新URL
+            this.onSessionIdResolved?.(tempId, realId);
+
+            // 清除临时会话
+            this.pendingSession = null;
+
+            // 更新 window 变量使用真实UUID
+            window.currentSessionId = realId;
+          }
         }
+
+        // 合并后端会话列表
+        this.sessionList = filteredList;
 
         this.sessionList = applyPreferredSessionSelection({
           sessions: this.sessionList,
@@ -741,21 +803,7 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
   }
 
   async createSession(session: Partial<IAgentScopeRuntimeWebUISession>) {
-    // 检测已有空白会话：messages 为空且 name 为空或"新会话"
-    const existingEmptySession = this.sessionList.find((s) => {
-      const isEmptyMessages = !s.messages || s.messages.length === 0;
-      const isEmptyName = !s.name || s.name === DEFAULT_SESSION_NAME;
-      return isEmptyMessages && isEmptyName;
-    });
-
-    // 如果已有空白会话，直接返回它（不创建新的）
-    if (existingEmptySession) {
-      this.updateWindowVariables(existingEmptySession as ExtendedSession);
-      this.onSessionCreated?.(existingEmptySession.id!);
-      return [...this.sessionList];
-    }
-
-    // 否则创建新会话
+    // 生成临时时间戳ID（只在内存中使用，不添加到历史列表）
     session.id = Date.now().toString();
 
     // ==================== userId 统一整改 (Kun He) ====================
@@ -772,9 +820,16 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     } as ExtendedSession;
     // ==================== userId 统一整改结束 ====================
 
+    // 等消息发送完成后，后端返回真实UUID时才创建历史记录
     this.updateWindowVariables(extended);
-    this.sessionList.unshift(extended);
+
+    // 保存到 pendingSession，等消息发送完成后使用
+    this.pendingSession = extended;
+
+    // 触发回调（URL 清空，不导航到临时ID）
     this.onSessionCreated?.(session.id);
+
+    // 返回当前列表（不包含临时会话）
     return [...this.sessionList];
   }
 

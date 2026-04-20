@@ -5,6 +5,7 @@ import { IAgentScopeRuntimeWebUIMessage } from "@/components/agentscope-chat";
 import { useChatAnywhereMessages } from "../../Context/ChatAnywhereMessagesContext";
 import AgentScopeRuntimeRequestBuilder from "../../AgentScopeRuntime/Request/Builder";
 import { InputProps } from "../Input";
+import { withRequestHeaderMeta } from "./headerMeta";
 
 interface UseChatMessageHandlerOptions {
   currentQARef: React.MutableRefObject<{
@@ -30,13 +31,17 @@ export default function useChatMessageHandler(
   const createRequestMessage = useCallback(
     (data: Parameters<InputProps["onSubmit"]>[0]) => {
       currentQARef.current.abortController = new AbortController();
+      const requestTimestamp = Date.now();
       currentQARef.current.request = {
         id: uuid(),
         role: "user",
         cards: [
           {
             code: "AgentScopeRuntimeRequestCard",
-            data: new AgentScopeRuntimeRequestBuilder().handle(data),
+            data: withRequestHeaderMeta(
+              new AgentScopeRuntimeRequestBuilder().handle(data),
+              requestTimestamp,
+            ),
           },
         ],
       };
@@ -53,6 +58,7 @@ export default function useChatMessageHandler(
   const createApprovalMessage = useCallback(
     (data) => {
       currentQARef.current.abortController = new AbortController();
+      const requestTimestamp = Date.now();
 
       currentQARef.current.request = {
         id: uuid(),
@@ -60,7 +66,10 @@ export default function useChatMessageHandler(
         cards: [
           {
             code: "AgentScopeRuntimeRequestCard",
-            data: new AgentScopeRuntimeRequestBuilder().handleApproval(data),
+            data: withRequestHeaderMeta(
+              new AgentScopeRuntimeRequestBuilder().handleApproval(data),
+              requestTimestamp,
+            ),
           },
         ],
       };

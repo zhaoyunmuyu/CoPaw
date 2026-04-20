@@ -10,6 +10,7 @@ import Reasoning from "./Reasoning";
 import Error from "./Error";
 import { Bubble } from "@/components/agentscope-chat";
 import Actions from "./Actions";
+import Suggestions from "./Suggestions";
 // import { Avatar, Flex } from "antd";
 // import { useChatAnywhereOptions } from "../../Context/ChatAnywhereOptionsContext";
 
@@ -63,6 +64,12 @@ export default function AgentScopeRuntimeResponseCard(props: {
       })}
       {props.data.error && <Error data={props.data.error} />}
       <Actions {...props} />
+      {props.data.suggestions?.length > 0 && (
+        <Suggestions
+          suggestions={props.data.suggestions}
+          status={props.data.status}
+        />
+      )}
     </>
   );
 }

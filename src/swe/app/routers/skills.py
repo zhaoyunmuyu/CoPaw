@@ -471,6 +471,21 @@ async def _request_workspace_dir(request: Request) -> Path:
     return Path(workspace.workspace_dir)
 
 
+async def _request_workspace(request: Request) -> Any:
+    from ..agent_context import get_agent_for_request
+
+    return await get_agent_for_request(request)
+
+
+def _schedule_workspace_reload(request: Request, workspace: Any) -> None:
+    schedule_agent_reload(
+        request,
+        workspace.agent_id,
+        tenant_id=getattr(workspace, "tenant_id", None)
+        or _request_tenant_id(request),
+    )
+
+
 async def _hub_task_set_status(
     task_id: str,
     status: HubInstallTaskStatus,
@@ -1457,9 +1472,12 @@ async def batch_disable_skills(
     request: Request,
     skills: list[str],
 ) -> dict[str, Any]:
-    workspace_dir = await _request_workspace_dir(request)
+    workspace = await _request_workspace(request)
+    workspace_dir = Path(workspace.workspace_dir)
     service = SkillService(workspace_dir)
     results = {skill: service.disable_skill(skill) for skill in skills}
+    if any(result.get("success") for result in results.values()):
+        _schedule_workspace_reload(request, workspace)
     return {"results": results}
 
 
@@ -1475,7 +1493,8 @@ async def batch_enable_skills(
         first item and ``reason="security_scan_failed"`` for the second,
         rather than aborting the entire batch.
     """
-    workspace_dir = await _request_workspace_dir(request)
+    workspace = await _request_workspace(request)
+    workspace_dir = Path(workspace.workspace_dir)
     service = SkillService(workspace_dir)
     results: dict[str, Any] = {}
     for skill in skills:
@@ -1487,6 +1506,8 @@ async def batch_enable_skills(
                 "reason": "security_scan_failed",
                 "detail": _scan_error_payload(exc),
             }
+    if any(result.get("success") for result in results.values()):
+        _schedule_workspace_reload(request, workspace)
     return {"results": results}
 
 
@@ -1495,14 +1516,12 @@ async def disable_skill(
     request: Request,
     skill_name: str,
 ) -> dict[str, Any]:
-    from ..agent_context import get_agent_for_request
-
-    workspace = await get_agent_for_request(request)
+    workspace = await _request_workspace(request)
     workspace_dir = Path(workspace.workspace_dir)
     result = SkillService(workspace_dir).disable_skill(skill_name)
     if not result.get("success"):
         raise HTTPException(status_code=404, detail="Skill not found")
-    schedule_agent_reload(request, workspace.agent_id)
+    _schedule_workspace_reload(request, workspace)
     return {"disabled": True, **result}
 
 
@@ -1512,9 +1531,7 @@ async def enable_skill(
     skill_name: str,
 ) -> dict[str, Any]:
     """Enable one workspace skill after a fresh scan."""
-    from ..agent_context import get_agent_for_request
-
-    workspace = await get_agent_for_request(request)
+    workspace = await _request_workspace(request)
     workspace_dir = Path(workspace.workspace_dir)
     try:
         result = SkillService(workspace_dir).enable_skill(skill_name)
@@ -1525,7 +1542,7 @@ async def enable_skill(
             status_code=404,
             detail=result.get("reason", "Skill not found"),
         )
-    schedule_agent_reload(request, workspace.agent_id)
+    _schedule_workspace_reload(request, workspace)
     return {"enabled": True, **result}
 
 

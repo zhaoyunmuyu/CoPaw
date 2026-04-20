@@ -8,6 +8,7 @@ import {
 } from "../../AgentScopeRuntime/types";
 import { IAgentScopeRuntimeWebUIMessage } from "@/components/agentscope-chat";
 import { IAgentScopeRuntimeWebUIInputData } from "../../types";
+import { withResponseHeaderMeta } from "./headerMeta";
 
 interface UseChatRequestOptions {
   currentQARef: React.MutableRefObject<{
@@ -36,6 +37,8 @@ export default function useChatRequest(options: UseChatRequestOptions) {
   }, [apiOptions]);
 
   const mockRequest = useCallback(async (mockdata) => {
+    const responseHeaderTimestamp =
+      currentQARef.current.response?.cards?.[0]?.data?.headerMeta?.timestamp;
     const agentScopeRuntimeResponseBuilder =
       new AgentScopeRuntimeResponseBuilder({
         id: "",
@@ -48,7 +51,7 @@ export default function useChatRequest(options: UseChatRequestOptions) {
       currentQARef.current.response.cards = [
         {
           code: "AgentScopeRuntimeResponseCard",
-          data: res,
+          data: withResponseHeaderMeta(res, responseHeaderTimestamp),
         },
       ];
 
@@ -61,6 +64,8 @@ export default function useChatRequest(options: UseChatRequestOptions) {
   const processSSEResponse = useCallback(
     async (response: Response) => {
       const currentApiOptions = apiOptionsRef.current;
+      const responseHeaderTimestamp =
+        currentQARef.current.response?.cards?.[0]?.data?.headerMeta?.timestamp;
       const agentScopeRuntimeResponseBuilder =
         new AgentScopeRuntimeResponseBuilder({
           id: "",
@@ -84,7 +89,7 @@ export default function useChatRequest(options: UseChatRequestOptions) {
           currentQARef.current.response.cards = [
             {
               code: "AgentScopeRuntimeResponseCard",
-              data: res,
+              data: withResponseHeaderMeta(res, responseHeaderTimestamp),
             },
           ];
           onFinish();
@@ -107,7 +112,10 @@ export default function useChatRequest(options: UseChatRequestOptions) {
             currentQARef.current.response.cards = [
               {
                 code: "AgentScopeRuntimeResponseCard",
-                data: agentScopeRuntimeResponseBuilder.cancel(),
+                data: withResponseHeaderMeta(
+                  agentScopeRuntimeResponseBuilder.cancel(),
+                  responseHeaderTimestamp,
+                ),
               },
             ];
 
@@ -130,7 +138,7 @@ export default function useChatRequest(options: UseChatRequestOptions) {
             currentQARef.current.response.cards = [
               {
                 code: "AgentScopeRuntimeResponseCard",
-                data: res,
+                data: withResponseHeaderMeta(res, responseHeaderTimestamp),
               },
             ];
 

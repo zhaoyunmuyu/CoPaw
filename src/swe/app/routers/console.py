@@ -7,12 +7,16 @@ import logging
 import re
 import uuid
 from pathlib import Path
-from typing import AsyncGenerator, Union
+from typing import AsyncGenerator, Union, List, Any
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from starlette.responses import StreamingResponse
 
-from agentscope_runtime.engine.schemas.agent_schemas import AgentRequest
+from agentscope_runtime.engine.schemas.agent_schemas import (
+    AgentRequest,
+    TextContent,
+    ContentType,
+)
 from ..agent_context import get_agent_for_request
 
 
@@ -34,24 +38,39 @@ def _extract_session_and_payload(request_data: Union[AgentRequest, dict]):
 
     run_key must be ChatSpec.id (chat_id) so it matches list_chats/get_chat.
     """
+    # First convert to dict to handle both AgentRequest and raw dict uniformly
     if isinstance(request_data, AgentRequest):
-        channel_id = request_data.channel or "console"
-        sender_id = request_data.user_id or "default"
-        session_id = request_data.session_id or "default"
-        content_parts = (
-            list(request_data.input[0].content) if request_data.input else []
-        )
+        request_dict = request_data.model_dump()
+        # AgentRequest doesn't have 'channel', default to 'console'
+        channel_id = "console"
+        sender_id = request_dict.get("user_id") or "default"
+        session_id = request_dict.get("session_id") or "default"
+        input_data = request_dict.get("input", [])
     else:
         channel_id = request_data.get("channel", "console")
         sender_id = request_data.get("user_id", "default")
         session_id = request_data.get("session_id", "default")
         input_data = request_data.get("input", [])
-        content_parts = []
-        for content_part in input_data:
-            if hasattr(content_part, "content"):
-                content_parts.extend(list(content_part.content or []))
-            elif isinstance(content_part, dict) and "content" in content_part:
-                content_parts.extend(content_part["content"] or [])
+
+    # Extract content parts from input messages and convert to TextContent objects
+    content_parts: List[Any] = []
+    for msg in input_data:
+        if isinstance(msg, dict) and "content" in msg:
+            for part in msg.get("content") or []:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    # Convert dict to TextContent object
+                    content_parts.append(
+                        TextContent(
+                            type=ContentType.TEXT,
+                            text=part.get("text", ""),
+                        ),
+                    )
+                elif (
+                    hasattr(part, "type")
+                    and getattr(part, "type") == ContentType.TEXT
+                ):
+                    # Already a Content object
+                    content_parts.append(part)
 
     native_payload = {
         "channel_id": channel_id,
@@ -90,15 +109,35 @@ async def post_console_chat(
         native_payload = _extract_session_and_payload(request_data)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+    # Inject source_id from header for data isolation
+    source_id = request.headers.get("X-Source-Id", "default")
+    native_payload["meta"]["source_id"] = source_id
+
+    # Debug: log the session_id from frontend
+    logger.debug(
+        "Console chat: native_payload.meta.session_id=%s",
+        native_payload.get("meta", {}).get("session_id"),
+    )
     session_id = console_channel.resolve_session_id(
         sender_id=native_payload["sender_id"],
         channel_meta=native_payload["meta"],
+    )
+    logger.debug(
+        "Console chat: resolved session_id=%s",
+        session_id,
     )
     name = "New Chat"
     if len(native_payload["content_parts"]) > 0:
         content = native_payload["content_parts"][0]
         if content:
-            name = content.text[:10]
+            # content can be dict or object with 'text' attribute
+            if isinstance(content, dict):
+                name = content.get("text", "New Chat")[:10]
+            elif hasattr(content, "text"):
+                name = content.text[:10]
+            else:
+                name = "Media Message"
         else:
             name = "Media Message"
     chat = await workspace.chat_manager.get_or_create_chat(
@@ -221,3 +260,23 @@ async def get_push_messages(
         messages = await take_all(tenant_id=tenant_id)
 
     return {"messages": messages}
+
+
+@router.get("/suggestions")
+async def get_suggestions(
+    request: Request,
+    session_id: str = Query(
+        ...,
+        description="Session id to get suggestions for",
+    ),
+):
+    """Return generated suggestions for the session.
+
+    猜你想问建议在后台异步生成，前端在主响应完成后轮询此接口获取。
+    获取后建议会被移除，不会重复返回。
+    """
+    from ..suggestions import take_suggestions
+
+    tenant_id = getattr(request.state, "tenant_id", None)
+    suggestions = await take_suggestions(session_id, tenant_id=tenant_id)
+    return {"suggestions": suggestions}

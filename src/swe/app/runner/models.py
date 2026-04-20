@@ -47,10 +47,19 @@ class ChatSpec(BaseModel):
     )
 
 
+class ChatMessage(Message):
+    """Chat message returned by the chat detail API."""
+
+    timestamp: str | None = Field(
+        default=None,
+        description="Canonical backend-provided message timestamp",
+    )
+
+
 class ChatHistory(BaseModel):
     """Complete chat view with spec and state."""
 
-    messages: list[Message] = Field(default_factory=list)
+    messages: list[ChatMessage] = Field(default_factory=list)
     status: str = Field(
         default="idle",
         description="Conversation status: idle or running",

@@ -120,7 +120,7 @@
     "deleteSuccess": "Агент успешно удалён",
     "deleteFailed": "Не удалось удалить агента",
     "selectAgent": "Выбрать агента",
-    "defaultDisplayName": "Агент по умолчанию",
+    "defaultDisplayName": "小助 Claw",
     "currentWorkspace": "Текущий агент",
     "switchSuccess": "Агент успешно переключён",
     "switchFailed": "Не удалось переключить агента",

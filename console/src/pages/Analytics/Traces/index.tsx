@@ -95,13 +95,14 @@ export default function TracesPage() {
   };
 
   const formatDuration = (ms: number | null) => {
-    if (ms === null) return "-";
+    if (!ms) return "-";
     if (ms < 1000) return `${ms}ms`;
     if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
     return `${(ms / 60000).toFixed(1)}m`;
   };
 
   const formatTokens = (tokens: number) => {
+    if (!tokens) return "0";
     if (tokens < 1000) return tokens.toString();
     if (tokens < 1000000) return `${(tokens / 1000).toFixed(1)}K`;
     return `${(tokens / 1000000).toFixed(2)}M`;
@@ -325,6 +326,23 @@ export default function TracesPage() {
                 <pre className={styles.errorText}>
                   {selectedTrace.trace.error}
                 </pre>
+              </div>
+            )}
+
+            {/* 使用技能 - 与 Sessions 页面一致 */}
+            {selectedTrace.trace.skills_used && selectedTrace.trace.skills_used.length > 0 && (
+              <div className={styles.section}>
+                <h4>
+                  <Zap size={14} style={{ marginRight: 8 }} />
+                  {t("analytics.skillsUsed", "Skills Used")}
+                </h4>
+                <div className={styles.tagList}>
+                  {selectedTrace.trace.skills_used.map((skill) => (
+                    <Tag key={skill} color="blue">
+                      {skill}
+                    </Tag>
+                  ))}
+                </div>
               </div>
             )}
 

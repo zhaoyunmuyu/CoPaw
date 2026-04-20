@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
+from .auth_state import resolve_auth_token_for_execution
 from .models import CronJobSpec
 from ..tenant_context import bind_tenant_context
 from ..console_push_store import append as push_store_append
@@ -112,6 +113,26 @@ class CronExecutor:
 
         # Collect text for console push
         console_text_parts: list[str] = []
+
+        try:
+            resolved = resolve_auth_token_for_execution(
+                tenant_id=getattr(job, "tenant_id", None),
+                workspace_dir=dispatch_meta.get("workspace_dir"),
+            )
+        except ValueError as exc:
+            logger.warning(
+                "cron agent aborted: job_id=%s auth_state_error=%s",
+                job.id,
+                repr(exc),
+            )
+            raise RuntimeError(
+                "cron auth user_info is expired; "
+                "please refresh cron auth configuration",
+            ) from exc
+        if resolved.token:
+            req["auth_token"] = resolved.token
+        if resolved.cookie_header:
+            req["cookie"] = resolved.cookie_header
 
         async def _run_agent() -> None:
             async for event in self._runner.stream_query(req):

@@ -120,7 +120,7 @@
     "deleteSuccess": "エージェントが正常に削除されました",
     "deleteFailed": "エージェントの削除に失敗しました",
     "selectAgent": "エージェントを選択",
-    "defaultDisplayName": "デフォルトエージェント",
+    "defaultDisplayName": "小助 Claw",
     "currentWorkspace": "現在のエージェント",
     "switchSuccess": "エージェントが正常に切り替えられました",
     "switchFailed": "エージェントの切り替えに失敗しました",

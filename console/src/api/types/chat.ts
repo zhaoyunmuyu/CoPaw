@@ -15,6 +15,7 @@ export interface ChatSpec {
 export interface Message {
   role: string;
   content: unknown;
+  timestamp?: string | null;
   [key: string]: unknown;
 }
 

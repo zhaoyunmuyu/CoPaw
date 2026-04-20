@@ -38,6 +38,7 @@ export interface ToolUsage {
 export interface SkillUsage {
   skill_name: string;
   count: number;
+  avg_duration_ms: number;
 }
 
 export interface MCPToolUsage {

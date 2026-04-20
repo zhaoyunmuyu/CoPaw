@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { Input, Upload } from "antd";
 import { SparkAttachmentLine } from "@agentscope-ai/icons";
 import { IconButton } from "@agentscope-ai/design";
@@ -8,7 +8,9 @@ import KnowledgeTabs from "../KnowledgeTabs";
 import FeaturedCases from "../FeaturedCases";
 import CaseDetailDrawer from "../CaseDetailDrawer";
 import { casesApi } from "@/api/modules/cases";
+import { greetingApi } from "@/api/modules/greeting";
 import type { Case } from "@/api/types/cases";
+import type { GreetingDisplay } from "@/api/types/greeting";
 import { DESIGN_TOKENS } from "@/config/designTokens";
 
 interface WelcomeCenterLayoutProps {
@@ -32,7 +34,7 @@ function SendIcon() {
 
 export default function WelcomeCenterLayout(props: WelcomeCenterLayoutProps) {
   const {
-    greeting = "你好，你的专属小龙虾，前来报到！",
+    greeting: defaultGreeting = "你好，你的专属小龙虾，前来报到！",
     onSubmit,
   } = props;
   const [inputValue, setInputValue] = useState("");
@@ -40,6 +42,19 @@ export default function WelcomeCenterLayout(props: WelcomeCenterLayoutProps) {
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
   const [loadingCase, setLoadingCase] = useState(false);
   const uploadRef = useRef<any>(null);
+
+  // Dynamic greeting config from API
+  const [greetingConfig, setGreetingConfig] = useState<GreetingDisplay | null>(null);
+
+  useEffect(() => {
+    greetingApi.getDisplayGreeting()
+      .then(setGreetingConfig)
+      .catch(() => setGreetingConfig(null));
+  }, []);
+
+  // Use dynamic config or default values
+  const greeting = greetingConfig?.greeting || defaultGreeting;
+  const placeholder = greetingConfig?.placeholder || "任何要求，尽管提…";
 
   const handleSend = useCallback(() => {
     const trimmed = inputValue.trim();
@@ -99,7 +114,7 @@ export default function WelcomeCenterLayout(props: WelcomeCenterLayoutProps) {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="任何要求，尽管提…"
+            placeholder={placeholder}
             autoSize={{ minRows: 1, maxRows: 5 }}
             bordered={false}
           />

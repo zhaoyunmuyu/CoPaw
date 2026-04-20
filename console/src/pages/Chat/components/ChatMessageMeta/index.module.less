@@ -1,0 +1,55 @@
+.messageBlockStart,
+.messageBlockEnd {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  max-width: 100%;
+}
+
+.messageBlockStart {
+  align-items: flex-start;
+}
+
+.messageBlockEnd {
+  align-items: flex-end;
+}
+
+.messageMetaStart,
+.messageMetaEnd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 1.2;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.messageMetaEnd {
+  justify-content: flex-end;
+}
+
+.messageMetaName {
+  color: rgba(0, 0, 0, 0.72);
+  font-weight: 600;
+}
+
+.messageMetaTime {
+  color: rgba(0, 0, 0, 0.45);
+}
+
+:global(.dark-mode) {
+  .messageMetaStart,
+  .messageMetaEnd {
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  .messageMetaName {
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .messageMetaTime {
+    color: rgba(255, 255, 255, 0.5);
+  }
+}

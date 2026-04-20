@@ -120,6 +120,7 @@ export interface IAgentScopeRuntimeResponse {
   output: IAgentScopeRuntimeMessage[];
   usage?: Record<string, any>;
   error?: IAgentScopeRuntimeError;
+  suggestions?: string[]; // 猜你想问建议列表
 }
 
 export interface IAgentScopeRuntimeError {

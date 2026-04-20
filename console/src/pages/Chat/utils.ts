@@ -22,6 +22,15 @@ export type RuntimeLoadingBridgeApi = {
   setLoading?: (loading: boolean | string) => void;
 };
 
+type UserMessagePart = {
+  type?: string;
+  text?: string;
+};
+
+type UserMessageLike = {
+  content?: string | UserMessagePart[];
+};
+
 // ---------------------------------------------------------------------------
 // Text extraction utilities
 // ---------------------------------------------------------------------------
@@ -60,12 +69,12 @@ export function extractCopyableText(response: CopyableResponse): string {
 }
 
 /** Extract plain text from user message content. */
-export function extractUserMessageText(m: any): string {
+export function extractUserMessageText(m: UserMessageLike): string {
   if (typeof m.content === "string") return m.content;
   if (!Array.isArray(m.content)) return "";
   return m.content
-    .filter((p: any) => p.type === "text")
-    .map((p: any) => p.text || "")
+    .filter((p) => p.type === "text")
+    .map((p) => p.text || "")
     .join("\n");
 }
 
@@ -167,7 +176,9 @@ export function toStoredName(v: string): string {
 }
 
 /** Convert content part URLs to stored name format. */
-export function normalizeContentUrls(part: any): any {
+export function normalizeContentUrls(
+  part: Record<string, unknown>,
+): Record<string, unknown> {
   const p = { ...part };
   if (p.type === "image" && typeof p.image_url === "string")
     p.image_url = toStoredName(p.image_url);
