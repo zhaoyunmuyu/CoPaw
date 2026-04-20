@@ -187,11 +187,16 @@ class TraceStore:
         )
         await self.db.execute(query, params)
 
-    async def get_trace(self, trace_id: str) -> Optional[Trace]:
+    async def get_trace(
+        self,
+        trace_id: str,
+        source_id: Optional[str] = None,
+    ) -> Optional[Trace]:
         """Get a trace by ID.
 
         Args:
             trace_id: Trace identifier
+            source_id: If provided, only return trace matching this source.
 
         Returns:
             Trace or None
@@ -199,8 +204,15 @@ class TraceStore:
         if self.db is None:
             return None
 
-        query = "SELECT * FROM swe_tracing_traces WHERE trace_id = %s"
-        row = await self.db.fetch_one(query, (trace_id,))
+        if source_id:
+            query = (
+                "SELECT * FROM swe_tracing_traces "
+                "WHERE trace_id = %s AND source_id = %s"
+            )
+            row = await self.db.fetch_one(query, (trace_id, source_id))
+        else:
+            query = "SELECT * FROM swe_tracing_traces WHERE trace_id = %s"
+            row = await self.db.fetch_one(query, (trace_id,))
         if row is None:
             return None
         return self._row_to_trace(row)
@@ -832,16 +844,21 @@ class TraceStore:
         ]
         return traces, total
 
-    async def get_trace_detail(self, trace_id: str) -> Optional[TraceDetail]:
+    async def get_trace_detail(
+        self,
+        trace_id: str,
+        source_id: Optional[str] = None,
+    ) -> Optional[TraceDetail]:
         """Get detailed trace with spans.
 
         Args:
             trace_id: Trace identifier
+            source_id: If provided, only return trace matching this source.
 
         Returns:
             Trace detail or None
         """
-        trace = await self.get_trace(trace_id)
+        trace = await self.get_trace(trace_id, source_id)
         if trace is None:
             return None
 
@@ -887,6 +904,7 @@ class TraceStore:
     async def get_trace_detail_with_timeline(
         self,
         trace_id: str,
+        source_id: Optional[str] = None,
     ) -> Optional[TraceDetailWithTimeline]:
         """Get trace detail with hierarchical timeline.
 
@@ -895,11 +913,12 @@ class TraceStore:
 
         Args:
             trace_id: Trace identifier
+            source_id: If provided, only return trace matching this source.
 
         Returns:
             Trace detail with timeline or None
         """
-        trace = await self.get_trace(trace_id)
+        trace = await self.get_trace(trace_id, source_id)
         if trace is None:
             return None
 

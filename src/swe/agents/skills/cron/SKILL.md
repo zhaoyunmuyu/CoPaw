@@ -1,6 +1,6 @@
 ---
 name: cron
-description: Use this skill only for scheduled or recurring tasks. Manage cron jobs with swe cron list/create/get/state/pause/resume/delete/run. Always pass --agent-id explicitly. | 仅在需要未来定时执行或周期执行时使用本 skill。用 swe cron list/create/get/state/pause/resume/delete/run 管理任务；必须显式传 --agent-id
+description: Use this skill only for scheduled or recurring tasks. Manage cron jobs with swe cron list/create/update/get/state/pause/resume/delete/run. Prefer update when modifying an existing job. Always pass --agent-id explicitly. | 仅在需要未来定时执行或周期执行时使用本 skill。用 swe cron list/create/update/get/state/pause/resume/delete/run 管理任务；修改已有任务时优先 update；必须显式传 --agent-id
 metadata:
   builtin_skill_version: "1.1"
   swe:
@@ -31,6 +31,7 @@ metadata:
 3. **创建前必须确认执行时间/周期、目标 channel、target-user、target-session**
 4. **所有 cron 命令都必须显式传 `--agent-id`**
 5. **不要依赖默认 agent，否则任务可能落到 default workspace**
+6. **修改已有任务时优先使用 `swe cron update`，不要默认 `delete` + `create`**
 
 ---
 
@@ -63,6 +64,9 @@ swe cron state <job_id> --agent-id <agent_id>
 
 # 创建任务
 swe cron create --agent-id <agent_id> ...
+
+# 修改任务（保留原 job_id）
+swe cron update <job_id> --agent-id <agent_id> ...
 
 # 删除任务
 swe cron delete <job_id> --agent-id <agent_id>
@@ -127,6 +131,13 @@ swe cron create \
 swe cron create --agent-id <agent_id> -f job_spec.json
 ```
 
+## 修改已有任务
+
+- 先用 `swe cron get <job_id> --agent-id <agent_id>` 查看当前定义
+- 再用 `swe cron update <job_id> --agent-id <agent_id> ...`
+- 优先原地替换，保持同一个 `job_id`
+- 只有用户明确要求新任务身份时，才使用 `delete` + `create`
+
 ---
 
 ## 最小工作流
@@ -136,8 +147,9 @@ swe cron create --agent-id <agent_id> -f job_spec.json
 2. 确认执行时间/周期
 3. 确认 channel、target-user、target-session
 4. 显式带上 --agent-id
-5. swe cron create 创建任务
-6. 后续用 list / state / pause / resume / delete 管理
+5. 新建任务时用 `swe cron create`
+6. 修改已有任务时用 `swe cron update`
+7. 后续用 list / state / pause / resume / delete 管理
 ```
 
 ---
@@ -178,12 +190,23 @@ swe cron list --agent-id <agent_id>
 
 找到正确的 `job_id`。
 
+### 错误 5：修改已有任务时直接 delete + create
+
+修改已有任务时，优先使用：
+
+```bash
+swe cron update <job_id> --agent-id <agent_id> ...
+```
+
+只有用户明确要求全新的任务 ID 时，才使用 `delete` + `create`。
+
 ---
 
 ## 使用建议
 
 - 缺少参数时，先问用户再创建
 - 修改/暂停/删除前，先 `swe cron list --agent-id <agent_id>`
+- 修改已有任务时，先 `swe cron get <job_id> --agent-id <agent_id>`，然后优先用 `update`
 - 排查问题时，用 `swe cron state <job_id> --agent-id <agent_id>`
 - 给用户展示命令时，提供完整、可直接复制的版本
 
@@ -195,6 +218,7 @@ swe cron list --agent-id <agent_id>
 swe cron -h
 swe cron list -h
 swe cron create -h
+swe cron update -h
 swe cron get -h
 swe cron state -h
 swe cron pause -h

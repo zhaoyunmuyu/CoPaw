@@ -16,44 +16,48 @@ from starlette.types import ASGIApp
 from swe.config.context import (
     set_current_tenant_id,
     set_current_user_id,
+    set_current_source_id,
     reset_current_tenant_id,
     reset_current_user_id,
+    reset_current_source_id,
 )
 
 logger = logging.getLogger(__name__)
 
 # Routes that are explicitly exempt from tenant identity requirements
 # These are either truly stateless or system-level endpoints
-TENANT_EXEMPT_ROUTES = frozenset([
-    # Health check endpoints
-    "/health",
-    "/healthz",
-    "/api/health/health",
-    "/ready",
-    "/readyz",
-    "/alive",
-    # Version endpoint
-    "/api/version",
-    # OpenAPI docs (if enabled)
-    "/docs",
-    "/redoc",
-    "/openapi.json",
-    # Auth endpoints
-    "/api/auth/login",
-    "/api/auth/register",
-    "/api/auth/refresh",
-    "/api/auth/logout",
-    "/api/zhaohu/callback",
-    # Static assets
-    "/assets",
-    "/logo.png",
-    "/dark-logo.png",
-    "/swe-symbol.svg",
-    "/swe-dark.png",
-    # Console SPA routes (static files)
-    "/console",
-    "/console/",
-])
+TENANT_EXEMPT_ROUTES = frozenset(
+    [
+        # Health check endpoints
+        "/health",
+        "/healthz",
+        "/api/health/health",
+        "/ready",
+        "/readyz",
+        "/alive",
+        # Version endpoint
+        "/api/version",
+        # OpenAPI docs (if enabled)
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        # Auth endpoints
+        "/api/auth/login",
+        "/api/auth/register",
+        "/api/auth/refresh",
+        "/api/auth/logout",
+        "/api/zhaohu/callback",
+        # Static assets
+        "/assets",
+        "/logo.png",
+        "/dark-logo.png",
+        "/swe-symbol.svg",
+        "/swe-dark.png",
+        # Console SPA routes (static files)
+        "/console",
+        "/console/",
+    ],
+)
 
 
 def is_tenant_exempt(path: str) -> bool:
@@ -113,17 +117,18 @@ class TenantIdentityMiddleware(BaseHTTPMiddleware):
     def _resolve_request_identity(
         self,
         request: Request,
-    ) -> tuple[str | None, str | None, bool]:
-        """Resolve tenant and user IDs from request headers."""
+    ) -> tuple[str | None, str | None, str | None, bool]:
+        """Resolve tenant, user, and source IDs from request headers."""
         path = request.url.path
         is_exempt = request.method == "OPTIONS" or is_tenant_exempt(path)
         tenant_id = request.headers.get("X-Tenant-Id")
         user_id = request.headers.get("X-User-Id")
+        source_id = request.headers.get("X-Source-Id")
 
         if not is_exempt:
             tenant_id = self._validate_tenant_id(path, tenant_id)
 
-        return tenant_id, user_id, is_exempt
+        return tenant_id, user_id, source_id, is_exempt
 
     def _validate_tenant_id(
         self,
@@ -150,6 +155,48 @@ class TenantIdentityMiddleware(BaseHTTPMiddleware):
             )
         return tenant_id
 
+    def _store_request_state(
+        self,
+        request: Request,
+        tenant_id: str | None,
+        user_id: str | None,
+        source_id: str | None,
+    ) -> None:
+        """Store identity in request state for downstream use."""
+        if tenant_id:
+            request.state.tenant_id = tenant_id
+        if user_id:
+            request.state.user_id = user_id
+        if source_id:
+            request.state.source_id = source_id
+
+    def _bind_context(
+        self,
+        tenant_id: str | None,
+        user_id: str | None,
+        source_id: str | None,
+    ) -> list[tuple[str, object]]:
+        """Bind identity to context variables, return tokens for reset."""
+        tokens = []
+        if tenant_id:
+            tokens.append(("tenant", set_current_tenant_id(tenant_id)))
+        if user_id:
+            tokens.append(("user", set_current_user_id(user_id)))
+        if source_id:
+            tokens.append(("source", set_current_source_id(source_id)))
+        return tokens
+
+    def _reset_context(self, tokens: list[tuple[str, object]]) -> None:
+        """Reset context variables using tokens."""
+        reset_map = {
+            "tenant": reset_current_tenant_id,
+            "user": reset_current_user_id,
+            "source": reset_current_source_id,
+        }
+        for name, token in reversed(tokens):
+            if name in reset_map:
+                reset_map[name](token)
+
     async def dispatch(
         self,
         request: Request,
@@ -167,37 +214,26 @@ class TenantIdentityMiddleware(BaseHTTPMiddleware):
         Raises:
             HTTPException: If tenant ID is required but missing/invalid.
         """
-        tenant_id: str | None = None
-        user_id: str | None = None
         tokens = []
-        is_exempt = False
 
         try:
-            tenant_id, user_id, is_exempt = self._resolve_request_identity(
-                request,
-            )
+            (
+                tenant_id,
+                user_id,
+                source_id,
+                is_exempt,
+            ) = self._resolve_request_identity(request)
 
-            # Store in request state for downstream use
-            if tenant_id:
-                request.state.tenant_id = tenant_id
-            if user_id:
-                request.state.user_id = user_id
-
-            # Bind context variables for the request duration
-            if tenant_id:
-                tokens.append(("tenant", set_current_tenant_id(tenant_id)))
-            if user_id:
-                tokens.append(("user", set_current_user_id(user_id)))
+            self._store_request_state(request, tenant_id, user_id, source_id)
+            tokens = self._bind_context(tenant_id, user_id, source_id)
 
             logger.debug(
                 f"TenantIdentityMiddleware: tenant_id={tenant_id}, "
                 f"user_id={user_id}, path={request.url.path}, exempt={is_exempt}",
             )
 
-            # Call next handler
             response = await call_next(request)
 
-            # Add tenant info to response headers (for debugging)
             if tenant_id:
                 response.headers["X-Tenant-Id-Resolved"] = tenant_id
 
@@ -207,14 +243,8 @@ class TenantIdentityMiddleware(BaseHTTPMiddleware):
                 status_code=exc.status_code,
                 content={"detail": exc.detail},
             )
-
         finally:
-            # Reset context variables (in reverse order)
-            for name, token in reversed(tokens):
-                if name == "tenant":
-                    reset_current_tenant_id(token)
-                elif name == "user":
-                    reset_current_user_id(token)
+            self._reset_context(tokens)
 
     def _is_valid_tenant_id(self, tenant_id: str) -> bool:
         """Validate tenant ID format.
@@ -309,6 +339,18 @@ def require_user_id(request: Request) -> str:
     return user_id
 
 
+def get_source_id_from_request(request: Request) -> str | None:
+    """Get source ID from request state.
+
+    Args:
+        request: The FastAPI request object.
+
+    Returns:
+        The source ID if set, None otherwise.
+    """
+    return getattr(request.state, "source_id", None)
+
+
 __all__ = [
     "TenantIdentityMiddleware",
     "is_tenant_exempt",
@@ -317,4 +359,5 @@ __all__ = [
     "get_user_id_from_request",
     "require_tenant_id",
     "require_user_id",
+    "get_source_id_from_request",
 ]

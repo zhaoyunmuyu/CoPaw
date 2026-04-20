@@ -115,13 +115,19 @@ class TenantWorkspacePool:
                 self._bootstrap_locks[tenant_id] = asyncio.Lock()
             return self._bootstrap_locks[tenant_id]
 
-    async def ensure_bootstrap(self, tenant_id: str) -> None:
+    async def ensure_bootstrap(
+        self,
+        tenant_id: str,
+        source_id: str | None = None,
+    ) -> None:
         """Ensure tenant directory is bootstrapped (minimal).
 
         Thread-safe: Uses per-tenant locking to prevent duplicate bootstrap.
 
         Args:
             tenant_id: The tenant identifier.
+            source_id: Optional source identifier from X-Source-Id header.
+                Used to select the appropriate default_{source} template.
 
         Raises:
             RuntimeError: If bootstrap fails.
@@ -133,6 +139,7 @@ class TenantWorkspacePool:
                 initializer = TenantInitializer(
                     self._base_working_dir,
                     tenant_id,
+                    source_id=source_id,
                 )
                 if initializer.has_seeded_bootstrap():
                     self._mark_access(entry)
@@ -152,6 +159,7 @@ class TenantWorkspacePool:
             initializer = TenantInitializer(
                 self._base_working_dir,
                 tenant_id,
+                source_id=source_id,
             )
             if entry is not None and initializer.has_seeded_bootstrap():
                 self._mark_access(entry)
@@ -182,6 +190,13 @@ class TenantWorkspacePool:
                         f"{workspace_seed.get('skills', [])}",
                     )
 
+                # Record init source mapping
+                await self._record_init_source_mapping(
+                    tenant_id,
+                    source_id,
+                    initializer.template_name,
+                )
+
                 # Register in pool (no workspace runtime created)
                 async with self._registry_lock:
                     if tenant_id not in self._workspaces:
@@ -203,6 +218,37 @@ class TenantWorkspacePool:
                 raise RuntimeError(
                     f"Failed to bootstrap tenant {tenant_id}: {e}",
                 ) from e
+
+    async def _record_init_source_mapping(
+        self,
+        tenant_id: str,
+        source_id: str | None,
+        init_source: str,
+    ) -> None:
+        """Record tenant init source mapping to database.
+
+        Args:
+            tenant_id: The tenant identifier.
+            source_id: The source identifier (from X-Source-Id).
+            init_source: The template directory name used for initialization.
+        """
+        try:
+            from .tenant_init_source_store import get_tenant_init_source_store
+
+            store = get_tenant_init_source_store()
+            if store is None:
+                return
+            await store.get_or_create(
+                tenant_id=tenant_id,
+                source_id=source_id or "default",
+                init_source=init_source,
+            )
+        except Exception as e:
+            # Non-fatal: log warning but don't fail bootstrap
+            logger.warning(
+                f"Failed to record init source mapping for tenant "
+                f"{tenant_id}: {e}",
+            )
 
     async def get_or_create(
         self,

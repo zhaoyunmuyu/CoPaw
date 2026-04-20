@@ -4,6 +4,7 @@ import { getApiToken } from "./config";
 // 使用统一的 getUserId helper，遵循优先级：iframe > window > session > default
 import { getUserId } from "../utils/identity";
 import { getIframeContext } from "../stores/iframeStore";
+import { DEFAULT_SOURCE_ID } from "../constants/identity";
 // ==================== userId 统一整改结束 ====================
 
 /**
@@ -66,9 +67,8 @@ export function buildAuthHeaders(): Record<string, string> {
   // ==================== userId 统一整改结束 ====================
 
   // 5. Source ID（来自 iframe context，用于数据隔离）
-  if (iframeContext.source) {
-    headers["X-Source-Id"] = iframeContext.source;
-  }
+  // 非 iframe 模式下使用默认值
+  headers["X-Source-Id"] = iframeContext.source || DEFAULT_SOURCE_ID;
 
   // 6. BBK ID（来自 iframe context，用于维度配置匹配）
   if (iframeContext.bbk) {

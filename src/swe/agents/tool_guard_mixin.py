@@ -278,6 +278,7 @@ class ToolGuardMixin:
                     trace_id=trace_ctx.trace_id,
                     tool_name=tool_name,
                     tool_input=tool_input,
+                    source_id=trace_ctx.source_id,
                     user_id=trace_ctx.user_id,
                     session_id=trace_ctx.session_id,
                     channel=trace_ctx.channel,

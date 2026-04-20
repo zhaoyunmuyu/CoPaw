@@ -128,6 +128,18 @@ def _extract_text_from_response(response) -> str:
     return str(response) if response else ""
 
 
+async def _extract_text_from_streaming_response(response) -> str:
+    """从流式响应中提取最后一个 chunk 的文本内容."""
+    last_chunk_text = ""
+    async for chunk in response:
+        if not hasattr(chunk, "content") or not chunk.content:
+            continue
+        for content_block in chunk.content:
+            if isinstance(content_block, dict) and content_block.get("type") == "text":
+                last_chunk_text = content_block.get("text", "")
+    return last_chunk_text
+
+
 def _parse_suggestions_json(text: str, max_suggestions: int) -> List[str]:
     """解析模型输出的 JSON 数组为建议列表."""
     text = text.strip()
@@ -221,16 +233,9 @@ async def generate_suggestions(
         # 使用超时保护 (Python 3.10 compatible)
         response = await asyncio.wait_for(model(messages), timeout=timeout_seconds)
 
-        # 处理流式响应（每个chunk包含累积的完整文本，取最后一个）
+        # 处理流式响应
         if hasattr(response, "__aiter__"):
-            last_chunk_text = ""
-            async for chunk in response:
-                # ChatResponse has content as list of dicts
-                if hasattr(chunk, "content") and chunk.content:
-                    for content_block in chunk.content:
-                        if isinstance(content_block, dict) and content_block.get("type") == "text":
-                            last_chunk_text = content_block.get("text", "")
-            text = last_chunk_text
+            text = await _extract_text_from_streaming_response(response)
         else:
             text = _extract_text_from_response(response)
 

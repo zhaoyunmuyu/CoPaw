@@ -457,11 +457,16 @@ async def get_traces(
 
 
 @router.get("/traces/{trace_id}", response_model=TraceDetail)
-async def get_trace_detail(trace_id: str) -> TraceDetail:
+async def get_trace_detail(
+    trace_id: str,
+    request: Request,
+    source_id: Optional[str] = Query(None, description="Source identifier"),
+) -> TraceDetail:
     """Get detailed trace with spans.
 
     Args:
         trace_id: Trace identifier
+        source_id: Source identifier (optional, defaults from header)
 
     Returns:
         Trace detail with all spans
@@ -469,6 +474,7 @@ async def get_trace_detail(trace_id: str) -> TraceDetail:
     Raises:
         HTTPException: If trace not found
     """
+    actual_source_id = _get_source_id(request, source_id)
     try:
         manager = get_trace_manager()
         store = manager.store
@@ -478,7 +484,7 @@ async def get_trace_detail(trace_id: str) -> TraceDetail:
             detail="Tracing not available",
         ) from exc
 
-    detail = await store.get_trace_detail(trace_id)
+    detail = await store.get_trace_detail(trace_id, actual_source_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="Trace not found")
 
@@ -856,7 +862,11 @@ async def export_user_messages(
     "/traces/{trace_id}/timeline",
     response_model=TraceDetailWithTimeline,
 )
-async def get_trace_timeline(trace_id: str) -> TraceDetailWithTimeline:
+async def get_trace_timeline(
+    trace_id: str,
+    request: Request,
+    source_id: Optional[str] = Query(None, description="Source identifier"),
+) -> TraceDetailWithTimeline:
     """Get trace detail with hierarchical timeline.
 
     Returns a hierarchical timeline where skill invocations
@@ -864,6 +874,7 @@ async def get_trace_timeline(trace_id: str) -> TraceDetailWithTimeline:
 
     Args:
         trace_id: Trace identifier
+        source_id: Source identifier (optional, defaults from header)
 
     Returns:
         Trace detail with hierarchical timeline
@@ -871,6 +882,7 @@ async def get_trace_timeline(trace_id: str) -> TraceDetailWithTimeline:
     Raises:
         HTTPException: If trace not found
     """
+    actual_source_id = _get_source_id(request, source_id)
     try:
         manager = get_trace_manager()
         store = manager.store
@@ -880,7 +892,10 @@ async def get_trace_timeline(trace_id: str) -> TraceDetailWithTimeline:
             detail="Tracing not available",
         ) from exc
 
-    detail = await store.get_trace_detail_with_timeline(trace_id)
+    detail = await store.get_trace_detail_with_timeline(
+        trace_id,
+        actual_source_id,
+    )
     if detail is None:
         raise HTTPException(status_code=404, detail="Trace not found")
 
