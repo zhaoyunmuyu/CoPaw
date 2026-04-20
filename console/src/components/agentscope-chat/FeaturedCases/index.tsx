@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import Style from "./style";
-import { casesApi } from "@/api/modules/cases";
-import type { Case } from "@/api/types/cases";
+import { featuredCasesApi } from "@/api/modules/featuredCases";
 
 export interface FeaturedCase {
   id: string;
@@ -68,7 +67,7 @@ export default function FeaturedCases(props: FeaturedCasesProps) {
   useEffect(() => {
     const loadCases = async () => {
       try {
-        const apiCases = await casesApi.listCases();
+        const apiCases = await featuredCasesApi.listCases();
         const featuredCases: FeaturedCase[] = apiCases.map((c) => ({
           id: c.id,
           label: c.label,

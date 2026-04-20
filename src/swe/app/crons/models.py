@@ -128,7 +128,9 @@ class CronJobSpec(BaseModel):
     # Tenant isolation: each job belongs to a tenant
     tenant_id: Optional[str] = Field(
         default=None,
-        description="Tenant ID for job isolation. If None, uses default tenant.",
+        description=(
+            "Tenant ID for job isolation. If None, uses default tenant."
+        ),
     )
 
     schedule: ScheduleSpec
@@ -168,6 +170,7 @@ class JobsFile(BaseModel):
 class CronJobState(BaseModel):
     next_run_at: Optional[datetime] = None
     last_run_at: Optional[datetime] = None
+    last_prefetch_at: Optional[datetime] = None
     last_status: Optional[
         Literal["success", "error", "running", "skipped", "cancelled"]
     ] = None
@@ -189,6 +192,9 @@ class CronTaskView(BaseModel):
     unread_execution_count: int = 0
     last_scheduled_run_at: Optional[datetime] = None
     is_running: bool = False
+    is_paused: bool = False
+    pause_reason: Optional[Literal["manual", "auto_unread_threshold"]] = None
+    auto_paused_at: Optional[datetime] = None
 
 
 class CronJobListItem(CronJobSpec):

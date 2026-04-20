@@ -5,12 +5,14 @@ import asyncio
 import base64
 import json
 import logging
+import random
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, Optional, TypeVar, Union
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from ..channels.schema import DEFAULT_CHANNEL
@@ -20,11 +22,17 @@ from .coordination import (
     CoordinationConfig,
     CronCoordination,
 )
+from .auth_state import prefetch_auth_token
 from .executor import CronExecutor
 from .models import CronJobSpec, CronJobState, CronTaskView, JobsFile
 from .repo.base import BaseJobRepository
 
 HEARTBEAT_JOB_ID = "_heartbeat"
+AUTO_PAUSE_UNREAD_THRESHOLD = 3
+AUTO_PAUSE_REASON = "auto_unread_threshold"
+MANUAL_PAUSE_REASON = "manual"
+PREFETCH_JOB_PREFIX = "_prefetch:"
+PREFETCH_WINDOW = timedelta(hours=1)
 
 logger = logging.getLogger(__name__)
 _T = TypeVar("_T")
@@ -105,13 +113,13 @@ class CronManager:  # pylint: disable=too-many-public-methods
 
     @property
     def is_leader(self) -> bool:
-        """Check if this instance is the current leader (if coordination enabled)."""
+        """Check if this instance is leader when coordination is enabled."""
         if self._coordination is None:
             return True  # No coordination = always leader
         return self._coordination.is_leader
 
     async def initialize(self) -> None:
-        """Passive initialization - prepare resources but don't start scheduler.
+        """Passive initialization that prepares resources only.
 
         This is called during workspace setup. The scheduler is NOT started
         here - that happens in activate() when leadership is confirmed.
@@ -148,7 +156,8 @@ class CronManager:  # pylint: disable=too-many-public-methods
         False if this is a follower.
 
         Raises:
-            RedisNotAvailableError: If coordination is enabled but Redis is not available.
+            RedisNotAvailableError: If coordination is enabled but Redis
+            is not available.
         """
         await self.initialize()
 
@@ -164,8 +173,9 @@ class CronManager:  # pylint: disable=too-many-public-methods
                     self._agent_id,
                 )
                 raise RuntimeError(
-                    "Redis coordination is enabled but Redis is not available. "
-                    "Please check Redis connection or disable coordination.",
+                    "Redis coordination is enabled but Redis is not "
+                    "available. Please check Redis connection or disable "
+                    "coordination.",
                 )
 
             # Try to acquire leadership
@@ -374,10 +384,11 @@ class CronManager:  # pylint: disable=too-many-public-methods
             )
 
     def _on_become_leader(self) -> None:
-        """Callback invoked when this instance becomes leader via candidate loop.
+        """Callback invoked after leadership is acquired via candidate loop.
 
         This starts the scheduler to begin cron execution.
-        If startup fails, releases the lease to allow another instance to take over.
+        If startup fails, the lease is released so another instance can
+        take over.
         """
         logger.info(
             "Become leader callback invoked, starting scheduler: agent=%s",
@@ -403,7 +414,8 @@ class CronManager:  # pylint: disable=too-many-public-methods
         try:
             await self._do_start()
             logger.info(
-                "Successfully started scheduler after becoming leader: agent=%s",
+                "Successfully started scheduler after becoming leader: "
+                "agent=%s",
                 self._agent_id,
             )
         except Exception:
@@ -426,8 +438,9 @@ class CronManager:  # pylint: disable=too-many-public-methods
 
         Never raises: best-effort cleanup for callback/background safety.
         """
-        # _do_start() can fail after starting APScheduler but before _started=True.
-        # Roll back scheduler runtime state before manager-level cleanup.
+        # _do_start() can fail after starting APScheduler but before
+        # _started=True. Roll back scheduler runtime state before
+        # manager-level cleanup.
         had_running_scheduler = self._scheduler is not None and getattr(
             self._scheduler,
             "running",
@@ -833,6 +846,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
             if self._started and self._scheduler is not None:
                 if self._scheduler.get_job(job_id):
                     self._scheduler.remove_job(job_id)
+                self._remove_prefetch_job(job_id)
                 self._active_jobs.discard(job_id)
             self._states.pop(job_id, None)
             self._rt.pop(job_id, None)
@@ -865,10 +879,10 @@ class CronManager:  # pylint: disable=too-many-public-methods
         """
         async with self._lock:
             _, job, _ = await self._mutate_jobs_file_locked(
-                lambda jobs_file: self._set_job_enabled_in_jobs_file(
+                lambda jobs_file: self._set_job_paused_in_jobs_file(
                     jobs_file,
                     job_id,
-                    enabled=False,
+                    reason=MANUAL_PAUSE_REASON,
                 ),
             )
             if job is None:
@@ -878,6 +892,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
             if self._started and self._scheduler is not None:
                 if self._scheduler.get_job(job_id):
                     self._scheduler.pause_job(job_id)
+                self._remove_prefetch_job(job_id)
 
             return True
 
@@ -892,10 +907,9 @@ class CronManager:  # pylint: disable=too-many-public-methods
         """
         async with self._lock:
             _, job, _ = await self._mutate_jobs_file_locked(
-                lambda jobs_file: self._set_job_enabled_in_jobs_file(
+                lambda jobs_file: self._set_job_resumed_in_jobs_file(
                     jobs_file,
                     job_id,
-                    enabled=True,
                 ),
             )
             if job is None:
@@ -905,13 +919,17 @@ class CronManager:  # pylint: disable=too-many-public-methods
             if self._started and self._scheduler is not None:
                 if self._scheduler.get_job(job_id):
                     self._scheduler.resume_job(job_id)
+                    aps_job = self._scheduler.get_job(job_id)
+                    next_run_at = aps_job.next_run_time if aps_job else None
+                    self._schedule_prefetch_job(job, next_run_at)
 
             return True
 
     async def reschedule_heartbeat(self) -> None:
         """Reload heartbeat config and update or remove the heartbeat job.
 
-        Note: This should be called after activate() when the manager is leader.
+        Note: This should be called after activate() when the manager is
+        leader.
         Heartbeat config lives in agent config rather than jobs.json, so these
         changes converge through the config watcher + reschedule flow, not
         through the cron definition version/reconcile path.
@@ -993,6 +1011,9 @@ class CronManager:  # pylint: disable=too-many-public-methods
             ),
             last_scheduled_run_at=meta.get("task_last_scheduled_run_at"),
             is_running=state.last_status == "running",
+            is_paused=bool(meta.get("pause_reason")),
+            pause_reason=meta.get("pause_reason"),
+            auto_paused_at=meta.get("auto_paused_at"),
         )
 
     # ----- callbacks -----
@@ -1078,8 +1099,8 @@ class CronManager:  # pylint: disable=too-many-public-methods
         except Exception:
             if save_succeeded and not should_publish:
                 logger.warning(
-                    "Cron definition mutation saved jobs.json but failed to sync "
-                    "definition version: "
+                    "Cron definition mutation saved jobs.json but failed "
+                    "to sync definition version: "
                     "agent=%s version=%s",
                     self._agent_id,
                     version,
@@ -1163,7 +1184,10 @@ class CronManager:  # pylint: disable=too-many-public-methods
         self._stop_definition_reconcile.clear()
         self._definition_reconcile_task = asyncio.create_task(
             self._definition_reconcile_loop(),
-            name=f"cron-def-reconcile-{self._tenant_id or 'default'}-{self._agent_id}",
+            name=(
+                "cron-def-reconcile-"
+                f"{self._tenant_id or 'default'}-{self._agent_id}"
+            ),
         )
 
     async def _stop_definition_reconcile_loop(self) -> None:
@@ -1311,6 +1335,84 @@ class CronManager:  # pylint: disable=too-many-public-methods
             return True, updated
         return False, None
 
+    def _set_job_paused_in_jobs_file(
+        self,
+        jobs_file: JobsFile,
+        job_id: str,
+        *,
+        reason: str,
+        auto_paused_at: Optional[datetime] = None,
+        unread_count_at_pause: Optional[int] = None,
+    ) -> tuple[bool, Optional[CronJobSpec]]:
+        for index, job in enumerate(jobs_file.jobs):
+            if job.id != job_id:
+                continue
+            meta = dict(job.meta or {})
+            changed = False
+            if job.enabled:
+                changed = True
+            if meta.get("pause_reason") != reason:
+                meta["pause_reason"] = reason
+                changed = True
+            if (
+                auto_paused_at is not None
+                and meta.get("auto_paused_at") != auto_paused_at
+            ):
+                meta["auto_paused_at"] = auto_paused_at
+                changed = True
+            if (
+                unread_count_at_pause is not None
+                and meta.get("unread_count_at_pause") != unread_count_at_pause
+            ):
+                meta["unread_count_at_pause"] = unread_count_at_pause
+                changed = True
+            if not changed:
+                return False, job
+            updated = job.model_copy(
+                update={
+                    "enabled": False,
+                    "meta": meta,
+                },
+            )
+            jobs_file.jobs[index] = updated
+            return True, updated
+        return False, None
+
+    def _set_job_resumed_in_jobs_file(
+        self,
+        jobs_file: JobsFile,
+        job_id: str,
+    ) -> tuple[bool, Optional[CronJobSpec]]:
+        for index, job in enumerate(jobs_file.jobs):
+            if job.id != job_id:
+                continue
+            meta = dict(job.meta or {})
+            changed = False
+            if not job.enabled:
+                changed = True
+            if int(meta.get("task_unread_execution_count", 0) or 0) != 0:
+                meta["task_unread_execution_count"] = 0
+                changed = True
+            for key in (
+                "pause_reason",
+                "auto_paused_at",
+                "unread_count_at_pause",
+            ):
+                if key in meta:
+                    meta.pop(key, None)
+                    changed = True
+            if not changed:
+                return False, job
+            updated = job.model_copy(
+                update={
+                    "enabled": True,
+                    "meta": meta,
+                },
+            )
+            jobs_file.jobs[index] = updated
+            return True, updated
+        return False, None
+
     def _disable_invalid_jobs_in_jobs_file(
         self,
         jobs_file: JobsFile,
@@ -1407,13 +1509,20 @@ class CronManager:  # pylint: disable=too-many-public-methods
             creator_user_id,
         )
         async with self._lock:
-            await self._mutate_jobs_file_locked(
+            _, auto_paused, _ = await self._mutate_jobs_file_locked(
                 lambda jobs_file: self._apply_task_execution_success(
                     jobs_file,
                     job.id,
                     preview,
                 ),
             )
+            if (
+                auto_paused
+                and self._started
+                and self._scheduler is not None
+                and self._scheduler.get_job(job.id)
+            ):
+                self._scheduler.pause_job(job.id)
 
     async def _load_task_preview_text(
         self,
@@ -1446,12 +1555,28 @@ class CronManager:  # pylint: disable=too-many-public-methods
             meta = dict(job.meta or {})
             meta["task_has_scheduled_result"] = True
             meta["task_last_scheduled_preview"] = preview[:10]
-            meta["task_unread_execution_count"] = (
+            unread_count = (
                 int(meta.get("task_unread_execution_count", 0) or 0) + 1
             )
+            meta["task_unread_execution_count"] = unread_count
             meta["task_last_scheduled_run_at"] = datetime.now(timezone.utc)
-            jobs_file.jobs[index] = job.model_copy(update={"meta": meta})
-            return True, True
+            updated = job.model_copy(update={"meta": meta})
+            auto_paused = False
+            if unread_count >= AUTO_PAUSE_UNREAD_THRESHOLD and job.enabled:
+                auto_paused = True
+                meta["pause_reason"] = AUTO_PAUSE_REASON
+                meta["auto_paused_at"] = meta["task_last_scheduled_run_at"]
+                meta["unread_count_at_pause"] = unread_count
+                updated = job.model_copy(
+                    update={
+                        "enabled": False,
+                        "meta": meta,
+                    },
+                )
+                jobs_file.jobs[index] = updated
+                return True, auto_paused
+            jobs_file.jobs[index] = updated
+            return True, auto_paused
         return False, False
 
     def _build_wplus_link(self, session_id: str) -> str:
@@ -1513,7 +1638,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
         self,
         job: CronJobSpec,
     ) -> None:
-        """Push success notification via Zhaohu channel when agent task completes."""
+        """Push success notification when an agent task completes."""
         # 只对 agent 类型的任务发送通知
         if job.task_type != "agent":
             logger.debug("Skip notification: job %s is not agent type", job.id)
@@ -1525,7 +1650,8 @@ class CronManager:  # pylint: disable=too-many-public-methods
             return
 
         logger.info(
-            "Sending cron task completion notification: job_id=%s job_name=%s session_id=%s",
+            "Sending cron task completion notification: "
+            "job_id=%s job_name=%s session_id=%s",
             job.id,
             job.name,
             session_id,
@@ -1550,7 +1676,8 @@ class CronManager:  # pylint: disable=too-many-public-methods
             meta=meta,
         )
         logger.info(
-            "Cron task completion notification sent: job_id=%s job_name=%s",
+            "Cron task completion notification sent: "
+            "job_id=%s job_name=%s",
             job.id,
             job.name,
         )
@@ -1618,11 +1745,128 @@ class CronManager:  # pylint: disable=too-many-public-methods
         if not spec.enabled:
             self._scheduler.pause_job(spec.id)
 
-        # update next_run
         aps_job = self._scheduler.get_job(spec.id)
+        next_run_at = aps_job.next_run_time if aps_job else None
+        self._schedule_prefetch_job(spec, next_run_at)
+
+        # update next_run
         st = self._states.get(spec.id, CronJobState())
-        st.next_run_at = aps_job.next_run_time if aps_job else None
+        st.next_run_at = next_run_at
         self._states[spec.id] = st
+
+    def _prefetch_job_id(self, job_id: str) -> str:
+        return f"{PREFETCH_JOB_PREFIX}{job_id}"
+
+    def _remove_prefetch_job(self, job_id: str) -> None:
+        if self._scheduler is None:
+            return
+        prefetch_job_id = self._prefetch_job_id(job_id)
+        if self._scheduler.get_job(prefetch_job_id):
+            self._scheduler.remove_job(prefetch_job_id)
+        self._active_jobs.discard(prefetch_job_id)
+
+    def _compute_prefetch_run_at(
+        self,
+        spec: CronJobSpec,
+        next_run_at: datetime | None,
+    ) -> datetime | None:
+        if next_run_at is None:
+            return None
+
+        run_at = next_run_at.astimezone(timezone.utc)
+        now = datetime.now(timezone.utc)
+        if run_at <= now:
+            return None
+
+        window_start = max(now, run_at - PREFETCH_WINDOW)
+        window_seconds = int((run_at - window_start).total_seconds())
+        if window_seconds <= 0:
+            return window_start
+
+        seed = f"{spec.id}:{int(run_at.timestamp())}"
+        jitter = random.Random(seed).randint(0, window_seconds)
+        return window_start + timedelta(seconds=jitter)
+
+    def _schedule_prefetch_job(
+        self,
+        spec: CronJobSpec,
+        next_run_at: datetime | None,
+    ) -> None:
+        if self._scheduler is None:
+            return
+
+        self._remove_prefetch_job(spec.id)
+        if not spec.enabled or spec.task_type != "agent":
+            return
+
+        run_at = self._compute_prefetch_run_at(spec, next_run_at)
+        if run_at is None:
+            return
+
+        prefetch_job_id = self._prefetch_job_id(spec.id)
+        self._scheduler.add_job(
+            self._prefetch_callback,
+            trigger=DateTrigger(run_date=run_at, timezone=timezone.utc),
+            id=prefetch_job_id,
+            args=[spec.id],
+            replace_existing=True,
+        )
+        self._active_jobs.add(prefetch_job_id)
+
+    async def _prefetch_callback(self, job_id: str) -> None:
+        if self._coordination is not None and not self._coordination.is_leader:
+            logger.debug(
+                "Skipping auth prefetch: not leader (agent=%s, job=%s)",
+                self._agent_id,
+                job_id,
+            )
+            return
+
+        job = await self._repo.get_job(job_id)
+        if not job or not job.enabled or job.task_type != "agent":
+            self._remove_prefetch_job(job_id)
+            return
+
+        if self._coordination is not None:
+            still_owner = (
+                await self._coordination.preflight_scheduler_execution(
+                    job_id=self._prefetch_job_id(job_id),
+                    schedule_type="cron",
+                )
+            )
+            if not still_owner:
+                return
+
+        dispatch_meta = dict(job.dispatch.meta or {})
+        workspace_dir = dispatch_meta.get("workspace_dir")
+        try:
+            with bind_tenant_context(
+                tenant_id=job.tenant_id,
+                user_id=job.dispatch.target.user_id,
+                workspace_dir=workspace_dir,
+            ):
+                prefetch_auth_token(
+                    tenant_id=job.tenant_id,
+                    workspace_dir=workspace_dir,
+                )
+            st = self._states.get(job_id, CronJobState())
+            st.last_prefetch_at = datetime.now(timezone.utc)
+            st.last_error = None
+            self._states[job_id] = st
+        except Exception as exc:  # pylint: disable=broad-except
+            st = self._states.get(job_id, CronJobState())
+            st.last_error = repr(exc)
+            self._states[job_id] = st
+            logger.warning(
+                "cron auth prefetch failed: job_id=%s error=%s",
+                job_id,
+                repr(exc),
+            )
+        finally:
+            if self._scheduler is not None and self._scheduler.get_job(job_id):
+                aps_job = self._scheduler.get_job(job_id)
+                next_run_at = aps_job.next_run_time if aps_job else None
+                self._schedule_prefetch_job(job, next_run_at)
 
     def _build_trigger(self, spec: CronJobSpec) -> CronTrigger:
         # enforce 5 fields (no seconds)
@@ -1720,8 +1964,10 @@ class CronManager:  # pylint: disable=too-many-public-methods
         if self._scheduler is not None:
             aps_job = self._scheduler.get_job(job_id)
             st = self._states.get(job_id, CronJobState())
-            st.next_run_at = aps_job.next_run_time if aps_job else None
+            next_run_at = aps_job.next_run_time if aps_job else None
+            st.next_run_at = next_run_at
             self._states[job_id] = st
+            self._schedule_prefetch_job(job, next_run_at)
 
     async def _heartbeat_callback(self) -> None:
         """Run one heartbeat under the same preflight as ordinary cron jobs."""

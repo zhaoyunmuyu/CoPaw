@@ -36,18 +36,20 @@ def init_instance_module(db=None):
     """Initialize instance module with database connection.
 
     Args:
-        db: DatabaseConnection instance (required for database operations).
+        db: DatabaseConnection instance (optional, if None, module operates in stub mode).
 
-    Raises:
-        RuntimeError: If db is None or not connected.
+    Note:
+        If db is None or not connected, the module will operate in stub mode
+        where instance-related API endpoints will return appropriate errors.
     """
     global _store, _service
 
     if db is None or not getattr(db, "is_connected", False):
-        raise RuntimeError(
-            "Instance module requires a connected database. "
-            "Please ensure database is initialized before calling this function.",
-        )
+        # Operate in stub mode - endpoints will handle missing service
+        _store = None
+        _service = None
+        logger.info("Instance module initialized in stub mode (no database connection)")
+        return
 
     _store = InstanceStore(db)
     _service = InstanceService(_store)
@@ -58,10 +60,9 @@ def get_service() -> InstanceService:
     """Get instance service."""
     global _service
     if _service is None:
-        init_instance_module()
-        # After init_instance_module, _service should not be None
-        if _service is None:
-            raise RuntimeError("Failed to initialize instance service")
+        raise RuntimeError(
+            "Instance service not available. Database connection is required.",
+        )
     return _service
 
 

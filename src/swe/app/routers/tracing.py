@@ -10,7 +10,7 @@ import io
 import csv
 import logging
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from ...tracing import get_trace_manager, has_trace_manager
@@ -21,6 +21,33 @@ from ...tracing.models import (
     SessionStats,
     UserStats,
 )
+
+
+def _get_source_id(
+    request: Request,
+    query_source_id: Optional[str] = None,
+) -> str:
+    """Get source_id from header or query parameter.
+
+    Priority:
+    1. X-Source-Id header
+    2. Query parameter source_id
+    3. Default value "default"
+
+    Args:
+        request: FastAPI request object
+        query_source_id: Optional source_id from query parameter
+
+    Returns:
+        Source identifier string
+    """
+    header_source_id = request.headers.get("X-Source-Id")
+    if header_source_id:
+        return header_source_id
+    if query_source_id:
+        return query_source_id
+    return "default"
+
 
 router = APIRouter(prefix="/tracing", tags=["tracing"])
 logger = logging.getLogger(__name__)
@@ -245,6 +272,8 @@ def _build_user_messages_csv_response(
 
 @router.get("/overview", response_model=OverviewStats)
 async def get_overview(
+    request: Request,
+    source_id: Optional[str] = Query(None, description="Source identifier"),
     start_date: Optional[str] = Query(
         None,
         description="Start date (YYYY-MM-DD)",
@@ -254,6 +283,7 @@ async def get_overview(
     """Get overview statistics for the dashboard.
 
     Args:
+        source_id: Source identifier (optional, defaults from header)
         start_date: Optional start date filter
         end_date: Optional end date filter
 
@@ -261,6 +291,7 @@ async def get_overview(
         Overview statistics including user counts, token usage,
         model distribution.
     """
+    actual_source_id = _get_source_id(request, source_id)
     try:
         manager = get_trace_manager()
         store = manager.store
@@ -271,11 +302,13 @@ async def get_overview(
     start = _parse_date(start_date, "start_date")
     end = _parse_date(end_date, "end_date", add_day=True)
 
-    return await store.get_overview_stats(start, end)
+    return await store.get_overview_stats(actual_source_id, start, end)
 
 
 @router.get("/users", response_model=dict)
 async def get_users(
+    request: Request,
+    source_id: Optional[str] = Query(None, description="Source identifier"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     user_id: Optional[str] = Query(
@@ -291,6 +324,7 @@ async def get_users(
     """Get list of users with their statistics.
 
     Args:
+        source_id: Source identifier (optional, defaults from header)
         page: Page number
         page_size: Page size
         user_id: Filter by user ID
@@ -300,6 +334,7 @@ async def get_users(
     Returns:
         Paginated list of users with stats
     """
+    actual_source_id = _get_source_id(request, source_id)
     try:
         manager = get_trace_manager()
         store = manager.store
@@ -310,6 +345,7 @@ async def get_users(
     end = _parse_date(end_date, "end_date", add_day=True)
 
     users, total = await store.get_users(
+        actual_source_id,
         page,
         page_size,
         user_id,
@@ -327,6 +363,8 @@ async def get_users(
 @router.get("/users/{user_id}", response_model=UserStats)
 async def get_user_stats(
     user_id: str,
+    request: Request,
+    source_id: Optional[str] = Query(None, description="Source identifier"),
     start_date: Optional[str] = Query(
         None,
         description="Start date (YYYY-MM-DD)",
@@ -337,12 +375,14 @@ async def get_user_stats(
 
     Args:
         user_id: User identifier
+        source_id: Source identifier (optional, defaults from header)
         start_date: Optional start date filter
         end_date: Optional end date filter
 
     Returns:
         User statistics
     """
+    actual_source_id = _get_source_id(request, source_id)
     try:
         manager = get_trace_manager()
         store = manager.store
@@ -352,11 +392,13 @@ async def get_user_stats(
     start = _parse_date(start_date, "start_date")
     end = _parse_date(end_date, "end_date", add_day=True)
 
-    return await store.get_user_stats(user_id, start, end)
+    return await store.get_user_stats(actual_source_id, user_id, start, end)
 
 
 @router.get("/traces", response_model=dict)
 async def get_traces(
+    request: Request,
+    source_id: Optional[str] = Query(None, description="Source identifier"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     user_id: Optional[str] = Query(None, description="Filter by user ID"),
@@ -374,6 +416,7 @@ async def get_traces(
     """Get list of traces.
 
     Args:
+        source_id: Source identifier (optional, defaults from header)
         page: Page number
         page_size: Page size
         user_id: Filter by user ID
@@ -385,6 +428,7 @@ async def get_traces(
     Returns:
         Paginated list of traces
     """
+    actual_source_id = _get_source_id(request, source_id)
     try:
         manager = get_trace_manager()
         store = manager.store
@@ -395,6 +439,7 @@ async def get_traces(
     end = _parse_date(end_date, "end_date", add_day=True)
 
     traces, total = await store.get_traces(
+        source_id=actual_source_id,
         page=page,
         page_size=page_size,
         user_id=user_id,
@@ -442,6 +487,8 @@ async def get_trace_detail(trace_id: str) -> TraceDetail:
 
 @router.get("/models", response_model=dict)
 async def get_model_usage(
+    request: Request,
+    source_id: Optional[str] = Query(None, description="Source identifier"),
     start_date: Optional[str] = Query(
         None,
         description="Start date (YYYY-MM-DD)",
@@ -451,12 +498,14 @@ async def get_model_usage(
     """Get model usage statistics.
 
     Args:
+        source_id: Source identifier (optional, defaults from header)
         start_date: Start date filter
         end_date: End date filter
 
     Returns:
         Model usage statistics
     """
+    actual_source_id = _get_source_id(request, source_id)
     try:
         manager = get_trace_manager()
         store = manager.store
@@ -466,12 +515,14 @@ async def get_model_usage(
     start = _parse_date(start_date, "start_date")
     end = _parse_date(end_date, "end_date", add_day=True)
 
-    stats = await store.get_overview_stats(start, end)
+    stats = await store.get_overview_stats(actual_source_id, start, end)
     return {"models": [m.model_dump() for m in stats.model_distribution]}
 
 
 @router.get("/tools", response_model=dict)
 async def get_tool_usage(
+    request: Request,
+    source_id: Optional[str] = Query(None, description="Source identifier"),
     start_date: Optional[str] = Query(
         None,
         description="Start date (YYYY-MM-DD)",
@@ -481,12 +532,14 @@ async def get_tool_usage(
     """Get tool usage statistics.
 
     Args:
+        source_id: Source identifier (optional, defaults from header)
         start_date: Start date filter
         end_date: End date filter
 
     Returns:
         Tool usage statistics
     """
+    actual_source_id = _get_source_id(request, source_id)
     try:
         manager = get_trace_manager()
         store = manager.store
@@ -496,12 +549,14 @@ async def get_tool_usage(
     start = _parse_date(start_date, "start_date")
     end = _parse_date(end_date, "end_date", add_day=True)
 
-    stats = await store.get_overview_stats(start, end)
+    stats = await store.get_overview_stats(actual_source_id, start, end)
     return {"tools": [t.model_dump() for t in stats.top_tools]}
 
 
 @router.get("/skills", response_model=dict)
 async def get_skill_usage(
+    request: Request,
+    source_id: Optional[str] = Query(None, description="Source identifier"),
     start_date: Optional[str] = Query(
         None,
         description="Start date (YYYY-MM-DD)",
@@ -511,12 +566,14 @@ async def get_skill_usage(
     """Get skill usage statistics.
 
     Args:
+        source_id: Source identifier (optional, defaults from header)
         start_date: Start date filter
         end_date: End date filter
 
     Returns:
         Skill usage statistics
     """
+    actual_source_id = _get_source_id(request, source_id)
     try:
         manager = get_trace_manager()
         store = manager.store
@@ -526,12 +583,14 @@ async def get_skill_usage(
     start = _parse_date(start_date, "start_date")
     end = _parse_date(end_date, "end_date", add_day=True)
 
-    stats = await store.get_overview_stats(start, end)
+    stats = await store.get_overview_stats(actual_source_id, start, end)
     return {"skills": [s.model_dump() for s in stats.top_skills]}
 
 
 @router.get("/mcp", response_model=dict)
 async def get_mcp_usage(
+    request: Request,
+    source_id: Optional[str] = Query(None, description="Source identifier"),
     start_date: Optional[str] = Query(
         None,
         description="Start date (YYYY-MM-DD)",
@@ -541,12 +600,14 @@ async def get_mcp_usage(
     """Get MCP tool and server usage statistics.
 
     Args:
+        source_id: Source identifier (optional, defaults from header)
         start_date: Start date filter
         end_date: End date filter
 
     Returns:
         MCP usage statistics
     """
+    actual_source_id = _get_source_id(request, source_id)
     try:
         manager = get_trace_manager()
         store = manager.store
@@ -556,7 +617,7 @@ async def get_mcp_usage(
     start = _parse_date(start_date, "start_date")
     end = _parse_date(end_date, "end_date", add_day=True)
 
-    stats = await store.get_overview_stats(start, end)
+    stats = await store.get_overview_stats(actual_source_id, start, end)
     return {
         "mcp_tools": [t.model_dump() for t in stats.top_mcp_tools],
         "mcp_servers": [s.model_dump() for s in stats.mcp_servers],
@@ -565,6 +626,8 @@ async def get_mcp_usage(
 
 @router.get("/sessions", response_model=dict)
 async def get_sessions(
+    request: Request,
+    source_id: Optional[str] = Query(None, description="Source identifier"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     user_id: Optional[str] = Query(None, description="Filter by user ID"),
@@ -581,6 +644,7 @@ async def get_sessions(
     """Get list of sessions with their statistics.
 
     Args:
+        source_id: Source identifier (optional, defaults from header)
         page: Page number
         page_size: Page size
         user_id: Filter by user ID
@@ -591,6 +655,7 @@ async def get_sessions(
     Returns:
         Paginated list of sessions with stats
     """
+    actual_source_id = _get_source_id(request, source_id)
     try:
         manager = get_trace_manager()
         store = manager.store
@@ -601,6 +666,7 @@ async def get_sessions(
     end = _parse_date(end_date, "end_date", add_day=True)
 
     sessions, total = await store.get_sessions(
+        source_id=actual_source_id,
         page=page,
         page_size=page_size,
         user_id=user_id,
@@ -619,6 +685,8 @@ async def get_sessions(
 @router.get("/sessions/{session_id:path}", response_model=SessionStats)
 async def get_session_stats(
     session_id: str,
+    request: Request,
+    source_id: Optional[str] = Query(None, description="Source identifier"),
     start_date: Optional[str] = Query(
         None,
         description="Start date (YYYY-MM-DD)",
@@ -629,12 +697,14 @@ async def get_session_stats(
 
     Args:
         session_id: Session identifier
+        source_id: Source identifier (optional, defaults from header)
         start_date: Optional start date filter
         end_date: Optional end date filter
 
     Returns:
         Session statistics
     """
+    actual_source_id = _get_source_id(request, source_id)
     try:
         manager = get_trace_manager()
         store = manager.store
@@ -644,11 +714,18 @@ async def get_session_stats(
     start = _parse_date(start_date, "start_date")
     end = _parse_date(end_date, "end_date", add_day=True)
 
-    return await store.get_session_stats(session_id, start, end)
+    return await store.get_session_stats(
+        actual_source_id,
+        session_id,
+        start,
+        end,
+    )
 
 
 @router.get("/user-messages", response_model=dict)
 async def get_user_messages(
+    request: Request,
+    source_id: Optional[str] = Query(None, description="Source identifier"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Page size"),
     user_id: Optional[str] = Query(None, description="Filter by user ID"),
@@ -669,6 +746,7 @@ async def get_user_messages(
     """Get user messages with token info for cost analysis.
 
     Args:
+        source_id: Source identifier (optional, defaults from header)
         page: Page number
         page_size: Page size
         user_id: Filter by user ID
@@ -680,6 +758,7 @@ async def get_user_messages(
     Returns:
         Paginated list of user messages with token usage
     """
+    actual_source_id = _get_source_id(request, source_id)
     try:
         manager = get_trace_manager()
         store = manager.store
@@ -690,6 +769,7 @@ async def get_user_messages(
     end = _parse_date(end_date, "end_date", add_day=True)
 
     messages, total = await store.get_user_messages(
+        source_id=actual_source_id,
         page=page,
         page_size=page_size,
         user_id=user_id,
@@ -709,6 +789,8 @@ async def get_user_messages(
 
 @router.get("/user-messages/export")
 async def export_user_messages(
+    request: Request,
+    source_id: Optional[str] = Query(None, description="Source identifier"),
     user_id: Optional[str] = Query(None, description="Filter by user ID"),
     session_id: Optional[str] = Query(
         None,
@@ -732,6 +814,7 @@ async def export_user_messages(
     """Export user messages with token info for cost analysis.
 
     Args:
+        source_id: Source identifier (optional, defaults from header)
         user_id: Filter by user ID
         session_id: Filter by session ID
         start_date: Start date filter
@@ -742,12 +825,14 @@ async def export_user_messages(
     Returns:
         StreamingResponse with exported data
     """
+    actual_source_id = _get_source_id(request, source_id)
     store = _get_trace_store_or_503()
 
     start = _parse_date(start_date, "start_date")
     end = _parse_date(end_date, "end_date", add_day=True)
 
     messages, _ = await store.get_user_messages(
+        source_id=actual_source_id,
         page=1,
         page_size=1,  # Ignored in export mode
         user_id=user_id,

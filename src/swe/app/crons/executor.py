@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
+from .auth_state import resolve_auth_token_for_execution
 from .models import CronJobSpec
 from ..tenant_context import bind_tenant_context
 
@@ -35,9 +36,9 @@ class CronExecutor:
             workspace_dir = Path(workspace_dir_value)
 
         # Extract tenant_id from job spec (added for tenant isolation)
-        tenant_id = getattr(job, 'tenant_id', None)
+        tenant_id = getattr(job, "tenant_id", None)
         if tenant_id:
-            dispatch_meta['tenant_id'] = tenant_id
+            dispatch_meta["tenant_id"] = tenant_id
 
         logger.info(
             "cron execute: job_id=%s channel=%s task_type=%s "
@@ -56,7 +57,12 @@ class CronExecutor:
             user_id=target_user_id,
             workspace_dir=workspace_dir,
         ):
-            await self._execute_job(job, target_user_id, target_session_id, dispatch_meta)
+            await self._execute_job(
+                job,
+                target_user_id,
+                target_session_id,
+                dispatch_meta,
+            )
 
     async def _execute_job(
         self,
@@ -92,6 +98,26 @@ class CronExecutor:
         req: Dict[str, Any] = job.request.model_dump(mode="json")
         req["user_id"] = target_user_id or "cron"
         req["session_id"] = target_session_id or f"cron:{job.id}"
+
+        try:
+            resolved = resolve_auth_token_for_execution(
+                tenant_id=getattr(job, "tenant_id", None),
+                workspace_dir=dispatch_meta.get("workspace_dir"),
+            )
+        except ValueError as exc:
+            logger.warning(
+                "cron agent aborted: job_id=%s auth_state_error=%s",
+                job.id,
+                repr(exc),
+            )
+            raise RuntimeError(
+                "cron auth user_info is expired; "
+                "please refresh cron auth configuration"
+            ) from exc
+        if resolved.token:
+            req["auth_token"] = resolved.token
+        if resolved.cookie_header:
+            req["cookie"] = resolved.cookie_header
 
         async def _run() -> None:
             async for event in self._runner.stream_query(req):

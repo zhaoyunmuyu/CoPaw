@@ -327,6 +327,19 @@ class SkillFeatureInferencer:
         best_confidence = 0.0
 
         for skill_name in enabled_skills:
+            # Layer 0.5: Direct skill name match (highest confidence)
+            # Check if user explicitly mentions the skill name
+            skill_name_lower = skill_name.lower()
+            if skill_name_lower in message_lower:
+                confidence = 0.95
+                best_skill, best_confidence = self._update_best_match(
+                    skill_name,
+                    confidence,
+                    best_skill,
+                    best_confidence,
+                )
+                continue
+
             feature = self._features.get(skill_name)
             if not feature:
                 continue

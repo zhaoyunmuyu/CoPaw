@@ -28,6 +28,7 @@ class SkillExecutionContext:
         tools_called: List of built-in tools called during execution
         mcp_tools_called: List of MCP tools called during execution
         confidence: Attribution confidence level (0.0-1.0)
+        span_id: Span ID for tracing (used to update duration on end)
     """
 
     skill_name: str
@@ -36,6 +37,7 @@ class SkillExecutionContext:
     tools_called: list[str] = field(default_factory=list)
     mcp_tools_called: list[str] = field(default_factory=list)
     confidence: float = 1.0
+    span_id: Optional[str] = None
 
 
 class SkillContextManager:
@@ -72,6 +74,7 @@ class SkillContextManager:
         skill_name: str,
         trigger_reason: str = "inferred",
         confidence: float = 1.0,
+        span_id: Optional[str] = None,
     ) -> None:
         """Start a new skill execution context.
 
@@ -85,12 +88,14 @@ class SkillContextManager:
                 - "inferred": Detected through inference
                 - "keyword": Detected through trigger keywords
             confidence: Attribution confidence (0.0-1.0)
+            span_id: Span ID for tracing (used to update duration on end)
         """
         context = SkillExecutionContext(
             skill_name=skill_name,
             start_time=datetime.now(),
             trigger_reason=trigger_reason,
             confidence=confidence,
+            span_id=span_id,
         )
 
         # Get current stack and append (ContextVar requires re-assignment)

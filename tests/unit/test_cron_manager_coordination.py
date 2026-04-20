@@ -10,7 +10,7 @@ These tests verify:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -543,7 +543,10 @@ class TestCronManagerTimedPreflight:
 
         await manager._scheduled_callback(sample_job_spec.id)
 
-        manager._execute_once.assert_awaited_once_with(sample_job_spec)
+        manager._execute_once.assert_awaited_once()
+        executed_job = manager._execute_once.await_args.args[0]
+        assert executed_job.id == sample_job_spec.id
+        assert executed_job.task_type == sample_job_spec.task_type
         manager._coordination.create_execution_lock.assert_not_called()
 
         await manager.deactivate()
@@ -588,6 +591,226 @@ class TestCronManagerTimedPreflight:
 
 class TestCronManagerState:
     """Tests for CronManager state tracking."""
+
+    async def test_register_schedules_prefetch_for_agent_jobs(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+    ):
+        manager = CronManager(
+            repo=JsonJobRepository(temp_jobs_file),
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        await manager.activate()
+
+        job = CronJobSpec(
+            id="test-agent-job",
+            name="Test Agent Job",
+            enabled=True,
+            tenant_id="test-tenant",
+            schedule=ScheduleSpec(
+                type="cron",
+                cron="0 0 * * *",
+                timezone="UTC",
+            ),
+            task_type="agent",
+            request=CronJobRequest(
+                input=[{"content": [{"text": "ping"}]}],
+            ),
+            dispatch=DispatchSpec(
+                type="channel",
+                channel="console",
+                target=DispatchTarget(user_id="user1", session_id="session1"),
+                meta={"workspace_dir": "/tmp/test"},
+            ),
+            runtime=JobRuntimeSpec(timeout_seconds=30),
+        )
+
+        await manager.create_or_replace_job(job)
+
+        assert (
+            manager._scheduler.get_job(manager._prefetch_job_id(job.id))
+            is not None
+        )
+
+        await manager.deactivate()
+
+    async def test_prefetch_callback_updates_state_and_reschedules(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+    ):
+        manager = CronManager(
+            repo=JsonJobRepository(temp_jobs_file),
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        await manager.activate()
+
+        job = CronJobSpec(
+            id="prefetch-job",
+            name="Prefetch Job",
+            enabled=True,
+            tenant_id="test-tenant",
+            schedule=ScheduleSpec(
+                type="cron",
+                cron="0 0 * * *",
+                timezone="UTC",
+            ),
+            task_type="agent",
+            request=CronJobRequest(
+                input=[{"content": [{"text": "ping"}]}],
+            ),
+            dispatch=DispatchSpec(
+                type="channel",
+                channel="console",
+                target=DispatchTarget(user_id="user1", session_id="session1"),
+                meta={"workspace_dir": "/tmp/test"},
+            ),
+            runtime=JobRuntimeSpec(timeout_seconds=30),
+        )
+        await manager.create_or_replace_job(job)
+
+        prefetch_job = manager._scheduler.get_job(
+            manager._prefetch_job_id(job.id),
+        )
+        assert prefetch_job is not None
+        original_next_run_at = manager.get_state(job.id).next_run_at
+        assert original_next_run_at is not None
+
+        with patch(
+            "swe.app.crons.manager.prefetch_auth_token",
+        ) as prefetch_mock:
+            await manager._prefetch_callback(job.id)
+
+        prefetch_mock.assert_called_once_with(
+            tenant_id="test-tenant",
+            workspace_dir="/tmp/test",
+        )
+        state = manager.get_state(job.id)
+        assert state.last_prefetch_at is not None
+        assert state.last_error is None
+        rescheduled = manager._scheduler.get_job(
+            manager._prefetch_job_id(job.id),
+        )
+        assert rescheduled is not None
+        assert rescheduled.next_run_time <= original_next_run_at
+
+        await manager.deactivate()
+
+    async def test_pause_and_resume_manage_prefetch_job(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+    ):
+        manager = CronManager(
+            repo=JsonJobRepository(temp_jobs_file),
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        await manager.activate()
+
+        job = CronJobSpec(
+            id="pause-resume-job",
+            name="Pause Resume Job",
+            enabled=True,
+            tenant_id="test-tenant",
+            schedule=ScheduleSpec(
+                type="cron",
+                cron="0 0 * * *",
+                timezone="UTC",
+            ),
+            task_type="agent",
+            request=CronJobRequest(
+                input=[{"content": [{"text": "ping"}]}],
+            ),
+            dispatch=DispatchSpec(
+                type="channel",
+                channel="console",
+                target=DispatchTarget(user_id="user1", session_id="session1"),
+                meta={"workspace_dir": "/tmp/test"},
+            ),
+            runtime=JobRuntimeSpec(timeout_seconds=30),
+        )
+        await manager.create_or_replace_job(job)
+
+        assert (
+            manager._scheduler.get_job(manager._prefetch_job_id(job.id))
+            is not None
+        )
+
+        await manager.pause_job(job.id)
+        assert (
+            manager._scheduler.get_job(manager._prefetch_job_id(job.id))
+            is None
+        )
+
+        await manager.resume_job(job.id)
+        assert (
+            manager._scheduler.get_job(manager._prefetch_job_id(job.id))
+            is not None
+        )
+
+        await manager.deactivate()
+
+    async def test_prefetch_run_time_is_within_one_hour_window(
+        self,
+        temp_jobs_file,
+        mock_runner,
+        mock_channel_manager,
+    ):
+        manager = CronManager(
+            repo=JsonJobRepository(temp_jobs_file),
+            runner=mock_runner,
+            channel_manager=mock_channel_manager,
+            agent_id="test-agent",
+            tenant_id="test-tenant",
+            coordination_config=CoordinationConfig(enabled=False),
+        )
+        next_run_at = datetime.now(timezone.utc) + timedelta(hours=3)
+        spec = CronJobSpec(
+            id="window-job",
+            name="Window Job",
+            enabled=True,
+            tenant_id="test-tenant",
+            schedule=ScheduleSpec(
+                type="cron",
+                cron="0 0 * * *",
+                timezone="UTC",
+            ),
+            task_type="agent",
+            request=CronJobRequest(
+                input=[{"content": [{"text": "ping"}]}],
+            ),
+            dispatch=DispatchSpec(
+                type="channel",
+                channel="console",
+                target=DispatchTarget(user_id="user1", session_id="session1"),
+            ),
+            runtime=JobRuntimeSpec(timeout_seconds=30),
+        )
+
+        run_at = manager._compute_prefetch_run_at(spec, next_run_at)
+
+        assert run_at is not None
+        assert (
+            next_run_at - timedelta(hours=1)
+            <= run_at
+            <= next_run_at
+        )
 
     async def test_job_state_tracking(
         self,
