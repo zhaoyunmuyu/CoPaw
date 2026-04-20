@@ -12,6 +12,14 @@ import type { HistorySession } from './historySessions';
 import { useChatAnywhereSessionsState } from '@/components/agentscope-chat';
 import { formatListTime } from '../../listTimeFormat';
 import sessionApi from '../../sessionApi';
+import ChatSessionItem from '../ChatSessionItem';
+import { chatApi } from '../../../../api/modules/chat';
+
+/** Extended session type with additional backend fields */
+interface ExtendedHistorySession extends HistorySession {
+  channel?: string;
+  realId?: string;
+}
 
 function HistoryIcon() {
   return (
@@ -37,37 +45,6 @@ function NewTopicIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
       <path d="M6 1V11M1 6H11" stroke="white" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function SkillMarketIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M4.5 3L6 21H18L19.5 3H4.5Z"
-        stroke={DESIGN_TOKENS.colorTextSecondary}
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M2 3H22"
-        stroke={DESIGN_TOKENS.colorTextSecondary}
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <path
-        d="M9 8L10.5 15"
-        stroke={DESIGN_TOKENS.colorTextSecondary}
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <path
-        d="M15 8L13.5 15"
-        stroke={DESIGN_TOKENS.colorTextSecondary}
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
     </svg>
   );
 }
@@ -227,6 +204,29 @@ export default function ChatSidebar(props: ChatSidebarProps) {
     setGuidePreviewVisible(true);
   }, []);
 
+  const handleDeleteSession = useCallback(
+    async (sessionId: string) => {
+      const session = sessions.find((s) => s.id === sessionId) as ExtendedHistorySession | undefined;
+      const backendId = session?.realId || (/^\d+$/.test(sessionId) ? null : sessionId);
+
+      if (backendId) {
+        await chatApi.deleteChat(backendId);
+      }
+
+      if (currentChatId === sessionId) {
+        const next = sessions.filter((s) => s.id !== sessionId);
+        if (next[0]?.id) {
+          navigate(`/chat/${next[0].id}`, { replace: true });
+        } else {
+          navigate('/chat', { replace: true });
+        }
+      }
+
+      await refreshSessions();
+    },
+    [sessions, currentChatId, refreshSessions, navigate],
+  );
+
   if (collapsed) {
     // Calculate total unread execution count for badge
     const unreadCount = tasks.reduce(
@@ -308,27 +308,22 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                 <ToggleIcon collapsed={historyCollapsed} />
               </div>
               {!historyCollapsed &&
-                sessions.map((session) => (
-                  <div
-                    key={session.id}
-                    className="chat-sidebar-history-item"
-                    onClick={() => handleSessionClick(session.id!)}
-                    role="button"
-                    tabIndex={0}
-                    style={
-                      session.id === currentChatId
-                        ? { backgroundColor: 'rgba(55, 105, 252, 0.06)' }
-                        : undefined
-                    }
-                  >
-                    <div className="chat-sidebar-history-item-title">
-                      {session.name || '新会话'}
-                    </div>
-                    <div className="chat-sidebar-history-item-time">
-                      {formatListTime((session as any).createdAt)}
-                    </div>
-                  </div>
-                ))}
+                sessions.map((session) => {
+                  const ext = session as ExtendedHistorySession;
+                  return (
+                    <ChatSessionItem
+                      key={session.id}
+                      name={session.name || '新会话'}
+                      time={formatListTime(ext.createdAt)}
+                      active={session.id === currentChatId}
+                      onClick={() => handleSessionClick(session.id!)}
+                      onDelete={() => handleDeleteSession(session.id!)}
+                      showEdit={false}
+                      showTimeline={false}
+                      showChannel={false}
+                    />
+                  );
+                })}
             </div>
           </div>
 
