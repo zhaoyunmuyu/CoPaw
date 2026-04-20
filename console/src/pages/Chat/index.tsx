@@ -333,7 +333,7 @@ export default function ChatPage() {
   const dragCounterRef = useRef(0);
   const runtimeLoadingBridgeRef = useRef<RuntimeLoadingBridgeApi | null>(null);
   const { message } = useAppMessage();
-  const { setSessionLoading } = useChatAnywhereSessionsState();
+  const { setSessionLoading, setSessions } = useChatAnywhereSessionsState();
 
   const isChatActiveRef = useRef(false);
   isChatActiveRef.current =
@@ -597,65 +597,76 @@ export default function ChatPage() {
     void cronJobApi.markTaskRead(currentTask.id).catch(() => {});
   }, [currentTask?.id, currentTask?.task?.unread_execution_count]);
 
-  // ==================== 会话状态轮询 (自动 reconnect) ====================
-  // 当用户已在当前会话页面时，如果会话状态变为 running，自动触发 reconnect
-  // 注意：需要排除用户主动发起提问的情况（已在 generating 状态）
+  // ==================== 会话状态轮询 (刷新会话列表 + 自动 reconnect) ====================
+  // 当用户在 chat 页面时：
+  // 1. 刷新会话列表（触发 ChatSidebar 显示新会话）
+  // 2. 如果在具体会话页面，检查当前会话状态，running 时 reconnect
   const sessionReconnectingRef = useRef(false);
   const prevSessionStatusRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!chatId) return;
+    // 只在 chat 页面时轮询
+    if (!isChatActiveRef.current) return;
 
-    const pollSessionStatus = async () => {
+    const poll = async () => {
       try {
-        // 如果当前已经在 generating/loading 状态，说明用户主动发起的提问正在进行
-        // 此时不应触发 reconnect，避免重复创建 SSE 连接
+        // 如果当前已经在 generating/loading 状态，跳过
         const isLoading = runtimeLoadingBridgeRef.current?.getLoading?.() ?? false;
-        if (isLoading) {
-          // 正在进行中，跳过轮询，但记录状态为 running 以便下次正确判断
-          prevSessionStatusRef.current = "running";
-          return;
+
+        // 刷新会话列表（使用 chatApi.listChats 获取带 status 的数据）
+        const chatSpecs = await chatApi.listChats();
+        // 转换为 session 格式并触发更新
+        const sessions = chatSpecs.map((c) => ({
+          id: c.id,
+          name: c.name || "New Chat",
+          messages: [],
+          generating: c.status === "running",
+          sessionId: c.session_id,
+          userId: c.user_id,
+          channel: c.channel,
+          createdAt: c.created_at,
+        }));
+        setSessions(sessions);
+
+        // 如果在具体会话页面，检查当前会话状态
+        if (chatId && !isLoading) {
+          const currentChat = chatSpecs.find((c) => c.id === chatId);
+          const status = currentChat?.status;
+          const generating = status === "running";
+
+          // 状态从非 running 变为 running 时触发 reconnect
+          if (
+            generating &&
+            prevSessionStatusRef.current !== "running" &&
+            !sessionReconnectingRef.current
+          ) {
+            sessionReconnectingRef.current = true;
+            console.info("[Chat] Session running, auto reconnect:", chatId);
+            emit({
+              type: "handleReconnect",
+              data: { session_id: chatId },
+            });
+          }
+
+          // 状态变为非 running 时重置标记
+          if (!generating) {
+            sessionReconnectingRef.current = false;
+          }
+
+          prevSessionStatusRef.current = status;
         }
-
-        const chatHistory = await chatApi.getChat(chatId);
-        const status = chatHistory?.status;
-        const generating = status === "running";
-
-        // 状态从非 running 变为 running 时触发 reconnect
-        // 条件：1. 状态变为 running  2. 之前不是 running  3. 没有正在 reconnect  4. 当前没有正在 generating
-        if (
-          generating &&
-          prevSessionStatusRef.current !== "running" &&
-          !sessionReconnectingRef.current &&
-          !isLoading
-        ) {
-          sessionReconnectingRef.current = true;
-          // 使用 chatId（UUID）作为 session_id，后端会正确处理
-          console.info("[Chat] Session running, auto reconnect:", chatId);
-          emit({
-            type: "handleReconnect",
-            data: { session_id: chatId },
-          });
-        }
-
-        // 状态变为非 running 时重置 reconnecting 标记
-        if (!generating) {
-          sessionReconnectingRef.current = false;
-        }
-
-        prevSessionStatusRef.current = status;
       } catch (err) {
-        console.warn("[Chat] Failed to poll session status:", err);
+        console.warn("[Chat] Poll failed:", err);
       }
     };
 
-    pollSessionStatus();
-    const intervalId = window.setInterval(pollSessionStatus, SESSION_RUNNING_POLL_MS);
+    poll();
+    const intervalId = window.setInterval(poll, SESSION_RUNNING_POLL_MS);
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [chatId]);
+  }, [chatId, setSessions]);
   // ==================== 会话状态轮询结束 ====================
 
   const handleTaskOpen = useCallback(

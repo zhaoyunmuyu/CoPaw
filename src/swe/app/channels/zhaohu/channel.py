@@ -1302,10 +1302,8 @@ class ZhaohuChannel(BaseChannel):
         """Handle task assignment (Case 2): create new session and process task.
 
         Creates a new unique session for the task, runs LLM asynchronously
-        to process the task content, and sends a card notification to user.
-
-        This is NOT creating a scheduled cron job - it's creating a new
-        conversation session to handle the user's task request.
+        to process the task content via _consume_with_tracker for streaming,
+        and sends a card notification to user.
 
         Args:
             sap_id: User's sapId
@@ -1326,25 +1324,61 @@ class ZhaohuChannel(BaseChannel):
             sap_id,
         )
 
-        # Build AgentRequest for the new session
+        # Build content parts
         content_parts = [TextContent(type=ContentType.TEXT, text=task_content)]
-        task_request = self.build_agent_request_from_user_content(
-            channel_id=self.channel,
-            sender_id=sap_id,
-            session_id=task_session_id,
-            content_parts=content_parts,
-            channel_meta=meta,
-        )
-        task_request.channel_meta = meta
 
-        # Launch async LLM task in the new session
-        asyncio.create_task(
-            self._run_task_llm_async(
-                task_request,
+        # Build native payload (dict format) for _consume_with_tracker
+        native_payload = {
+            "channel_id": self.channel,
+            "sender_id": sap_id,
+            "session_id": task_session_id,
+            "content_parts": content_parts,
+            "meta": meta,
+        }
+
+        # Use BaseChannel's standard flow if workspace is available
+        # This enables TaskTracker broadcasting for Console frontend streaming
+        if self._workspace is not None:
+            request = self.build_agent_request_from_user_content(
+                channel_id=self.channel,
+                sender_id=sap_id,
+                session_id=task_session_id,
+                content_parts=content_parts,
+                channel_meta=meta,
+            )
+            request.channel_meta = meta
+
+            # Launch async task in background (non-blocking)
+            # _consume_with_tracker will create Chat and broadcast events
+            asyncio.create_task(
+                self._consume_with_tracker(request, native_payload),
+            )
+            logger.info(
+                "zhaohu _handle_task_assignment: started background task "
+                "with streaming, sessionId=%s",
                 task_session_id,
-                task_content,
-            ),
-        )
+            )
+        else:
+            # Fallback to direct processing (no streaming)
+            logger.warning(
+                "zhaohu _handle_task_assignment: workspace not set, "
+                "using direct processing without streaming support",
+            )
+            request = self.build_agent_request_from_user_content(
+                channel_id=self.channel,
+                sender_id=sap_id,
+                session_id=task_session_id,
+                content_parts=content_parts,
+                channel_meta=meta,
+            )
+            request.channel_meta = meta
+            asyncio.create_task(
+                self._run_task_llm_async(
+                    request,
+                    task_session_id,
+                    task_content,
+                ),
+            )
 
         # Send card notification to user
         card_content = self._build_task_initiated_card(
