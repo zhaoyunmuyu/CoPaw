@@ -104,7 +104,8 @@ async def _build_and_connect_mcp_clients(
             if client is not None:
                 await client.connect()
                 clients.append(client)
-                logger.debug(f"MCP client '{key}' created and connected")
+                logger.info(f"MCP client '{key}' created and connected")
+                print("passthrough_headers",passthrough_headers)
         except Exception as e:
             logger.warning(
                 f"Failed to create MCP client '{key}': {e}",

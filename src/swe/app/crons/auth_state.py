@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -109,8 +110,8 @@ def merge_auth_token_into_cookie(
     cookie_header: str | None,
     auth_token: str,
 ) -> str:
-    if not cookie_header or not cookie_header.strip():
-        return f"{ACCESS_TOKEN_COOKIE_NAME}={auth_token}"
+    if not cookie_header:
+        return None
 
     merged_parts: list[str] = []
     replaced = False
@@ -144,6 +145,8 @@ def load_cron_auth_state(
         tenant_id=tenant_id,
         workspace_dir=workspace_dir,
     )
+    logger.info("load_cron_auth_state workspace_dir")
+    print(path)
     if not path.is_file():
         return CronAuthState()
     try:
@@ -214,6 +217,7 @@ def _raise_if_user_info_expired(state: CronAuthState) -> None:
     if not state.user_info:
         return
     expires_at = ensure_utc(state.user_info_expires_at)
+    print("user_info expires_at",expires_at)
     now = utc_now()
     if expires_at is not None and expires_at <= now:
         raise ValueError("cron auth user_info is expired")
