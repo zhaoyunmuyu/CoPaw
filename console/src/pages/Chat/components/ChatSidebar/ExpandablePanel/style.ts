@@ -89,6 +89,15 @@ export default createGlobalStyle`
   & + & {
     margin-top: ${DESIGN_TOKENS.panelTaskCardGap}px;
   }
+
+  &--paused {
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.03);
+  }
+
+  &--auto-paused {
+    background:
+      linear-gradient(90deg, rgba(223, 146, 33, 0.12), rgba(223, 146, 33, 0.04));
+  }
 }
 
 .expandable-panel-task-title-row {
@@ -125,11 +134,74 @@ export default createGlobalStyle`
   text-align: center;
 }
 
+.expandable-panel-task-action {
+  flex-shrink: 0;
+  height: 24px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(55, 105, 252, 0.1);
+  color: ${DESIGN_TOKENS.colorPrimary};
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 24px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+
+  &:hover {
+    background: rgba(55, 105, 252, 0.16);
+  }
+
+  &--delete {
+    background: rgba(254, 40, 66, 0.1);
+    color: ${DESIGN_TOKENS.colorBadgeRed};
+
+    &:hover {
+      background: rgba(254, 40, 66, 0.16);
+    }
+  }
+}
+
+.expandable-panel-task-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.expandable-panel-task-status {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  margin-top: 4px;
+
+  &--auto {
+    color: #A15C07;
+  }
+
+  &--manual {
+    color: ${DESIGN_TOKENS.colorTextMuted};
+  }
+}
+
 .expandable-panel-task-subtitle {
   font-size: 12px;
   font-weight: 400;
   font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
   color: ${DESIGN_TOKENS.colorTextMuted};
+  line-height: 16px;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.expandable-panel-task-next-run {
+  font-size: 12px;
+  font-weight: 500;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  color: ${DESIGN_TOKENS.colorTextSecondary};
   line-height: 16px;
   margin-top: 4px;
   white-space: nowrap;

@@ -1,10 +1,13 @@
 // ==================== 组件引入方式变更 (Kun He) ====================
 import {
-  AgentScopeRuntimeWebUI,
+  AgentScopeRuntimeWebUILayout,
+  AgentScopeRuntimeWebUIComposedProvider,
   IAgentScopeRuntimeWebUIOptions,
   type IAgentScopeRuntimeWebUIRef,
   useChatAnywhereSessionsState,
 } from "@/components/agentscope-chat";
+import AgentScopeRuntimeRequestCard from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Request/Card";
+import AgentScopeRuntimeResponseCard from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Card";
 // ==================== 组件引入方式变更结束 ====================
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Modal, Result, Tooltip } from "antd";
@@ -60,7 +63,7 @@ import {
   type CopyableResponse,
   type RuntimeLoadingBridgeApi,
 } from "./utils";
-import { deriveChatTaskState } from "./taskJobs";
+import { deriveChatTaskState, shouldMarkTaskReadOnOpen } from "./taskJobs";
 import { shouldRefreshCurrentTaskMessages } from "./taskMessageRefresh";
 
 const CHAT_ATTACHMENT_MAX_MB = 10;
@@ -555,6 +558,7 @@ export default function ChatPage() {
   useEffect(() => {
     if (!currentTask?.id) return;
     if ((currentTask.task?.unread_execution_count || 0) <= 0) return;
+    if (!shouldMarkTaskReadOnOpen(currentTask)) return;
 
     setJobs((prev) =>
       prev.map((job) =>
@@ -577,31 +581,96 @@ export default function ChatPage() {
       const taskChatId = task.task?.chat_id;
       if (!taskChatId) return;
 
-      setJobs((prev) =>
-        prev.map((job) =>
-          job.id === task.id && job.task
-            ? {
-                ...job,
-                task: {
-                  ...job.task,
-                  unread_execution_count: 0,
-                },
-              }
-            : job,
-        ),
-      );
+      if (shouldMarkTaskReadOnOpen(task)) {
+        setJobs((prev) =>
+          prev.map((job) =>
+            job.id === task.id && job.task
+              ? {
+                  ...job,
+                  task: {
+                    ...job.task,
+                    unread_execution_count: 0,
+                  },
+                }
+              : job,
+          ),
+        );
+      }
 
       // 先设置 loading 状态，避免导航后闪现欢迎页
       setSessionLoading(true);
       navigate(`/chat/${taskChatId}`, { replace: true });
 
-      try {
-        await cronJobApi.markTaskRead(task.id);
-      } catch {
-        void refreshJobs();
+      if (shouldMarkTaskReadOnOpen(task)) {
+        try {
+          await cronJobApi.markTaskRead(task.id);
+        } catch {
+          void refreshJobs();
+        }
       }
     },
     [navigate, refreshJobs, setSessionLoading],
+  );
+
+  const handleTaskResume = useCallback(
+    async (task: CronJobSpecOutput) => {
+      setJobs((prev) =>
+        prev.map((job) =>
+          job.id === task.id
+            ? {
+                ...job,
+                enabled: true,
+                task: job.task
+                  ? {
+                      ...job.task,
+                      is_paused: false,
+                      pause_reason: null,
+                      auto_paused_at: null,
+                      unread_execution_count: 0,
+                    }
+                  : job.task,
+              }
+            : job,
+        ),
+      );
+
+      try {
+        await cronJobApi.resumeCronJob(task.id);
+        message.success("任务已恢复");
+        void refreshJobs();
+      } catch {
+        message.error("恢复失败");
+        void refreshJobs();
+      }
+    },
+    [message, refreshJobs],
+  );
+
+  const handleTaskDelete = useCallback(
+    (task: CronJobSpecOutput) => {
+      Modal.confirm({
+        title: "删除暂停任务",
+        content: `确认删除任务“${task.name || task.id}”？`,
+        okText: "删除",
+        okType: "danger",
+        cancelText: "取消",
+        onOk: async () => {
+          setJobs((prev) => prev.filter((job) => job.id !== task.id));
+          if (task.task?.chat_id && task.task.chat_id === chatIdRef.current) {
+            navigate("/chat", { replace: true });
+          }
+          try {
+            await cronJobApi.deleteCronJob(task.id);
+            message.success("任务已删除");
+            void refreshJobs();
+          } catch {
+            message.error("删除失败");
+            void refreshJobs();
+          }
+        },
+      });
+    },
+    [message, navigate, refreshJobs],
   );
 
   useEffect(() => {
@@ -1002,84 +1071,93 @@ export default function ChatPage() {
   }, [navigate]);
   // ==================== 首页改版结束 ====================
 
-  return (
-    <div
-      style={{
-        height: "100%",
-        width: "100%",
-        display: "flex",
-        flexDirection: "row",
-      }}
-    >
-      {/* ==================== 首页改版 (Kun He) ==================== */}
-      {/* 聊天专用侧栏：支持折叠为64px工具条 */}
-      <ChatSidebar
-        tasks={tasks}
-        onCreateSession={handleCreateSessionFromSidebar}
-        onTaskClick={handleTaskOpen}
-      />
-      {/* ==================== 首页改版结束 ==================== */}
-      <div
-        className={styles.chatMessagesArea}
-        style={{ flex: 1, minWidth: 0, position: "relative" }}
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
-      >
-        <AgentScopeRuntimeWebUI
-          ref={chatRef}
-          key={refreshKey}
-          options={options}
-        />
-        <DragUploadOverlay visible={isDragging} onClose={handleDragOverlayClose} />
-      </div>
+  // 定义 cards 配置（与 AgentScopeRuntimeWebUI 内部一致）
+  const cards = useMemo(() => {
+    return {
+      AgentScopeRuntimeRequestCard,
+      AgentScopeRuntimeResponseCard,
+      ...options.cards,
+    };
+  }, [options.cards]);
 
-      <Modal
-        open={showModelPrompt}
-        closable={false}
-        footer={null}
-        width={480}
-        styles={{
-          content: isDark
-            ? { background: "#1f1f1f", boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }
-            : undefined,
+  return (
+    <AgentScopeRuntimeWebUIComposedProvider options={options} cards={cards}>
+      <div
+        style={{
+          height: "100%",
+          width: "100%",
+          display: "flex",
+          flexDirection: "row",
         }}
       >
-        <Result
-          icon={<ExclamationCircleOutlined style={{ color: "#faad14" }} />}
-          title={
-            <span
-              style={{ color: isDark ? "rgba(255,255,255,0.88)" : undefined }}
-            >
-              {t("modelConfig.promptTitle")}
-            </span>
-          }
-          subTitle={
-            <span
-              style={{ color: isDark ? "rgba(255,255,255,0.55)" : undefined }}
-            >
-              {t("modelConfig.promptMessage")}
-            </span>
-          }
-          extra={[
-            <Button key="skip" onClick={() => setShowModelPrompt(false)}>
-              {t("modelConfig.skipButton")}
-            </Button>,
-            <Button
-              key="configure"
-              type="primary"
-              icon={<SettingOutlined />}
-              onClick={() => {
-                setShowModelPrompt(false);
-                navigate("/models");
-              }}
-            >
-              {t("modelConfig.configureButton")}
-            </Button>,
-          ]}
+        {/* ==================== 首页改版 (Kun He) ==================== */}
+        {/* 聊天专用侧栏：支持折叠为64px工具条 */}
+        <ChatSidebar
+          tasks={tasks}
+          onCreateSession={handleCreateSessionFromSidebar}
+          onTaskClick={handleTaskOpen}
+          onTaskResume={handleTaskResume}
+          onTaskDelete={handleTaskDelete}
         />
-      </Modal>
-    </div>
+        {/* ==================== 首页改版结束 ==================== */}
+          <div
+            className={styles.chatMessagesArea}
+            style={{ flex: 1, minWidth: 0, position: "relative" }}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+          >
+            <AgentScopeRuntimeWebUILayout ref={chatRef} key={refreshKey} />
+            <DragUploadOverlay visible={isDragging} onClose={handleDragOverlayClose} />
+          </div>
+
+        <Modal
+          open={showModelPrompt}
+          closable={false}
+          footer={null}
+          width={480}
+          styles={{
+            content: isDark
+              ? { background: "#1f1f1f", boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }
+              : undefined,
+          }}
+        >
+          <Result
+            icon={<ExclamationCircleOutlined style={{ color: "#faad14" }} />}
+            title={
+              <span
+                style={{ color: isDark ? "rgba(255,255,255,0.88)" : undefined }}
+              >
+                {t("modelConfig.promptTitle")}
+              </span>
+            }
+            subTitle={
+              <span
+                style={{ color: isDark ? "rgba(255,255,255,0.55)" : undefined }}
+              >
+                {t("modelConfig.promptMessage")}
+              </span>
+            }
+            extra={[
+              <Button key="skip" onClick={() => setShowModelPrompt(false)}>
+                {t("modelConfig.skipButton")}
+              </Button>,
+              <Button
+                key="configure"
+                type="primary"
+                icon={<SettingOutlined />}
+                onClick={() => {
+                  setShowModelPrompt(false);
+                  navigate("/models");
+                }}
+              >
+                {t("modelConfig.configureButton")}
+              </Button>,
+            ]}
+          />
+        </Modal>
+      </div>
+    </AgentScopeRuntimeWebUIComposedProvider>
   );
 }

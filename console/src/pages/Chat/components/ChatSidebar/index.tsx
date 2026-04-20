@@ -1,19 +1,17 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Image } from "antd";
 import guideImage from "@/assets/icons/agent_default_logo.png";
-import { chatApi } from '@/api/modules/chat';
 import type { CronJobSpecOutput } from '@/api/types';
 import Style from './style';
 import ChatTaskList from '../ChatTaskList';
 import { DESIGN_TOKENS } from '@/config/designTokens';
 import CollapsedToolbar, { type PanelType } from './CollapsedToolbar';
 import ExpandablePanel from './ExpandablePanel';
-import {
-  buildHistorySessions,
-  type HistorySession,
-} from './historySessions';
+import type { HistorySession } from './historySessions';
 import { useChatAnywhereSessionsState } from '@/components/agentscope-chat';
+import { formatListTime } from '../../listTimeFormat';
+import sessionApi from '../../sessionApi';
 
 function HistoryIcon() {
   return (
@@ -120,51 +118,43 @@ export interface ChatSidebarProps {
   tasks: CronJobSpecOutput[];
   onCreateSession?: () => void;
   onTaskClick?: (task: CronJobSpecOutput) => void;
-}
-
-function formatTime(raw: string | null | undefined): string {
-  if (!raw) return '';
-  const date = new Date(raw);
-  if (isNaN(date.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate(),
-  )} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  onTaskResume?: (task: CronJobSpecOutput) => void;
+  onTaskDelete?: (task: CronJobSpecOutput) => void;
 }
 
 export default function ChatSidebar(props: ChatSidebarProps) {
-  const { tasks, onCreateSession, onTaskClick } = props;
+  const { tasks, onCreateSession, onTaskClick, onTaskResume, onTaskDelete } =
+    props;
   const navigate = useNavigate();
   const location = useLocation();
   const [historyCollapsed, setHistoryCollapsed] = useState(false);
-  const [sessions, setSessions] = useState<HistorySession[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [activePanel, setActivePanel] = useState<PanelType>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   // Guide image preview state
   const [guidePreviewVisible, setGuidePreviewVisible] = useState(false);
-  const { setSessionLoading } = useChatAnywhereSessionsState();
+  const { sessions: sharedSessions, setSessionLoading, setSessions } = useChatAnywhereSessionsState();
 
   const currentChatId = location.pathname.match(/^\/chat\/(.+)$/)?.[1] || null;
 
-  const fetchSessions = useCallback(async () => {
+  // 刷新共享 sessions 状态
+  const refreshSessions = useCallback(async () => {
     try {
-      const chats = await chatApi.listChats();
-      setSessions(Array.isArray(chats) ? buildHistorySessions(chats) : []);
+      const sessionList = await sessionApi.getSessionList();
+      setSessions(sessionList);
     } catch {
-      setSessions([]);
+      // ignore
     }
-  }, []);
+  }, [setSessions]);
 
+  // 监听 focus/visibilitychange 刷新 sessions
   useEffect(() => {
-    void fetchSessions();
-
     const handleFocusRefresh = () => {
-      void fetchSessions();
+      void refreshSessions();
     };
     const handleVisibilityRefresh = () => {
       if (document.visibilityState === 'visible') {
-        void fetchSessions();
+        void refreshSessions();
       }
     };
 
@@ -175,7 +165,20 @@ export default function ChatSidebar(props: ChatSidebarProps) {
       window.removeEventListener('focus', handleFocusRefresh);
       document.removeEventListener('visibilitychange', handleVisibilityRefresh);
     };
-  }, [fetchSessions]);
+  }, [refreshSessions]);
+
+  // 使用共享 sessions 状态，过滤并转换
+  const sessions = useMemo(() => {
+    return sharedSessions
+      .filter((s) => (s as HistorySession).meta?.session_kind !== "task")
+      .map((s) => {
+        const hs = s as HistorySession;
+        return {
+          ...hs,
+          createdAt: hs.createdAt || new Date(parseInt(s.id)).toISOString(),
+        };
+      });
+  }, [sharedSessions]);
 
   const handleToggleHistory = useCallback(() => {
     setHistoryCollapsed((prev) => !prev);
@@ -243,15 +246,17 @@ export default function ChatSidebar(props: ChatSidebarProps) {
               taskBadgeCount={unreadCount}
             />
           </div>
-          <ExpandablePanel
-            visible={activePanel === 'tasks'}
-            type="tasks"
-            onClose={handleClosePanel}
-            tasks={tasks}
-            sessions={sessions}
-            onTaskClick={handleTaskOpen}
-            toolbarRef={toolbarRef}
-          />
+            <ExpandablePanel
+              visible={activePanel === 'tasks'}
+              type="tasks"
+              onClose={handleClosePanel}
+              tasks={tasks}
+              sessions={sessions}
+              onTaskClick={handleTaskOpen}
+              onTaskResume={onTaskResume}
+              onTaskDelete={onTaskDelete}
+              toolbarRef={toolbarRef}
+            />
           <ExpandablePanel
             visible={activePanel === 'history'}
             type="history"
@@ -282,7 +287,12 @@ export default function ChatSidebar(props: ChatSidebarProps) {
       <div className="chat-sidebar-wrapper">
         <div className="chat-sidebar">
           <div className="chat-sidebar-content">
-            <ChatTaskList tasks={tasks} onTaskClick={handleTaskOpen} />
+            <ChatTaskList
+              tasks={tasks}
+              onTaskClick={handleTaskOpen}
+              onTaskResume={onTaskResume}
+              onTaskDelete={onTaskDelete}
+            />
 
             <div className="chat-sidebar-history">
               <div
@@ -315,7 +325,7 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                       {session.name || '新会话'}
                     </div>
                     <div className="chat-sidebar-history-item-time">
-                      {formatTime((session as any).createdAt)}
+                      {formatListTime((session as any).createdAt)}
                     </div>
                   </div>
                 ))}

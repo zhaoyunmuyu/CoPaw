@@ -189,6 +189,9 @@ class CronTaskView(BaseModel):
     unread_execution_count: int = 0
     last_scheduled_run_at: Optional[datetime] = None
     is_running: bool = False
+    is_paused: bool = False
+    pause_reason: Optional[Literal["manual", "auto_unread_threshold"]] = None
+    auto_paused_at: Optional[datetime] = None
 
 
 class CronJobListItem(CronJobSpec):

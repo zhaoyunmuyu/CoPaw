@@ -27,6 +27,8 @@ export type { ChatAnywhereRef, TMessage, TSession } from "./ChatAnywhere";
 export * as DefaultCards from "./DefaultCards";
 
 export { default as AgentScopeRuntimeWebUI } from "./AgentScopeRuntimeWebUI";
+export { default as AgentScopeRuntimeWebUILayout } from "./AgentScopeRuntimeWebUI/core/Layout";
+export { default as AgentScopeRuntimeWebUIComposedProvider } from "./AgentScopeRuntimeWebUI/core/ChatAnywhere/ComposedProvider";
 export * from "./AgentScopeRuntimeWebUI/core/types";
 export {
   useChatAnywhereSessions,
