@@ -9,13 +9,10 @@ import {
 import { IAgentScopeRuntimeWebUIMessage } from "@/components/agentscope-chat";
 import { IAgentScopeRuntimeWebUIInputData } from "../../types";
 import { withResponseHeaderMeta } from "./headerMeta";
+import type { CurrentQARef } from "./currentQARef";
 
 interface UseChatRequestOptions {
-  currentQARef: React.MutableRefObject<{
-    request?: IAgentScopeRuntimeWebUIMessage;
-    response?: IAgentScopeRuntimeWebUIMessage;
-    abortController?: AbortController;
-  }>;
+  currentQARef: CurrentQARef;
   updateMessage: (message: IAgentScopeRuntimeWebUIMessage) => void;
   getCurrentSessionId: () => string;
   onFinish: () => void;
@@ -36,9 +33,15 @@ export default function useChatRequest(options: UseChatRequestOptions) {
     apiOptionsRef.current = apiOptions;
   }, [apiOptions]);
 
+  const getResponseHeaderTimestamp = useCallback(() => {
+    return (
+      currentQARef.current.response?.cards?.[0]?.data?.headerMeta?.timestamp ??
+      currentQARef.current.response?.liveHeaderTimestamp
+    );
+  }, [currentQARef]);
+
   const mockRequest = useCallback(async (mockdata) => {
-    const responseHeaderTimestamp =
-      currentQARef.current.response?.cards?.[0]?.data?.headerMeta?.timestamp;
+    const responseHeaderTimestamp = getResponseHeaderTimestamp();
     const agentScopeRuntimeResponseBuilder =
       new AgentScopeRuntimeResponseBuilder({
         id: "",
@@ -63,8 +66,7 @@ export default function useChatRequest(options: UseChatRequestOptions) {
 
   const processSSEResponse = useCallback(
     async (response: Response) => {
-      const responseHeaderTimestamp =
-        currentQARef.current.response?.cards?.[0]?.data?.headerMeta?.timestamp;
+      const responseHeaderTimestamp = getResponseHeaderTimestamp();
       const buildResponseCard = () => {
         const responseData = currentQARef.current.response?.cards?.[0]
           ?.data as
@@ -186,7 +188,7 @@ export default function useChatRequest(options: UseChatRequestOptions) {
         console.error(error);
       }
     },
-    [getCurrentSessionId, currentQARef, updateMessage, onFinish],
+    [getCurrentSessionId, currentQARef, getResponseHeaderTimestamp, updateMessage, onFinish],
   );
 
   const request = useCallback(
@@ -252,8 +254,7 @@ export default function useChatRequest(options: UseChatRequestOptions) {
   );
 
   const cancelActiveRequest = useCallback(async () => {
-    const responseHeaderTimestamp =
-      currentQARef.current.response?.cards?.[0]?.data?.headerMeta?.timestamp;
+    const responseHeaderTimestamp = getResponseHeaderTimestamp();
     const responseData = currentQARef.current.response?.cards?.[0]?.data as
       | {
           id?: string;
@@ -297,7 +298,7 @@ export default function useChatRequest(options: UseChatRequestOptions) {
 
       updateMessage(currentQARef.current.response);
     }
-  }, [currentQARef, getCurrentSessionId, updateMessage]);
+  }, [currentQARef, getCurrentSessionId, getResponseHeaderTimestamp, updateMessage]);
 
   return { request, reconnect, mockRequest, cancelActiveRequest };
 }

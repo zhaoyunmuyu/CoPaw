@@ -73,11 +73,6 @@ export function resolveResponseHeaderTimestamp(
     return currentTimestamp;
   }
 
-  const createdAt = toTimestamp(response?.created_at);
-  if (createdAt !== null) {
-    return createdAt;
-  }
-
   return Date.now();
 }
 

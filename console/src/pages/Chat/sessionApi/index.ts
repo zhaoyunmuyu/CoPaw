@@ -216,7 +216,7 @@ const buildResponseCard = (
       timestamp: message.timestamp,
     })),
   );
-  const now = Math.floor(Date.now() / 1000);
+  const createdAt = timestamp ?? Date.now();
   const maxSeq = outputMessages.reduce(
     (max, m) => Math.max(max, m.sequence_number || 0),
     0,
@@ -238,10 +238,10 @@ const buildResponseCard = (
           output: normalizedMessages,
           object: "response",
           status: "completed",
-          created_at: now,
+          created_at: createdAt,
           sequence_number: maxSeq + 1,
           error: null,
-          completed_at: now,
+          completed_at: createdAt,
           usage: null,
           headerMeta: {
             timestamp,
