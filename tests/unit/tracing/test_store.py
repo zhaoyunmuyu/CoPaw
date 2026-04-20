@@ -10,6 +10,7 @@ import pytest
 from swe.tracing.config import TracingConfig
 from swe.tracing.models import (
     EventType,
+    OverviewStats,
     Span,
     Trace,
     TraceStatus,
@@ -273,20 +274,39 @@ class TestQueryOperations:
     @pytest.mark.asyncio
     async def test_get_overview_stats(self, config, mock_db):
         """Test getting overview statistics."""
-        mock_db.fetch_one.return_value = {
-            "total_traces": 100,
-            "total_spans": 500,
-            "total_input_tokens": 10000,
-            "total_output_tokens": 5000,
-            "active_users": 10,
-            "active_sessions": 15,
-        }
+
+        # Set up side effects for multiple fetch_one and fetch_all calls
+        def fetch_one_side_effect(
+            *args,
+            **_kwargs,
+        ):  # pylint: disable=unused-argument
+            # Return different results based on query type
+            return {
+                "total_users": 10,
+                "input_tokens": 1000,
+                "output_tokens": 500,
+                "total_tokens": 1500,
+                "total_traces": 100,
+                "total_sessions": 20,
+                "avg_duration": 100.0,
+            }
+
+        def fetch_all_side_effect(
+            *args,
+            **_kwargs,
+        ):  # pylint: disable=unused-argument
+            # Return empty lists for distribution queries
+            return []
+
+        mock_db.fetch_one.side_effect = fetch_one_side_effect
+        mock_db.fetch_all.side_effect = fetch_all_side_effect
 
         store = TraceStore(config, mock_db)
         await store.initialize()
 
         stats = await store.get_overview_stats()
         assert stats is not None
+        assert isinstance(stats, OverviewStats)
 
     @pytest.mark.asyncio
     async def test_get_users(self, config, mock_db):
@@ -294,20 +314,26 @@ class TestQueryOperations:
         mock_db.fetch_all.return_value = [
             {
                 "user_id": "user-1",
-                "trace_count": 10,
+                "total_sessions": 10,
+                "total_conversations": 15,
+                "total_tokens": 1000,
                 "last_active": datetime.now(),
+                "total_skills": 5,
             },
             {
                 "user_id": "user-2",
-                "trace_count": 5,
+                "total_sessions": 5,
+                "total_conversations": 8,
+                "total_tokens": 500,
                 "last_active": datetime.now(),
+                "total_skills": 2,
             },
         ]
 
         store = TraceStore(config, mock_db)
         await store.initialize()
 
-        users = await store.get_users()
+        users, total = await store.get_users()
         assert len(users) == 2
 
     @pytest.mark.asyncio
@@ -316,25 +342,30 @@ class TestQueryOperations:
         mock_db.fetch_all.return_value = [
             {
                 "user_id": "user-1",
-                "trace_count": 10,
+                "total_sessions": 10,
+                "total_conversations": 15,
+                "total_tokens": 1000,
                 "last_active": datetime.now(),
+                "total_skills": 5,
             },
         ]
 
         store = TraceStore(config, mock_db)
         await store.initialize()
 
-        users = await store.get_users(page=1, page_size=10)
+        users, total = await store.get_users(page=1, page_size=10)
         assert len(users) == 1
 
     @pytest.mark.asyncio
     async def test_get_user_stats(self, config, mock_db):
         """Test getting user statistics."""
         mock_db.fetch_one.return_value = {
-            "user_id": "user-1",
-            "total_traces": 10,
-            "total_input_tokens": 1000,
-            "total_output_tokens": 500,
+            "total_sessions": 10,
+            "total_conversations": 15,
+            "input_tokens": 1000,
+            "output_tokens": 500,
+            "total_tokens": 1500,
+            "avg_duration": 100.0,
         }
 
         store = TraceStore(config, mock_db)
@@ -354,23 +385,18 @@ class TestQueryOperations:
                 "session_id": "session-1",
                 "channel": "console",
                 "start_time": now,
-                "end_time": None,
                 "duration_ms": None,
-                "status": "running",
-                "user_message": None,
-                "error": None,
+                "total_tokens": 0,
                 "model_name": None,
-                "total_input_tokens": 0,
-                "total_output_tokens": 0,
-                "tools_used": "[]",
-                "skills_used": "[]",
+                "status": "running",
+                "skills_count": 0,
             },
         ]
 
         store = TraceStore(config, mock_db)
         await store.initialize()
 
-        traces = await store.get_traces()
+        traces, total = await store.get_traces()
         assert len(traces) == 1
 
     @pytest.mark.asyncio
@@ -384,23 +410,18 @@ class TestQueryOperations:
                 "session_id": "session-1",
                 "channel": "console",
                 "start_time": now,
-                "end_time": None,
                 "duration_ms": None,
-                "status": "running",
-                "user_message": None,
-                "error": None,
+                "total_tokens": 0,
                 "model_name": None,
-                "total_input_tokens": 0,
-                "total_output_tokens": 0,
-                "tools_used": "[]",
-                "skills_used": "[]",
+                "status": "running",
+                "skills_count": 0,
             },
         ]
 
         store = TraceStore(config, mock_db)
         await store.initialize()
 
-        traces = await store.get_traces(user_id="user-1")
+        traces, total = await store.get_traces(user_id="user-1")
         assert len(traces) == 1
 
     @pytest.mark.asyncio
@@ -414,23 +435,18 @@ class TestQueryOperations:
                 "session_id": "session-1",
                 "channel": "console",
                 "start_time": now,
-                "end_time": now,
                 "duration_ms": 100,
-                "status": "completed",
-                "user_message": None,
-                "error": None,
+                "total_tokens": 0,
                 "model_name": None,
-                "total_input_tokens": 0,
-                "total_output_tokens": 0,
-                "tools_used": "[]",
-                "skills_used": "[]",
+                "status": "completed",
+                "skills_count": 0,
             },
         ]
 
         store = TraceStore(config, mock_db)
         await store.initialize()
 
-        traces = await store.get_traces(status=TraceStatus.COMPLETED)
+        traces, total = await store.get_traces(status=TraceStatus.COMPLETED)
         assert len(traces) == 1
 
     @pytest.mark.asyncio
@@ -461,7 +477,7 @@ class TestQueryOperations:
 
         detail = await store.get_trace_detail("trace-1")
         assert detail is not None
-        assert detail.trace_id == "trace-1"
+        assert detail.trace.trace_id == "trace-1"
 
     @pytest.mark.asyncio
     async def test_get_sessions(self, config, mock_db):
@@ -471,15 +487,18 @@ class TestQueryOperations:
                 "session_id": "session-1",
                 "user_id": "user-1",
                 "channel": "console",
-                "trace_count": 5,
+                "total_traces": 5,
+                "total_tokens": 1000,
+                "first_active": datetime.now(),
                 "last_active": datetime.now(),
+                "total_skills": 2,
             },
         ]
 
         store = TraceStore(config, mock_db)
         await store.initialize()
 
-        sessions = await store.get_sessions()
+        sessions, total = await store.get_sessions()
         assert len(sessions) == 1
 
     @pytest.mark.asyncio
@@ -488,15 +507,22 @@ class TestQueryOperations:
         mock_db.fetch_all.return_value = [
             {
                 "trace_id": "trace-1",
+                "user_id": "user-1",
+                "session_id": "session-1",
+                "channel": "console",
                 "user_message": "Hello",
+                "total_input_tokens": 10,
+                "total_output_tokens": 20,
+                "model_name": None,
                 "start_time": datetime.now(),
+                "duration_ms": None,
             },
         ]
 
         store = TraceStore(config, mock_db)
         await store.initialize()
 
-        messages = await store.get_user_messages()
+        messages, total = await store.get_user_messages()
         assert len(messages) == 1
 
 
@@ -513,25 +539,3 @@ class TestCleanup:
         await store.cleanup_old_data(cutoff_date)
         # Should execute delete queries
         assert mock_db.execute.called
-
-
-class TestTokenSummary:
-    """Tests for token summary operations."""
-
-    @pytest.mark.asyncio
-    async def test_get_token_summary(self, config, mock_db):
-        """Test getting token summary."""
-        mock_db.fetch_all.return_value = [
-            {
-                "model_name": "gpt-4",
-                "total_input_tokens": 1000,
-                "total_output_tokens": 500,
-                "trace_count": 10,
-            },
-        ]
-
-        store = TraceStore(config, mock_db)
-        await store.initialize()
-
-        summary = await store.get_token_summary()
-        assert len(summary) == 1

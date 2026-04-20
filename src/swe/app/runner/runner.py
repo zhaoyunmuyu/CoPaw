@@ -155,7 +155,9 @@ async def _create_mcp_client_with_headers(
             cwd=launch_config.cwd,
         )
         setattr(
-            client, "_swe_rebuild_info", {
+            client,
+            "_swe_rebuild_info",
+            {
                 **rebuild_info,
                 "launch_command": launch_config.launch_command,
                 "launch_args": launch_config.launch_args,
@@ -199,7 +201,9 @@ async def _create_mcp_client_with_headers(
     client.client = client_context
 
     setattr(
-        client, "_swe_rebuild_info", {
+        client,
+        "_swe_rebuild_info",
+        {
             **rebuild_info,
             "headers": merged_headers,
             "_temp_client": True,
@@ -526,7 +530,7 @@ class AgentRunner(Runner):
 
             # Setup skill detector for tracing
             if trace_id:
-                agent.setup_skill_detector(trace_id)
+                await agent.setup_skill_detector(trace_id)
 
             logger.debug(
                 f"Agent Query msgs {msgs}",

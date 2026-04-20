@@ -367,7 +367,7 @@ class SWEAgent(ToolGuardMixin, ReActAgent):
         except Exception as e:
             logger.warning("Failed to build skill-tool registry: %s", e)
 
-    def setup_skill_detector(self, trace_id: str) -> None:
+    async def setup_skill_detector(self, trace_id: str) -> None:
         """Setup skill invocation detector for a trace.
 
         This should be called after start_trace() to enable skill
@@ -396,7 +396,7 @@ class SWEAgent(ToolGuardMixin, ReActAgent):
                 return
 
             # Setup detector with effective skills
-            trace_mgr.setup_skill_detector(
+            await trace_mgr.setup_skill_detector(
                 trace_id=trace_id,
                 enabled_skills=self._effective_skills,
             )

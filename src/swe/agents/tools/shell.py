@@ -31,28 +31,52 @@ from ...security.tenant_path_boundary import (
 
 # Commands that take string arguments which may look like paths
 # but should NOT be treated as file paths
-_STRING_ARG_COMMANDS = frozenset({
-    "echo", "/bin/echo", "/usr/bin/echo",
-    "printf", "/usr/bin/printf",
-})
+_STRING_ARG_COMMANDS = frozenset(
+    {
+        "echo",
+        "/bin/echo",
+        "/usr/bin/echo",
+        "printf",
+        "/usr/bin/printf",
+    },
+)
 
 # Interpreter commands that have dangerous -c/-e code execution flags
 # Only for these commands do we reject -c/-e flags
-_INTERPRETER_COMMANDS = frozenset({
-    # Python code execution temporarily allowed
-    # "python", "python3", "python2",
-    # "/usr/bin/python", "/usr/bin/python3", "/usr/bin/python2",
-    # "/usr/local/bin/python", "/usr/local/bin/python3",
-    "node", "/usr/bin/node", "/usr/local/bin/node",
-    "nodejs", "/usr/bin/nodejs",
-    "ruby", "/usr/bin/ruby", "/usr/local/bin/ruby",
-    "perl", "/usr/bin/perl", "/usr/local/bin/perl",
-    "bash", "/bin/bash", "/usr/bin/bash",
-    "sh", "/bin/sh", "/usr/bin/sh",
-    "zsh", "/bin/zsh", "/usr/bin/zsh",
-    "ksh", "/bin/ksh", "/usr/bin/ksh",
-    "dash", "/bin/dash", "/usr/bin/dash",
-})
+_INTERPRETER_COMMANDS = frozenset(
+    {
+        # Python code execution temporarily allowed
+        # "python", "python3", "python2",
+        # "/usr/bin/python", "/usr/bin/python3", "/usr/bin/python2",
+        # "/usr/local/bin/python", "/usr/local/bin/python3",
+        "node",
+        "/usr/bin/node",
+        "/usr/local/bin/node",
+        "nodejs",
+        "/usr/bin/nodejs",
+        "ruby",
+        "/usr/bin/ruby",
+        "/usr/local/bin/ruby",
+        "perl",
+        "/usr/bin/perl",
+        "/usr/local/bin/perl",
+        "bash",
+        "/bin/bash",
+        "/usr/bin/bash",
+        "sh",
+        "/bin/sh",
+        "/usr/bin/sh",
+        "zsh",
+        "/bin/zsh",
+        "/usr/bin/zsh",
+        "ksh",
+        "/bin/ksh",
+        "/usr/bin/ksh",
+        "dash",
+        "/bin/dash",
+        "/usr/bin/dash",
+    },
+)
 
 
 def _is_path_like(token: str) -> bool:
@@ -64,7 +88,7 @@ def _is_path_like(token: str) -> bool:
     Returns:
         True if the token looks like a path (starts with /, ./, ../, or ~).
     """
-    return token.startswith(('/', './', '../', '~'))
+    return token.startswith(("/", "./", "../", "~"))
 
 
 def _has_code_exec_flag(token: str) -> bool:
@@ -80,19 +104,18 @@ def _has_code_exec_flag(token: str) -> bool:
         True if the token contains -c or -e as code execution flags.
     """
     # Long-form flags that are always code execution
-    if token in ('--eval', '--exec', '--command'):
+    if token in ("--eval", "--exec", "--command"):
         return True
 
     # Short-form flags: -c, -e, or combined like -lc, -ec, -ce
-    if token.startswith('-') and len(token) > 1:
+    if token.startswith("-") and len(token) > 1:
         # Check if 'c' or 'e' appears in the combined flag
         # But exclude special cases like --option (already handled above)
         flag_body = token[1:]  # Remove leading -
-        if 'c' in flag_body or 'e' in flag_body:
+        if "c" in flag_body or "e" in flag_body:
             return True
 
     return False
-
 
 
 def _extract_path_tokens(command: str) -> tuple[list[str], bool]:
@@ -146,7 +169,7 @@ def _extract_path_tokens(command: str) -> tuple[list[str], bool]:
             if is_exempt_cmd:
                 if i > 0:
                     prev = tokens[i - 1]
-                    if prev.startswith('-'):
+                    if prev.startswith("-"):
                         # This is likely a flag argument, skip
                         pass
                     else:
@@ -498,6 +521,7 @@ async def execute_shell_command(
 
     # Intercept command and inject tenant isolation params if applicable
     from .shell_interceptor import intercept_command
+
     cmd, _was_intercepted = intercept_command(cmd)
 
     # Validate and resolve the working directory against tenant boundary
@@ -635,10 +659,13 @@ async def execute_shell_command(
                 response_parts.append(f"\n[stderr]\n{stderr_str}")
             response_text = "".join(response_parts)
 
-        response_text = _append_process_limit_diagnostic(
-            response_text,
-            process_limit_policy.diagnostic,
-        )
+        if process_limit_policy.diagnostic and (
+            not process_limit_policy.should_enforce or returncode != 0
+        ):
+            response_text = _append_process_limit_diagnostic(
+                response_text,
+                process_limit_policy.diagnostic,
+            )
 
         return ToolResponse(
             content=[
