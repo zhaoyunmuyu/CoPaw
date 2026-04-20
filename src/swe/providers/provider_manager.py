@@ -138,11 +138,16 @@ class ProviderManager:
     ) -> None:
         """Initialize provider storage for a tenant.
 
-        Copies from the appropriate default_{source} template if available,
-        otherwise from the default tenant, or creates an empty structure.
+        Copies from the appropriate default_{source} template if available.
+        If the source-specific template doesn't exist, automatically creates
+        it from the default tenant, then copies to the tenant directory.
+
+        When tenant_id is "default" and source_id is set, the dynamic
+        template creation may create the target directory directly (since
+        template dir == target dir), so no additional copy is needed.
 
         Args:
-            tenant_id: The tenant ID.
+            tenant_id: The effective tenant ID.
             tenant_providers_dir: Target directory for provider storage.
         """
         from ..config.context import get_current_source_id
@@ -157,6 +162,25 @@ class ProviderManager:
             if candidate.exists() and any(candidate.iterdir()):
                 source_dir = candidate
                 template_name = f"default_{source_id}"
+            else:
+                # Dynamic creation: create source template from default
+                ProviderManager._ensure_source_template_providers(
+                    SECRET_DIR,
+                    source_id,
+                )
+                # Re-check after creation
+                if candidate.exists() and any(candidate.iterdir()):
+                    source_dir = candidate
+                    template_name = f"default_{source_id}"
+
+        # After dynamic creation, target might already exist
+        # (when effective_tenant_id matches template_name, e.g., default + ruice)
+        if tenant_providers_dir.exists():
+            logger.info(
+                "Provider config for tenant %s already exists, skipping copy",
+                tenant_id,
+            )
+            return
 
         # Fall back to generic default
         if source_dir is None:
@@ -182,6 +206,53 @@ class ProviderManager:
             (tenant_providers_dir / "custom").mkdir(exist_ok=True)
 
     @staticmethod
+    def _ensure_source_template_providers(
+        secret_dir: Path,
+        source_id: str,
+    ) -> None:
+        """Ensure source-specific providers template exists.
+
+        Creates default_{source_id}/providers from default/providers
+        if the source template doesn't exist.
+
+        Args:
+            secret_dir: Base secret directory (e.g., ~/.swe.secret).
+            source_id: Source identifier (e.g., "ruice").
+        """
+        default_providers = secret_dir / "default" / "providers"
+        target_providers = secret_dir / f"default_{source_id}" / "providers"
+
+        if not default_providers.exists():
+            return
+
+        target_parent = target_providers.parent
+        try:
+            if not target_parent.exists():
+                # Copy entire default directory to create default_{source_id}
+                shutil.copytree(
+                    secret_dir / "default",
+                    target_parent,
+                )
+                logger.info(
+                    "Created source template providers directory: %s",
+                    target_parent,
+                )
+            elif not target_providers.exists():
+                shutil.copytree(default_providers, target_providers)
+                logger.info(
+                    "Created source template providers: %s",
+                    target_providers,
+                )
+        except OSError:
+            # Handle race condition - created by concurrent request
+            if not target_providers.exists():
+                raise
+            logger.debug(
+                "Source template providers %s created by concurrent request",
+                target_providers,
+            )
+
+    @staticmethod
     def ensure_tenant_provider_storage(tenant_id: str | None) -> None:
         """Ensure tenant provider storage exists, initializing if needed.
 
@@ -189,6 +260,9 @@ class ProviderManager:
         provider storage by copying from the default tenant's configuration
         when it doesn't exist. If the default tenant has no configuration,
         an empty directory structure is created.
+
+        When tenant_id is "default" and source_id is set in context, the
+        effective storage directory becomes default_{source_id}.
 
         Args:
             tenant_id: The tenant ID to ensure storage for. If None, uses "default".
@@ -202,8 +276,15 @@ class ProviderManager:
             (provider APIs, local model APIs, runtime model creation). It is safe
             to call multiple times - subsequent calls are no-ops if storage exists.
         """
+        from ..config.context import (
+            get_current_source_id,
+            resolve_effective_tenant_id,
+        )
+
         tenant_id = tenant_id or "default"
-        tenant_providers_dir = SECRET_DIR / tenant_id / "providers"
+        source_id = get_current_source_id()
+        effective_tenant_id = resolve_effective_tenant_id(tenant_id, source_id)
+        tenant_providers_dir = SECRET_DIR / effective_tenant_id / "providers"
 
         # Fast path: already exists
         if tenant_providers_dir.exists():
@@ -214,13 +295,13 @@ class ProviderManager:
             tenant_providers_dir.parent.mkdir(parents=True, exist_ok=True)
             ProviderManager._initialize_with_lock(
                 lock_file,
-                tenant_id,
+                effective_tenant_id,
                 tenant_providers_dir,
             )
         except Exception as e:
             logger.error(
                 "Failed to initialize provider config for tenant %s: %s",
-                tenant_id,
+                effective_tenant_id,
                 e,
             )
             raise
@@ -319,26 +400,38 @@ class ProviderManager:
         This method implements a multi-instance singleton pattern where
         each tenant has its own isolated ProviderManager instance.
 
+        When tenant_id is "default" and source_id is set in context, the
+        singleton key becomes default_{source_id} for source isolation.
+
         Args:
             tenant_id: The tenant ID. If None, uses "default" tenant.
 
         Returns:
             ProviderManager instance for the specified tenant.
         """
+        from ..config.context import (
+            get_current_source_id,
+            resolve_effective_tenant_id,
+        )
+
         tenant_id = tenant_id or "default"
+        source_id = get_current_source_id()
+        effective_tenant_id = resolve_effective_tenant_id(tenant_id, source_id)
 
         # Fast path: check if instance exists without lock
-        if tenant_id in ProviderManager._instances:
-            return ProviderManager._instances[tenant_id]
+        if effective_tenant_id in ProviderManager._instances:
+            return ProviderManager._instances[effective_tenant_id]
 
         # Slow path: create instance with lock
         with ProviderManager._instances_lock:
             # Double-check after acquiring lock
-            if tenant_id not in ProviderManager._instances:
-                ProviderManager._instances[tenant_id] = ProviderManager(
-                    tenant_id,
+            if effective_tenant_id not in ProviderManager._instances:
+                ProviderManager._instances[
+                    effective_tenant_id
+                ] = ProviderManager(
+                    effective_tenant_id,
                 )
-            return ProviderManager._instances[tenant_id]
+            return ProviderManager._instances[effective_tenant_id]
 
     @staticmethod
     def get_active_chat_model() -> ChatModelBase:

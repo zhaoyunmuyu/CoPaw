@@ -45,11 +45,19 @@ from swe.config.utils import save_config  # noqa: E402
 class TestTenantInitializerSourceId:
     """Tests for TenantInitializer source_id and template selection."""
 
-    def test_no_source_id_uses_default_template(self, tmp_path):
-        """Without source_id, template_name is 'default'."""
+    def test_non_default_without_source_uses_default_template(self, tmp_path):
+        """Non-default tenant without source_id uses 'default' template."""
         initializer = TenantInitializer(tmp_path, "tenant-1")
         assert initializer.template_name == "default"
         assert initializer.source_id is None
+        assert initializer.effective_tenant_id == "tenant-1"
+
+    def test_default_without_source_raises_error(self, tmp_path):
+        """Default tenant without source_id raises TenantContextError."""
+        from swe.config.context import TenantContextError
+
+        with pytest.raises(TenantContextError):
+            TenantInitializer(tmp_path, "default", source_id=None)
 
     def test_source_id_selects_matching_template(self, tmp_path):
         """With source_id, template_name is 'default_{source_id}' if exists."""
@@ -63,14 +71,82 @@ class TestTenantInitializerSourceId:
             source_id="ruice",
         )
         assert initializer.template_name == "default_ruice"
+        # Non-default tenant: effective_tenant_id is unchanged
+        assert initializer.effective_tenant_id == "tenant-1"
 
-    def test_source_id_falls_back_to_default_if_missing(self, tmp_path):
-        """With source_id but no matching template dir, falls back to 'default'."""
+    def test_default_user_with_source_uses_source_directory(self, tmp_path):
+        """Default user with source_id accesses default_{source_id} directory."""
+        default_dir = tmp_path / "default"
+        default_dir.mkdir()
+        (default_dir / "config.json").write_text(
+            '{"agents": {}}',
+            encoding="utf-8",
+        )
+
+        initializer = TenantInitializer(
+            tmp_path,
+            "default",
+            source_id="ruice",
+        )
+        # Template is created from default
+        assert initializer.template_name == "default_ruice"
+        # Effective tenant ID is also default_ruice
+        assert initializer.effective_tenant_id == "default_ruice"
+        # Tenant dir points to source-specific directory
+        assert initializer.tenant_dir == tmp_path / "default_ruice"
+
+    def test_non_default_user_with_source_keeps_own_directory(self, tmp_path):
+        """Non-default user with source_id still uses their own directory."""
+        default_dir = tmp_path / "default"
+        default_dir.mkdir()
+        (default_dir / "config.json").write_text("{}", encoding="utf-8")
+
+        initializer = TenantInitializer(
+            tmp_path,
+            "user-001",
+            source_id="ruice",
+        )
+        # Template is created from default
+        assert initializer.template_name == "default_ruice"
+        # Effective tenant ID remains as user-001
+        assert initializer.effective_tenant_id == "user-001"
+        # Tenant dir points to user's own directory
+        assert initializer.tenant_dir == tmp_path / "user-001"
+
+    def test_source_id_creates_template_from_default_when_missing(
+        self,
+        tmp_path,
+    ):
+        """With source_id but no matching template dir, creates from default."""
+        # Setup default template
+        default_dir = tmp_path / "default"
+        default_dir.mkdir()
+        (default_dir / "config.json").write_text(
+            '{"test": true}',
+            encoding="utf-8",
+        )
+
         initializer = TenantInitializer(
             tmp_path,
             "tenant-1",
             source_id="unknown",
         )
+        # Should create default_unknown from default
+        assert initializer.template_name == "default_unknown"
+        assert (tmp_path / "default_unknown").exists()
+        assert (tmp_path / "default_unknown" / "config.json").exists()
+
+    def test_source_id_falls_back_to_default_when_no_default_exists(
+        self,
+        tmp_path,
+    ):
+        """With source_id and no default template, falls back to 'default'."""
+        initializer = TenantInitializer(
+            tmp_path,
+            "tenant-1",
+            source_id="unknown",
+        )
+        # No default to copy from, so fallback
         assert initializer.template_name == "default"
 
     def test_empty_source_id_uses_default(self, tmp_path):
@@ -141,8 +217,9 @@ class TestTenantInitializerSourceId:
         assert config_data["security"]["tool_guard"]["enabled"] is True
         assert config_data["agents"]["language"] == "zh"
 
-    def test_seeded_bootstrap_uses_default_when_no_source(self, tmp_path):
-        """Without source_id, template_name is 'default' and config is seeded for default tenant."""
+    def test_seeded_bootstrap_uses_source_template(self, tmp_path):
+        """With source_id, config is seeded from source template for default tenant."""
+        # Setup default template (as source template base)
         default_dir = tmp_path / "default"
         default_workspace = default_dir / "workspaces" / "default"
         default_workspace.mkdir(parents=True)
@@ -186,11 +263,11 @@ class TestTenantInitializerSourceId:
                 encoding="utf-8",
             )
 
-        # Initialize default tenant (is_default_tenant=True triggers config seeding)
-        new_init = TenantInitializer(tmp_path, "default")
+        # Initialize default tenant with source_id (creates default_ruice)
+        new_init = TenantInitializer(tmp_path, "default", source_id="ruice")
         new_init.ensure_seeded_bootstrap()
 
-        tenant_dir = tmp_path / "default"
+        tenant_dir = tmp_path / "default_ruice"
         config_data = json.loads(
             (tenant_dir / "config.json").read_text(encoding="utf-8"),
         )
@@ -419,6 +496,43 @@ class TestSourceIdContext:
         reset_current_source_id(token)
 
 
+# ==================== resolve_effective_tenant_id tests ====================
+
+
+class TestResolveEffectiveTenantId:
+    """Tests for resolve_effective_tenant_id utility."""
+
+    def test_default_with_source_returns_source_tenant(self):
+        """default + source_id → default_{source_id}."""
+        from swe.config.context import resolve_effective_tenant_id
+
+        assert (
+            resolve_effective_tenant_id("default", "ruice") == "default_ruice"
+        )
+
+    def test_default_without_source_raises_error(self):
+        """default + no source_id → TenantContextError."""
+        from swe.config.context import (
+            TenantContextError,
+            resolve_effective_tenant_id,
+        )
+
+        with pytest.raises(TenantContextError):
+            resolve_effective_tenant_id("default", None)
+
+    def test_non_default_with_source_returns_original(self):
+        """Non-default tenant with source_id → original tenant_id."""
+        from swe.config.context import resolve_effective_tenant_id
+
+        assert resolve_effective_tenant_id("user-001", "ruice") == "user-001"
+
+    def test_non_default_without_source_returns_original(self):
+        """Non-default tenant without source_id → original tenant_id."""
+        from swe.config.context import resolve_effective_tenant_id
+
+        assert resolve_effective_tenant_id("user-001", None) == "user-001"
+
+
 # ==================== ProviderManager source-aware init tests ====================
 
 
@@ -512,3 +626,38 @@ class TestProviderManagerSourceInit:
             assert target_dir.exists()
             assert (target_dir / "builtin").exists()
             assert (target_dir / "custom").exists()
+
+    def test_dynamic_source_template_creation_from_default(self, tmp_path):
+        """ProviderManager creates source template from default when missing."""
+        from swe.providers.provider_manager import ProviderManager
+
+        with patch.object(ProviderManager, "__init__", lambda self: None):
+            # Setup only default providers (no default_ruice)
+            default_providers = tmp_path / "default" / "providers"
+            default_providers.mkdir(parents=True)
+            (default_providers / "builtin").mkdir()
+            (default_providers / "custom").mkdir()
+            (default_providers / "active_model.json").write_text(
+                '{"model": "default-model"}',
+                encoding="utf-8",
+            )
+
+            target_dir = tmp_path / "tenant-4" / "providers"
+
+            with (
+                patch("swe.providers.provider_manager.SECRET_DIR", tmp_path),
+                patch(
+                    "swe.config.context.get_current_source_id",
+                    return_value="ruice",
+                ),
+            ):
+                ProviderManager._do_initialize_provider_storage(
+                    "tenant-4",
+                    target_dir,
+                )
+
+            # Should have created default_ruice template
+            assert (tmp_path / "default_ruice" / "providers").exists()
+            # And copied to tenant
+            assert target_dir.exists()
+            assert (target_dir / "active_model.json").exists()
