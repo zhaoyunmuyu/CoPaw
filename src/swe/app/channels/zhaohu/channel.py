@@ -280,6 +280,38 @@ class ZhaohuChannel(BaseChannel):
         """
         return f"zhaohu:callback:{sender_id}"
 
+    def get_to_handle_from_request(self, request: Any) -> str:
+        """Get the send target from AgentRequest.
+
+        For Zhaohu, we need to send to yst_id (not sap_id/user_id).
+        The yst_id is stored in channel_meta['send_addr'].
+
+        Args:
+            request: AgentRequest with channel_meta
+
+        Returns:
+            yst_id for sending, or user_id as fallback
+        """
+        channel_meta = getattr(request, "channel_meta", None) or {}
+        send_addr = channel_meta.get("send_addr")
+        if send_addr:
+            return send_addr
+        # Fallback to user_id (sapId) if send_addr not in meta
+        return getattr(request, "user_id", "") or ""
+
+    def get_on_reply_sent_args(
+        self,
+        request: Any,
+        to_handle: str,
+    ) -> tuple:
+        """Args for _on_reply_sent(channel, *args).
+
+        Override to pass (user_id, session_id) for Zhaohu tracking.
+        """
+        session_id = getattr(request, "session_id", "") or ""
+        user_id = getattr(request, "user_id", "") or ""
+        return (user_id, session_id)
+
     def build_agent_request_from_native(self, native_payload: Any) -> Any:
         """Convert native callback payload to AgentRequest."""
 
@@ -621,7 +653,7 @@ class ZhaohuChannel(BaseChannel):
                         "type": [3],
                         "content": "点击跳转小助claw版查看",
                         "style": 1,
-                        "action": 3,
+                        "action": 1,
                         "link": {
                             "pcUrl": claw_url,
                         },
@@ -724,7 +756,9 @@ class ZhaohuChannel(BaseChannel):
                                 "style": 1,
                                 "action": 1,
                                 "disable": 0,
-                                "link": result_url,
+                                "link": {
+                                    "pcUrl": result_url,
+                                },
                             },
                         ],
                     },
@@ -1341,7 +1375,12 @@ class ZhaohuChannel(BaseChannel):
         msg_content_len: int,
         meta: Dict[str, Any],
     ) -> None:
-        """Handle casual chat (Case 3): proceed with LLM flow."""
+        """Handle casual chat (Case 3): proceed with LLM flow.
+
+        Uses BaseChannel's _consume_with_tracker to enable:
+        1. TaskTracker event broadcasting for Console frontend streaming
+        2. Standard message sending via on_event_message_completed
+        """
         from ....config.context import get_current_workspace_dir
 
         logger.info(
@@ -1361,27 +1400,51 @@ class ZhaohuChannel(BaseChannel):
             get_current_workspace_dir(),
         )
 
-        # Build AgentRequest
-        request = self.build_agent_request_from_user_content(
-            channel_id=self.channel,
-            sender_id=sap_id,
-            session_id=session_id,
-            content_parts=content_parts,
-            channel_meta=meta,
-        )
-        request.channel_meta = meta
+        # Build native payload (dict format) for _consume_with_tracker
+        native_payload = {
+            "channel_id": self.channel,
+            "sender_id": sap_id,
+            "session_id": session_id,
+            "content_parts": content_parts,
+            "meta": meta,
+        }
 
-        # Process through LLM
-        response_text = ""
-        await self.get_llm_response(
-            meta,
-            msg_id,
-            request,
-            response_text,
-            yst_id,
-        )
+        # Use BaseChannel's standard flow if workspace is available
+        # This enables TaskTracker broadcasting for Console frontend streaming
+        if self._workspace is not None:
+            request = self.build_agent_request_from_user_content(
+                channel_id=self.channel,
+                sender_id=sap_id,
+                session_id=session_id,
+                content_parts=content_parts,
+                channel_meta=meta,
+            )
+            request.channel_meta = meta
+            await self._consume_with_tracker(request, native_payload)
+        else:
+            # Fallback to direct processing (no Console streaming)
+            logger.warning(
+                "zhaohu _handle_casual_chat: workspace not set, "
+                "using direct processing without streaming support",
+            )
+            request = self.build_agent_request_from_user_content(
+                channel_id=self.channel,
+                sender_id=sap_id,
+                session_id=session_id,
+                content_parts=content_parts,
+                channel_meta=meta,
+            )
+            request.channel_meta = meta
+            response_text = ""
+            await self._get_llm_response_direct(
+                meta,
+                msg_id,
+                request,
+                response_text,
+                yst_id,
+            )
 
-    async def get_llm_response(
+    async def _get_llm_response_direct(
         self,
         meta,
         msg_id,
@@ -1389,6 +1452,10 @@ class ZhaohuChannel(BaseChannel):
         response_text,
         yst_id,
     ):
+        """Direct LLM processing without TaskTracker broadcasting.
+
+        Used as fallback when workspace is not available.
+        """
         from agentscope_runtime.engine.schemas.agent_schemas import RunStatus
 
         async for event in self._process(request):
