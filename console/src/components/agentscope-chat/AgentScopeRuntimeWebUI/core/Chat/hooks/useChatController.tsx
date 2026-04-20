@@ -3,14 +3,25 @@ import { useCallback, useEffect, useRef } from "react";
 import { useContextSelector } from "use-context-selector";
 import { ChatAnywhereInputContext } from "../../Context/ChatAnywhereInputContext";
 import { ChatAnywhereSessionsContext } from "../../Context/ChatAnywhereSessionsContext";
-import useChatAnywhereEventEmitter from "../../Context/useChatAnywhereEventEmitter";
+import {
+  emit,
+  default as useChatAnywhereEventEmitter,
+} from "../../Context/useChatAnywhereEventEmitter";
 import { IAgentScopeRuntimeWebUIMessage } from "@/components/agentscope-chat";
 import { InputProps } from "../Input";
 import useChatMessageHandler from "./useChatMessageHandler";
 import useChatRequest from "./useChatRequest";
 import useChatSessionHandler from "./useChatSessionHandler";
 import useSuggestionsPolling from "./useSuggestionsPolling";
+import { useChatAnywhereOptions } from "../../Context/ChatAnywhereOptionsContext";
 import ReactDOM from "react-dom";
+import {
+  FollowUpSubmitCoordinator,
+  FOLLOW_UP_SUBMIT_FAILED_EVENT,
+  RUNTIME_INPUT_SET_CONTENT_EVENT,
+  type FollowUpSubmitData,
+} from "./followUpSubmit";
+import { shouldEnqueueFollowUpSubmission } from "./followUpSubmitState";
 // import mockdata from '../../mock/mock.json'
 
 /**
@@ -21,16 +32,23 @@ export default function useChatController() {
     ChatAnywhereInputContext,
     (v) => v.setLoading,
   );
+  const getLoading = useContextSelector(
+    ChatAnywhereInputContext,
+    (v) => v.getLoading,
+  );
   const currentSessionId = useContextSelector(
     ChatAnywhereSessionsContext,
     (v) => v.currentSessionId,
   );
+  const sessionApi = useChatAnywhereOptions((v) => v.session.api);
 
   const currentQARef = useRef<{
     request?: IAgentScopeRuntimeWebUIMessage;
     response?: IAgentScopeRuntimeWebUIMessage;
     abortController?: AbortController;
   }>({});
+  const followUpCoordinatorRef = useRef<FollowUpSubmitCoordinator | null>(null);
+  const followUpSessionIdRef = useRef<string | undefined>(undefined);
 
   // 消息处理
   const messageHandler = useChatMessageHandler({ currentQARef });
@@ -68,43 +86,147 @@ export default function useChatController() {
   );
 
   // API 请求处理
-  const { request, reconnect } = useChatRequest({
+  const { request, reconnect, cancelActiveRequest } = useChatRequest({
     currentQARef,
     updateMessage: messageHandler.updateMessage,
     getCurrentSessionId: sessionHandler.getCurrentSessionId,
     onFinish: () => finishResponse("finished"),
   });
 
-  /**
-   * 处理用户提交
-   */
-  const handleSubmit = useCallback<InputProps["onSubmit"]>(
-    async (data) => {
-      // 1. 确保会话存在
+  const submitTurn = useCallback(
+    async (data: FollowUpSubmitData) => {
       await sessionHandler.ensureSession(data.query);
 
-      // 2. 更新会话名称（如果是第一条消息）
       const messages = messageHandler.getMessages();
       if (sessionHandler.getCurrentSessionId()) {
         await sessionHandler.updateSessionName(data.query, messages);
       }
 
-      // 3. 创建用户请求消息
       messageHandler.createRequestMessage(data);
       setLoading(true);
       await sleep(100);
 
-      // 4. 创建助手响应消息
       messageHandler.createResponseMessage();
 
-      // 5. 获取历史消息并发起请求
       const historyMessages = messageHandler.getHistoryMessages();
       await sessionHandler.syncSessionMessages(messageHandler.getMessages());
 
       await request(historyMessages, data.biz_params);
-      // mockRequest(mockdata);
     },
-    [messageHandler, sessionHandler, request],
+    [messageHandler, request, sessionHandler, setLoading],
+  );
+
+  const isSessionGenerating = useCallback(async () => {
+    const sessionId = sessionHandler.getCurrentSessionId();
+    if (!sessionId || !sessionApi?.getSession) {
+      return false;
+    }
+
+    try {
+      const session = await sessionApi.getSession(sessionId);
+      return Boolean(session?.generating);
+    } catch {
+      return false;
+    }
+  }, [sessionApi, sessionHandler]);
+
+  const restorePendingInput = useCallback((data: FollowUpSubmitData) => {
+    emit({
+      type: RUNTIME_INPUT_SET_CONTENT_EVENT,
+      data: {
+        content: data.query,
+        fileList: data.fileList,
+        biz_params: data.biz_params,
+      },
+    });
+  }, []);
+
+  const notifyFollowUpFailure = useCallback(() => {
+    emit({
+      type: FOLLOW_UP_SUBMIT_FAILED_EVENT,
+    });
+  }, []);
+
+  const stopActiveRunInBackground = useCallback(async () => {
+    await cancelActiveRequest();
+
+    if (currentQARef.current.response) {
+      currentQARef.current.response.msgStatus = "finished";
+      ReactDOM.flushSync(() => {
+        messageHandler.updateMessage(currentQARef.current.response!);
+      });
+    }
+
+    await sessionHandler.syncSessionMessages(messageHandler.getMessages());
+  }, [cancelActiveRequest, messageHandler, sessionHandler]);
+
+  if (!followUpCoordinatorRef.current) {
+    followUpCoordinatorRef.current = new FollowUpSubmitCoordinator({
+      stop: async () => {
+        if (
+          followUpSessionIdRef.current !== sessionHandler.getCurrentSessionId()
+        ) {
+          return;
+        }
+
+        await stopActiveRunInBackground();
+      },
+      submit: async (data) => {
+        if (followUpSessionIdRef.current !== sessionHandler.getCurrentSessionId()) {
+          return;
+        }
+
+        await submitTurn(data);
+      },
+      isGenerating: async () => {
+        if (
+          followUpSessionIdRef.current !== sessionHandler.getCurrentSessionId()
+        ) {
+          return false;
+        }
+
+        return isSessionGenerating();
+      },
+      restoreInput: (query) => {
+        if (
+          followUpSessionIdRef.current !== sessionHandler.getCurrentSessionId()
+        ) {
+          return;
+        }
+
+        restorePendingInput(query);
+      },
+      notifyFailure: () => {
+        if (
+          followUpSessionIdRef.current !== sessionHandler.getCurrentSessionId()
+        ) {
+          return;
+        }
+
+        notifyFollowUpFailure();
+      },
+    });
+  }
+
+  /**
+   * 处理用户提交
+   */
+  const handleSubmit = useCallback<InputProps["onSubmit"]>(
+    async (data) => {
+      const generating = shouldEnqueueFollowUpSubmission(
+        Boolean(getLoading?.()),
+        await isSessionGenerating(),
+      );
+
+      if (generating) {
+        followUpSessionIdRef.current = sessionHandler.getCurrentSessionId();
+        await followUpCoordinatorRef.current?.enqueue(data);
+        return;
+      }
+
+      await submitTurn(data);
+    },
+    [getLoading, isSessionGenerating, submitTurn],
   );
 
   const handleApproval = useCallback(
@@ -120,7 +242,7 @@ export default function useChatController() {
 
       await request(historyMessages);
     },
-    [messageHandler, sessionHandler, request],
+    [messageHandler, request, sessionHandler, setLoading],
   );
 
   /**
@@ -148,7 +270,7 @@ export default function useChatController() {
       const historyMessages = messageHandler.getHistoryMessages();
       await request(historyMessages);
     },
-    [messageHandler, request],
+    [messageHandler, request, setLoading],
   );
 
   /**
@@ -168,6 +290,7 @@ export default function useChatController() {
 
   // 监听会话切换，断开当前 SSE 连接（不通知后端取消）并重置状态
   useEffect(() => {
+    followUpSessionIdRef.current = undefined;
     currentQARef.current.abortController?.abort();
     currentQARef.current = {
       request: undefined,

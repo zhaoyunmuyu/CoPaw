@@ -69,6 +69,7 @@ import { shouldRefreshCurrentTaskMessages } from "./taskMessageRefresh";
 
 // ==================== 会话状态轮询 (自动 reconnect) ====================
 import { emit } from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/Context/useChatAnywhereEventEmitter";
+import { FOLLOW_UP_SUBMIT_FAILED_EVENT } from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/Chat/hooks/followUpSubmit";
 // ==================== 会话状态轮询 (自动 reconnect) ====================
 import RuntimeRequestCard from "./components/RuntimeRequestCard";
 import RuntimeResponseCard from "./components/RuntimeResponseCard";
@@ -338,6 +339,16 @@ export default function ChatPage() {
   const isChatActiveRef = useRef(false);
   isChatActiveRef.current =
     location.pathname === "/" || location.pathname.startsWith("/chat");
+
+  useEffect(() => {
+    const handler = () => {
+      message.error(t("chat.followUp.autoSubmitFailed"));
+    };
+
+    document.addEventListener(FOLLOW_UP_SUBMIT_FAILED_EVENT, handler);
+    return () =>
+      document.removeEventListener(FOLLOW_UP_SUBMIT_FAILED_EVENT, handler);
+  }, [message, t]);
 
   const isChatActive = useCallback(() => isChatActiveRef.current, []);
 

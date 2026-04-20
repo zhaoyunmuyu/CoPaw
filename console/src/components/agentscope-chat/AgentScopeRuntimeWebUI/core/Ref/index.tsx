@@ -1,16 +1,11 @@
 import React, { forwardRef } from "react";
 import { useContextSelector } from "use-context-selector";
-import {
-  ChatAnywhereMessagesContext,
-  useChatAnywhereMessages,
-} from "../Context/ChatAnywhereMessagesContext";
-import {
-  ChatAnywhereInputContext,
-  useChatAnywhereInput,
-} from "../Context/ChatAnywhereInputContext";
+import { useChatAnywhereMessages } from "../Context/ChatAnywhereMessagesContext";
+import { ChatAnywhereInputContext } from "../Context/ChatAnywhereInputContext";
 import { emit } from "../Context/useChatAnywhereEventEmitter";
 import { IAgentScopeRuntimeWebUIInputData } from "../types";
 import { useChatAnywhereSessions } from "../Context/ChatAnywhereSessionsContext";
+import { RUNTIME_INPUT_SET_CONTENT_EVENT } from "../Chat/hooks/followUpSubmit";
 
 // 逐步放开
 function Ref(_, ref) {
@@ -35,12 +30,18 @@ function Ref(_, ref) {
               data: { query, fileList, biz_params },
             });
           },
+          setContent: (content: string) => {
+            emit({
+              type: RUNTIME_INPUT_SET_CONTENT_EVENT,
+              data: { content },
+            });
+          },
         },
         createSession,
         refreshSession,
       };
     },
-    [messages, createSession, refreshSession],
+    [messages, createSession, refreshSession, setDisabled],
   );
 
   return null;

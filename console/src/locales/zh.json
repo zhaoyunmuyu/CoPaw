@@ -1135,6 +1135,9 @@
       "multimodalWarning": "当前模型未检测到多模态能力，图片或视频可能无法被正确处理",
       "imageOnlyAccept": "当前模型仅支持图片文件",
       "imageOnlyWarning": "当前模型仅检测到图片支持，视频等非图片文件可能无法被正确处理"
+    },
+    "followUp": {
+      "autoSubmitFailed": "无法自动停止当前回答，待发送消息已恢复到输入框。"
     }
   },
   "security": {

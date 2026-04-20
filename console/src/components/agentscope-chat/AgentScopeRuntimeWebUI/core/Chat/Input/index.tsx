@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   useProviderContext,
   ChatInput,
@@ -9,7 +9,10 @@ import { useGetState } from "ahooks";
 import { useChatAnywhereInput } from "../../Context/ChatAnywhereInputContext";
 import useAttachments from "./useAttachments";
 import { IAgentScopeRuntimeWebUIInputData } from "@/components/agentscope-chat";
-import { emit } from "../../Context/useChatAnywhereEventEmitter";
+import {
+  RUNTIME_INPUT_SET_CONTENT_EVENT,
+  type RuntimeInputRestorePayload,
+} from "../hooks/followUpSubmit";
 
 export interface InputProps {
   onCancel: () => void;
@@ -18,6 +21,9 @@ export interface InputProps {
 
 export default function Input(props: InputProps) {
   const [content, setContent, getContent] = useGetState("");
+  const restoredBizParamsRef = useRef<
+    IAgentScopeRuntimeWebUIInputData["biz_params"]
+  >(undefined);
   const prefixCls = useProviderContext().getPrefixCls("chat-anywhere-input");
   const senderOptions = useChatAnywhereOptions((v) => v.sender);
   const inputContext = useChatAnywhereInput((v) => v);
@@ -55,14 +61,55 @@ export default function Input(props: InputProps) {
     return () => document.removeEventListener("pasteFile", handler);
   }, [handlePasteFile]);
 
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<RuntimeInputRestorePayload>).detail;
+      const nextContent = detail?.content;
+      if (typeof nextContent !== "string") {
+        return;
+      }
+
+      setContent(nextContent);
+
+      if (Object.prototype.hasOwnProperty.call(detail, "fileList") && setFileList) {
+        setFileList(detail.fileList || []);
+      }
+
+      if (Object.prototype.hasOwnProperty.call(detail, "biz_params")) {
+        restoredBizParamsRef.current = detail.biz_params;
+      } else {
+        restoredBizParamsRef.current = undefined;
+      }
+    };
+
+    document.addEventListener(RUNTIME_INPUT_SET_CONTENT_EVENT, handler);
+    return () =>
+      document.removeEventListener(RUNTIME_INPUT_SET_CONTENT_EVENT, handler);
+  }, [setContent, setFileList]);
+
+  const handleContentChange = useCallback(
+    (value: string) => {
+      restoredBizParamsRef.current = undefined;
+      setContent(value);
+    },
+    [setContent],
+  );
+
   const handleSubmit = useCallback(async () => {
     const next = await beforeSubmit();
     if (!next) return;
 
     const fileList = (getFileList?.() || []).filter((i) => i.response?.url);
-    props.onSubmit({ query: getContent(), fileList });
+    props.onSubmit({
+      query: getContent(),
+      fileList,
+      biz_params: restoredBizParamsRef.current,
+    });
     setContent("");
-    setFileList && setFileList([]);
+    restoredBizParamsRef.current = undefined;
+    if (setFileList) {
+      setFileList([]);
+    }
   }, []);
 
   const handleCancel = useCallback(() => {
@@ -85,7 +132,7 @@ export default function Input(props: InputProps) {
             </>
           }
           header={uploadFileListHeader}
-          onChange={setContent}
+          onChange={handleContentChange}
           maxLength={maxLength}
           onSubmit={handleSubmit}
           onCancel={handleCancel}

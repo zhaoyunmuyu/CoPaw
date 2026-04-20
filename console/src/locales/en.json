@@ -1163,6 +1163,9 @@
       "multimodalWarning": "No multimodal capability detected for current model, images or videos may not be processed correctly",
       "imageOnlyAccept": "Current model only supports image files",
       "imageOnlyWarning": "Current model only supports images, non-image files like videos may not be processed correctly"
+    },
+    "followUp": {
+      "autoSubmitFailed": "Could not automatically stop the current response. Your pending message has been restored to the input box."
     }
   },
   "security": {

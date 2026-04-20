@@ -432,7 +432,7 @@ const ForwardSender = React.forwardRef<SenderRef, SenderProps>((props, ref) => {
 
   // ============================ Events ============================
   const triggerSend = () => {
-    if (!contextValue.onSendDisabled && onSubmit && !loading) {
+    if (!contextValue.onSendDisabled && onSubmit) {
       onSubmit(innerValue);
     }
   };

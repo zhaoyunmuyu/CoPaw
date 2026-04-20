@@ -6,6 +6,7 @@ export interface IAgentScopeRuntimeWebUIRef {
   input: {
     setDisabled: (disabled: boolean) => void;
     submit: (data: IAgentScopeRuntimeWebUIInputData) => void;
+    setContent: (content: string) => void;
   };
   createSession: (data?: { name?: string }) => Promise<string | undefined>;
   refreshSession: (sessionId?: string) => Promise<boolean>;

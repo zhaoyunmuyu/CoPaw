@@ -63,15 +63,62 @@ export default function useChatRequest(options: UseChatRequestOptions) {
 
   const processSSEResponse = useCallback(
     async (response: Response) => {
-      const currentApiOptions = apiOptionsRef.current;
       const responseHeaderTimestamp =
         currentQARef.current.response?.cards?.[0]?.data?.headerMeta?.timestamp;
-      const agentScopeRuntimeResponseBuilder =
-        new AgentScopeRuntimeResponseBuilder({
-          id: "",
-          status: AgentScopeRuntimeRunStatus.Created,
-          created_at: 0,
+      const buildResponseCard = () => {
+        const responseData = currentQARef.current.response?.cards?.[0]
+          ?.data as
+          | {
+              id?: string;
+              status?: AgentScopeRuntimeRunStatus;
+              created_at?: number;
+              output?: unknown[];
+            }
+          | undefined;
+
+        const builder = new AgentScopeRuntimeResponseBuilder({
+          id: responseData?.id || "",
+          status: responseData?.status || AgentScopeRuntimeRunStatus.Created,
+          created_at: responseData?.created_at || 0,
         });
+
+        if (responseData) {
+          builder.handle(responseData as never);
+        }
+
+        return builder;
+      };
+
+      const cancelActiveRequest = async () => {
+        currentQARef.current.abortController?.abort();
+
+        const currentApiOptions = apiOptionsRef.current;
+        if (currentApiOptions.cancel) {
+          await Promise.resolve(
+            currentApiOptions.cancel({
+              session_id: getCurrentSessionId(),
+            }),
+          ).catch((error) => {
+            console.error(error);
+          });
+        }
+
+        if (currentQARef.current.response) {
+          currentQARef.current.response.cards = [
+            {
+              code: "AgentScopeRuntimeResponseCard",
+              data: withResponseHeaderMeta(
+                buildResponseCard().cancel(),
+                responseHeaderTimestamp,
+              ),
+            },
+          ];
+
+          updateMessage(currentQARef.current.response);
+        }
+      };
+
+      const agentScopeRuntimeResponseBuilder = buildResponseCard();
 
       if (!response.ok) {
         response.json().then((data) => {
@@ -102,24 +149,7 @@ export default function useChatRequest(options: UseChatRequestOptions) {
           readableStream: response.body,
         })) {
           if (currentQARef.current.response?.msgStatus === "interrupted") {
-            currentQARef.current.abortController?.abort();
-            if (currentApiOptions.cancel) {
-              currentApiOptions.cancel({
-                session_id: getCurrentSessionId(),
-              });
-            }
-
-            currentQARef.current.response.cards = [
-              {
-                code: "AgentScopeRuntimeResponseCard",
-                data: withResponseHeaderMeta(
-                  agentScopeRuntimeResponseBuilder.cancel(),
-                  responseHeaderTimestamp,
-                ),
-              },
-            ];
-
-            updateMessage(currentQARef.current.response);
+            await cancelActiveRequest();
             break;
           }
 
@@ -221,5 +251,53 @@ export default function useChatRequest(options: UseChatRequestOptions) {
     [currentQARef, processSSEResponse],
   );
 
-  return { request, reconnect, mockRequest };
+  const cancelActiveRequest = useCallback(async () => {
+    const responseHeaderTimestamp =
+      currentQARef.current.response?.cards?.[0]?.data?.headerMeta?.timestamp;
+    const responseData = currentQARef.current.response?.cards?.[0]?.data as
+      | {
+          id?: string;
+          status?: AgentScopeRuntimeRunStatus;
+          created_at?: number;
+        }
+      | undefined;
+    const responseBuilder = new AgentScopeRuntimeResponseBuilder({
+      id: responseData?.id || "",
+      status: responseData?.status || AgentScopeRuntimeRunStatus.Created,
+      created_at: responseData?.created_at || 0,
+    });
+
+    if (responseData) {
+      responseBuilder.handle(responseData as never);
+    }
+
+    currentQARef.current.abortController?.abort();
+
+    const currentApiOptions = apiOptionsRef.current;
+    if (currentApiOptions.cancel) {
+      await Promise.resolve(
+        currentApiOptions.cancel({
+          session_id: getCurrentSessionId(),
+        }),
+      ).catch((error) => {
+        console.error(error);
+      });
+    }
+
+    if (currentQARef.current.response) {
+      currentQARef.current.response.cards = [
+        {
+          code: "AgentScopeRuntimeResponseCard",
+          data: withResponseHeaderMeta(
+            responseBuilder.cancel(),
+            responseHeaderTimestamp,
+          ),
+        },
+      ];
+
+      updateMessage(currentQARef.current.response);
+    }
+  }, [currentQARef, getCurrentSessionId, updateMessage]);
+
+  return { request, reconnect, mockRequest, cancelActiveRequest };
 }
