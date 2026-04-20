@@ -9,6 +9,7 @@ import click
 
 from .http import client, print_json
 from ..app.channels.schema import DEFAULT_CHANNEL
+from ..config.utils import load_config
 
 
 def _base_url(ctx: click.Context, base_url: Optional[str]) -> str:
@@ -28,8 +29,8 @@ def _base_url(ctx: click.Context, base_url: Optional[str]) -> str:
 def cron_group() -> None:
     """Manage scheduled cron jobs via the HTTP API (/cron).
 
-    Use list/get/state to inspect jobs; create/delete to add or remove;
-    pause/resume to toggle execution; run to trigger a one-off run.
+    Use list/get/state to inspect jobs; create/update/delete to add, replace,
+    or remove; pause/resume to toggle execution; run to trigger a one-off run.
     """
 
 
@@ -166,8 +167,9 @@ def _build_spec_from_cli(
     enabled: bool,
     mode: str,
     tenant_id: Optional[str] = None,
+    job_id: str = "",
 ) -> dict:
-    """Build CronJobSpec JSON payload from CLI args (no id)."""
+    """Build CronJobSpec JSON payload from CLI args."""
     schedule = {"type": "cron", "cron": cron, "timezone": timezone}
     dispatch = {
         "type": "channel",
@@ -190,7 +192,7 @@ def _build_spec_from_cli(
                 "--text is required when task type is 'text'",
             )
         return {
-            "id": "",
+            "id": job_id,
             "name": name,
             "enabled": enabled,
             "tenant_id": tenant_id,
@@ -208,7 +210,7 @@ def _build_spec_from_cli(
                 "(the question/prompt sent to the agent)",
             )
         return {
-            "id": "",
+            "id": job_id,
             "name": name,
             "enabled": enabled,
             "tenant_id": tenant_id,
@@ -230,6 +232,82 @@ def _build_spec_from_cli(
             "meta": meta,
         }
     raise click.UsageError(f"Unsupported task type: {task_type}")
+
+
+def _build_payload_from_args(
+    *,
+    file_: Optional[Path],
+    task_type: Optional[str],
+    name: Optional[str],
+    cron: Optional[str],
+    channel: Optional[str],
+    target_user: Optional[str],
+    target_session: Optional[str],
+    creator_user: Optional[str],
+    text: Optional[str],
+    timezone: str,
+    enabled: bool,
+    mode: str,
+    tenant_id: Optional[str],
+    job_id: str = "",
+) -> dict:
+    if file_ is not None:
+        payload = json.loads(file_.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise click.UsageError(
+                "Cron job spec file must contain a JSON object",
+            )
+        payload["id"] = job_id
+        return payload
+
+    for value, label in [
+        (task_type, "--type"),
+        (name, "--name"),
+        (cron, "--cron"),
+        (channel, "--channel"),
+        (target_user, "--target-user"),
+        (target_session, "--target-session"),
+    ]:
+        if not value or (isinstance(value, str) and not value.strip()):
+            raise click.UsageError(
+                f"When creating without -f/--file, {label} is required",
+            )
+    return _build_spec_from_cli(
+        task_type=task_type or "agent",
+        name=name or "",
+        cron=cron or "",
+        channel=channel or DEFAULT_CHANNEL,
+        target_user=target_user or "",
+        target_session=target_session or "",
+        creator_user=creator_user,
+        text=text,
+        timezone=timezone,
+        enabled=enabled,
+        mode=mode,
+        tenant_id=tenant_id,
+        job_id=job_id,
+    )
+
+
+def _infer_effective_user_id(
+    payload: object,
+    creator_user: Optional[str],
+) -> Optional[str]:
+    effective_user_id = creator_user
+    if not effective_user_id and isinstance(payload, dict):
+        meta = payload.get("meta") or {}
+        if isinstance(meta, dict):
+            effective_user_id = meta.get("creator_user_id")
+    if (
+        not effective_user_id
+        and isinstance(payload, dict)
+        and payload.get("task_type") == "agent"
+    ):
+        dispatch = payload.get("dispatch") or {}
+        target = dispatch.get("target") if isinstance(dispatch, dict) else {}
+        if isinstance(target, dict):
+            effective_user_id = target.get("user_id")
+    return effective_user_id
 
 
 @cron_group.command("create")
@@ -370,60 +448,206 @@ def create_job(
     inline.
     """
     if timezone is None:
-        from ..config import load_config
-
         timezone = load_config().user_timezone or "UTC"
     base_url = _base_url(ctx, base_url)
-    if file_ is not None:
-        payload = json.loads(file_.read_text(encoding="utf-8"))
-    else:
-        for value, label in [
-            (task_type, "--type"),
-            (name, "--name"),
-            (cron, "--cron"),
-            (channel, "--channel"),
-            (target_user, "--target-user"),
-            (target_session, "--target-session"),
-        ]:
-            if not value or (isinstance(value, str) and not value.strip()):
-                raise click.UsageError(
-                    f"When creating without -f/--file, {label} is required",
-                )
-        payload = _build_spec_from_cli(
-            task_type=task_type or "agent",
-            name=name or "",
-            cron=cron or "",
-            channel=channel or DEFAULT_CHANNEL,
-            target_user=target_user or "",
-            target_session=target_session or "",
-            creator_user=creator_user,
-            text=text,
-            timezone=timezone,
-            enabled=enabled,
-            mode=mode,
-            tenant_id=tenant_id,
-        )
+    payload = _build_payload_from_args(
+        file_=file_,
+        task_type=task_type,
+        name=name,
+        cron=cron,
+        channel=channel,
+        target_user=target_user,
+        target_session=target_session,
+        creator_user=creator_user,
+        text=text,
+        timezone=timezone,
+        enabled=enabled,
+        mode=mode,
+        tenant_id=tenant_id,
+    )
     with client(base_url) as c:
-        effective_user_id = creator_user
-        if not effective_user_id and isinstance(payload, dict):
-            meta = payload.get("meta") or {}
-            if isinstance(meta, dict):
-                effective_user_id = meta.get("creator_user_id")
-        if (
-            not effective_user_id
-            and isinstance(payload, dict)
-            and payload.get("task_type") == "agent"
-        ):
-            dispatch = payload.get("dispatch") or {}
-            target = (
-                dispatch.get("target") if isinstance(dispatch, dict) else {}
-            )
-            if isinstance(target, dict):
-                effective_user_id = target.get("user_id")
+        effective_user_id = _infer_effective_user_id(payload, creator_user)
         headers = _build_headers(agent_id, tenant_id, effective_user_id)
         r = c.post("/cron/jobs", json=payload, headers=headers)
         r.raise_for_status()
         print_json(r.json())
+
+
+def _update_job_impl(
+    ctx: click.Context,
+    job_id: str,
+    file_: Optional[Path],
+    task_type: Optional[str],
+    name: Optional[str],
+    cron: Optional[str],
+    channel: Optional[str],
+    target_user: Optional[str],
+    target_session: Optional[str],
+    creator_user: Optional[str],
+    text: Optional[str],
+    timezone: Optional[str],
+    enabled: bool,
+    mode: str,
+    base_url: Optional[str],
+    agent_id: str,
+    tenant_id: Optional[str],
+) -> None:
+    if timezone is None:
+        timezone = load_config().user_timezone or "UTC"
+    base_url = _base_url(ctx, base_url)
+    payload = _build_payload_from_args(
+        file_=file_,
+        task_type=task_type,
+        name=name,
+        cron=cron,
+        channel=channel,
+        target_user=target_user,
+        target_session=target_session,
+        creator_user=creator_user,
+        text=text,
+        timezone=timezone,
+        enabled=enabled,
+        mode=mode,
+        tenant_id=tenant_id,
+        job_id=job_id,
+    )
+    with client(base_url) as c:
+        effective_user_id = _infer_effective_user_id(payload, creator_user)
+        headers = _build_headers(agent_id, tenant_id, effective_user_id)
+        r = c.put(f"/cron/jobs/{job_id}", json=payload, headers=headers)
+        if r.status_code == 404:
+            raise click.ClickException("Job not found.")
+        r.raise_for_status()
+        print_json(r.json())
+
+
+@cron_group.command("update")
+@click.argument("job_id", metavar="JOB_ID")
+@click.option(
+    "-f",
+    "--file",
+    "file_",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Path to a JSON file containing the full cron job spec. "
+        "Mutually exclusive with inline options (--type, --name, etc.)."
+    ),
+)
+@click.option(
+    "--type",
+    "task_type",
+    type=click.Choice(["text", "agent"], case_sensitive=False),
+    default=None,
+    help="Task type for the replacement job when not using -f/--file.",
+)
+@click.option(
+    "--name",
+    default=None,
+    help="Display name for the replacement job when not using -f/--file.",
+)
+@click.option(
+    "--cron",
+    default=None,
+    help="Cron expression for the replacement job when not using -f/--file.",
+)
+@click.option(
+    "--channel",
+    default=None,
+    help="Delivery channel for the replacement job when not using -f/--file.",
+)
+@click.option(
+    "--target-user",
+    default=None,
+    help="Target user_id for the replacement job when not using -f/--file.",
+)
+@click.option(
+    "--target-session",
+    default=None,
+    help="Target session_id for the replacement job when not using -f/--file.",
+)
+@click.option(
+    "--creator-user",
+    default=None,
+    hidden=True,
+    help="Creator user_id override for task ownership metadata.",
+)
+@click.option(
+    "--text",
+    default=None,
+    help="Content for the replacement job when not using -f/--file.",
+)
+@click.option(
+    "--timezone",
+    default=None,
+    help="Timezone for the replacement job. Defaults to user timezone.",
+)
+@click.option(
+    "--enabled/--no-enabled",
+    default=True,
+    help="Replace the job as enabled (--enabled) or disabled (--no-enabled).",
+)
+@click.option(
+    "--mode",
+    type=click.Choice(["stream", "final"], case_sensitive=False),
+    default="final",
+    help="Delivery mode for the replacement job.",
+)
+@click.option(
+    "--base-url",
+    default=None,
+    help="Override the API base URL. Defaults to global --host/--port.",
+)
+@click.option(
+    "--agent-id",
+    default="default",
+    help="Agent ID (defaults to 'default')",
+)
+@click.option(
+    "--tenant-id",
+    default=None,
+    help="Tenant ID forwarded as X-Tenant-Id header.",
+)
+@click.pass_context
+def update_job(
+    ctx: click.Context,
+    job_id: str,
+    file_: Optional[Path],
+    task_type: Optional[str],
+    name: Optional[str],
+    cron: Optional[str],
+    channel: Optional[str],
+    target_user: Optional[str],
+    target_session: Optional[str],
+    creator_user: Optional[str],
+    text: Optional[str],
+    timezone: Optional[str],
+    enabled: bool,
+    mode: str,
+    base_url: Optional[str],
+    agent_id: str,
+    tenant_id: Optional[str],
+) -> None:
+    """Replace an existing cron job in place while keeping the same job ID."""
+    _update_job_impl(
+        ctx,
+        job_id,
+        file_,
+        task_type,
+        name,
+        cron,
+        channel,
+        target_user,
+        target_session,
+        creator_user,
+        text,
+        timezone,
+        enabled,
+        mode,
+        base_url,
+        agent_id,
+        tenant_id,
+    )
 
 
 @cron_group.command("delete")
