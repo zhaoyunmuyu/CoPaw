@@ -240,6 +240,7 @@ class TracingModelWrapper:
                 trace_id=trace_ctx.trace_id,
                 model_name=f"{self.provider_id}:{self._model_name}",
                 input_tokens=0,  # Will be updated after call
+                source_id=trace_ctx.source_id,
                 user_id=trace_ctx.user_id,
                 session_id=trace_ctx.session_id,
                 channel=trace_ctx.channel,
