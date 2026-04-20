@@ -358,6 +358,41 @@ class MemorySummaryConfig(BaseModel):
     )
 
 
+class SuggestionConfig(BaseModel):
+    """猜你想问功能配置 - 在模型回答后异步生成后续问题建议."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = Field(
+        default=True,
+        description="是否启用猜你想问功能",
+    )
+    max_suggestions: int = Field(
+        default=3,
+        ge=1,
+        le=5,
+        description="最多生成的问题数量",
+    )
+    timeout_seconds: float = Field(
+        default=5.0,
+        ge=1.0,
+        le=15.0,
+        description="建议生成超时时间（秒）",
+    )
+    user_message_max_length: int = Field(
+        default=200,
+        ge=50,
+        le=500,
+        description="用户提问截断长度（字符）",
+    )
+    assistant_response_max_length: int = Field(
+        default=500,
+        ge=200,
+        le=2000,
+        description="助手回答截断长度（字符）",
+    )
+
+
 class AgentsRunningConfig(BaseModel):
     """Agent runtime behavior configuration."""
 
@@ -505,6 +540,11 @@ class AgentsRunningConfig(BaseModel):
             max_output_length=TRACING_MAX_OUTPUT_LENGTH,
         ),
         description="Tracing configuration for request tracking and analytics",
+    )
+
+    suggestions: SuggestionConfig = Field(
+        default_factory=SuggestionConfig,
+        description="猜你想问功能配置",
     )
 
     @property

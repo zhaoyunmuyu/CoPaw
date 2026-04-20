@@ -32,14 +32,24 @@ interface ChatSessionItemProps {
   onEditSubmit?: () => void;
   /** Cancel edit callback */
   onEditCancel?: () => void;
+  /** Whether to show edit button (default: true) */
+  showEdit?: boolean;
+  /** Whether to show timeline indicator (left line + dot) (default: true) */
+  showTimeline?: boolean;
+  /** Whether to show channel tag (default: true) */
+  showChannel?: boolean;
   className?: string;
 }
 
 const ChatSessionItem: React.FC<ChatSessionItemProps> = (props) => {
+  // Apply compact style when timeline and channel are hidden
+  const isCompact = props.showTimeline === false && props.showChannel === false;
+
   const className = [
     styles.chatSessionItem,
     props.active ? styles.active : "",
     props.editing ? styles.editing : "",
+    isCompact ? styles.compact : "",
     props.className || "",
   ]
     .filter(Boolean)
@@ -51,7 +61,9 @@ const ChatSessionItem: React.FC<ChatSessionItemProps> = (props) => {
       onClick={props.editing ? undefined : props.onClick}
     >
       {/* Timeline indicator placeholder */}
-      <div className={styles.iconPlaceholder} />
+      {props.showTimeline !== false && (
+        <div className={styles.iconPlaceholder} />
+      )}
       <div className={styles.content}>
         {props.editing ? (
           <Input
@@ -68,7 +80,7 @@ const ChatSessionItem: React.FC<ChatSessionItemProps> = (props) => {
         )}
         <div className={styles.metaRow}>
           <span className={styles.time}>{props.time}</span>
-          {(props.channelKey || props.channelLabel) && (
+          {props.showChannel !== false && (props.channelKey || props.channelLabel) && (
             <span
               className={styles.channelTag}
               title={props.channelLabel || props.channelKey}
@@ -94,15 +106,17 @@ const ChatSessionItem: React.FC<ChatSessionItemProps> = (props) => {
       {/* Action buttons visible on hover */}
       {!props.editing && (
         <div className={styles.actions}>
-          <IconButton
-            bordered={false}
-            size="small"
-            icon={<SparkEditLine />}
-            onClick={(e) => {
-              e.stopPropagation();
-              props.onEdit?.();
-            }}
-          />
+          {props.showEdit !== false && (
+            <IconButton
+              bordered={false}
+              size="small"
+              icon={<SparkEditLine />}
+              onClick={(e) => {
+                e.stopPropagation();
+                props.onEdit?.();
+              }}
+            />
+          )}
           <IconButton
             bordered={false}
             size="small"

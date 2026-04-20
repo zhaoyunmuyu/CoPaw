@@ -128,7 +128,9 @@ class CronJobSpec(BaseModel):
     # Tenant isolation: each job belongs to a tenant
     tenant_id: Optional[str] = Field(
         default=None,
-        description="Tenant ID for job isolation. If None, uses default tenant.",
+        description=(
+            "Tenant ID for job isolation. If None, uses default tenant."
+        ),
     )
 
     schedule: ScheduleSpec
@@ -168,6 +170,7 @@ class JobsFile(BaseModel):
 class CronJobState(BaseModel):
     next_run_at: Optional[datetime] = None
     last_run_at: Optional[datetime] = None
+    last_prefetch_at: Optional[datetime] = None
     last_status: Optional[
         Literal["success", "error", "running", "skipped", "cancelled"]
     ] = None

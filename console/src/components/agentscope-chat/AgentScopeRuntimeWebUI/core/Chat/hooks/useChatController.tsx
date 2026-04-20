@@ -9,6 +9,7 @@ import { InputProps } from "../Input";
 import useChatMessageHandler from "./useChatMessageHandler";
 import useChatRequest from "./useChatRequest";
 import useChatSessionHandler from "./useChatSessionHandler";
+import useSuggestionsPolling from "./useSuggestionsPolling";
 import ReactDOM from "react-dom";
 // import mockdata from '../../mock/mock.json'
 
@@ -37,6 +38,12 @@ export default function useChatController() {
   // 会话处理
   const sessionHandler = useChatSessionHandler();
 
+  // 建议轮询
+  const { pollSuggestions } = useSuggestionsPolling({
+    currentQARef,
+    updateMessage: messageHandler.updateMessage,
+  });
+
   /**
    * 完成响应
    */
@@ -51,8 +58,13 @@ export default function useChatController() {
       });
 
       sessionHandler.syncSessionMessages(messageHandler.getMessages());
+
+      // 完成后轮询获取建议
+      if (status === "finished") {
+        pollSuggestions();
+      }
     },
-    [setLoading, messageHandler, sessionHandler],
+    [setLoading, messageHandler, sessionHandler, pollSuggestions],
   );
 
   // API 请求处理

@@ -44,6 +44,46 @@
       padding-right: 12px;
     }
   }
+
+  // Compact variant (no timeline, no channel)
+  &.compact {
+    height: auto;
+    min-height: 48px;
+    padding: 10px 12px;
+    border-radius: 4px;
+    margin-bottom: 4px;
+    flex-direction: column;
+    gap: 0;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
+
+    .content {
+      padding-top: 0;
+      gap: 4px;
+    }
+
+    .name {
+      font-size: 14px;
+      line-height: 20px;
+    }
+
+    .metaRow {
+      justify-content: flex-start;
+    }
+
+    .time {
+      font-size: 12px;
+      line-height: 16px;
+    }
+
+    .actions {
+      top: 50%;
+      transform: translateY(-50%);
+      right: 8px;
+    }
+  }
 }
 
 .iconPlaceholder {
