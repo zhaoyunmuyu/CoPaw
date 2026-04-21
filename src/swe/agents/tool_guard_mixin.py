@@ -230,6 +230,11 @@ class ToolGuardMixin:
         removes them.  When *include_denial_response* is ``True``,
         also removes the assistant message immediately following the
         last marked message (the LLM's denial explanation).
+
+        When *include_denial_response* is ``False`` (approval granted),
+        keeps the waiting-for-approval message but clears its
+        ``approval_action`` metadata so the approval card won't render
+        on reload, preserving the text content for conversation history.
         """
         ids_to_delete: list[str] = []
         last_marked_idx = -1
@@ -247,6 +252,26 @@ class ToolGuardMixin:
             next_msg, _ = self.memory.content[last_marked_idx + 1]
             if next_msg.role == "assistant":
                 ids_to_delete.append(next_msg.id)
+
+                # When approval is granted (include_denial_response=False),
+        # clear approval_action metadata from the waiting message
+        # instead of deleting it, preserving text content.
+        if (
+            not include_denial_response
+            and last_marked_idx >= 0
+            and last_marked_idx + 1 < len(self.memory.content)
+        ):
+            next_msg, marks = self.memory.content[last_marked_idx + 1]
+            if next_msg.role == "assistant":
+                metadata = getattr(next_msg, "metadata", None)
+                if metadata and isinstance(metadata, dict):
+                    # Clear approval_action so frontend won't render approval card
+                    if "approval_action" in metadata:
+                        del metadata["approval_action"]
+                        logger.info(
+                            "Tool guard: cleared approval_action metadata "
+                            "from waiting message (approval granted)",
+                        )
 
         if ids_to_delete:
             removed = await self.memory.delete(ids_to_delete)
@@ -419,7 +444,7 @@ class ToolGuardMixin:
         if guarded and await self._consume_preapproval(tool_name, tool_input):
             self._tool_guard_pending_info = None
             await self._cleanup_tool_guard_denied_messages(
-                include_denial_response=True,
+                include_denial_response=False,
             )
             return _GuardAction("preapproved", tool_name, tool_input)
 
@@ -903,7 +928,7 @@ class ToolGuardMixin:
             ensure_ascii=False,
             indent=2,
         )
-        trigger_label, settings_hint = self._guardian_trigger_hint(guardians)
+        trigger_label, _ = self._guardian_trigger_hint(guardians)
         metadata = {
             "approval_action": {
                 "requestId": request_id,
@@ -916,14 +941,5 @@ class ToolGuardMixin:
         }
         self._tool_guard_pending_message_metadata = metadata
         return await self._emit_assistant_msg(
-            "⏳ Waiting for approval / 等待审批\n\n"
-            f"- Tool / 工具: `{tool_name}`\n"
-            f"- Triggered by / 触发来源: `{trigger_label}`\n"
-            f"- Parameters / 参数:\n"
-            f"```json\n{params_text}\n```\n\n"
-            f"{settings_hint}\n\n"
-            "Type `/approve` to approve, "
-            "`/deny` to deny, or send any message to deny.\n"
-            "输入 `/approve` 批准执行，"
-            "或发送任意消息拒绝。",
+            f"⏳ `{tool_name}`调用需要审批\n" f"```json\n{params_text}\n```\n",
         )

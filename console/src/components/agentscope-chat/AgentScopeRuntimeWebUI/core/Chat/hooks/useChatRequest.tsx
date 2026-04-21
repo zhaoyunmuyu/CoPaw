@@ -146,6 +146,60 @@ export default function useChatRequest(options: UseChatRequestOptions) {
         return;
       }
 
+      // 辅助函数：从 chunkData 中提取 approval_action
+      // 后端将 msg.metadata 嵌套在 message.metadata.metadata 中
+      const extractApprovalAction = (data: any): any | null => {
+        if (!data || typeof data !== "object") return null;
+
+        // 获取 metadata 对象
+        const getMetadata = (obj: any): any | null => {
+          if (!obj || typeof obj !== "object") return null;
+          return obj.metadata;
+        };
+
+        const metadata = getMetadata(data);
+
+        if (metadata && typeof metadata === "object") {
+          // 路径1: metadata.approval_action (直接)
+          const directAction = (metadata as Record<string, unknown>).approval_action;
+          if (directAction && typeof directAction === "object") {
+            return directAction;
+          }
+
+          // 路径2: metadata.metadata.approval_action (嵌套)
+          const nestedMetadata = (metadata as Record<string, unknown>).metadata;
+          if (nestedMetadata && typeof nestedMetadata === "object") {
+            const nestedAction = (nestedMetadata as Record<string, unknown>).approval_action;
+            if (nestedAction && typeof nestedAction === "object") {
+              return nestedAction;
+            }
+          }
+        }
+
+        // 在 output 数组中查找
+        if (Array.isArray(data.output)) {
+          for (const msg of data.output) {
+            const msgMetadata = getMetadata(msg);
+            if (msgMetadata && typeof msgMetadata === "object") {
+              const directAction = (msgMetadata as Record<string, unknown>).approval_action;
+              if (directAction && typeof directAction === "object") {
+                return directAction;
+              }
+
+              const nestedMetadata = (msgMetadata as Record<string, unknown>).metadata;
+              if (nestedMetadata && typeof nestedMetadata === "object") {
+                const nestedAction = (nestedMetadata as Record<string, unknown>).approval_action;
+                if (nestedAction && typeof nestedAction === "object") {
+                  return nestedAction;
+                }
+              }
+            }
+          }
+        }
+
+        return null;
+      };
+
       try {
         for await (const chunk of Stream({
           readableStream: response.body,
@@ -167,12 +221,23 @@ export default function useChatRequest(options: UseChatRequestOptions) {
             continue;
 
           if (currentQARef.current.response) {
-            currentQARef.current.response.cards = [
+            const cards: any[] = [
               {
                 code: "AgentScopeRuntimeResponseCard",
                 data: withResponseHeaderMeta(res, responseHeaderTimestamp),
               },
             ];
+
+                    // 检测 approval_action metadata，额外创建审批卡片
+            const approvalAction = extractApprovalAction(chunkData) || extractApprovalAction(res);
+            if (approvalAction) {
+              cards.push({
+                code: "ApprovalAction",
+                data: approvalAction,
+              });
+            }
+
+            currentQARef.current.response.cards = cards;
 
             if (
               res.status === AgentScopeRuntimeRunStatus.Completed ||
