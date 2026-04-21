@@ -35,7 +35,9 @@ class ESClient:
             )
             return
 
-        hosts = [{"host": self._config.host, "port": self._config.port}]
+        # Build URL with scheme (required by newer elasticsearch versions)
+        scheme = "https" if self._config.port == 443 else "http"
+        hosts = [f"{scheme}://{self._config.host}:{self._config.port}"]
         kwargs: dict = {"hosts": hosts}
 
         if self._config.user and self._config.password:
