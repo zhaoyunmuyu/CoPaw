@@ -557,21 +557,19 @@ class ZhaohuChannel(BaseChannel):
 
     def _build_claw_url(
         self,
-        session_id: str,
-        task_id: Optional[str] = None,
+        chat_id: str,
     ) -> str:
         """Build claw URL for card navigation.
 
         Generates a URL following the formula:
         param = { errorPage, to: menuId, type: "toMenu",
-                  queryParam: {sessionId/taskId, origin: 'Y'} }
+                  queryParam: {sessionId, origin: 'Y'} }
         pcParams = encodeURIComponent(btoa(JSON.stringify(param)))
         pcParams2 = encodeURIComponent(btoa('pcParams='+pcParams))
         URL = CMBMobileOA:///?pcSysId=${sys_id}&pcParams={pcParams2}
 
         Args:
-            session_id: Session ID for queryParam
-            task_id: Optional task ID (if provided, uses taskId instead of sessionId)
+            chat_id: Chat ID for queryParam (sessionId key)
 
         Returns:
             Generated claw URL string
@@ -583,11 +581,8 @@ class ZhaohuChannel(BaseChannel):
             )
             return ""
 
-        # Build param object
-        if task_id:
-            query_param = {"taskId": task_id, "origin": "Y"}
-        else:
-            query_param = {"sessionId": session_id, "origin": "Y"}
+        # Always use sessionId as key, chat_id as value
+        query_param = {"sessionId": chat_id, "origin": "Y"}
 
         param = {
             "errorPage": self.cron_task_error_page,
@@ -619,7 +614,7 @@ class ZhaohuChannel(BaseChannel):
     def _build_task_initiated_card(
         self,
         task_content: str,
-        session_id: str,
+        chat_id: str,
     ) -> list:
         """Build card content for task initiated notification (Template 1).
 
@@ -627,13 +622,13 @@ class ZhaohuChannel(BaseChannel):
 
         Args:
             task_content: The original task content from user message
-            session_id: Session ID for generating claw URL
+            chat_id: Chat ID for generating claw URL
 
         Returns:
             Card content array for send_custom_card
         """
         # Generate claw URL for navigation
-        claw_url = self._build_claw_url(session_id)
+        claw_url = self._build_claw_url(chat_id)
 
         # Template 1: Task initiated notification
         card_content = [
@@ -674,7 +669,7 @@ class ZhaohuChannel(BaseChannel):
                 - status: Task status ("completed", "in_progress", "pending")
                 - status_text: Status display text (e.g., "已完成", "进行中", "待开始")
                 - time_info: Time information (e.g., "已于8:30执行完成")
-                - result_url: URL to view task result (optional)
+                - task_chat_id: Chat ID for navigation (from task meta)
 
         Returns:
             Card content array for send_custom_card
@@ -696,7 +691,7 @@ class ZhaohuChannel(BaseChannel):
             status = task.get("status", "pending")
             status_text = task.get("status_text", "待开始")
             time_info = task.get("time_info", "")
-            job_id = task.get("job_id", "")
+            task_chat_id = task.get("task_chat_id", "")
 
             # Determine style and backgroundColor based on status
             if status == "completed":
@@ -740,13 +735,10 @@ class ZhaohuChannel(BaseChannel):
                 },
             ]
 
-            # Operation row (view result button) - only for completed tasks
-            if status == "completed":
-                # Generate claw URL using job_id as task_id
-                result_url = self._build_claw_url(
-                    session_id="",
-                    task_id=job_id,
-                )
+            # Operation row (view result button) - only for completed tasks with chat_id
+            if status == "completed" and task_chat_id:
+                # Generate claw URL using task_chat_id
+                result_url = self._build_claw_url(task_chat_id)
                 task_list.append(
                     {
                         "type": "operate",
@@ -1039,14 +1031,16 @@ class ZhaohuChannel(BaseChannel):
                     today,
                 )
                 # Convert to format expected by _build_task_progress_card
+                # Use task_chat_id from task meta for navigation
                 for raw_task in raw_tasks:
+                    task_meta = raw_task.get("meta") or {}
                     tasks.append(
                         {
                             "task_name": raw_task.get("task_name", "未知任务"),
                             "status": raw_task.get("status", "pending"),
                             "status_text": raw_task.get("status_text", "待开始"),
                             "time_info": raw_task.get("time_info", ""),
-                            "result_url": raw_task.get("result_url", ""),
+                            "task_chat_id": task_meta.get("task_chat_id", ""),
                         },
                     )
                 logger.info(
@@ -1141,6 +1135,83 @@ class ZhaohuChannel(BaseChannel):
                 session_id,
             )
 
+    async def _create_task_chat(
+        self,
+        session_id: str,
+        user_id: str,
+        task_content: str,
+    ) -> str:
+        """Create chat for task and return chat_id."""
+        chat_id = session_id  # Default fallback
+        if self._workspace and self._workspace.chat_manager:
+            try:
+                chat = await self._workspace.chat_manager.get_or_create_chat(
+                    session_id,
+                    user_id,
+                    self.channel,
+                    name=task_content[:50] if task_content else "New Chat",
+                )
+                chat_id = chat.id
+                logger.info(
+                    "zhaohu _create_task_chat: created chat, "
+                    "chat_id=%s, session_id=%s",
+                    chat_id,
+                    session_id,
+                )
+            except Exception:
+                logger.warning(
+                    "zhaohu _create_task_chat: failed to create chat, "
+                    "using session_id as fallback",
+                )
+        return chat_id
+
+    async def _send_task_result(
+        self,
+        session_id: str,
+        response_text: str,
+        meta: Dict[str, Any],
+    ) -> None:
+        """Send task result to user via push_url."""
+        yst_id = meta.get("send_addr", "")
+        if not yst_id:
+            return
+        if response_text:
+            await self.send(yst_id, response_text, meta)
+            logger.info(
+                "zhaohu _send_task_result: result sent to yst_id=%s",
+                yst_id,
+            )
+        else:
+            await self.send(
+                yst_id,
+                "抱歉，处理您的任务时发生错误，请稍后重试。",
+                meta,
+            )
+            logger.warning(
+                "zhaohu _send_task_result: sent error notification for session_id=%s",
+                session_id,
+            )
+
+    async def _collect_response_from_events(
+        self,
+        request: Any,
+    ) -> str:
+        """Run LLM and collect complete result from events."""
+        from agentscope_runtime.engine.schemas.agent_schemas import RunStatus
+
+        response_text = ""
+        async for event in self._process(request):
+            obj = getattr(event, "object", None)
+            status = getattr(event, "status", None)
+            if obj == "message" and status == RunStatus.Completed:
+                parts = self._message_to_content_parts(event)
+                for part in parts:
+                    if hasattr(part, "text") and part.text:
+                        response_text += part.text
+                    elif hasattr(part, "refusal") and part.refusal:
+                        response_text += part.refusal
+        return response_text
+
     async def _run_task_llm_and_notify(
         self,
         request: Any,
@@ -1148,13 +1219,15 @@ class ZhaohuChannel(BaseChannel):
         task_content: str,
         from_id: str,
         meta: Dict[str, Any],
+        user_id: str,
     ) -> None:
         """Run LLM task and send final result to user.
 
         This method:
-        1. Sends task initiated card notification to user immediately
-        2. Runs LLM to get complete result (no streaming)
-        3. Sends final result to user when complete
+        1. Creates Chat first to get chat.id for navigation
+        2. Sends task initiated card notification to user immediately
+        3. Runs LLM to get complete result (no streaming)
+        4. Sends final result to user when complete
 
         Args:
             request: AgentRequest for the task session
@@ -1162,16 +1235,18 @@ class ZhaohuChannel(BaseChannel):
             task_content: Task content/description
             from_id: User's openId (for sending messages)
             meta: Channel metadata
+            user_id: User's sapId for chat creation
         """
-        from agentscope_runtime.engine.schemas.agent_schemas import RunStatus
+        # Step 0: Create Chat first to get chat.id for navigation
+        chat_id = await self._create_task_chat(
+            session_id,
+            user_id,
+            task_content,
+        )
 
         # Step 1: Send card notification immediately
-        card_content = self._build_task_initiated_card(
-            task_content,
-            session_id,
-        )
+        card_content = self._build_task_initiated_card(task_content, chat_id)
         code, msg = await self.send_custom_card(from_id, card_content)
-
         if code == 0:
             logger.info(
                 "zhaohu _run_task_llm_and_notify: card sent successfully, msgId=%s",
@@ -1179,33 +1254,20 @@ class ZhaohuChannel(BaseChannel):
             )
         else:
             logger.warning(
-                "zhaohu _run_task_llm_and_notify: card send failed, "
-                "code=%d msg=%s",
+                "zhaohu _run_task_llm_and_notify: card send failed, code=%d msg=%s",
                 code,
                 msg,
             )
 
         # Step 2: Run LLM and collect complete result
         logger.info(
-            "zhaohu _run_task_llm_and_notify: starting LLM for sessionId=%s",
+            "zhaohu _run_task_llm_and_notify: starting LLM for sessionId=%s, chat_id=%s",
             session_id,
+            chat_id,
         )
 
-        response_text = ""
         try:
-            async for event in self._process(request):
-                obj = getattr(event, "object", None)
-                status = getattr(event, "status", None)
-                if obj == "message" and status == RunStatus.Completed:
-                    # Extract text from the completed message
-                    parts = self._message_to_content_parts(event)
-                    for part in parts:
-                        if hasattr(part, "text") and part.text:
-                            response_text += part.text
-                        elif hasattr(part, "refusal") and part.refusal:
-                            response_text += part.refusal
-
-            # Step 3: Send final result to user
+            response_text = await self._collect_response_from_events(request)
             if response_text:
                 logger.info(
                     "zhaohu _run_task_llm_and_notify: completed for sessionId=%s, "
@@ -1213,33 +1275,18 @@ class ZhaohuChannel(BaseChannel):
                     session_id,
                     len(response_text),
                 )
-                # Send result via push_url
-                yst_id = meta.get("send_addr", "")
-                if yst_id:
-                    await self.send(yst_id, response_text, meta)
-                    logger.info(
-                        "zhaohu _run_task_llm_and_notify: result sent to yst_id=%s",
-                        yst_id,
-                    )
+                await self._send_task_result(session_id, response_text, meta)
             else:
                 logger.warning(
                     "zhaohu _run_task_llm_and_notify: no response for sessionId=%s",
                     session_id,
                 )
-
         except Exception:
             logger.exception(
                 "zhaohu _run_task_llm_and_notify: failed for sessionId=%s",
                 session_id,
             )
-            # Send error notification to user
-            yst_id = meta.get("send_addr", "")
-            if yst_id:
-                await self.send(
-                    yst_id,
-                    "抱歉，处理您的任务时发生错误，请稍后重试。",
-                    meta,
-                )
+            await self._send_task_result(session_id, "", meta)
 
     async def process_callback_message(self, callback_body: Any) -> None:
         """Process callback message: query user, route by message type."""
@@ -1444,6 +1491,7 @@ class ZhaohuChannel(BaseChannel):
                 task_content,
                 from_id,
                 meta,
+                sap_id,  # user_id for chat creation
             ),
         )
         logger.info(

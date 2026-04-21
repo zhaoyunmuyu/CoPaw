@@ -116,6 +116,7 @@ class TestRunTaskLlmAndNotify:
             task_content="Do something",
             from_id="open_id_123",
             meta=meta,
+            user_id="sap_id_123",
         )
 
         # Verify card was sent
@@ -148,6 +149,7 @@ class TestRunTaskLlmAndNotify:
             task_content="Do something",
             from_id="open_id_123",
             meta=meta,
+            user_id="sap_id_123",
         )
 
         # Card should be called first (before send)
@@ -175,6 +177,7 @@ class TestRunTaskLlmAndNotify:
             task_content="Do something",
             from_id="open_id_123",
             meta=meta,
+            user_id="sap_id_123",
         )
 
         # Card should still be sent
@@ -207,6 +210,7 @@ class TestErrorHandling:
             task_content="Do something",
             from_id="open_id_123",
             meta=meta,
+            user_id="sap_id_123",
         )
 
         # Card should still be sent
@@ -239,6 +243,7 @@ class TestErrorHandling:
             task_content="Do something",
             from_id="open_id_123",
             meta=meta,
+            user_id="sap_id_123",
         )
 
         # Card should still be sent
