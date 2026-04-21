@@ -10,7 +10,7 @@ import {
 import AgentScopeRuntimeRequestCard from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Request/Card";
 import AgentScopeRuntimeResponseCard from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Card";
 // ==================== 组件引入方式变更结束 ====================
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Button, Modal, Result, Tooltip } from "antd";
 import { useAppMessage } from "../../hooks/useAppMessage";
 import { ExclamationCircleOutlined, SettingOutlined } from "@ant-design/icons";
@@ -336,6 +336,11 @@ export default function ChatPage() {
   const { message } = useAppMessage();
   const { setSessionLoading } = useChatAnywhereSessionsState();
 
+  // useTransition for non-urgent state updates (badge clearing)
+  const [, startTransition] = useTransition();
+  // Debounce flag for markTaskRead API calls
+  const markTaskReadPendingRef = useRef(false);
+
   const isChatActiveRef = useRef(false);
   isChatActiveRef.current =
     location.pathname === "/" || location.pathname.startsWith("/chat");
@@ -588,20 +593,34 @@ export default function ChatPage() {
     if ((currentTask.task?.unread_execution_count || 0) <= 0) return;
     if (!shouldMarkTaskReadOnOpen(currentTask)) return;
 
-    setJobs((prev) =>
-      prev.map((job) =>
-        job.id === currentTask.id && job.task
-          ? {
-              ...job,
-              task: {
-                ...job.task,
-                unread_execution_count: 0,
-              },
-            }
-          : job,
-      ),
-    );
-    void cronJobApi.markTaskRead(currentTask.id).catch(() => {});
+    // Debounce: skip if there's already a pending markTaskRead request
+    if (markTaskReadPendingRef.current) return;
+
+    markTaskReadPendingRef.current = true;
+
+    // Non-urgent update: badge clearing can be delayed
+    startTransition(() => {
+      setJobs((prev) =>
+        prev.map((job) =>
+          job.id === currentTask.id && job.task
+            ? {
+                ...job,
+                task: {
+                  ...job.task,
+                  unread_execution_count: 0,
+                },
+              }
+            : job,
+        ),
+      );
+    });
+
+    void cronJobApi
+      .markTaskRead(currentTask.id)
+      .catch(() => {})
+      .finally(() => {
+        markTaskReadPendingRef.current = false;
+      });
   }, [currentTask?.id, currentTask?.task?.unread_execution_count]);
 
   // ==================== 会话状态轮询 (自动 reconnect) ====================
@@ -666,39 +685,15 @@ export default function ChatPage() {
   // ==================== 会话状态轮询结束 ====================
 
   const handleTaskOpen = useCallback(
-    async (task: CronJobSpecOutput) => {
+    (task: CronJobSpecOutput) => {
       const taskChatId = task.task?.chat_id;
       if (!taskChatId) return;
 
-      if (shouldMarkTaskReadOnOpen(task)) {
-        setJobs((prev) =>
-          prev.map((job) =>
-            job.id === task.id && job.task
-              ? {
-                  ...job,
-                  task: {
-                    ...job.task,
-                    unread_execution_count: 0,
-                  },
-                }
-              : job,
-          ),
-        );
-      }
-
-      // 先设置 loading 状态，避免导航后闪现欢迎页
+      // Set loading first to avoid blocking, then navigate
       setSessionLoading(true);
       navigate(`/chat/${taskChatId}`, { replace: true });
-
-      if (shouldMarkTaskReadOnOpen(task)) {
-        try {
-          await cronJobApi.markTaskRead(task.id);
-        } catch {
-          void refreshJobs();
-        }
-      }
     },
-    [navigate, refreshJobs, setSessionLoading],
+    [navigate, setSessionLoading],
   );
 
   const handleTaskResume = useCallback(
