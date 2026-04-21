@@ -16,16 +16,12 @@ from ..utils import schedule_agent_reload
 from ...config.config import (
     AgentProfileConfig,
     AgentProfileRef,
-    load_agent_config,
-    save_agent_config,
     generate_short_agent_id,
 )
 from ...config.utils import (
     load_config,
     save_config,
-    get_tenant_working_dir,
     get_tenant_working_dir_strict,
-    get_tenant_config_path,
     get_tenant_config_path_strict,
 )
 from ...agents.memory.agent_md_manager import AgentMdManager
@@ -393,7 +389,11 @@ async def update_agent(
     _save_agent_config_for_request(agentId, existing_config, request)
 
     # Trigger hot reload if agent is running (async, non-blocking)
-    schedule_agent_reload(request, agentId)
+    schedule_agent_reload(
+        request,
+        agentId,
+        tenant_id=getattr(request.state, "tenant_id", None),
+    )
 
     return agent_config
 
@@ -685,7 +685,9 @@ def _resolve_workspace_language(
 
     if working_dir is not None:
         try:
-            config = load_config(Path(working_dir).expanduser() / "config.json")
+            config = load_config(
+                Path(working_dir).expanduser() / "config.json",
+            )
             tenant_language = getattr(config.agents, "language", None)
             if tenant_language:
                 return tenant_language

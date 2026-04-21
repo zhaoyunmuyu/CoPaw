@@ -912,7 +912,7 @@ async def create_skill(
             },
         )
     if body.enable:
-        schedule_agent_reload(request, workspace.agent_id)
+        _schedule_workspace_reload(request, workspace)
     return {"created": True, "name": created}
 
 
@@ -960,7 +960,7 @@ async def upload_skill_zip(
     if result.get("conflicts"):
         raise HTTPException(status_code=409, detail=result)
     if enable and result.get("count", 0) > 0:
-        schedule_agent_reload(request, workspace.agent_id)
+        _schedule_workspace_reload(request, workspace)
     return result
 
 
@@ -1635,7 +1635,7 @@ async def save_workspace_skill(
             raise HTTPException(status_code=409, detail=result)
         raise HTTPException(status_code=404, detail="Skill not found")
     if result.get("mode") != "noop":
-        schedule_agent_reload(request, workspace.agent_id)
+        _schedule_workspace_reload(request, workspace)
     return result
 
 
@@ -1655,7 +1655,7 @@ async def update_skill_channels_endpoint(
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Skill not found")
-    schedule_agent_reload(request, workspace.agent_id)
+    _schedule_workspace_reload(request, workspace)
     return {"updated": True, "channels": channels}
 
 

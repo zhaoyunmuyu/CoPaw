@@ -19,6 +19,7 @@ from ..config.context import (
 from .middleware.tenant_workspace import TenantWorkspaceContext
 
 if TYPE_CHECKING:
+    from ..config.config import AgentProfileConfig
     from .workspace import Workspace
 
 # Context variable to store current agent ID across async calls
@@ -234,6 +235,21 @@ async def get_agent_for_request(
         ) from e
 
 
+async def get_agent_and_config_for_request(
+    request: Request,
+    agent_id: Optional[str] = None,
+) -> tuple["Workspace", "AgentProfileConfig"]:
+    """Resolve the request workspace and authoritative tenant-scoped config."""
+    from ..config.config import load_agent_config
+
+    workspace = await get_agent_for_request(request, agent_id=agent_id)
+    agent_config = load_agent_config(
+        workspace.agent_id,
+        tenant_id=getattr(workspace, "tenant_id", None),
+    )
+    return workspace, agent_config
+
+
 def get_active_agent_id(tenant_id: Optional[str] = None) -> str:
     """Get current active agent ID from config.
 
@@ -309,6 +325,7 @@ def get_tenant_workspace_strict(request: Request) -> "Workspace":
 
 __all__ = [
     "get_agent_for_request",
+    "get_agent_and_config_for_request",
     "get_active_agent_id",
     "set_current_agent_id",
     "get_current_agent_id",
