@@ -330,10 +330,35 @@ def _load_existing_job_spec(
     raise click.ClickException("Invalid response when loading existing job.")
 
 
+def _normalize_extracted_text(text: str) -> Optional[str]:
+    normalized = text.strip()
+    return normalized or None
+
+
+def _extract_text_from_content_parts(parts: list[object]) -> Optional[str]:
+    text_parts = [
+        str(part["text"])
+        for part in parts
+        if isinstance(part, dict)
+        and part.get("type") == "text"
+        and part.get("text")
+    ]
+    if not text_parts:
+        return None
+    return _normalize_extracted_text("".join(text_parts))
+
+
+def _extract_text_from_content(content: object) -> Optional[str]:
+    if isinstance(content, str):
+        return _normalize_extracted_text(content)
+    if isinstance(content, list):
+        return _extract_text_from_content_parts(content)
+    return None
+
+
 def _extract_existing_text(payload: dict) -> Optional[str]:
     if payload.get("task_type") == "text":
-        text = payload.get("text")
-        return text.strip() if isinstance(text, str) and text.strip() else None
+        return _extract_text_from_content(payload.get("text"))
 
     request = payload.get("request")
     if not isinstance(request, dict):
@@ -345,19 +370,9 @@ def _extract_existing_text(payload: dict) -> Optional[str]:
     for item in request_input:
         if not isinstance(item, dict):
             continue
-        content = item.get("content")
-        if isinstance(content, str) and content.strip():
-            return content.strip()
-        if not isinstance(content, list):
-            continue
-        text_parts = []
-        for part in content:
-            if not isinstance(part, dict):
-                continue
-            if part.get("type") == "text" and part.get("text"):
-                text_parts.append(str(part["text"]))
-        if text_parts:
-            return "".join(text_parts).strip()
+        extracted = _extract_text_from_content(item.get("content"))
+        if extracted:
+            return extracted
     return None
 
 
