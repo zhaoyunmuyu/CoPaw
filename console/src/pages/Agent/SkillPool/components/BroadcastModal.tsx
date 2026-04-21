@@ -3,7 +3,7 @@ import { Button, Modal } from "@agentscope-ai/design";
 import { CheckOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { PoolSkillSpec } from "../../../../api/types";
-import { TenantTargetPicker } from "../../../../../components/TenantTargetPicker";
+import { TenantTargetPicker } from "../../../../components/TenantTargetPicker";
 import styles from "../../Skills/index.module.less";
 
 interface BroadcastModalProps {
