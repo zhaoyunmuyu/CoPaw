@@ -67,11 +67,8 @@ import {
 import { deriveChatTaskState, shouldMarkTaskReadOnOpen } from "./taskJobs";
 import { shouldRefreshCurrentTaskMessages } from "./taskMessageRefresh";
 
-// ==================== 会话状态轮询 (自动 reconnect) ====================
-import { emit } from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/Context/useChatAnywhereEventEmitter";
-import { FOLLOW_UP_SUBMIT_FAILED_EVENT } from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/Chat/hooks/followUpSubmit";
-// ==================== 会话状态轮询 (自动 reconnect) ====================
 import RuntimeRequestCard from "./components/RuntimeRequestCard";
+import { FOLLOW_UP_SUBMIT_FAILED_EVENT } from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/Chat/hooks/followUpSubmit";
 import RuntimeResponseCard from "./components/RuntimeResponseCard";
 import type {
   ChatRuntimeRequestCardData,
@@ -81,7 +78,6 @@ import type {
 const CHAT_ATTACHMENT_MAX_MB = 10;
 const TASK_PAGE_POLL_MS = 30_000;
 const TASK_PENDING_POLL_MS = 30_000;
-const SESSION_RUNNING_POLL_MS = 3_000;
 
 interface SessionInfo {
   session_id?: string;
@@ -607,78 +603,6 @@ export default function ChatPage() {
     );
     void cronJobApi.markTaskRead(currentTask.id).catch(() => {});
   }, [currentTask?.id, currentTask?.task?.unread_execution_count]);
-
-  // ==================== 会话状态轮询 (刷新会话列表 + 自动 reconnect) ====================
-  // 当用户在 chat 页面时：
-  // 1. 刷新会话列表（触发 ChatSidebar 显示新会话）
-  // 2. 如果在具体会话页面，检查当前会话状态，running 时 reconnect
-  const sessionReconnectingRef = useRef(false);
-  const prevSessionStatusRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    // 只在 chat 页面时轮询
-    if (!isChatActiveRef.current) return;
-
-    const poll = async () => {
-      try {
-        // 如果当前已经在 generating/loading 状态，跳过
-        const isLoading = runtimeLoadingBridgeRef.current?.getLoading?.() ?? false;
-
-        // 刷新会话列表（使用 chatApi.listChats 获取带 status 的数据）
-        const chatSpecs = await chatApi.listChats();
-        // 转换为 session 格式并触发更新
-        const sessions = chatSpecs.map((c) => ({
-          id: c.id,
-          name: c.name || "New Chat",
-          messages: [],
-          generating: c.status === "running",
-          sessionId: c.session_id,
-          userId: c.user_id,
-          channel: c.channel,
-          createdAt: c.created_at,
-        }));
-        setSessions(sessions);
-
-        // 如果在具体会话页面，检查当前会话状态
-        if (chatId && chatId.startsWith("zhaohu") && !isLoading) {
-          const currentChat = chatSpecs.find((c) => c.id === chatId);
-          const status = currentChat?.status;
-          const generating = status === "running";
-
-          // 状态从非 running 变为 running 时触发 reconnect
-          if (
-            generating &&
-            prevSessionStatusRef.current !== "running" &&
-            !sessionReconnectingRef.current
-          ) {
-            sessionReconnectingRef.current = true;
-            console.info("[Chat] Session running, auto reconnect:", chatId);
-            emit({
-              type: "handleReconnect",
-              data: { session_id: chatId },
-            });
-          }
-
-          // 状态变为非 running 时重置标记
-          if (!generating) {
-            sessionReconnectingRef.current = false;
-          }
-
-          prevSessionStatusRef.current = status;
-        }
-      } catch (err) {
-        console.warn("[Chat] Poll failed:", err);
-      }
-    };
-
-    poll();
-    const intervalId = window.setInterval(poll, SESSION_RUNNING_POLL_MS);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [chatId, setSessions]);
-  // ==================== 会话状态轮询结束 ====================
 
   const handleTaskOpen = useCallback(
     async (task: CronJobSpecOutput) => {
