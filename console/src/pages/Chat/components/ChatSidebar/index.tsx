@@ -158,7 +158,10 @@ export default function ChatSidebar(props: ChatSidebarProps) {
 
   const handleSessionClick = useCallback(
     (sessionId: string) => {
-      // 先设置 loading 状态，避免导航后闪现欢迎页
+      // Skip if already on the same session
+      if (currentChatIdRef.current === sessionId) return;
+
+      // Set loading first to avoid showing welcome page briefly
       setSessionLoading(true);
       navigate(`/chat/${sessionId}`, { replace: true });
     },
