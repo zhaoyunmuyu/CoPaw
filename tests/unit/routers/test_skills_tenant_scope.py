@@ -351,6 +351,217 @@ def test_list_broadcast_tenants_uses_source_scoped_logical_ids(
     assert result.tenant_ids == ["default", "tenant-a"]
 
 
+def test_list_workspace_skill_sources_uses_effective_tenant_id(
+    monkeypatch,
+) -> None:
+    observed: list[str | None] = []
+
+    def fake_list_workspaces(
+        tenant_id: str | None = None,
+    ) -> list[dict[str, str]]:
+        observed.append(tenant_id)
+        return [
+            {
+                "agent_id": "default",
+                "agent_name": "Default",
+                "workspace_dir": "/tmp/default_ruice/workspaces/default",
+            },
+        ]
+
+    monkeypatch.setattr(skills_router, "list_workspaces", fake_list_workspaces)
+    monkeypatch.setattr(
+        skills_router,
+        "_build_workspace_skill_specs",
+        lambda workspace_dir: [],
+    )
+
+    result = asyncio.run(
+        skills_router.list_workspace_skill_sources(
+            _request("default", "ruice"),
+        ),
+    )
+
+    assert observed == ["default_ruice"]
+    assert result[0].workspace_dir == "/tmp/default_ruice/workspaces/default"
+
+
+def test_upload_workspace_skill_to_pool_uses_effective_tenant_id(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    observed: dict[str, object] = {"workspace_tenant_ids": []}
+
+    monkeypatch.setattr(
+        skills_router,
+        "get_tenant_working_dir_strict",
+        lambda tenant_id=None: tmp_path / str(tenant_id),
+    )
+
+    def fake_workspace_dir_for_agent(
+        agent_id: str,
+        *,
+        tenant_id: str | None = None,
+    ) -> Path:
+        workspace_tenant_ids = observed["workspace_tenant_ids"]
+        assert isinstance(workspace_tenant_ids, list)
+        workspace_tenant_ids.append(tenant_id)
+        return tmp_path / "default_ruice" / "workspaces" / agent_id
+
+    class FakeSkillPoolService:
+        def __init__(self, *, working_dir: Path) -> None:
+            observed["working_dir"] = working_dir
+
+        def upload_from_workspace(
+            self,
+            *,
+            workspace_dir: Path,
+            skill_name: str,
+            target_name: str | None,
+            overwrite: bool,
+        ) -> dict[str, object]:
+            observed["workspace_dir"] = workspace_dir
+            observed["skill_name"] = skill_name
+            observed["target_name"] = target_name
+            observed["overwrite"] = overwrite
+            return {"success": True, "name": target_name or skill_name}
+
+    monkeypatch.setattr(
+        skills_router,
+        "_workspace_dir_for_agent",
+        fake_workspace_dir_for_agent,
+    )
+    monkeypatch.setattr(
+        skills_router,
+        "SkillPoolService",
+        FakeSkillPoolService,
+    )
+
+    result = asyncio.run(
+        skills_router.upload_workspace_skill_to_pool(
+            _request("default", "ruice"),
+            skills_router.UploadToPoolRequest(
+                workspace_id="default",
+                skill_name="guidance",
+                overwrite=True,
+            ),
+        ),
+    )
+
+    assert observed["workspace_tenant_ids"] == ["default_ruice"]
+    assert observed["working_dir"] == tmp_path / "default_ruice"
+    assert observed["workspace_dir"] == (
+        tmp_path / "default_ruice" / "workspaces" / "default"
+    )
+    assert result == {"success": True, "name": "guidance"}
+
+
+def test_download_pool_skill_to_workspaces_uses_effective_tenant_id(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    observed: dict[str, object] = {"workspace_tenant_ids": []}
+
+    monkeypatch.setattr(
+        skills_router,
+        "get_tenant_working_dir_strict",
+        lambda tenant_id=None: tmp_path / str(tenant_id),
+    )
+
+    def fake_workspace_dir_for_agent(
+        agent_id: str,
+        *,
+        tenant_id: str | None = None,
+    ) -> Path:
+        workspace_tenant_ids = observed["workspace_tenant_ids"]
+        assert isinstance(workspace_tenant_ids, list)
+        workspace_tenant_ids.append((agent_id, tenant_id))
+        return tmp_path / "default_ruice" / "workspaces" / agent_id
+
+    class FakeSkillPoolService:
+        def __init__(self, working_dir: Path) -> None:
+            observed["working_dir"] = working_dir
+
+        def preflight_download_to_workspace(
+            self,
+            *,
+            skill_name: str,
+            workspace_dir: Path,
+            target_name: str | None,
+            overwrite: bool,
+        ) -> dict[str, object]:
+            observed["preflight"] = (
+                skill_name,
+                workspace_dir,
+                target_name,
+                overwrite,
+            )
+            return {"success": True}
+
+        def download_to_workspace(
+            self,
+            *,
+            skill_name: str,
+            workspace_dir: Path,
+            target_name: str | None,
+            overwrite: bool,
+        ) -> dict[str, object]:
+            observed["download"] = (
+                skill_name,
+                workspace_dir,
+                target_name,
+                overwrite,
+            )
+            return {
+                "success": True,
+                "workspace_name": "Default",
+                "name": target_name or skill_name,
+            }
+
+    monkeypatch.setattr(
+        skills_router,
+        "_workspace_dir_for_agent",
+        fake_workspace_dir_for_agent,
+    )
+    monkeypatch.setattr(
+        skills_router,
+        "_snapshot_workspace_skill",
+        lambda workspace_dir, skill_name: {"backup_dir": None},
+    )
+    monkeypatch.setattr(
+        skills_router,
+        "SkillPoolService",
+        FakeSkillPoolService,
+    )
+
+    result = asyncio.run(
+        skills_router.download_pool_skill_to_workspaces(
+            _request("default", "ruice"),
+            skills_router.DownloadFromPoolRequest(
+                skill_name="guidance",
+                targets=[
+                    skills_router.PoolDownloadTarget(workspace_id="default"),
+                ],
+                overwrite=True,
+            ),
+        ),
+    )
+
+    assert observed["workspace_tenant_ids"] == [
+        ("default", "default_ruice"),
+        ("default", "default_ruice"),
+    ]
+    assert observed["working_dir"] == tmp_path / "default_ruice"
+    assert result == {
+        "downloaded": [
+            {
+                "workspace_id": "default",
+                "workspace_name": "Default",
+                "name": "guidance",
+            },
+        ],
+    }
+
+
 def test_broadcast_pool_skills_to_bootstrapped_tenant(
     monkeypatch,
     tmp_path: Path,

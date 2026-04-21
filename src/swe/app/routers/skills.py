@@ -772,7 +772,9 @@ async def list_workspace_skill_sources(
     request: Request,
 ) -> list[WorkspaceSkillSummary]:
     summaries: list[WorkspaceSkillSummary] = []
-    workspaces = list_workspaces(tenant_id=_request_tenant_id(request))
+    workspaces = list_workspaces(
+        tenant_id=_request_effective_tenant_id(request),
+    )
     for workspace in workspaces:
         workspace_dir = Path(workspace["workspace_dir"])
         summaries.append(
@@ -1103,7 +1105,7 @@ async def upload_workspace_skill_to_pool(
     request: Request,
     body: UploadToPoolRequest,
 ) -> dict[str, Any]:
-    tenant_id = _request_tenant_id(request)
+    tenant_id = _request_effective_tenant_id(request)
     workspace_dir = _workspace_dir_for_agent(
         body.workspace_id,
         tenant_id=tenant_id,
@@ -1233,7 +1235,7 @@ async def download_pool_skill_to_workspaces(
 
     All-or-nothing: if any target conflicts, reject everything.
     """
-    tenant_id = _request_tenant_id(request)
+    tenant_id = _request_effective_tenant_id(request)
     targets, hub_service = _resolve_and_preflight(
         body,
         tenant_id=tenant_id,
