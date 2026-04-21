@@ -14,8 +14,13 @@ from swe.app.routers import providers as providers_router
 from swe.providers.models import ModelSlotConfig
 
 
-def _request(tenant_id: str = "tenant-source") -> SimpleNamespace:
-    return SimpleNamespace(state=SimpleNamespace(tenant_id=tenant_id))
+def _request(
+    tenant_id: str = "tenant-source",
+    source_id: str | None = None,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        state=SimpleNamespace(tenant_id=tenant_id, source_id=source_id),
+    )
 
 
 @dataclass
@@ -126,15 +131,42 @@ def test_list_active_model_distribution_tenants_returns_discovered_ids(
 ) -> None:
     monkeypatch.setattr(
         providers_router,
-        "list_all_tenant_ids",
-        lambda: ["default", "tenant-a", "tenant-b"],
+        "list_logical_tenant_ids",
+        lambda source_id=None: ["default", "tenant-a", "tenant-b"],
     )
 
     result = asyncio.run(
-        providers_router.list_active_model_distribution_tenants(),
+        providers_router.list_active_model_distribution_tenants(_request()),
     )
 
     assert result.tenant_ids == ["default", "tenant-a", "tenant-b"]
+
+
+def test_list_active_model_distribution_tenants_maps_source_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[str | None] = []
+
+    def fake_list_logical_tenant_ids(
+        source_id: str | None = None,
+    ) -> list[str]:
+        observed.append(source_id)
+        return ["default", "tenant-a"]
+
+    monkeypatch.setattr(
+        providers_router,
+        "list_logical_tenant_ids",
+        fake_list_logical_tenant_ids,
+    )
+
+    result = asyncio.run(
+        providers_router.list_active_model_distribution_tenants(
+            _request(source_id="ruice"),
+        ),
+    )
+
+    assert observed == ["ruice"]
+    assert result.tenant_ids == ["default", "tenant-a"]
 
 
 def test_distribute_active_model_to_bootstrapped_tenant(
@@ -175,9 +207,15 @@ def test_distribute_active_model_to_bootstrapped_tenant(
     )
 
     class FakeInitializer:
-        def __init__(self, base_working_dir: Path, tenant_id: str):
+        def __init__(
+            self,
+            base_working_dir: Path,
+            tenant_id: str,
+            source_id: str | None = None,
+        ):
             assert base_working_dir == tmp_path
             self.tenant_id = tenant_id
+            self.source_id = source_id
 
         def has_seeded_bootstrap(self) -> bool:
             return True
@@ -249,13 +287,20 @@ def test_distribute_active_model_bootstraps_missing_tenant(
     )
 
     class FakeInitializer:
-        def __init__(self, _base_working_dir: Path, tenant_id: str):
+        def __init__(
+            self,
+            _base_working_dir: Path,
+            tenant_id: str,
+            source_id: str | None = None,
+        ):
             self.tenant_id = tenant_id
+            self.source_id = source_id
 
         def has_seeded_bootstrap(self) -> bool:
             return False
 
         def ensure_seeded_bootstrap(self) -> dict[str, object]:
+            assert self.source_id == "ruice"
             bootstrap_calls.append(self.tenant_id)
             return {"minimal": True}
 
@@ -263,7 +308,7 @@ def test_distribute_active_model_bootstraps_missing_tenant(
 
     result = asyncio.run(
         providers_router.distribute_active_model(
-            _request(),
+            _request(source_id="ruice"),
             providers_router.ActiveModelDistributionRequest(
                 target_tenant_ids=["tenant-new"],
                 overwrite=True,
@@ -325,7 +370,7 @@ def test_distribute_active_model_overwrites_builtin_provider_and_switches_active
     monkeypatch.setattr(
         providers_router,
         "TenantInitializer",
-        lambda base_working_dir, tenant_id: SimpleNamespace(
+        lambda base_working_dir, tenant_id, source_id=None: SimpleNamespace(
             has_seeded_bootstrap=lambda: True,
             ensure_seeded_bootstrap=lambda: {"minimal": True},
         ),
@@ -396,7 +441,7 @@ def test_distribute_active_model_overwrites_custom_provider_and_switches_active_
     monkeypatch.setattr(
         providers_router,
         "TenantInitializer",
-        lambda base_working_dir, tenant_id: SimpleNamespace(
+        lambda base_working_dir, tenant_id, source_id=None: SimpleNamespace(
             has_seeded_bootstrap=lambda: True,
             ensure_seeded_bootstrap=lambda: {"minimal": True},
         ),
@@ -461,7 +506,7 @@ def test_distribute_active_model_reports_partial_success(
     monkeypatch.setattr(
         providers_router,
         "TenantInitializer",
-        lambda base_working_dir, tenant_id: SimpleNamespace(
+        lambda base_working_dir, tenant_id, source_id=None: SimpleNamespace(
             has_seeded_bootstrap=lambda: True,
             ensure_seeded_bootstrap=lambda: {"minimal": True},
         ),

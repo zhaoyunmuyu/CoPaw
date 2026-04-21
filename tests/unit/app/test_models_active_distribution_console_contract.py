@@ -45,7 +45,10 @@ def test_shared_tenant_picker_supports_discovered_and_manual_selection() -> (
     assert "manualTenantIdsText" in content
     assert "function parseManualTenantIds(input: string): string[]" in content
     assert ".split(/[\\s,]+/)" in content
-    assert "const mergedTenantIds = Array.from(" in content
+    assert "function mergeTenantIds(" in content
+    assert "function haveSameTenantIds(" in content
+    assert "const mergedTenantIds = useMemo(" in content
+    assert "haveSameTenantIds(selectedTenantIds, mergedTenantIds)" in content
     assert 't("skillPool.allWorkspaces")' in content
     assert 't("skillPool.manualTenantIds")' in content
     assert 'placeholder={t("skillPool.manualTenantPlaceholder")}' in content

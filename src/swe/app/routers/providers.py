@@ -19,7 +19,10 @@ from fastapi import (
 from pydantic import BaseModel, Field
 
 from ...config.context import get_current_tenant_id
-from ...config.utils import get_tenant_working_dir_strict, list_all_tenant_ids
+from ...config.utils import (
+    get_tenant_working_dir_strict,
+    list_logical_tenant_ids,
+)
 from ...providers.models import ModelSlotConfig
 from ...providers.provider import ProviderInfo, ModelInfo
 from ...providers.provider_manager import ActiveModelsInfo, ProviderManager
@@ -148,6 +151,10 @@ def _request_tenant_working_dir(request: Request):
     return get_tenant_working_dir_strict(_request_tenant_id(request))
 
 
+def _request_source_id(request: Request) -> str | None:
+    return getattr(request.state, "source_id", None)
+
+
 def _validate_target_tenant_id(tenant_id: str) -> str:
     tenant_id = str(tenant_id or "").strip()
     if not tenant_id:
@@ -199,13 +206,12 @@ async def _distribute_active_model_to_tenant(
     target_tenant_id: str,
     provider_payload: dict,
     source_active_model: ModelSlotConfig,
+    source_id: str | None,
 ) -> ActiveModelDistributionTenantResult:
-    target_working_dir = get_tenant_working_dir_strict(target_tenant_id)
-    del target_working_dir
-
     initializer = TenantInitializer(
-        base_working_dir=source_working_dir.parent,
-        tenant_id=target_tenant_id,
+        source_working_dir.parent,
+        target_tenant_id,
+        source_id=source_id,
     )
     was_bootstrapped = initializer.has_seeded_bootstrap()
     if not was_bootstrapped:
@@ -663,10 +669,12 @@ async def set_active_model(
     response_model=DistributionTenantListResponse,
     summary="List discovered tenants for model distribution",
 )
-async def list_active_model_distribution_tenants() -> (
-    DistributionTenantListResponse
-):
-    return DistributionTenantListResponse(tenant_ids=list_all_tenant_ids())
+async def list_active_model_distribution_tenants(
+    request: Request,
+) -> (DistributionTenantListResponse):
+    return DistributionTenantListResponse(
+        tenant_ids=list_logical_tenant_ids(_request_source_id(request)),
+    )
 
 
 @router.post(
@@ -694,6 +702,7 @@ async def distribute_active_model(
         manager,
     )
     source_working_dir = _request_tenant_working_dir(request)
+    source_id = _request_source_id(request)
     results: list[ActiveModelDistributionTenantResult] = []
     for tenant_id in body.target_tenant_ids:
         try:
@@ -703,6 +712,7 @@ async def distribute_active_model(
                 target_tenant_id=validated_tenant_id,
                 provider_payload=provider_payload,
                 source_active_model=source_active_model,
+                source_id=source_id,
             )
             results.append(result)
         except Exception as exc:

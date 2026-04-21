@@ -61,8 +61,13 @@ skills_router = _load_module(
 )
 
 
-def _request(tenant_id: str | None = "tenant-a") -> SimpleNamespace:
-    return SimpleNamespace(state=SimpleNamespace(tenant_id=tenant_id))
+def _request(
+    tenant_id: str | None = "tenant-a",
+    source_id: str | None = None,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        state=SimpleNamespace(tenant_id=tenant_id, source_id=source_id),
+    )
 
 
 def _write_skill(skill_dir: Path, description: str) -> None:
@@ -312,13 +317,38 @@ def test_list_broadcast_tenants_returns_discovered_tenant_ids(
 ) -> None:
     monkeypatch.setattr(
         skills_router,
-        "list_all_tenant_ids",
-        lambda: ["default", "tenant-a", "tenant-b"],
+        "list_logical_tenant_ids",
+        lambda source_id=None: ["default", "tenant-a", "tenant-b"],
     )
 
-    result = asyncio.run(skills_router.list_broadcast_tenants())
+    result = asyncio.run(skills_router.list_broadcast_tenants(_request()))
 
     assert result.tenant_ids == ["default", "tenant-a", "tenant-b"]
+
+
+def test_list_broadcast_tenants_uses_source_scoped_logical_ids(
+    monkeypatch,
+) -> None:
+    observed: list[str | None] = []
+
+    def fake_list_logical_tenant_ids(
+        source_id: str | None = None,
+    ) -> list[str]:
+        observed.append(source_id)
+        return ["default", "tenant-a"]
+
+    monkeypatch.setattr(
+        skills_router,
+        "list_logical_tenant_ids",
+        fake_list_logical_tenant_ids,
+    )
+
+    result = asyncio.run(
+        skills_router.list_broadcast_tenants(_request(source_id="ruice")),
+    )
+
+    assert observed == ["ruice"]
+    assert result.tenant_ids == ["default", "tenant-a"]
 
 
 def test_broadcast_pool_skills_to_bootstrapped_tenant(
@@ -354,9 +384,16 @@ def test_broadcast_pool_skills_to_bootstrapped_tenant(
     )
 
     class FakeInitializer:
-        def __init__(self, base_working_dir: Path, tenant_id: str):
+        def __init__(
+            self,
+            base_working_dir: Path,
+            tenant_id: str,
+            source_id: str | None = None,
+        ):
             self.base_working_dir = base_working_dir
             self.tenant_id = tenant_id
+            self.source_id = source_id
+            self.tenant_dir = tmp_path / tenant_id
 
         def has_seeded_bootstrap(self) -> bool:
             return True
@@ -432,14 +469,22 @@ def test_broadcast_pool_skills_bootstraps_missing_tenant(
     bootstrap_calls: list[str] = []
 
     class FakeInitializer:
-        def __init__(self, base_working_dir: Path, tenant_id: str):
+        def __init__(
+            self,
+            base_working_dir: Path,
+            tenant_id: str,
+            source_id: str | None = None,
+        ):
             self.base_working_dir = base_working_dir
             self.tenant_id = tenant_id
+            self.source_id = source_id
+            self.tenant_dir = tmp_path / tenant_id
 
         def has_seeded_bootstrap(self) -> bool:
             return False
 
         def ensure_seeded_bootstrap(self) -> dict[str, object]:
+            assert self.source_id == "ruice"
             bootstrap_calls.append(self.tenant_id)
             tenant_dir = tmp_path / self.tenant_id
             default_workspace = tenant_dir / "workspaces" / "default"
@@ -483,7 +528,7 @@ def test_broadcast_pool_skills_bootstraps_missing_tenant(
 
     result = asyncio.run(
         skills_router.broadcast_pool_skills_to_default_agents(
-            _request("tenant-a"),
+            _request("tenant-a", "ruice"),
             skills_router.BroadcastDefaultAgentsRequest(
                 skill_names=["guidance"],
                 target_tenant_ids=["tenant-new"],
@@ -524,9 +569,16 @@ def test_broadcast_pool_skills_reports_partial_success(
     )
 
     class FakeInitializer:
-        def __init__(self, base_working_dir: Path, tenant_id: str):
+        def __init__(
+            self,
+            base_working_dir: Path,
+            tenant_id: str,
+            source_id: str | None = None,
+        ):
             self.base_working_dir = base_working_dir
             self.tenant_id = tenant_id
+            self.source_id = source_id
+            self.tenant_dir = tmp_path / tenant_id
 
         def has_seeded_bootstrap(self) -> bool:
             return self.tenant_id == "tenant-ok"

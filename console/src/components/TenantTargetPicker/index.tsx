@@ -11,6 +11,25 @@ interface TenantTargetPickerProps {
   hint?: ReactNode;
 }
 
+function mergeTenantIds(
+  discoveredTenantIds: string[],
+  manualTenantIds: string[],
+): string[] {
+  return Array.from(new Set([...discoveredTenantIds, ...manualTenantIds]));
+}
+
+function haveSameTenantIds(left: string[], right: string[]): boolean {
+  const leftTenantIds = Array.from(new Set(left));
+  const rightTenantIds = Array.from(new Set(right));
+
+  if (leftTenantIds.length !== rightTenantIds.length) {
+    return false;
+  }
+
+  const rightSet = new Set(rightTenantIds);
+  return leftTenantIds.every((tenantId) => rightSet.has(tenantId));
+}
+
 export function parseManualTenantIds(input: string): string[] {
   return Array.from(
     new Set(
@@ -38,8 +57,9 @@ export function TenantTargetPicker({
     [manualTenantIdsText],
   );
 
-  const mergedTenantIds = Array.from(
-    new Set([...selectedDiscoveredTenantIds, ...manualTenantIds]),
+  const mergedTenantIds = useMemo(
+    () => mergeTenantIds(selectedDiscoveredTenantIds, manualTenantIds),
+    [manualTenantIds, selectedDiscoveredTenantIds],
   );
 
   useEffect(() => {
@@ -49,13 +69,23 @@ export function TenantTargetPicker({
     const manual = selectedTenantIds.filter(
       (tenantId) => !tenantIds.includes(tenantId),
     );
-    setSelectedDiscoveredTenantIds(discovered);
-    setManualTenantIdsText(manual.join("\n"));
+    setSelectedDiscoveredTenantIds((current) =>
+      haveSameTenantIds(current, discovered) ? current : discovered,
+    );
+    setManualTenantIdsText((current) => {
+      const nextManualTenantIdsText = manual.join("\n");
+      return current === nextManualTenantIdsText
+        ? current
+        : nextManualTenantIdsText;
+    });
   }, [selectedTenantIds, tenantIds]);
 
   useEffect(() => {
+    if (haveSameTenantIds(selectedTenantIds, mergedTenantIds)) {
+      return;
+    }
     onChange(mergedTenantIds);
-  }, [mergedTenantIds, onChange]);
+  }, [mergedTenantIds, onChange, selectedTenantIds]);
 
   return (
     <div style={{ display: "grid", gap: 12 }}>

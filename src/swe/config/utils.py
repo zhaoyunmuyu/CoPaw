@@ -822,3 +822,27 @@ def list_all_tenant_ids() -> list[str]:
             tenant_ids.append(entry.name)
 
     return sorted(tenant_ids)
+
+
+def list_logical_tenant_ids(source_id: str | None = None) -> list[str]:
+    """Return tenant IDs suitable for source-scoped API consumers."""
+    tenant_ids = list_all_tenant_ids()
+    if not source_id:
+        return tenant_ids
+
+    logical_tenant_ids: list[str] = []
+    effective_default_tenant_id = f"default_{source_id}"
+    has_default_tenant = False
+
+    for tenant_id in tenant_ids:
+        if tenant_id in {"default", effective_default_tenant_id}:
+            has_default_tenant = True
+            continue
+        if tenant_id.startswith("default_"):
+            continue
+        logical_tenant_ids.append(tenant_id)
+
+    if has_default_tenant:
+        logical_tenant_ids.append("default")
+
+    return sorted(set(logical_tenant_ids))
