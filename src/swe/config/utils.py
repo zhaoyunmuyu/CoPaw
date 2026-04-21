@@ -845,8 +845,6 @@ def list_logical_tenant_ids(source_id: str | None = None) -> list[str]:
         if tenant_id in {"default", effective_default_tenant_id}:
             has_default_tenant = True
             continue
-        if tenant_id.startswith("default_"):
-            continue
         logical_tenant_ids.append(tenant_id)
 
     if has_default_tenant:

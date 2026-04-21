@@ -184,10 +184,11 @@ class TestLogicalTenantListing:
 
         assert list_logical_tenant_ids("ruice") == [
             "default",
+            "default_other",
             "tenant-a",
         ]
 
-    def test_source_id_hides_source_backing_default_directories(
+    def test_source_id_preserves_other_default_prefixed_tenants(
         self,
         monkeypatch,
     ):
@@ -203,6 +204,7 @@ class TestLogicalTenantListing:
 
         assert list_logical_tenant_ids("ruice") == [
             "default",
+            "default_sales",
             "tenant-a",
         ]
 
