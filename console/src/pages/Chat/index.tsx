@@ -73,7 +73,9 @@ import { FOLLOW_UP_SUBMIT_FAILED_EVENT } from "@/components/agentscope-chat/Agen
 // ==================== 会话状态轮询 (自动 reconnect) ====================
 import RuntimeRequestCard from "./components/RuntimeRequestCard";
 import RuntimeResponseCard from "./components/RuntimeResponseCard";
+import ApprovalActionCard from "./components/ApprovalActionCard";
 import type {
+  ChatApprovalActionCardData,
   ChatRuntimeRequestCardData,
   ChatRuntimeResponseCardData,
 } from "./messageMeta";
@@ -1095,6 +1097,9 @@ export default function ChatPage() {
           data: ChatRuntimeResponseCardData;
           isLast?: boolean;
         }) => <RuntimeResponseCard {...props} />,
+        ApprovalAction: (props: { data: ChatApprovalActionCardData }) => (
+          <ApprovalActionCard {...props} />
+        ),
       },
       api: {
         ...defaultConfig.api,
