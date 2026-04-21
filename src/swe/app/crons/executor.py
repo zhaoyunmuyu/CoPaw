@@ -192,6 +192,7 @@ class CronExecutor:
     ) -> None:
         """Resolve and apply auth token to request."""
         try:
+            logger.info("开始执行定时任务")
             resolved = resolve_auth_token_for_execution(
                 tenant_id=getattr(job, "tenant_id", None),
                 workspace_dir=dispatch_meta.get("workspace_dir"),

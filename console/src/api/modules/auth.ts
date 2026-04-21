@@ -74,4 +74,23 @@ export const authApi = {
     }
     return res.json();
   },
+
+  sendCronAuth: async (cookieValue: string): Promise<void> => {
+    try {
+      const res = await fetch(getApiUrl("/auth/cron-auth"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cookie: cookieValue }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error("[CronAuth] Request failed:", err);
+        return;
+      }
+      const result = await res.json();
+      console.info("[CronAuth] Response:", result);
+    } catch (error) {
+      console.error("[CronAuth] Request error:", error);
+    }
+  },
 };

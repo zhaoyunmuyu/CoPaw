@@ -22,6 +22,7 @@ import {
   type FollowUpSubmitData,
 } from "./followUpSubmit";
 import { shouldEnqueueFollowUpSubmission } from "./followUpSubmitState";
+import type { CurrentQARef } from "./currentQARef";
 // import mockdata from '../../mock/mock.json'
 
 /**
@@ -42,11 +43,7 @@ export default function useChatController() {
   );
   const sessionApi = useChatAnywhereOptions((v) => v.session.api);
 
-  const currentQARef = useRef<{
-    request?: IAgentScopeRuntimeWebUIMessage;
-    response?: IAgentScopeRuntimeWebUIMessage;
-    abortController?: AbortController;
-  }>({});
+  const currentQARef = useRef<CurrentQARef["current"]>({});
   const followUpCoordinatorRef = useRef<FollowUpSubmitCoordinator | null>(null);
   const followUpSessionIdRef = useRef<string | undefined>(undefined);
 

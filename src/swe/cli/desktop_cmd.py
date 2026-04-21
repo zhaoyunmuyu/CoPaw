@@ -16,7 +16,7 @@ import webbrowser
 import click
 
 from ..constant import LOG_LEVEL_ENV
-from ..utils.logging import setup_logger
+from ..utils.my_logging import setup_logger
 
 try:
     import webview

@@ -3,7 +3,7 @@ import logging
 import os
 import time
 
-from .utils.logging import setup_logger
+from .utils.my_logging import setup_logger
 
 # Fallback before we can safely read canonical constant definitions.
 LOG_LEVEL_ENV = "SWE_LOG_LEVEL"

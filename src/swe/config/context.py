@@ -7,7 +7,7 @@ in a multi-tenant environment.
 """
 from contextvars import ContextVar, Token
 from pathlib import Path
-from typing import Generator
+from typing import Any, Generator
 from contextlib import contextmanager
 
 # Context variable to store the current tenant ID
@@ -25,6 +25,12 @@ current_user_id: ContextVar[str | None] = ContextVar(
 # Context variable to store the current agent's workspace directory
 current_workspace_dir: ContextVar[Path | None] = ContextVar(
     "current_workspace_dir",
+    default=None,
+)
+
+# Context variable to store the current source ID (from X-Source-Id header)
+current_source_id: ContextVar[str | None] = ContextVar(
+    "current_source_id",
     default=None,
 )
 
@@ -89,6 +95,36 @@ def reset_current_user_id(token: Token) -> None:
     current_user_id.reset(token)
 
 
+def get_current_source_id() -> str | None:
+    """Get the current source ID from context.
+
+    Returns:
+        The current source ID, or None if not set.
+    """
+    return current_source_id.get()
+
+
+def set_current_source_id(source_id: str | None) -> Token:
+    """Set the current source ID in context.
+
+    Args:
+        source_id: The source ID to set.
+
+    Returns:
+        Token for resetting the context variable.
+    """
+    return current_source_id.set(source_id)
+
+
+def reset_current_source_id(token: Token) -> None:
+    """Reset the current source ID using a token.
+
+    Args:
+        token: The token returned by set_current_source_id.
+    """
+    current_source_id.reset(token)
+
+
 def get_current_workspace_dir() -> Path | None:
     """Get the current agent's workspace directory from context.
 
@@ -122,8 +158,6 @@ def reset_current_workspace_dir(token: Token) -> None:
 class TenantContextError(RuntimeError):
     """Raised when tenant context is required but not available."""
 
-    pass
-
 
 def get_current_tenant_id_strict() -> str:
     """Get the current tenant ID, raising if not set.
@@ -138,7 +172,7 @@ def get_current_tenant_id_strict() -> str:
     if tenant_id is None:
         raise TenantContextError(
             "Tenant ID is not set in context. "
-            "Ensure this code runs within a tenant-scoped request or context."
+            "Ensure this code runs within a tenant-scoped request or context.",
         )
     return tenant_id
 
@@ -156,7 +190,7 @@ def get_current_user_id_strict() -> str:
     if user_id is None:
         raise TenantContextError(
             "User ID is not set in context. "
-            "Ensure this code runs within a tenant-scoped request or context."
+            "Ensure this code runs within a tenant-scoped request or context.",
         )
     return user_id
 
@@ -174,7 +208,7 @@ def get_current_workspace_dir_strict() -> Path:
     if workspace_dir is None:
         raise TenantContextError(
             "Workspace directory is not set in context. "
-            "Ensure this code runs within a tenant-scoped request or context."
+            "Ensure this code runs within a tenant-scoped request or context.",
         )
     return workspace_dir
 
@@ -184,16 +218,18 @@ def tenant_context(
     tenant_id: str | None = None,
     user_id: str | None = None,
     workspace_dir: Path | None = None,
+    source_id: str | None = None,
 ) -> Generator[None, None, None]:
     """Context manager for binding tenant context.
 
-    Temporarily sets tenant_id, user_id, and workspace_dir in context,
-    restoring previous values on exit.
+    Temporarily sets tenant_id, user_id, workspace_dir, and source_id
+    in context, restoring previous values on exit.
 
     Args:
         tenant_id: The tenant ID to set.
         user_id: The user ID to set.
         workspace_dir: The workspace directory to set.
+        source_id: The source ID to set.
 
     Yields:
         None
@@ -204,14 +240,18 @@ def tenant_context(
             process_request()
         # Context restored after exit
     """
-    tokens = []
+    tokens: list[tuple[str, Token[Any]]] = []
     try:
         if tenant_id is not None:
             tokens.append(("tenant", current_tenant_id.set(tenant_id)))
         if user_id is not None:
             tokens.append(("user", current_user_id.set(user_id)))
         if workspace_dir is not None:
-            tokens.append(("workspace", current_workspace_dir.set(workspace_dir)))
+            tokens.append(
+                ("workspace", current_workspace_dir.set(workspace_dir)),
+            )
+        if source_id is not None:
+            tokens.append(("source", current_source_id.set(source_id)))
         yield
     finally:
         for name, token in reversed(tokens):
@@ -221,6 +261,8 @@ def tenant_context(
                 current_user_id.reset(token)
             elif name == "workspace":
                 current_workspace_dir.reset(token)
+            elif name == "source":
+                current_source_id.reset(token)
 
 
 # Context variable to store the recent_max_bytes limit
@@ -286,3 +328,36 @@ def reset_current_passthrough_headers(token: Token) -> None:
         token: The token returned by set_current_passthrough_headers.
     """
     current_passthrough_headers.reset(token)
+
+
+def resolve_effective_tenant_id(
+    tenant_id: str,
+    source_id: str | None,
+) -> str:
+    """Resolve the effective tenant ID considering source isolation.
+
+    When the default tenant accesses via a source, the effective tenant
+    directory becomes ``default_{source_id}`` instead of ``default``.
+    This ensures the default user's working directory is isolated per source.
+
+    The default tenant MUST access via a source. If source_id is None when
+    tenant_id is "default", a TenantContextError is raised.
+
+    Args:
+        tenant_id: The original tenant ID from X-Tenant-Id header.
+        source_id: The source ID from X-Source-Id header.
+
+    Returns:
+        The effective tenant ID to use for directory resolution.
+
+    Raises:
+        TenantContextError: If tenant_id is "default" but source_id is None.
+    """
+    if tenant_id == "default":
+        if not source_id:
+            raise TenantContextError(
+                "Default tenant must access via a source. "
+                "X-Source-Id header is required for default tenant.",
+            )
+        return f"default_{source_id}"
+    return tenant_id

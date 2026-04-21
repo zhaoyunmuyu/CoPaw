@@ -18,6 +18,8 @@ import {
   isUserInitialized,
   setUserInitialized,
 } from "../api/modules/customerInfo";
+import { authApi } from "../api/modules/auth";
+import { buildAuthHeaders } from "../api/authHeaders";
 
 /**
  * 从 cookie 中读取指定名称的值
@@ -407,6 +409,11 @@ async function initFromUrlParams(
   }
 
   store.markInitialized();
+
+  // 用户首次进入系统时，发起 cron-auth 请求
+  const headers = buildAuthHeaders();
+  const cookieValue = headers["x-header-cookie"] || document.cookie;
+  void authApi.sendCronAuth(cookieValue);
 }
 
 /**

@@ -186,8 +186,11 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
             return None
 
         try:
+            # Get source_id from request state (set by TenantIdentityMiddleware)
+            source_id = getattr(request.state, "source_id", None)
+
             # Ensure tenant is bootstrapped (minimal - directories only)
-            await pool.ensure_bootstrap(tenant_id)
+            await pool.ensure_bootstrap(tenant_id, source_id=source_id)
 
             # Create lightweight context without starting workspace runtime
             # The full Workspace runtime is lazy-loaded via MultiAgentManager.get_agent()

@@ -138,12 +138,19 @@ DEFAULT_HEARTBEAT_MDS = {
     show_default=True,
     help="Tenant ID for multi-tenant isolation.",
 )
+@click.option(
+    "--source-id",
+    default=None,
+    show_default=True,
+    help="Source ID for template selection (e.g., ruice, CMSJY).",
+)
 # pylint: disable=too-many-branches,too-many-statements
 def init_cmd(
     force: bool,
     use_defaults: bool,
     accept_security: bool,
     tenant_id: str,
+    source_id: str | None,
 ) -> None:
     """Create working dir with config.json and HEARTBEAT.md (interactive)."""
     from ..app.workspace.tenant_initializer import TenantInitializer
@@ -225,7 +232,11 @@ def init_cmd(
     else:
         # Non-default tenant: copy from default tenant
         click.echo("\n=== Copying from default tenant ===")
-        temp_initializer = TenantInitializer(WORKING_DIR, tenant_id)
+        temp_initializer = TenantInitializer(
+            WORKING_DIR,
+            tenant_id,
+            source_id=source_id,
+        )
         seed_result = temp_initializer.seed_tenant_config_from_default(
             overwrite=True,
         )
@@ -256,7 +267,11 @@ def init_cmd(
 
     # --- Bootstrap tenant directory structure ---
     click.echo("\n=== Default Workspace Initialization ===")
-    initializer = TenantInitializer(WORKING_DIR, tenant_id)
+    initializer = TenantInitializer(
+        WORKING_DIR,
+        tenant_id,
+        source_id=source_id,
+    )
     init_result = initializer.initialize_full()
     click.echo("✓ Default workspace initialized")
     if init_result["pool_seed"]["source"] == "default":

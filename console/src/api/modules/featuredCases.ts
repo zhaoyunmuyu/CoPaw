@@ -24,10 +24,18 @@ export const featuredCasesApi = {
   // ==================== Admin: Case definitions ====================
 
   /** Admin: list all case definitions */
-  adminListCases: (params?: { page?: number; page_size?: number }) =>
-    request<FeaturedCaseListResponse>("/featured-cases/admin/cases", {
-      params,
-    }),
+  adminListCases: (params?: { page?: number; page_size?: number }) => {
+    const query = params
+      ? new URLSearchParams(
+          Object.entries(params)
+            .filter(([_, v]) => v !== undefined)
+            .map(([k, v]) => [k, String(v)])
+        ).toString()
+      : "";
+    return request<FeaturedCaseListResponse>(
+      `/featured-cases/admin/cases${query ? `?${query}` : ""}`
+    );
+  },
 
   /** Admin: create case definition */
   adminCreateCase: (caseItem: FeaturedCaseCreate) =>
@@ -65,10 +73,18 @@ export const featuredCasesApi = {
     source_id?: string;
     page?: number;
     page_size?: number;
-  }) =>
-    request<CaseConfigListResponse>("/featured-cases/admin/configs", {
-      params,
-    }),
+  }) => {
+    const query = params
+      ? new URLSearchParams(
+          Object.entries(params)
+            .filter(([_, v]) => v !== undefined)
+            .map(([k, v]) => [k, String(v)])
+        ).toString()
+      : "";
+    return request<CaseConfigListResponse>(
+      `/featured-cases/admin/configs${query ? `?${query}` : ""}`
+    );
+  },
 
   /** Admin: get config detail */
   adminGetConfigDetail: (sourceId: string, bbkId?: string | null) => {
