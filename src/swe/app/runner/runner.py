@@ -62,7 +62,7 @@ _APPROVE_EXACT = frozenset(
         "/daemon approve",
     },
 )
-_MCP_HTTP_TIMEOUT_SECONDS = 90.0
+_MCP_HTTP_TIMEOUT_SECONDS = 240.0
 _MCP_HTTP_SSE_READ_TIMEOUT_SECONDS = 60.0 * 5
 
 
