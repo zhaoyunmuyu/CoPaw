@@ -4,6 +4,7 @@ import { SessionApi } from "./index";
 const apiMocks = vi.hoisted(() => ({
   listChats: vi.fn(),
   getChat: vi.fn(),
+  deleteChat: vi.fn(),
 }));
 
 const cronJobApiMocks = vi.hoisted(() => ({
@@ -15,6 +16,7 @@ vi.mock("../../../api", () => ({
   default: {
     listChats: apiMocks.listChats,
     getChat: apiMocks.getChat,
+    deleteChat: apiMocks.deleteChat,
   },
 }));
 
@@ -35,6 +37,7 @@ describe("SessionApi identity mapping", () => {
   beforeEach(() => {
     apiMocks.listChats.mockReset();
     apiMocks.getChat.mockReset();
+    apiMocks.deleteChat.mockReset();
     cronJobApiMocks.listCronJobs.mockReset();
     cronJobApiMocks.listCronJobs.mockResolvedValue([]);
     sessionStorage.clear();
@@ -90,5 +93,61 @@ describe("SessionApi identity mapping", () => {
     expect(
       (window as Window & { currentSessionId?: string }).currentSessionId,
     ).toBe(logicalSessionId);
+  });
+
+  it("resolves persisted chats back to their backend chat id from the logical session id", async () => {
+    const sessionApi = new SessionApi();
+
+    apiMocks.listChats.mockResolvedValue([
+      {
+        id: "chat-real-1",
+        name: "persisted chat",
+        session_id: "channel:user-1",
+        user_id: "user-1",
+        channel: "console",
+        meta: {},
+        status: "running",
+        created_at: "2026-04-22T00:00:00Z",
+      },
+    ]);
+
+    await sessionApi.getSessionList();
+
+    expect(sessionApi.getChatIdForSession("channel:user-1")).toBe(
+      "chat-real-1",
+    );
+  });
+
+  it("clears temp-to-real mappings when deleting the persisted backend chat", async () => {
+    const sessionApi = new SessionApi();
+
+    sessionStorage.setItem(
+      "copaw_resolved_chat_ids",
+      JSON.stringify({
+        temp_123: "chat-real-1",
+      }),
+    );
+    apiMocks.listChats.mockResolvedValue([
+      {
+        id: "chat-real-1",
+        name: "persisted chat",
+        session_id: "channel:user-1",
+        user_id: "user-1",
+        channel: "console",
+        meta: {},
+        status: "idle",
+        created_at: "2026-04-22T00:00:00Z",
+      },
+    ]);
+    apiMocks.deleteChat.mockResolvedValue({
+      success: true,
+      chat_id: "chat-real-1",
+    });
+
+    await sessionApi.getSessionList();
+    await sessionApi.removeSession({ id: "chat-real-1" });
+
+    expect(apiMocks.deleteChat).toHaveBeenCalledWith("chat-real-1");
+    expect(sessionStorage.getItem("copaw_resolved_chat_ids")).toBe("{}");
   });
 });

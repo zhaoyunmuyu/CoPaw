@@ -23,6 +23,7 @@ import { shouldNotifySessionSelected } from "./sessionRaceGuard";
 import { filterStaleTaskSessions } from "./taskSessions";
 import {
   forgetResolvedChatId,
+  forgetResolvedChatIdsForChat,
   getResolvedChatId,
   rememberResolvedChatId,
 } from "./resolvedSessionMapping";
@@ -522,7 +523,9 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     return this.sessionList.find((session) => {
       const extendedSession = session as ExtendedSession;
       return (
-        extendedSession.id === sessionId || extendedSession.realId === sessionId
+        extendedSession.id === sessionId ||
+        extendedSession.realId === sessionId ||
+        extendedSession.sessionId === sessionId
       );
     }) as ExtendedSession | undefined;
   }
@@ -906,8 +909,8 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
 
     const resolvedId = existing?.realId ?? sessionId;
     forgetResolvedChatId(sessionId);
-    if (existing?.id && existing.id !== sessionId) {
-      forgetResolvedChatId(existing.id);
+    if (deleteId) {
+      forgetResolvedChatIdsForChat(deleteId);
     }
     this.onSessionRemoved?.(resolvedId);
 

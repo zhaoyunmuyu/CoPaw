@@ -56,6 +56,26 @@ export function forgetResolvedChatId(temporarySessionId: string): void {
   writeResolvedSessionMapping(mapping);
 }
 
+export function forgetResolvedChatIdsForChat(chatId: string): void {
+  if (!chatId) {
+    return;
+  }
+
+  const mapping = readResolvedSessionMapping();
+  let changed = false;
+
+  Object.entries(mapping).forEach(([temporarySessionId, resolvedChatId]) => {
+    if (temporarySessionId === chatId || resolvedChatId === chatId) {
+      delete mapping[temporarySessionId];
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    writeResolvedSessionMapping(mapping);
+  }
+}
+
 export function getResolvedChatId(
   temporarySessionId: string | undefined | null,
 ): string | null {
@@ -79,7 +99,17 @@ export function resolveRequestedSessionId(options: {
     return requestedSessionId;
   }
 
-  return getResolvedChatId(requestedSessionId) ?? requestedSessionId;
+  const resolvedChatId = getResolvedChatId(requestedSessionId);
+  if (!resolvedChatId) {
+    return requestedSessionId;
+  }
+
+  if (sessionList.some((session) => session.id === resolvedChatId)) {
+    return resolvedChatId;
+  }
+
+  forgetResolvedChatId(requestedSessionId);
+  return undefined;
 }
 
 export function matchesResolvedChatId(options: {
