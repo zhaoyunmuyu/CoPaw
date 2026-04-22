@@ -25,6 +25,7 @@ export interface ChatApprovalActionCardData {
   triggerLabel: string;
   approveCommand: string;
   denyCommand: string;
+  status?: "pending" | "approved" | "denied" | "timeout" | "superseded";
 }
 
 type TimestampSource = {

@@ -48,6 +48,7 @@ class PendingApproval:
     result_summary: str = ""
     findings_count: int = 0
     extra: dict[str, Any] = field(default_factory=dict)
+    consumed: bool = False
 
 
 # ------------------------------------------------------------------
@@ -237,6 +238,7 @@ class ApprovalService:
                     completed.session_id == session_id
                     and completed.tool_name == tool_name
                     and completed.status == "approved"
+                    and not completed.consumed
                 ):
                     if tool_params is not None:
                         approved_call = completed.extra.get(
@@ -257,7 +259,8 @@ class ApprovalService:
                             )
                             del self._completed[key]
                             return False
-                    del self._completed[key]
+                    completed.consumed = True
+                    self._completed[key] = completed
                     return True
         return False
 
