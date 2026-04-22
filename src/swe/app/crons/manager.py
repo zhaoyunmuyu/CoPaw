@@ -587,13 +587,14 @@ class CronManager:  # pylint: disable=too-many-public-methods
             user_id: User's sapId
 
         Returns:
-            List of jobs with tenant_id matching user_id
+            List of jobs with tenant_id matching user_id and task_type is agent
         """
         user_jobs = []
         for job in jobs:
-            # Check tenant_id match
+            # Check tenant_id match and task_type is agent
             if job.tenant_id and job.tenant_id == user_id:
-                user_jobs.append(job)
+                if job.task_type == "agent":
+                    user_jobs.append(job)
         return user_jobs
 
     def _calculate_run_times_on_date(
