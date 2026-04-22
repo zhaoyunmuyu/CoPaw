@@ -524,8 +524,7 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
       const extendedSession = session as ExtendedSession;
       return (
         extendedSession.id === sessionId ||
-        extendedSession.realId === sessionId ||
-        extendedSession.sessionId === sessionId
+        extendedSession.realId === sessionId
       );
     }) as ExtendedSession | undefined;
   }
@@ -568,11 +567,18 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
       return session.id;
     }
 
-    if (!isLocalTimestamp(sessionId)) {
-      return sessionId;
+    if (isLocalTimestamp(sessionId)) {
+      return getResolvedChatId(sessionId);
     }
 
-    return getResolvedChatId(sessionId);
+    const matchesLogicalSessionId = this.sessionList.some(
+      (session) => (session as ExtendedSession).sessionId === sessionId,
+    );
+    if (matchesLogicalSessionId) {
+      return null;
+    }
+
+    return sessionId;
   }
 
   /**

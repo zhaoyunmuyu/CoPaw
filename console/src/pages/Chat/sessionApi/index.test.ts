@@ -95,7 +95,7 @@ describe("SessionApi identity mapping", () => {
     ).toBe(logicalSessionId);
   });
 
-  it("resolves persisted chats back to their backend chat id from the logical session id", async () => {
+  it("does not treat a persisted logical session id as a unique backend chat id", async () => {
     const sessionApi = new SessionApi();
 
     apiMocks.listChats.mockResolvedValue([
@@ -113,9 +113,38 @@ describe("SessionApi identity mapping", () => {
 
     await sessionApi.getSessionList();
 
-    expect(sessionApi.getChatIdForSession("channel:user-1")).toBe(
-      "chat-real-1",
-    );
+    expect(sessionApi.getChatIdForSession("channel:user-1")).toBeNull();
+  });
+
+  it("does not resolve a logical session id to the first persisted chat when multiple chats share it", async () => {
+    const sessionApi = new SessionApi();
+
+    apiMocks.listChats.mockResolvedValue([
+      {
+        id: "chat-real-1",
+        name: "older chat",
+        session_id: "channel:user-1",
+        user_id: "user-1",
+        channel: "console",
+        meta: {},
+        status: "idle",
+        created_at: "2026-04-21T00:00:00Z",
+      },
+      {
+        id: "chat-real-2",
+        name: "newer chat",
+        session_id: "channel:user-1",
+        user_id: "user-1",
+        channel: "console",
+        meta: {},
+        status: "running",
+        created_at: "2026-04-22T00:00:00Z",
+      },
+    ]);
+
+    await sessionApi.getSessionList();
+
+    expect(sessionApi.getChatIdForSession("channel:user-1")).toBeNull();
   });
 
   it("clears temp-to-real mappings when deleting the persisted backend chat", async () => {

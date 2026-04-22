@@ -877,8 +877,8 @@ export default function ChatPage() {
       };
 
       const backendChatId =
-        sessionApi.getChatIdForSession(requestBody.session_id) ??
         chatIdRef.current ??
+        sessionApi.getChatIdForSession(requestBody.session_id) ??
         requestBody.session_id;
       if (backendChatId) {
         const userText = rewrittenInput
@@ -1123,7 +1123,9 @@ export default function ChatPage() {
         },
         cancel(data: { session_id: string }) {
           const chatId =
-            sessionApi.getChatIdForSession(data.session_id) ?? data.session_id;
+            chatIdRef.current ??
+            sessionApi.getChatIdForSession(data.session_id) ??
+            data.session_id;
           if (chatId) {
             chatApi.stopChat(chatId).catch((err) => {
               console.error("Failed to stop chat:", err);
@@ -1142,8 +1144,8 @@ export default function ChatPage() {
             body: JSON.stringify({
               reconnect: true,
               session_id:
-                sessionApi.getChatIdForSession(data.session_id) ??
                 chatIdRef.current ??
+                sessionApi.getChatIdForSession(data.session_id) ??
                 data.session_id,
               // ==================== userId 统一整改 (Kun He) ====================
               // 使用 getUserId()/getChannel() 获取
