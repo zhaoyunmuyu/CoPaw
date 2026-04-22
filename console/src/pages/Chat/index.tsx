@@ -10,7 +10,8 @@ import {
 import AgentScopeRuntimeRequestCard from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Request/Card";
 import AgentScopeRuntimeResponseCard from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Card";
 // ==================== 组件引入方式变更结束 ====================
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { flushSync } from "react-dom";
 import { Button, Modal, Result, Tooltip } from "antd";
 import { useAppMessage } from "../../hooks/useAppMessage";
 import { ExclamationCircleOutlined, SettingOutlined } from "@ant-design/icons";
@@ -44,7 +45,7 @@ import { useIframeStore } from "../../stores/iframeStore";
 // ==================== URL 导航参数结束 ====================
 import styles from "./index.module.less";
 import { IconButton } from "@agentscope-ai/design";
-import ChatActionGroup from "./components/ChatActionGroup";
+// import ChatActionGroup from "./components/ChatActionGroup";
 import ChatHeaderTitle from "./components/ChatHeaderTitle";
 import ChatSessionInitializer from "./components/ChatSessionInitializer";
 // ==================== 首页改版 (Kun He) ====================
@@ -68,13 +69,12 @@ import { deriveChatTaskState, shouldMarkTaskReadOnOpen } from "./taskJobs";
 import { shouldRefreshCurrentTaskMessages } from "./taskMessageRefresh";
 import { matchesResolvedChatId } from "./sessionApi/resolvedSessionMapping";
 
-// ==================== 会话状态轮询 (自动 reconnect) ====================
-import { emit } from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/Context/useChatAnywhereEventEmitter";
-import { FOLLOW_UP_SUBMIT_FAILED_EVENT } from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/Chat/hooks/followUpSubmit";
-// ==================== 会话状态轮询 (自动 reconnect) ====================
 import RuntimeRequestCard from "./components/RuntimeRequestCard";
+import { FOLLOW_UP_SUBMIT_FAILED_EVENT } from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/Chat/hooks/followUpSubmit";
 import RuntimeResponseCard from "./components/RuntimeResponseCard";
+import ApprovalActionCard from "./components/ApprovalActionCard";
 import type {
+  ChatApprovalActionCardData,
   ChatRuntimeRequestCardData,
   ChatRuntimeResponseCardData,
 } from "./messageMeta";
@@ -82,7 +82,6 @@ import type {
 const CHAT_ATTACHMENT_MAX_MB = 10;
 const TASK_PAGE_POLL_MS = 30_000;
 const TASK_PENDING_POLL_MS = 30_000;
-const SESSION_RUNNING_POLL_MS = 3_000;
 
 interface SessionInfo {
   session_id?: string;
@@ -335,7 +334,12 @@ export default function ChatPage() {
   const dragCounterRef = useRef(0);
   const runtimeLoadingBridgeRef = useRef<RuntimeLoadingBridgeApi | null>(null);
   const { message } = useAppMessage();
-  const { setSessionLoading } = useChatAnywhereSessionsState();
+  const { setSessionLoading, setSessions } = useChatAnywhereSessionsState();
+
+  // useTransition for non-urgent state updates (badge clearing)
+  const [, startTransition] = useTransition();
+  // Debounce flag for markTaskRead API calls
+  const markTaskReadPendingRef = useRef(false);
 
   const isChatActiveRef = useRef(false);
   isChatActiveRef.current =
@@ -556,20 +560,16 @@ export default function ChatPage() {
   useEffect(() => {
     void refreshJobs();
 
-    const handleFocusRefresh = () => {
-      void refreshJobs();
-    };
+    // 仅从其他标签页切换回来时刷新（移除 window.focus 触发，减少不必要的 API 调用）
     const handleVisibilityRefresh = () => {
       if (document.visibilityState === "visible") {
         void refreshJobs();
       }
     };
 
-    window.addEventListener("focus", handleFocusRefresh);
     document.addEventListener("visibilitychange", handleVisibilityRefresh);
 
     return () => {
-      window.removeEventListener("focus", handleFocusRefresh);
       document.removeEventListener("visibilitychange", handleVisibilityRefresh);
     };
   }, [refreshJobs]);
@@ -600,117 +600,49 @@ export default function ChatPage() {
     if ((currentTask.task?.unread_execution_count || 0) <= 0) return;
     if (!shouldMarkTaskReadOnOpen(currentTask)) return;
 
-    setJobs((prev) =>
-      prev.map((job) =>
-        job.id === currentTask.id && job.task
-          ? {
-              ...job,
-              task: {
-                ...job.task,
-                unread_execution_count: 0,
-              },
-            }
-          : job,
-      ),
-    );
-    void cronJobApi.markTaskRead(currentTask.id).catch(() => {});
+    // Debounce: skip if there's already a pending markTaskRead request
+    if (markTaskReadPendingRef.current) return;
+
+    markTaskReadPendingRef.current = true;
+
+    // Non-urgent update: badge clearing can be delayed
+    startTransition(() => {
+      setJobs((prev) =>
+        prev.map((job) =>
+          job.id === currentTask.id && job.task
+            ? {
+                ...job,
+                task: {
+                  ...job.task,
+                  unread_execution_count: 0,
+                },
+              }
+            : job,
+        ),
+      );
+    });
+
+    void cronJobApi
+      .markTaskRead(currentTask.id)
+      .catch(() => {})
+      .finally(() => {
+        markTaskReadPendingRef.current = false;
+      });
   }, [currentTask?.id, currentTask?.task?.unread_execution_count]);
 
-  // ==================== 会话状态轮询 (自动 reconnect) ====================
-  // 当用户已在当前会话页面时，如果会话状态变为 running，自动触发 reconnect
-  // 注意：需要排除用户主动发起提问的情况（已在 generating 状态）
-  const sessionReconnectingRef = useRef(false);
-  const prevSessionStatusRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!chatId) return;
-
-    const pollSessionStatus = async () => {
-      try {
-        // 如果当前已经在 generating/loading 状态，说明用户主动发起的提问正在进行
-        // 此时不应触发 reconnect，避免重复创建 SSE 连接
-        const isLoading = runtimeLoadingBridgeRef.current?.getLoading?.() ?? false;
-        if (isLoading) {
-          // 正在进行中，跳过轮询，但记录状态为 running 以便下次正确判断
-          prevSessionStatusRef.current = "running";
-          return;
-        }
-
-        const chatHistory = await chatApi.getChat(chatId);
-        const status = chatHistory?.status;
-        const generating = status === "running";
-
-        // 状态从非 running 变为 running 时触发 reconnect
-        // 条件：1. 状态变为 running  2. 之前不是 running  3. 没有正在 reconnect  4. 当前没有正在 generating
-        if (
-          generating &&
-          prevSessionStatusRef.current !== "running" &&
-          !sessionReconnectingRef.current &&
-          !isLoading
-        ) {
-          sessionReconnectingRef.current = true;
-          // 使用 chatId（UUID）作为 session_id，后端会正确处理
-          console.info("[Chat] Session running, auto reconnect:", chatId);
-          emit({
-            type: "handleReconnect",
-            data: { session_id: chatId },
-          });
-        }
-
-        // 状态变为非 running 时重置 reconnecting 标记
-        if (!generating) {
-          sessionReconnectingRef.current = false;
-        }
-
-        prevSessionStatusRef.current = status;
-      } catch (err) {
-        console.warn("[Chat] Failed to poll session status:", err);
-      }
-    };
-
-    pollSessionStatus();
-    const intervalId = window.setInterval(pollSessionStatus, SESSION_RUNNING_POLL_MS);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [chatId]);
-  // ==================== 会话状态轮询结束 ====================
-
   const handleTaskOpen = useCallback(
-    async (task: CronJobSpecOutput) => {
+    (task: CronJobSpecOutput) => {
       const taskChatId = task.task?.chat_id;
       if (!taskChatId) return;
 
-      if (shouldMarkTaskReadOnOpen(task)) {
-        setJobs((prev) =>
-          prev.map((job) =>
-            job.id === task.id && job.task
-              ? {
-                  ...job,
-                  task: {
-                    ...job.task,
-                    unread_execution_count: 0,
-                  },
-                }
-              : job,
-          ),
-        );
-      }
+      // Force loading to render immediately before navigate triggers re-render
+      flushSync(() => {
+        setSessionLoading(true);
+      });
 
-      // 先设置 loading 状态，避免导航后闪现欢迎页
-      setSessionLoading(true);
       navigate(`/chat/${taskChatId}`, { replace: true });
-
-      if (shouldMarkTaskReadOnOpen(task)) {
-        try {
-          await cronJobApi.markTaskRead(task.id);
-        } catch {
-          void refreshJobs();
-        }
-      }
     },
-    [navigate, refreshJobs, setSessionLoading],
+    [navigate, setSessionLoading],
   );
 
   const handleTaskResume = useCallback(
@@ -796,15 +728,15 @@ export default function ChatPage() {
   ]);
 
   // Show toast when task has no scheduled result yet
-  const taskNoResultShownRef = useRef(false);
+  const taskNoResultShownIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (currentTask && !currentTask.task?.has_scheduled_result) {
-      if (!taskNoResultShownRef.current) {
-        taskNoResultShownRef.current = true;
+      if (taskNoResultShownIdRef.current !== currentTask.id) {
+        taskNoResultShownIdRef.current = currentTask.id;
         message.info("当前任务暂未启动，等下次收到提醒再来看看哟~");
       }
     } else {
-      taskNoResultShownRef.current = false;
+      taskNoResultShownIdRef.current = null;
     }
   }, [currentTask?.id, currentTask?.task?.has_scheduled_result]);
 
@@ -1044,7 +976,7 @@ export default function ChatPage() {
             <ChatHeaderTitle />
             <span style={{ flex: 1 }} />
             <ModelSelector />
-            <ChatActionGroup />
+            {/* <ChatActionGroup /> */}
           </>
         ),
       },
@@ -1074,7 +1006,7 @@ export default function ChatPage() {
       sender: {
         ...senderConfig,
         beforeSubmit: handleBeforeSubmit,
-        allowSpeech: true,
+        allowSpeech: false,
         attachments: {
           trigger: function AttachmentTrigger(props: AttachmentTriggerProps) {
             const tooltipKey = multimodalCaps.supportsMultimodal
@@ -1114,6 +1046,9 @@ export default function ChatPage() {
           data: ChatRuntimeResponseCardData;
           isLast?: boolean;
         }) => <RuntimeResponseCard {...props} />,
+        ApprovalAction: (props: { data: ChatApprovalActionCardData }) => (
+          <ApprovalActionCard {...props} />
+        ),
       },
       api: {
         ...defaultConfig.api,

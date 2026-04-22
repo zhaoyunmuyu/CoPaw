@@ -686,11 +686,11 @@ const ForwardSender = React.forwardRef<SenderRef, SenderProps>((props, ref) => {
                 style={styles.prefix}
               >
                 <Flex gap={8}>
-                  {allowSpeech && (
+                  {/* {allowSpeech && (
                     <ActionButtonContext.Provider value={contextValue}>
                       <SpeechButton />
                     </ActionButtonContext.Provider>
-                  )}
+                  )} */}
                   {prefix}
                 </Flex>
               </div>

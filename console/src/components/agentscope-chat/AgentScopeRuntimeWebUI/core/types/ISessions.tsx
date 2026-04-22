@@ -33,4 +33,7 @@ export interface IAgentScopeRuntimeWebUISessionsContext {
   // 会话加载状态，用于在切换会话时保持显示旧消息，避免闪现欢迎页
   isSessionLoading: boolean;
   setSessionLoading: (loading: boolean) => void;
+  // 会话列表加载状态，用于首次加载时显示骨架屏
+  isSessionsListLoading: boolean;
+  setSessionsListLoading: (loading: boolean) => void;
 }

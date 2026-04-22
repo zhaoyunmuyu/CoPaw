@@ -39,34 +39,29 @@ export default createGlobalStyle`
   &-items {
     display: flex;
     flex-direction: column;
-    gap: 0;
+    gap: 4px;
   }
 
   &-item {
-    padding: 12px 0;
+    position: relative;
+    padding: 10px 12px;
     cursor: pointer;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+    border-radius: 4px;
+    background-color: transparent;
     transition: background-color 0.15s ease;
-
-    &:last-child {
-      border-bottom: none;
-    }
+    overflow: hidden;
 
     &:hover {
-      background-color: rgba(0, 0, 0, 0.02);
+      background: rgba(55, 105, 252, 0.03);
+
+      .chat-task-list-item-actions {
+        opacity: 1;
+        pointer-events: auto;
+      }
     }
 
     &--paused {
-      padding-left: 8px;
-      padding-right: 8px;
-      margin-left: -8px;
-      margin-right: -8px;
-      border-radius: 10px;
-    }
-
-    &--auto-paused {
-      background:
-        linear-gradient(90deg, rgba(223, 146, 33, 0.12), rgba(223, 146, 33, 0.04));
+      background: rgba(223, 146, 33, 0.06);
     }
   }
 
@@ -79,7 +74,8 @@ export default createGlobalStyle`
 
   &-item-title {
     font-size: 14px;
-    line-height: 21px;
+    line-height: 20px;
+    font-weight: 500;
     color: ${DESIGN_TOKENS.colorTextPrimary};
     white-space: nowrap;
     overflow: hidden;
@@ -99,6 +95,19 @@ export default createGlobalStyle`
     font-size: 10px;
     line-height: 14px;
     text-align: center;
+  }
+
+  &-item-actions {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
   }
 
   &-item-action {
@@ -129,12 +138,6 @@ export default createGlobalStyle`
         background: rgba(254, 40, 66, 0.16);
       }
     }
-  }
-
-  &-item-actions {
-    display: flex;
-    align-items: center;
-    gap: 6px;
   }
 
   &-item-status {

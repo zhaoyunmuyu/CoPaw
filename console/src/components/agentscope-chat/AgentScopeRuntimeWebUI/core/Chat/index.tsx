@@ -25,12 +25,10 @@ export default function Chat() {
       <Style />
       <div className={prefixCls}>
         <MessageList onSubmit={handleSubmit} />
-        {/* ==================== 首页改版 (Kun He) ==================== */}
-        {/* 欢迎态隐藏底部输入框，聊天态显示 */}
-        {hasMessages && (
+        {/* Input always rendered to handle pasteFile events, visually hidden when no messages */}
+        <div style={{ display: hasMessages ? "block" : "none" }}>
           <Input onCancel={handleCancel} onSubmit={handleSubmit} />
-        )}
-        {/* ==================== 首页改版结束 ==================== */}
+        </div>
       </div>
     </>
   );

@@ -621,8 +621,9 @@ class CronManager:  # pylint: disable=too-many-public-methods
             second=0,
             microsecond=0,
         )
-        if start_of_day.tzinfo is None:
-            start_of_day = start_of_day.replace(tzinfo=timezone.utc)
+        # Ensure start_of_day is timezone-naive for local time comparison
+        if start_of_day.tzinfo is not None:
+            start_of_day = start_of_day.replace(tzinfo=None)
 
         run_times: list[datetime] = []
         next_fire = trigger.get_next_fire_time(None, start_of_day)
@@ -632,6 +633,9 @@ class CronManager:  # pylint: disable=too-many-public-methods
             fire_date = next_fire.date()
             query_date = date.date()
             if fire_date == query_date:
+                # Convert to timezone-naive if it has timezone info
+                if next_fire.tzinfo is not None:
+                    next_fire = next_fire.replace(tzinfo=None)
                 run_times.append(next_fire)
                 next_fire = trigger.get_next_fire_time(next_fire, next_fire)
             elif fire_date > query_date:
@@ -657,7 +661,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
         Returns:
             Status string: "completed", "in_progress", "pending", "error", "cancelled"
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now()
         last_run = state.last_run_at
 
         if state.last_status == "running":
@@ -1562,7 +1566,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
                 int(meta.get("task_unread_execution_count", 0) or 0) + 1
             )
             meta["task_unread_execution_count"] = unread_count
-            meta["task_last_scheduled_run_at"] = datetime.now(timezone.utc)
+            meta["task_last_scheduled_run_at"] = datetime.now()
             updated = job.model_copy(update={"meta": meta})
             auto_paused = False
             if unread_count >= AUTO_PAUSE_UNREAD_THRESHOLD and job.enabled:
@@ -1679,8 +1683,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
             meta=meta,
         )
         logger.info(
-            "Cron task completion notification sent: "
-            "job_id=%s job_name=%s",
+            "Cron task completion notification sent: job_id=%s job_name=%s",
             job.id,
             job.name,
         )
@@ -1954,7 +1957,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
                 st = self._states.get(job_id, CronJobState())
                 st.last_status = "skipped"
                 st.last_error = "stale leader preflight rejected execution"
-                st.last_run_at = datetime.now(timezone.utc)
+                st.last_run_at = datetime.now()
                 self._states[job_id] = st
                 return
 
@@ -1997,7 +2000,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
                 st = self._states.get(HEARTBEAT_JOB_ID, CronJobState())
                 st.last_status = "skipped"
                 st.last_error = "stale leader preflight rejected execution"
-                st.last_run_at = datetime.now(timezone.utc)
+                st.last_run_at = datetime.now()
                 self._states[HEARTBEAT_JOB_ID] = st
                 return
 
@@ -2076,7 +2079,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
                 )
                 raise
             finally:
-                st.last_run_at = datetime.now(timezone.utc)
+                st.last_run_at = datetime.now()
                 self._states[job.id] = st
 
     # ----- Legacy API compatibility -----

@@ -213,6 +213,7 @@ class ToolGuardMixin:
             tool_input = tool_call["input"]
 
         return {
+            "request_id": pending.request_id or fallback.get("request_id", ""),
             "tool_name": pending.tool_name
             or fallback.get("tool_name", "unknown"),
             "tool_input": tool_input or fallback.get("tool_input", {}),
@@ -229,6 +230,11 @@ class ToolGuardMixin:
         removes them.  When *include_denial_response* is ``True``,
         also removes the assistant message immediately following the
         last marked message (the LLM's denial explanation).
+
+        When *include_denial_response* is ``False`` (approval granted),
+        keeps the waiting-for-approval message but clears its
+        ``approval_action`` metadata so the approval card won't render
+        on reload, preserving the text content for conversation history.
         """
         ids_to_delete: list[str] = []
         last_marked_idx = -1
@@ -246,6 +252,26 @@ class ToolGuardMixin:
             next_msg, _ = self.memory.content[last_marked_idx + 1]
             if next_msg.role == "assistant":
                 ids_to_delete.append(next_msg.id)
+
+                # When approval is granted (include_denial_response=False),
+        # clear approval_action metadata from the waiting message
+        # instead of deleting it, preserving text content.
+        if (
+            not include_denial_response
+            and last_marked_idx >= 0
+            and last_marked_idx + 1 < len(self.memory.content)
+        ):
+            next_msg, marks = self.memory.content[last_marked_idx + 1]
+            if next_msg.role == "assistant":
+                metadata = getattr(next_msg, "metadata", None)
+                if metadata and isinstance(metadata, dict):
+                    # Clear approval_action so frontend won't render approval card
+                    if "approval_action" in metadata:
+                        del metadata["approval_action"]
+                        logger.info(
+                            "Tool guard: cleared approval_action metadata "
+                            "from waiting message (approval granted)",
+                        )
 
         if ids_to_delete:
             removed = await self.memory.delete(ids_to_delete)
@@ -418,7 +444,7 @@ class ToolGuardMixin:
         if guarded and await self._consume_preapproval(tool_name, tool_input):
             self._tool_guard_pending_info = None
             await self._cleanup_tool_guard_denied_messages(
-                include_denial_response=True,
+                include_denial_response=False,
             )
             return _GuardAction("preapproved", tool_name, tool_input)
 
@@ -628,7 +654,7 @@ class ToolGuardMixin:
                         qid,
                     )
 
-        await svc.create_pending(
+        pending_request = await svc.create_pending(
             session_id=session_id,
             user_id=str(
                 self._request_context.get("user_id") or "",
@@ -643,6 +669,7 @@ class ToolGuardMixin:
             {f.guardian for f in guard_result.findings if f.guardian},
         )
         self._tool_guard_pending_info = {
+            "request_id": pending_request.request_id,
             "tool_name": tool_name,
             "tool_input": tool_call.get("input", {}),
             "guardians": guardians,
@@ -658,7 +685,7 @@ class ToolGuardMixin:
             f"`{guard_result.findings_count}`\n\n"
             f"{findings_text}\n\n"
             f"Type `/approve` to approve, "
-            f"or send any message to deny.\n"
+            f"`/deny` to deny, or send any message to deny.\n"
             f"输入 `/approve` 批准执行，或发送任意消息拒绝。"
         )
 
@@ -784,9 +811,28 @@ class ToolGuardMixin:
         await self.memory.add(msg)
         return msg
 
-    async def _emit_assistant_msg(self, content: str) -> Msg:
+    async def _emit_assistant_msg(
+        self,
+        content: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> Msg:
         """Print and persist a plain assistant text message."""
-        msg = Msg(self.name, content, "assistant")
+        effective_metadata = metadata
+        if effective_metadata is None:
+            effective_metadata = getattr(
+                self,
+                "_tool_guard_pending_message_metadata",
+                None,
+            )
+            if hasattr(self, "_tool_guard_pending_message_metadata"):
+                self._tool_guard_pending_message_metadata = None
+        msg = Msg(
+            self.name,
+            content,
+            "assistant",
+            metadata=effective_metadata,
+        )
         await self.print(msg, True)
         await self.memory.add(msg)
         return msg
@@ -873,6 +919,7 @@ class ToolGuardMixin:
     async def _emit_waiting_for_approval(self) -> Msg:
         """Emit waiting-for-approval guidance when call is blocked."""
         pending = await self._get_pending_info_for_display()
+        request_id = str(pending.get("request_id", "") or "")
         tool_name = pending.get("tool_name", "unknown")
         tool_input = pending.get("tool_input", {})
         guardians: list[str] = pending.get("guardians", [])
@@ -881,16 +928,18 @@ class ToolGuardMixin:
             ensure_ascii=False,
             indent=2,
         )
-        trigger_label, settings_hint = self._guardian_trigger_hint(guardians)
+        trigger_label, _ = self._guardian_trigger_hint(guardians)
+        metadata = {
+            "approval_action": {
+                "requestId": request_id,
+                "toolName": tool_name,
+                "toolInput": tool_input,
+                "triggerLabel": trigger_label,
+                "approveCommand": "/approve",
+                "denyCommand": "/deny",
+            },
+        }
+        self._tool_guard_pending_message_metadata = metadata
         return await self._emit_assistant_msg(
-            "⏳ Waiting for approval / 等待审批\n\n"
-            f"- Tool / 工具: `{tool_name}`\n"
-            f"- Triggered by / 触发来源: `{trigger_label}`\n"
-            f"- Parameters / 参数:\n"
-            f"```json\n{params_text}\n```\n\n"
-            f"{settings_hint}\n\n"
-            "Type `/approve` to approve, "
-            "or send any message to deny.\n"
-            "输入 `/approve` 批准执行，"
-            "或发送任意消息拒绝。",
+            f"⏳ `{tool_name}`调用需要审批\n" f"```json\n{params_text}\n```\n",
         )

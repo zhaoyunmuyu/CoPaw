@@ -108,6 +108,8 @@ export const ChatAnywhereSessionsContext =
     getCurrentSessionId: () => "",
     isSessionLoading: false,
     setSessionLoading: () => {},
+    isSessionsListLoading: true,
+    setSessionsListLoading: () => {},
   });
 
 export function ChatAnywhereSessionsContextProvider(props: {
@@ -120,16 +122,22 @@ export function ChatAnywhereSessionsContextProvider(props: {
   const [currentSessionId, setCurrentSessionId, getCurrentSessionId] =
     useGetState<string | undefined>(undefined);
   const [isSessionLoading, setSessionLoading] = useGetState<boolean>(false);
+  const [isSessionsListLoading, setSessionsListLoading] = useGetState<boolean>(true);
 
   useMount(async () => {
-    const sessionList = await options.api.getSessionList();
-    setSessions(sessionList);
-    setCurrentSessionId(
-      getInitialSessionId({
-        pathname: window.location.pathname,
-        sessionList,
-      }),
-    );
+    setSessionsListLoading(true);
+    try {
+      const sessionList = await options.api.getSessionList();
+      setSessions(sessionList);
+      setCurrentSessionId(
+        getInitialSessionId({
+          pathname: window.location.pathname,
+          sessionList,
+        }),
+      );
+    } finally {
+      setSessionsListLoading(false);
+    }
   });
 
   return (
@@ -143,6 +151,8 @@ export function ChatAnywhereSessionsContextProvider(props: {
         getCurrentSessionId,
         isSessionLoading,
         setSessionLoading,
+        isSessionsListLoading,
+        setSessionsListLoading,
       }}
     >
       {props.children}
