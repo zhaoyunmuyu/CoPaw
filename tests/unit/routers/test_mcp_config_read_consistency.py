@@ -13,6 +13,7 @@ from swe.app.routers import agent as agent_router
 from swe.app.routers import mcp as mcp_router
 from swe.app.routers import tools as tools_router
 from swe.app.routers.agent_scoped import AgentContextMiddleware
+from swe.app import agent_context
 from swe.config.config import (
     AgentProfileConfig,
     AgentProfileRef,
@@ -159,7 +160,8 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     app.state.multi_agent_manager = manager
 
     monkeypatch.setattr(
-        "swe.app.agent_context._get_tenant_aware_config",
+        agent_context,
+        "_get_tenant_aware_config",
         lambda tenant_id=None, source_id=None: root_configs[tenant_id],
     )
     monkeypatch.setattr(
@@ -171,7 +173,8 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
         fake_save_agent_config,
     )
     monkeypatch.setattr(
-        "swe.app.agent_context.load_agent_config",
+        agent_context,
+        "load_agent_config",
         fake_load_agent_config,
         raising=False,
     )

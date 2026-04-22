@@ -15,6 +15,8 @@
 - `Workspace.config` 继续保留给运行时对象装配和当前进程内的局部缓存，不再作为控制面返回值的唯一真源
 - 所有 agent 配置写路径在 reload 时都必须显式带上 `tenant_id`
 - `/daemon restart` 也必须重载正确的 tenant-scoped runtime identity
+- heartbeat 的 scheduler 重排和运行时 `last_dispatch` 读取也必须显式带上 runtime `tenant_id`
+- `default + X-Source-Id` 这类请求必须统一映射到 effective tenant，不能只用逻辑 tenant 做 reload 或 root config 读写
 
 ## 首先看哪里
 
@@ -35,6 +37,8 @@
 - MCP create / update / toggle / delete 成功后，下一次 GET 仍读到旧配置
 - 两个 tenant 共享同名 agent id 时，读到了彼此的 MCP / tools / running-config
 - `/daemon restart` 执行成功，但实际重新加载的是 tenant-less 或错误 tenant 的实例
+- `PUT /config/heartbeat` 写入成功，但 CronManager 重排后仍按别的 tenant 的 heartbeat 配置执行
+- 默认租户带 `X-Source-Id` 更新 agent 后，内存中的 live runtime 没有被 reload，只有磁盘配置变了
 
 ## 和 `complete-console-agent-switching` 的关系
 

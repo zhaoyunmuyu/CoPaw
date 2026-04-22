@@ -548,7 +548,10 @@ class CronManager:  # pylint: disable=too-many-public-methods
 
         from ...config.utils import get_heartbeat_config
 
-        hb = get_heartbeat_config(self._agent_id)
+        hb = get_heartbeat_config(
+            self._agent_id,
+            tenant_id=self._tenant_id,
+        )
         if getattr(hb, "enabled", False):
             trigger = self._build_heartbeat_trigger(hb.every)
             self._scheduler.add_job(
@@ -2030,6 +2033,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
             runner=self._runner,
             channel_manager=self._channel_manager,
             agent_id=self._agent_id,
+            tenant_id=self._tenant_id,
             workspace_dir=workspace_dir,
         )
 

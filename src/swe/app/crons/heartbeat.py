@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Any, Dict, Optional
 
 from ...agents.utils.file_handling import read_text_file_with_encoding_fallback
-from ...config import (
+from ...config.utils import (
     get_heartbeat_config,
     get_heartbeat_query_path,
     load_config,
@@ -127,6 +127,7 @@ async def run_heartbeat_once(
     runner: Any,
     channel_manager: Any,
     agent_id: Optional[str] = None,
+    tenant_id: str | None = None,
     workspace_dir: Optional[Path] = None,
 ) -> None:
     """
@@ -137,11 +138,12 @@ async def run_heartbeat_once(
         runner: Agent runner instance
         channel_manager: Channel manager instance
         agent_id: Agent ID for loading config
+        tenant_id: Tenant scope for loading agent config
         workspace_dir: Workspace directory for reading HEARTBEAT.md
     """
     from ...config.config import load_agent_config
 
-    hb = get_heartbeat_config(agent_id)
+    hb = get_heartbeat_config(agent_id, tenant_id=tenant_id)
     if not _in_active_hours(hb.active_hours):
         logger.debug("heartbeat skipped: outside active hours")
         return
@@ -173,7 +175,10 @@ async def run_heartbeat_once(
     last_dispatch = None
     if agent_id:
         try:
-            agent_config = load_agent_config(agent_id)
+            agent_config = load_agent_config(
+                agent_id,
+                tenant_id=tenant_id,
+            )
             last_dispatch = agent_config.last_dispatch
         except Exception:
             pass
