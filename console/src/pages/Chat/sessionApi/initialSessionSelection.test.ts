@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { getInitialSessionId } from "./initialSessionSelection";
+import {
+  getInitialSessionId,
+  getInitialSessionSelection,
+} from "./initialSessionSelection";
 
 describe("getInitialSessionId", () => {
   beforeEach(() => {
@@ -67,5 +70,32 @@ describe("getInitialSessionId", () => {
         ],
       }),
     ).toBe("chat-real-newer");
+  });
+
+  it("returns the canonical backend chat id for logical session deep links", () => {
+    expect(
+      getInitialSessionSelection({
+        pathname: "/chat/channel:user-1",
+        sessionList: [
+          {
+            id: "chat-real-older",
+            name: "older chat",
+            messages: [],
+            sessionId: "channel:user-1",
+            createdAt: "2026-04-21T00:00:00Z",
+          } as any,
+          {
+            id: "chat-real-newer",
+            name: "newer chat",
+            messages: [],
+            sessionId: "channel:user-1",
+            createdAt: "2026-04-22T00:00:00Z",
+          } as any,
+        ],
+      }),
+    ).toEqual({
+      requestedSessionId: "channel:user-1",
+      resolvedSessionId: "chat-real-newer",
+    });
   });
 });

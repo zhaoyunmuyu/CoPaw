@@ -6,18 +6,36 @@ interface GetInitialSessionIdOptions {
   sessionList: IAgentScopeRuntimeWebUISession[];
 }
 
+interface InitialSessionSelection {
+  requestedSessionId?: string;
+  resolvedSessionId?: string;
+}
+
+export function getInitialSessionSelection({
+  pathname,
+  sessionList,
+}: GetInitialSessionIdOptions): InitialSessionSelection {
+  const match = pathname.match(/^\/chat\/(.+)$/);
+  if (!match?.[1]) {
+    return {};
+  }
+
+  const requestedSessionId = match[1];
+  return {
+    requestedSessionId,
+    resolvedSessionId: resolveRequestedSessionId({
+      requestedSessionId,
+      sessionList,
+    }),
+  };
+}
+
 export function getInitialSessionId({
   pathname,
   sessionList,
 }: GetInitialSessionIdOptions): string | undefined {
-  const match = pathname.match(/^\/chat\/(.+)$/);
-  if (!match?.[1]) {
-    return undefined;
-  }
-
-  const urlSessionId = match[1];
-  return resolveRequestedSessionId({
-    requestedSessionId: urlSessionId,
+  return getInitialSessionSelection({
+    pathname,
     sessionList,
-  });
+  }).resolvedSessionId;
 }
