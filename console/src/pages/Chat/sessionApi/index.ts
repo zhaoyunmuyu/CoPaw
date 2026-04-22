@@ -13,6 +13,7 @@ import api, {
 } from "../../../api";
 import { cronJobApi } from "../../../api/modules/cronjob";
 import type {
+  ChatApprovalActionCardData,
   ChatRuntimeRequestCardData,
   ChatRuntimeResponseCardData,
 } from "../messageMeta";
@@ -43,6 +44,7 @@ const ROLE_ASSISTANT = "assistant";
 const TYPE_PLUGIN_CALL_OUTPUT = "plugin_call_output";
 // const CARD_REQUEST = "AgentScopeRuntimeRequestCard";
 const CARD_RESPONSE = "AgentScopeRuntimeResponseCard";
+const CARD_APPROVAL_ACTION = "ApprovalAction";
 
 // ---------------------------------------------------------------------------
 // Window globals
@@ -70,8 +72,33 @@ interface ContentItem {
 /** A backend message after role-normalisation (output of toOutputMessage). */
 interface OutputMessage extends Omit<Message, "role"> {
   role: string;
-  metadata: null;
+  metadata: unknown;
   sequence_number?: number;
+}
+
+function extractApprovalAction(
+  message: OutputMessage,
+): ChatApprovalActionCardData | null {
+  const metadata =
+    message.metadata && typeof message.metadata === "object"
+      ? (message.metadata as Record<string, unknown>)
+      : null;
+  if (!metadata) return null;
+
+  const direct = metadata.approval_action;
+  if (direct && typeof direct === "object") {
+    return direct as ChatApprovalActionCardData;
+  }
+
+  const nested = metadata.metadata;
+  if (nested && typeof nested === "object") {
+    const approvalAction = (nested as Record<string, unknown>).approval_action;
+    if (approvalAction && typeof approvalAction === "object") {
+      return approvalAction as ChatApprovalActionCardData;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -172,7 +199,7 @@ const toOutputMessage = (msg: Message): OutputMessage => ({
     msg.type === TYPE_PLUGIN_CALL_OUTPUT && msg.role === "system"
       ? ROLE_TOOL
       : msg.role,
-  metadata: null,
+  metadata: msg.metadata ?? null,
 });
 
 /** Build a user card (AgentScopeRuntimeRequestCard) from a user message. */
@@ -227,28 +254,42 @@ const buildResponseCard = (
     content: normalizeOutputMessageContent(msg.content),
   }));
 
+  const approvalAction = normalizedMessages.reduce<ChatApprovalActionCardData | null>(
+    (found, message) => found ?? extractApprovalAction(message),
+    null,
+  );
+
+  const cards: NonNullable<IAgentScopeRuntimeWebUIMessage["cards"]> = [
+    {
+      code: CARD_RESPONSE,
+      data: {
+        id: `response_${generateId()}`,
+        output: normalizedMessages,
+        object: "response",
+        status: "completed",
+        created_at: createdAt,
+        sequence_number: maxSeq + 1,
+        error: null,
+        completed_at: createdAt,
+        usage: null,
+        headerMeta: {
+          timestamp,
+        },
+      } as unknown as ChatRuntimeResponseCardData,
+    },
+  ];
+
+  if (approvalAction) {
+    cards.push({
+      code: CARD_APPROVAL_ACTION,
+      data: approvalAction,
+    });
+  }
+
   return {
     id: generateId(),
     role: ROLE_ASSISTANT,
-    cards: [
-      {
-        code: CARD_RESPONSE,
-        data: {
-          id: `response_${generateId()}`,
-          output: normalizedMessages,
-          object: "response",
-          status: "completed",
-          created_at: createdAt,
-          sequence_number: maxSeq + 1,
-          error: null,
-          completed_at: createdAt,
-          usage: null,
-          headerMeta: {
-            timestamp,
-          },
-        } as unknown as ChatRuntimeResponseCardData,
-      },
-    ],
+    cards,
     msgStatus: "finished",
   };
 };
@@ -261,7 +302,7 @@ const buildResponseCard = (
  * - Consecutive non-user messages (assistant / system / tool) → grouped
  *   into a single AgentScopeRuntimeResponseCard with all output messages.
  */
-const convertMessages = (
+export const convertMessages = (
   messages: Message[],
 ): IAgentScopeRuntimeWebUIMessage[] => {
   const result: IAgentScopeRuntimeWebUIMessage[] = [];

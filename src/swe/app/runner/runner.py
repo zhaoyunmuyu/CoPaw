@@ -63,6 +63,14 @@ _APPROVE_EXACT = frozenset(
     },
 )
 
+_DENY_EXACT = frozenset(
+    {
+        "deny",
+        "/deny",
+        "/daemon deny",
+    },
+)
+
 
 def _is_approval(text: str) -> bool:
     """Return True only when *text* is exactly ``approve``,
@@ -73,6 +81,12 @@ def _is_approval(text: str) -> bool:
     """
     normalized = " ".join(text.split()).lower()
     return normalized in _APPROVE_EXACT
+
+
+def _is_denial(text: str) -> bool:
+    """Return True only when *text* is an explicit deny command."""
+    normalized = " ".join(text.split()).lower()
+    return normalized in _DENY_EXACT
 
 
 async def _build_and_connect_mcp_clients(
@@ -420,9 +434,15 @@ class AgentRunner(Runner):
                         ] = thinking_blocks
             return None, True, approved_tool_call
 
+        explicit_deny = _is_denial(normalized)
+        denial_decision = (
+            ApprovalDecision.DENIED
+            if explicit_deny
+            else ApprovalDecision.DENIED
+        )
         await svc.resolve_request(
             pending.request_id,
-            ApprovalDecision.DENIED,
+            denial_decision,
         )
         return (
             Msg(
