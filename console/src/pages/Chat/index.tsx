@@ -720,15 +720,15 @@ export default function ChatPage() {
   ]);
 
   // Show toast when task has no scheduled result yet
-  const taskNoResultShownRef = useRef(false);
+  const taskNoResultShownIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (currentTask && !currentTask.task?.has_scheduled_result) {
-      if (!taskNoResultShownRef.current) {
-        taskNoResultShownRef.current = true;
+      if (taskNoResultShownIdRef.current !== currentTask.id) {
+        taskNoResultShownIdRef.current = currentTask.id;
         message.info("当前任务暂未启动，等下次收到提醒再来看看哟~");
       }
     } else {
-      taskNoResultShownRef.current = false;
+      taskNoResultShownIdRef.current = null;
     }
   }, [currentTask?.id, currentTask?.task?.has_scheduled_result]);
 

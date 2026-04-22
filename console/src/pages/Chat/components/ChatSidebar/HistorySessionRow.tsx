@@ -12,6 +12,8 @@ export interface HistorySessionRowProps {
   active: boolean;
   onSessionClick: (sessionId: string) => void;
   onSessionDelete: (sessionId: string, backendId: string | null) => void;
+  /** Custom style for virtual scrolling positioning */
+  style?: React.CSSProperties;
 }
 
 
@@ -56,6 +58,7 @@ function HistorySessionRowInner(props: HistorySessionRowProps) {
       showEdit={false}
       showTimeline={false}
       showChannel={false}
+      style={props.style}
     />
   );
 }
@@ -72,7 +75,8 @@ function areEqual(
     prevProps.session.id === nextProps.session.id &&
     prevProps.session.realId === nextProps.session.realId &&
     prevProps.session.name === nextProps.session.name &&
-    prevProps.session.createdAt === nextProps.session.createdAt
+    prevProps.session.createdAt === nextProps.session.createdAt &&
+    prevProps.style === nextProps.style
   );
 }
 

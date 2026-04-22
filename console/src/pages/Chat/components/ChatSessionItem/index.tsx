@@ -39,6 +39,8 @@ interface ChatSessionItemProps {
   /** Whether to show channel tag (default: true) */
   showChannel?: boolean;
   className?: string;
+  /** Custom style for virtual scrolling positioning */
+  style?: React.CSSProperties;
 }
 
 const ChatSessionItem: React.FC<ChatSessionItemProps> = (props) => {
@@ -59,6 +61,7 @@ const ChatSessionItem: React.FC<ChatSessionItemProps> = (props) => {
     <div
       className={className}
       onClick={props.editing ? undefined : props.onClick}
+      style={props.style}
     >
       {/* Timeline indicator placeholder */}
       {props.showTimeline !== false && (

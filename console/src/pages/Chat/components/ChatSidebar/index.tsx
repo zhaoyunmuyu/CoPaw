@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Image } from "antd";
 import { useContextSelector } from "use-context-selector";
+import { useVirtualizer } from '@tanstack/react-virtual';
 import Style from './style';
 import ChatTaskList from '../ChatTaskList';
 import type { CronJobSpecOutput } from '@/api/types';
@@ -15,10 +16,9 @@ import operateIcon from '../../../../assets/icons/operate.svg'
 import guideImage from '@/assets/others/note.png'
 // import { useChatAnywhereSessionsState } from '@/components/agentscope-chat';
 import { ChatAnywhereSessionsContext } from '@/components/agentscope-chat';
-import { formatListTime } from '../../listTimeFormat';
 import sessionApi from '../../sessionApi';
 import { HistorySessionRow } from './HistorySessionRow';
-import ChatSessionItem from '../ChatSessionItem';
+import { HistorySkeleton } from './HistorySkeleton';
 import { chatApi } from '@/api/modules/chat';
 
 
@@ -104,6 +104,10 @@ export default function ChatSidebar(props: ChatSidebarProps) {
     ChatAnywhereSessionsContext,
     (value) => value.setSessions,
   );
+  const isSessionsListLoading = useContextSelector(
+    ChatAnywhereSessionsContext,
+    (value) => value.isSessionsListLoading,
+  );
 
 
   const currentChatId = location.pathname.match(/^\/chat\/(.+)$/)?.[1] || null;
@@ -151,6 +155,15 @@ export default function ChatSidebar(props: ChatSidebarProps) {
   }, [sharedSessions]);
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
+
+  // Virtual scrolling setup for history list
+  const historyListRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: sessions.length,
+    getScrollElement: () => historyListRef.current,
+    estimateSize: () => 52,
+    overscan: 5,
+  });
 
 
   const handleToggleHistory = useCallback(() => {
@@ -301,55 +314,74 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                 新建会话
               </button>
             </div>
-            <ChatTaskList
-              tasks={tasks}
-              onTaskClick={handleTaskOpen}
-              onTaskResume={onTaskResume}
-              onTaskDelete={onTaskDelete}
-            />
-
-
-            <div className="chat-sidebar-history">
-              <div
-                className="chat-sidebar-history-header"
-                onClick={handleToggleHistory}
-                role="button"
-                tabIndex={0}
-              >
-                <div className="chat-sidebar-history-title">
-                  <HistoryIcon />
-                  历史记录({sessions.length})
+            <div className="chat-sidebar-content-record-list">
+              <ChatTaskList
+                tasks={tasks}
+                onTaskClick={handleTaskOpen}
+                onTaskResume={onTaskResume}
+                onTaskDelete={onTaskDelete}
+              />
+              <div className="chat-sidebar-history">
+                <div
+                  className="chat-sidebar-history-header"
+                  onClick={handleToggleHistory}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div className="chat-sidebar-history-title">
+                    <HistoryIcon />
+                    历史记录({sessions.length})
+                  </div>
+                  <ToggleIcon collapsed={historyCollapsed} />
                 </div>
-                <ToggleIcon collapsed={historyCollapsed} />
+                {!historyCollapsed && (
+                  isSessionsListLoading ? (
+                    <HistorySkeleton count={8} />
+                  ) : sessions.length === 0 ? (
+                    <div className="chat-sidebar-history-empty">
+                      暂无历史记录
+                    </div>
+                  ) : (
+                    <div
+                      ref={historyListRef}
+                      className="chat-sidebar-history-list"
+                    >
+                      <div
+                        style={{
+                          height: `${rowVirtualizer.getTotalSize()}px`,
+                          width: '100%',
+                          position: 'relative',
+                        }}
+                      >
+                        {rowVirtualizer.getVirtualItems().map((virtualItem) => {
+                          const session = sessions[virtualItem.index];
+                          const ext = session as ExtendedHistorySession;
+                          return (
+                            <HistorySessionRow
+                              key={session.id}
+                              name={session.name || '新会话'}
+                              session={ext}
+                              active={session.id === currentChatId}
+                              onSessionClick={handleSessionClick}
+                              onSessionDelete={handleDeleteSession}
+                              style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: '100%',
+                                height: `${virtualItem.size}px`,
+                                transform: `translateY(${virtualItem.start}px)`,
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )
+                )}
               </div>
-              {!historyCollapsed &&
-                sessions.map((session) => {
-                  const ext = session as ExtendedHistorySession;
-                  return (
-                    <HistorySessionRow
-                      key={session.id}
-                      name={session.name || '新会话'}
-                      session={ext}
-                      active={session.id === currentChatId}
-                      onSessionClick={handleSessionClick}
-                      onSessionDelete={handleDeleteSession}
-                    />
-                    // <ChatSessionItem
-                    //   key={session.id}
-                    //   name={session.name || '新会话'}
-                    //   time={formatListTime(ext.createdAt)}
-                    //   active={session.id === currentChatId}
-                    //   onClick={() => handleSessionClick(session.id!)}
-                    //   onDelete={() => handleDeleteSession(session.id!)}
-                    //   showEdit={false}
-                    //   showTimeline={false}
-                    //   showChannel={false}
-                    // />
-                  );
-                })}
             </div>
           </div>
-
 
           <div className="chat-sidebar-footer">
             {/* 暂时隐藏，后续需要时再开放
