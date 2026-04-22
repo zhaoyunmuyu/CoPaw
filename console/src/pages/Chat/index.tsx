@@ -68,11 +68,8 @@ import {
 import { deriveChatTaskState, shouldMarkTaskReadOnOpen } from "./taskJobs";
 import { shouldRefreshCurrentTaskMessages } from "./taskMessageRefresh";
 
-// ==================== 会话状态轮询 (自动 reconnect) ====================
-import { emit } from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/Context/useChatAnywhereEventEmitter";
-import { FOLLOW_UP_SUBMIT_FAILED_EVENT } from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/Chat/hooks/followUpSubmit";
-// ==================== 会话状态轮询 (自动 reconnect) ====================
 import RuntimeRequestCard from "./components/RuntimeRequestCard";
+import { FOLLOW_UP_SUBMIT_FAILED_EVENT } from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/Chat/hooks/followUpSubmit";
 import RuntimeResponseCard from "./components/RuntimeResponseCard";
 import ApprovalActionCard from "./components/ApprovalActionCard";
 import type {
@@ -84,7 +81,6 @@ import type {
 const CHAT_ATTACHMENT_MAX_MB = 10;
 const TASK_PAGE_POLL_MS = 30_000;
 const TASK_PENDING_POLL_MS = 30_000;
-const SESSION_RUNNING_POLL_MS = 5_000;
 
 interface SessionInfo {
   session_id?: string;
@@ -337,7 +333,7 @@ export default function ChatPage() {
   const dragCounterRef = useRef(0);
   const runtimeLoadingBridgeRef = useRef<RuntimeLoadingBridgeApi | null>(null);
   const { message } = useAppMessage();
-  const { setSessionLoading } = useChatAnywhereSessionsState();
+  const { setSessionLoading, setSessions } = useChatAnywhereSessionsState();
 
   // useTransition for non-urgent state updates (badge clearing)
   const [, startTransition] = useTransition();
@@ -625,67 +621,6 @@ export default function ChatPage() {
         markTaskReadPendingRef.current = false;
       });
   }, [currentTask?.id, currentTask?.task?.unread_execution_count]);
-
-  // ==================== 会话状态轮询 (自动 reconnect) ====================
-  // 当用户已在当前会话页面时，如果会话状态变为 running，自动触发 reconnect
-  // 注意：需要排除用户主动发起提问的情况（已在 generating 状态）
-  const sessionReconnectingRef = useRef(false);
-  const prevSessionStatusRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!chatId) return;
-
-    const pollSessionStatus = async () => {
-      try {
-        // 如果当前已经在 generating/loading 状态，说明用户主动发起的提问正在进行
-        // 此时不应触发 reconnect，避免重复创建 SSE 连接
-        const isLoading = runtimeLoadingBridgeRef.current?.getLoading?.() ?? false;
-        if (isLoading) {
-          // 正在进行中，跳过轮询，但记录状态为 running 以便下次正确判断
-          prevSessionStatusRef.current = "running";
-          return;
-        }
-
-        const chatHistory = await chatApi.getChat(chatId);
-        const status = chatHistory?.status;
-        const generating = status === "running";
-
-        // 状态从非 running 变为 running 时触发 reconnect
-        // 条件：1. 状态变为 running  2. 之前不是 running  3. 没有正在 reconnect  4. 当前没有正在 generating
-        if (
-          generating &&
-          prevSessionStatusRef.current !== "running" &&
-          !sessionReconnectingRef.current &&
-          !isLoading
-        ) {
-          sessionReconnectingRef.current = true;
-          // 使用 chatId（UUID）作为 session_id，后端会正确处理
-          console.info("[Chat] Session running, auto reconnect:", chatId);
-          emit({
-            type: "handleReconnect",
-            data: { session_id: chatId },
-          });
-        }
-
-        // 状态变为非 running 时重置 reconnecting 标记
-        if (!generating) {
-          sessionReconnectingRef.current = false;
-        }
-
-        prevSessionStatusRef.current = status;
-      } catch (err) {
-        console.warn("[Chat] Failed to poll session status:", err);
-      }
-    };
-
-    pollSessionStatus();
-    const intervalId = window.setInterval(pollSessionStatus, SESSION_RUNNING_POLL_MS);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [chatId]);
-  // ==================== 会话状态轮询结束 ====================
 
   const handleTaskOpen = useCallback(
     (task: CronJobSpecOutput) => {
