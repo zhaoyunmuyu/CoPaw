@@ -110,6 +110,7 @@ class CronExecutor:
         req: Dict[str, Any] = job.request.model_dump(mode="json")
         req["user_id"] = target_user_id or "cron"
         req["session_id"] = target_session_id or f"cron:{job.id}"
+        req["skip_history"] = True  # 标记定时任务不加载历史会话
 
         # Collect text for console push
         console_text_parts: list[str] = []

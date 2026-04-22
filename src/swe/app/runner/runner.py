@@ -105,7 +105,7 @@ async def _build_and_connect_mcp_clients(
                 await client.connect()
                 clients.append(client)
                 logger.info(f"MCP client '{key}' created and connected")
-                print("passthrough_headers",passthrough_headers)
+                print("passthrough_headers", passthrough_headers)
         except Exception as e:
             logger.warning(
                 f"Failed to create MCP client '{key}': {e}",
@@ -536,6 +536,7 @@ class AgentRunner(Runner):
             session_id = request.session_id
             user_id = request.user_id
             channel = getattr(request, "channel", DEFAULT_CHANNEL)
+            skip_history = getattr(request, "skip_history", False)
 
             logger.info(
                 "Handle agent query:\n%s",
@@ -660,19 +661,28 @@ class AgentRunner(Runner):
 
             _was_cancelled = False
 
-            try:
-                await self.session.load_session_state(
-                    session_id=session_id,
-                    user_id=user_id,
-                    agent=agent,
+            # 对于 cron 任务，跳过会话历史加载（不读取旧历史）
+            if skip_history:
+                logger.info(
+                    "Cron task: skipping session state load "
+                    "(session_id=%s)",
+                    session_id,
                 )
-            except KeyError as e:
-                logger.warning(
-                    "load_session_state skipped (state schema mismatch): %s; "
-                    "will save fresh state on completion to recover file",
-                    e,
-                )
-            session_state_loaded = True
+                session_state_loaded = True
+            else:
+                try:
+                    await self.session.load_session_state(
+                        session_id=session_id,
+                        user_id=user_id,
+                        agent=agent,
+                    )
+                except KeyError as e:
+                    logger.warning(
+                        "load_session_state skipped (state schema mismatch): %s; "
+                        "will save fresh state on completion to recover file",
+                        e,
+                    )
+                session_state_loaded = True
 
             # Rebuild system prompt so it always reflects the latest
             # AGENTS.md / SOUL.md / PROFILE.md, not the stale one saved
@@ -752,11 +762,74 @@ class AgentRunner(Runner):
             )
 
             if agent is not None and session_state_loaded:
-                await self.session.save_session_state(
-                    session_id=session_id,
-                    user_id=user_id,
-                    agent=agent,
-                )
+                if skip_history:
+                    # 对于 cron 任务：合并保存，保留旧历史 + 新消息
+                    existing_state = await self.session.get_session_state_dict(
+                        session_id=session_id,
+                        user_id=user_id,
+                        allow_not_exist=True,
+                    )
+                    # 获取当前 agent 状态
+                    current_agent_state = agent.state_dict()
+
+                    # 深度合并：对于 agent.memory，需要追加内容而不是覆盖
+                    if (
+                        "agent" in existing_state
+                        and "memory" in existing_state["agent"]
+                    ):
+                        existing_memory = existing_state["agent"]["memory"]
+                        current_memory = current_agent_state.get("memory", {})
+                        # 合并 memory.content（消息列表）
+                        if "content" in existing_memory:
+                            existing_content = existing_memory["content"]
+                            current_content = current_memory.get("content", [])
+                            # 追加新消息到旧消息后面
+                            current_memory = dict(current_memory)
+                            current_memory["content"] = (
+                                existing_content + current_content
+                            )
+                            current_agent_state = dict(current_agent_state)
+                            current_agent_state["memory"] = current_memory
+
+                    # 构建最终状态
+                    merged_state = dict(existing_state)
+                    merged_state["agent"] = current_agent_state
+
+                    # 直接保存合并后的状态
+                    # pylint: disable=protected-access
+                    session_save_path = self.session._get_save_path(
+                        session_id,
+                        user_id=user_id,
+                    )
+
+                    with open(
+                        session_save_path,
+                        "w",
+                        encoding="utf-8",
+                    ) as f:
+                        f.write(json.dumps(merged_state, ensure_ascii=False))
+                    logger.info(
+                        "Cron task: saved merged session state "
+                        "(session_id=%s, existing_memory_content=%s, new_content=%s)",
+                        session_id,
+                        len(
+                            existing_state.get("agent", {})
+                            .get("memory", {})
+                            .get("content", []),
+                        ),
+                        len(
+                            current_agent_state.get("memory", {}).get(
+                                "content",
+                                [],
+                            ),
+                        ),
+                    )
+                else:
+                    await self.session.save_session_state(
+                        session_id=session_id,
+                        user_id=user_id,
+                        agent=agent,
+                    )
 
             if self._chat_manager is not None and chat is not None:
                 await self._chat_manager.update_chat(chat)
