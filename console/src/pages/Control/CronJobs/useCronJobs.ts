@@ -116,12 +116,37 @@ export function useCronJobs() {
   };
 
   const executeNow = async (jobId: string) => {
+    const original = jobs.find((j) => j.id === jobId);
+    setJobs((prev) =>
+      prev.map((job) =>
+        job.id === jobId
+          ? {
+              ...job,
+              state: {
+                ...job.state,
+                last_status: "running",
+                last_error: null,
+              },
+              task: job.task
+                ? {
+                    ...job.task,
+                    is_running: true,
+                  }
+                : job.task,
+            }
+          : job,
+      ),
+    );
+
     try {
       await api.triggerCronJob(jobId);
       message.success("Task triggered successfully");
       return true;
     } catch (error) {
       console.error("Failed to execute cron job", error);
+      if (original) {
+        setJobs((prev) => prev.map((job) => (job.id === jobId ? original : job)));
+      }
       message.error("Failed to execute");
       return false;
     }

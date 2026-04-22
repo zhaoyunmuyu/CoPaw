@@ -107,8 +107,13 @@ export default function ChatTaskList(props: ChatTaskListProps) {
                   <div
                     key={task.id}
                     className={`chat-task-list-item${
-                      sidebarMeta.state !== 'active'
+                      sidebarMeta.state !== 'active' &&
+                      sidebarMeta.state !== 'running'
                         ? ' chat-task-list-item--paused'
+                        : ''
+                    }${
+                      sidebarMeta.state === 'running'
+                        ? ' chat-task-list-item--running'
                         : ''
                     }${
                       sidebarMeta.state === 'auto-paused'
@@ -150,7 +155,8 @@ export default function ChatTaskList(props: ChatTaskListProps) {
                         )
                       )}
                     </div>
-                    {sidebarMeta.state !== 'active' && (
+                    {sidebarMeta.state !== 'active' &&
+                      sidebarMeta.state !== 'running' && (
                       <div
                         className={`chat-task-list-item-status ${
                           sidebarMeta.state === 'auto-paused'

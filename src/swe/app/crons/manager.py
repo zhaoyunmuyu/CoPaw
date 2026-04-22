@@ -971,6 +971,10 @@ class CronManager:  # pylint: disable=too-many-public-methods
             (job.dispatch.target.user_id or "")[:40],
             (job.dispatch.target.session_id or "")[:40],
         )
+        st = self._states.get(job_id, CronJobState())
+        st.last_status = "running"
+        st.last_error = None
+        self._states[job_id] = st
         task = asyncio.create_task(
             self._execute_once(job),
             name=f"c ron-run-{job_id}",

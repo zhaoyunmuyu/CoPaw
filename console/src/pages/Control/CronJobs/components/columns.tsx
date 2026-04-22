@@ -65,6 +65,30 @@ export const createColumns = (
       ),
     },
     {
+      title: "Status",
+      key: "last_status",
+      width: 120,
+      render: (_: unknown, record: CronJob) => {
+        const isRunning = record.task?.is_running;
+        const status = isRunning ? "running" : record.state?.last_status || "idle";
+        const toneClass =
+          status === "running"
+            ? styles.statusDotRunning
+            : status === "success"
+              ? styles.statusDotSuccess
+              : status === "error" || status === "cancelled"
+                ? styles.statusDotError
+                : styles.statusDotIdle;
+
+        return (
+          <span className={styles.statusIndicator}>
+            <span className={`${styles.statusDot} ${toneClass}`} />
+            {status}
+          </span>
+        );
+      },
+    },
+    {
       title: handlers.t("cronJobs.scheduleType"),
       dataIndex: ["schedule", "type"],
       key: "schedule_type",
