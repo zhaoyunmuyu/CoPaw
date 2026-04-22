@@ -40,10 +40,6 @@ export default function WelcomeCenterLayout(props: WelcomeCenterLayoutProps) {
     setRandomPlaceholder(placeholderOptions[randomIndex]);
   }, []);
 
-
-
-
-
   const handleSend = useCallback(() => {
     const trimmed = inputValue.trim();
     if (!trimmed) return;

@@ -129,12 +129,12 @@ export async function fetchCustomerInfo(
 ): Promise<CustomerInfoResponse | null> {
   try {
     const baseUrl = window.__env__.baseUrl || "";
-    const isDev = baseUrl === "yourapi";
+    const isDev = window.location.href.indexOf('.paast.') !== -1;
     const env = isDev ? "dev" : "prd";
     // TODO: 替换为真实的 API Key
     const apiKey = isDev ? "xxxx" : "your-api-key";
     // TODO: 替换为真实的 API 地址
-    const apiUrl = `${baseUrl}/openapi/${env}/yourapi`;
+    const apiUrl = `${baseUrl}/openapi/.../${env}/...`;
     const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
