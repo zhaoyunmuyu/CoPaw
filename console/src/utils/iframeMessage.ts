@@ -145,7 +145,7 @@ async function initializeUserIfNeeded(
   try {
     const initResponse = await fetchUserInit(params);
 
-    if (initResponse?.success) {
+    if (initResponse?.appended) {
       setUserInitialized(userId);
     } else {
       console.warn("[IframeMessage] User init failed");

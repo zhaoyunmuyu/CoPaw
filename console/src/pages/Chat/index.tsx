@@ -11,6 +11,7 @@ import AgentScopeRuntimeRequestCard from "@/components/agentscope-chat/AgentScop
 import AgentScopeRuntimeResponseCard from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Card";
 // ==================== 组件引入方式变更结束 ====================
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { flushSync } from "react-dom";
 import { Button, Modal, Result, Tooltip } from "antd";
 import { useAppMessage } from "../../hooks/useAppMessage";
 import { ExclamationCircleOutlined, SettingOutlined } from "@ant-design/icons";
@@ -691,8 +692,11 @@ export default function ChatPage() {
       const taskChatId = task.task?.chat_id;
       if (!taskChatId) return;
 
-      // Set loading first to avoid blocking, then navigate
-      setSessionLoading(true);
+      // Force loading to render immediately before navigate triggers re-render
+      flushSync(() => {
+        setSessionLoading(true);
+      });
+
       navigate(`/chat/${taskChatId}`, { replace: true });
     },
     [navigate, setSessionLoading],

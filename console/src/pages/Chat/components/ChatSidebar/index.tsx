@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Image } from "antd";
 import { useContextSelector } from "use-context-selector";
@@ -161,8 +162,11 @@ export default function ChatSidebar(props: ChatSidebarProps) {
       // Skip if already on the same session
       if (currentChatIdRef.current === sessionId) return;
 
-      // Set loading first to avoid showing welcome page briefly
-      setSessionLoading(true);
+      // Force loading to render immediately before navigate triggers re-render
+      flushSync(() => {
+        setSessionLoading(true);
+      });
+
       navigate(`/chat/${sessionId}`, { replace: true });
     },
     [navigate, setSessionLoading],
