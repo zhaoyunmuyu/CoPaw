@@ -117,7 +117,8 @@ function TasksContent({
               <div
                 key={task.id}
                 className={`expandable-panel-task-card${
-                  sidebarMeta.state !== 'active'
+                  sidebarMeta.state !== 'active' &&
+                  sidebarMeta.state !== 'running'
                     ? ' expandable-panel-task-card--paused'
                     : ''
                 }${
@@ -166,7 +167,8 @@ function TasksContent({
                     )
                   )}
                 </div>
-                {sidebarMeta.state !== 'active' && (
+                {sidebarMeta.state !== 'active' &&
+                  sidebarMeta.state !== 'running' && (
                   <div
                     className={`expandable-panel-task-status ${
                       sidebarMeta.state === 'auto-paused'

@@ -21,7 +21,7 @@ from ..constant import (
     WORKING_DIR,
 )
 from ..__version__ import __version__
-from ..utils.logging import setup_logger, add_swe_file_handler
+from ..utils.my_logging import setup_logger, add_swe_file_handler
 from .auth import AuthMiddleware
 from .middleware.tenant_identity import TenantIdentityMiddleware
 from .middleware.tenant_workspace import TenantWorkspaceMiddleware

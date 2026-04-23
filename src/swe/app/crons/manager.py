@@ -548,7 +548,10 @@ class CronManager:  # pylint: disable=too-many-public-methods
 
         from ...config.utils import get_heartbeat_config
 
-        hb = get_heartbeat_config(self._agent_id)
+        hb = get_heartbeat_config(
+            self._agent_id,
+            tenant_id=self._tenant_id,
+        )
         if getattr(hb, "enabled", False):
             trigger = self._build_heartbeat_trigger(hb.every)
             self._scheduler.add_job(
@@ -587,13 +590,14 @@ class CronManager:  # pylint: disable=too-many-public-methods
             user_id: User's sapId
 
         Returns:
-            List of jobs with tenant_id matching user_id
+            List of jobs with tenant_id matching user_id and task_type is agent
         """
         user_jobs = []
         for job in jobs:
-            # Check tenant_id match
+            # Check tenant_id match and task_type is agent
             if job.tenant_id and job.tenant_id == user_id:
-                user_jobs.append(job)
+                if job.task_type == "agent":
+                    user_jobs.append(job)
         return user_jobs
 
     def _calculate_run_times_on_date(
@@ -679,8 +683,8 @@ class CronManager:  # pylint: disable=too-many-public-methods
 
         Args:
             task_status: The task status
-            scheduled_time: Scheduled execution time
-            last_run: Last actual run time
+            scheduled_time: Scheduled execution time (UTC)
+            last_run: Last actual run time (UTC)
 
         Returns:
             Tuple of (status_text, time_info)
@@ -698,14 +702,26 @@ class CronManager:  # pylint: disable=too-many-public-methods
 
         status_text, default_info = status_map[task_status]
 
-        if task_status == "completed" and last_run:
-            time_info = f"{last_run.strftime('%H:%M')}已完成"
-        elif task_status == "in_progress" and last_run:
-            time_info = f"{last_run.strftime('%H:%M')}已启动"
-        elif task_status == "error" and last_run:
-            time_info = f"{last_run.strftime('%H:%M')}执行失败"
-        elif task_status == "pending" and scheduled_time:
-            time_info = f"将于{scheduled_time.strftime('%H:%M')}执行"
+        # Convert UTC to local time for display
+        def utc_to_local(dt: Optional[datetime]) -> Optional[datetime]:
+            if dt is None:
+                return None
+            if dt.tzinfo is None:
+                # Assume UTC if no timezone
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone()
+
+        local_last_run = utc_to_local(last_run)
+        local_scheduled_time = utc_to_local(scheduled_time)
+
+        if task_status == "completed" and local_last_run:
+            time_info = f"{local_last_run.strftime('%H:%M')}已完成"
+        elif task_status == "in_progress" and local_last_run:
+            time_info = f"{local_last_run.strftime('%H:%M')}已启动"
+        elif task_status == "error" and local_last_run:
+            time_info = f"{local_last_run.strftime('%H:%M')}执行失败"
+        elif task_status == "pending" and local_scheduled_time:
+            time_info = f"将于{local_scheduled_time.strftime('%H:%M')}执行"
         else:
             time_info = default_info
 
@@ -967,6 +983,10 @@ class CronManager:  # pylint: disable=too-many-public-methods
             (job.dispatch.target.user_id or "")[:40],
             (job.dispatch.target.session_id or "")[:40],
         )
+        st = self._states.get(job_id, CronJobState())
+        st.last_status = "running"
+        st.last_error = None
+        self._states[job_id] = st
         task = asyncio.create_task(
             self._execute_once(job),
             name=f"c ron-run-{job_id}",
@@ -1601,7 +1621,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
             "to": menu_id,
             "type": "toMenu",
             "queryParam": {
-                "taskId": session_id,
+                "sessionId": session_id,
                 "origin": "Y",
             },
         }
@@ -1646,9 +1666,9 @@ class CronManager:  # pylint: disable=too-many-public-methods
 
         session_id = job.meta.get("task_chat_id")
         if not session_id:
-            logger.debug("Skip notification: job %s has no session_id", job.id)
+            logger.info("Skip notification: job %s has no session_id", job.id)
             return
-
+        creator_id = job.meta.get("creator_user_id")
         logger.info(
             "Sending cron task completion notification: "
             "job_id=%s job_name=%s session_id=%s",
@@ -1667,20 +1687,46 @@ class CronManager:  # pylint: disable=too-many-public-methods
         meta["link_text"] = "点击跳转小助claw版查看"
         meta["notification_summary"] = "小助claw定时任务完成提醒"
 
+        await self.push_message(creator_id, job, session_id, meta)
+
+    async def push_message(
+        self,
+        creator_id: Any | None,
+        job: CronJobSpec,
+        session_id: Any | None,
+        meta: Optional[Dict[str, Any]] | None,
+    ):
         # 固定使用 zhaohu 通道发送通知
-        await self._channel_manager.send_text(
-            channel="zhaohu",
-            user_id=job.dispatch.target.user_id,
-            session_id=session_id,
-            text=f"叮咚，你发起的定时任务【{job.name}】已完成，快来查收结果~",
-            meta=meta,
-        )
-        logger.info(
-            "Cron task completion notification sent: "
-            "job_id=%s job_name=%s",
-            job.id,
-            job.name,
-        )
+        # 用 try-except 包裹，避免任务被取消时通知发送失败影响主流程
+        try:
+            await self._channel_manager.send_text(
+                channel="zhaohu",
+                user_id=creator_id,
+                session_id=session_id,
+                text=f"叮咚，你发起的定时任务【{job.name}】已完成，快来查收结果~",
+                meta=meta,
+            )
+            logger.info(
+                "Cron task completion notification sent: "
+                "job_id=%s job_name=%s",
+                job.id,
+                job.name,
+            )
+        except asyncio.CancelledError:
+            logger.warning(
+                "Cron task notification cancelled: job_id=%s job_name=%s",
+                job.id,
+                job.name,
+            )
+            raise
+        except Exception as exc:
+            logger.warning(
+                "Failed to send cron task notification: "
+                "job_id=%s job_name=%s error=%s",
+                job.id,
+                job.name,
+                repr(exc),
+            )
 
     @staticmethod
     def _extract_latest_assistant_preview(messages: list[Any]) -> str:
@@ -2030,6 +2076,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
             runner=self._runner,
             channel_manager=self._channel_manager,
             agent_id=self._agent_id,
+            tenant_id=self._tenant_id,
             workspace_dir=workspace_dir,
         )
 
@@ -2048,7 +2095,17 @@ class CronManager:  # pylint: disable=too-many-public-methods
                 await self._executor.execute(job)
                 st.last_status = "success"
                 st.last_error = None
-                await self._push_task_success_notification(job)
+                # 通知用 shield 保护，避免任务取消时误标记状态
+                try:
+                    await asyncio.shield(
+                        self._push_task_success_notification(job),
+                    )
+                except asyncio.CancelledError:
+                    logger.info(
+                        "cron task notification/record cancelled but task succeeded: "
+                        "job_id=%s",
+                        job.id,
+                    )
                 await self._record_task_execution_success(job)
                 logger.info(
                     "cron _execute_once: job_id=%s status=success",

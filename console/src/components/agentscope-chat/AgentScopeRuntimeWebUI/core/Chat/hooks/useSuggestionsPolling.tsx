@@ -41,7 +41,7 @@ export default function useSuggestionsPolling(options: {
   /**
    * 轮询获取建议
    *
-   * 在响应完成后调用，轮询最多5次，每次间隔1000ms
+   * 在响应完成后调用，轮询最多5次，每次间隔3000ms
    * 如果后端建议功能未启用，则返回空列表，前端不显示
    */
   const pollSuggestions = useCallback(async () => {
@@ -60,6 +60,13 @@ export default function useSuggestionsPolling(options: {
 
     // 标记当前轮询为活跃（新轮询会覆盖此值，从而取消旧轮询）
     activePollResponseIdRef.current = pollResponseId;
+
+    // 刷新 sessionList，确保 realId 已解析（解决新建会话时时间戳问题）
+    try {
+      await (sessionApi as any)?.getSessionList?.();
+    } catch (e) {
+      console.debug("[Suggestions] getSessionList failed:", e);
+    }
 
     // 获取真实的 session ID（UUID）用于后端轮询
     // 后端存储 suggestions 时用的是 chat.id (UUID)
@@ -138,8 +145,8 @@ export default function useSuggestionsPolling(options: {
         console.debug("[Suggestions] Polling attempt failed:", i + 1, error);
       }
 
-      // 等待1000ms后继续轮询（建议生成需要约2秒）
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // 等待3000ms后继续轮询（建议生成时间较长）
+      await new Promise((resolve) => setTimeout(resolve, 3000));
     }
     console.debug("[Suggestions] Polling finished, no suggestions found");
   }, [currentQARef, updateMessage, sessionApi]);

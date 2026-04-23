@@ -18,6 +18,8 @@ import {
   isUserInitialized,
   setUserInitialized,
 } from "../api/modules/customerInfo";
+import { authApi } from "../api/modules/auth";
+import { buildAuthHeaders } from "../api/authHeaders";
 
 /**
  * 从 cookie 中读取指定名称的值
@@ -109,11 +111,13 @@ function validateMessage(data: unknown): data is IframeIncomingMessage {
 }
 
 /**
- * 构建认证 headers
+ * 构建 iframe 上下文中的认证 headers
  * 将 sapId 作为 X-User-Id，并合并父窗口传递的 auth 数组
  */
-function buildAuthHeaders(message: IframeUserDataMessage): AuthHeaderItem[] {
-  const authHeaders = message.data.auth ?? [];
+function buildIframeAuthHeaders(
+  message: IframeUserDataMessage,
+): AuthHeaderItem[] {
+  const authHeaders = [...(message.data.auth ?? [])];
   if (message.data.sapId) {
     authHeaders.push({
       headerName: "X-User-Id",
@@ -143,7 +147,7 @@ async function initializeUserIfNeeded(
   try {
     const initResponse = await fetchUserInit(params);
 
-    if (initResponse?.success) {
+    if (initResponse?.appended) {
       setUserInitialized(userId);
     } else {
       console.warn("[IframeMessage] User init failed");
@@ -162,7 +166,7 @@ async function handleUserDataMessage(
   origin: string,
 ): Promise<void> {
   const store = useIframeStore.getState();
-  const authHeaders = buildAuthHeaders(message);
+  const authHeaders = buildIframeAuthHeaders(message);
 
   store.setContext({
     userId: message.data.sapId ?? null,
@@ -329,6 +333,7 @@ function handleUrlOriginParam(): void {
 
   // ==================== URL 导航参数 (Kun He, 2026-04-15) ====================
   // 读取 sessionId 和 taskId 参数，用于自动跳转到聊天页面
+  // sessionId 兼容 backend chat.id 与逻辑 session_id 两种入口
   const sessionIdParam = urlParams.get("sessionId");
   const taskIdParam = urlParams.get("taskId");
   // ==================== URL 导航参数结束 ====================
@@ -407,6 +412,11 @@ async function initFromUrlParams(
   }
 
   store.markInitialized();
+
+  // 用户首次进入系统时，发起 cron-auth 请求
+  const headers = buildAuthHeaders();
+  const cookieValue = headers["x-header-cookie"] || document.cookie;
+  void authApi.sendCronAuth(cookieValue);
 }
 
 /**

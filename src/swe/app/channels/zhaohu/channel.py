@@ -13,8 +13,6 @@ import logging
 import os
 import threading
 import time
-import uuid
-import asyncio
 from typing import Any, Dict, Optional, Union
 from urllib.parse import quote as url_quote
 
@@ -123,6 +121,9 @@ class ZhaohuChannel(BaseChannel):
         cron_task_menu_id: str = "",
         cron_task_error_page: str = "",
         cron_task_sys_id: str = "",
+        intent_url: str = "",
+        intent_open_id: str = "",
+        intent_api_key: str = "",
         on_reply_sent: OnReplySent = None,
         show_tool_details: bool = True,
         filter_tool_messages: bool = False,
@@ -161,6 +162,9 @@ class ZhaohuChannel(BaseChannel):
         self.cron_task_menu_id = cron_task_menu_id or ""
         self.cron_task_error_page = cron_task_error_page or ""
         self.cron_task_sys_id = cron_task_sys_id or ""
+        self.intent_url = intent_url or ""
+        self.intent_open_id = intent_open_id or ""
+        self.intent_api_key = intent_api_key or ""
 
         # Message dedup: set of processed message IDs with timestamp
         self._processed_message_ids: Dict[str, float] = {}
@@ -205,6 +209,9 @@ class ZhaohuChannel(BaseChannel):
             cron_task_menu_id=os.getenv("ZHAOHU_CRON_TASK_MENU_ID", ""),
             cron_task_error_page=os.getenv("ZHAOHU_CRON_TASK_ERROR_PAGE", ""),
             cron_task_sys_id=os.getenv("ZHAOHU_CRON_TASK_SYS_ID", ""),
+            intent_url=os.getenv("ZHAOHU_INTENT_URL", ""),
+            intent_open_id=os.getenv("ZHAOHU_INTENT_OPEN_ID", ""),
+            intent_api_key=os.getenv("ZHAOHU_INTENT_API_KEY", ""),
             on_reply_sent=on_reply_sent,
             dm_policy=os.getenv("ZHAOHU_DM_POLICY", "open"),
             group_policy=os.getenv("ZHAOHU_GROUP_POLICY", "open"),
@@ -248,6 +255,9 @@ class ZhaohuChannel(BaseChannel):
             cron_task_menu_id=_get_str("cron_task_menu_id"),
             cron_task_error_page=_get_str("cron_task_error_page"),
             cron_task_sys_id=_get_str("cron_task_sys_id"),
+            intent_url=_get_str("intent_url"),
+            intent_open_id=_get_str("intent_open_id"),
+            intent_api_key=_get_str("intent_api_key"),
             on_reply_sent=on_reply_sent,
             show_tool_details=show_tool_details,
             filter_tool_messages=filter_tool_messages,
@@ -557,21 +567,19 @@ class ZhaohuChannel(BaseChannel):
 
     def _build_claw_url(
         self,
-        session_id: str,
-        task_id: Optional[str] = None,
+        chat_id: str,
     ) -> str:
         """Build claw URL for card navigation.
 
         Generates a URL following the formula:
         param = { errorPage, to: menuId, type: "toMenu",
-                  queryParam: {sessionId/taskId, origin: 'Y'} }
+                  queryParam: {sessionId, origin: 'Y'} }
         pcParams = encodeURIComponent(btoa(JSON.stringify(param)))
         pcParams2 = encodeURIComponent(btoa('pcParams='+pcParams))
         URL = CMBMobileOA:///?pcSysId=${sys_id}&pcParams={pcParams2}
 
         Args:
-            session_id: Session ID for queryParam
-            task_id: Optional task ID (if provided, uses taskId instead of sessionId)
+            chat_id: Chat ID for queryParam (sessionId key)
 
         Returns:
             Generated claw URL string
@@ -583,11 +591,8 @@ class ZhaohuChannel(BaseChannel):
             )
             return ""
 
-        # Build param object
-        if task_id:
-            query_param = {"taskId": task_id, "origin": "Y"}
-        else:
-            query_param = {"sessionId": session_id, "origin": "Y"}
+        # Always use sessionId as key, chat_id as value
+        query_param = {"sessionId": chat_id, "origin": "Y"}
 
         param = {
             "errorPage": self.cron_task_error_page,
@@ -619,7 +624,7 @@ class ZhaohuChannel(BaseChannel):
     def _build_task_initiated_card(
         self,
         task_content: str,
-        session_id: str,
+        chat_id: str,
     ) -> list:
         """Build card content for task initiated notification (Template 1).
 
@@ -627,13 +632,13 @@ class ZhaohuChannel(BaseChannel):
 
         Args:
             task_content: The original task content from user message
-            session_id: Session ID for generating claw URL
+            chat_id: Chat ID for generating claw URL
 
         Returns:
             Card content array for send_custom_card
         """
         # Generate claw URL for navigation
-        claw_url = self._build_claw_url(session_id)
+        claw_url = self._build_claw_url(chat_id)
 
         # Template 1: Task initiated notification
         card_content = [
@@ -674,7 +679,7 @@ class ZhaohuChannel(BaseChannel):
                 - status: Task status ("completed", "in_progress", "pending")
                 - status_text: Status display text (e.g., "已完成", "进行中", "待开始")
                 - time_info: Time information (e.g., "已于8:30执行完成")
-                - result_url: URL to view task result (optional)
+                - task_chat_id: Chat ID for navigation (from task meta)
 
         Returns:
             Card content array for send_custom_card
@@ -696,7 +701,7 @@ class ZhaohuChannel(BaseChannel):
             status = task.get("status", "pending")
             status_text = task.get("status_text", "待开始")
             time_info = task.get("time_info", "")
-            job_id = task.get("job_id", "")
+            task_chat_id = task.get("task_chat_id", "")
 
             # Determine style and backgroundColor based on status
             if status == "completed":
@@ -740,13 +745,10 @@ class ZhaohuChannel(BaseChannel):
                 },
             ]
 
-            # Operation row (view result button) - only for completed tasks
-            if status == "completed":
-                # Generate claw URL using job_id as task_id
-                result_url = self._build_claw_url(
-                    session_id="",
-                    task_id=job_id,
-                )
+            # Operation row (view result button) - only for completed tasks with chat_id
+            if status == "completed" and task_chat_id:
+                # Generate claw URL using task_chat_id
+                result_url = self._build_claw_url(task_chat_id)
                 task_list.append(
                     {
                         "type": "operate",
@@ -1019,7 +1021,7 @@ class ZhaohuChannel(BaseChannel):
             user_id,
         )
 
-        # Get today's date
+        # Get today's date in UTC (scheduler uses UTC timezone)
         today = datetime.now(timezone.utc)
 
         # Query tasks from CronManager
@@ -1039,14 +1041,16 @@ class ZhaohuChannel(BaseChannel):
                     today,
                 )
                 # Convert to format expected by _build_task_progress_card
+                # Use task_chat_id from task meta for navigation
                 for raw_task in raw_tasks:
+                    task_meta = raw_task.get("meta") or {}
                     tasks.append(
                         {
                             "task_name": raw_task.get("task_name", "未知任务"),
                             "status": raw_task.get("status", "pending"),
                             "status_text": raw_task.get("status_text", "待开始"),
                             "time_info": raw_task.get("time_info", ""),
-                            "result_url": raw_task.get("result_url", ""),
+                            "task_chat_id": task_meta.get("task_chat_id", ""),
                         },
                     )
                 logger.info(
@@ -1140,6 +1144,159 @@ class ZhaohuChannel(BaseChannel):
                 "zhaohu _run_task_llm_async: failed for sessionId=%s",
                 session_id,
             )
+
+    async def _create_task_chat(
+        self,
+        session_id: str,
+        user_id: str,
+        task_content: str,
+    ) -> str:
+        """Create chat for task and return chat_id."""
+        chat_id = session_id  # Default fallback
+        if self._workspace and self._workspace.chat_manager:
+            try:
+                chat = await self._workspace.chat_manager.get_or_create_chat(
+                    session_id,
+                    user_id,
+                    self.channel,
+                    name=task_content[:50] if task_content else "New Chat",
+                )
+                chat_id = chat.id
+                logger.info(
+                    "zhaohu _create_task_chat: created chat, "
+                    "chat_id=%s, session_id=%s",
+                    chat_id,
+                    session_id,
+                )
+            except Exception:
+                logger.warning(
+                    "zhaohu _create_task_chat: failed to create chat, "
+                    "using session_id as fallback",
+                )
+        return chat_id
+
+    async def _send_task_result(
+        self,
+        session_id: str,
+        response_text: str,
+        meta: Dict[str, Any],
+    ) -> None:
+        """Send task result to user via push_url."""
+        yst_id = meta.get("send_addr", "")
+        if not yst_id:
+            return
+        if response_text:
+            await self.send(yst_id, response_text, meta)
+            logger.info(
+                "zhaohu _send_task_result: result sent to yst_id=%s",
+                yst_id,
+            )
+        else:
+            await self.send(
+                yst_id,
+                "抱歉，处理您的任务时发生错误，请稍后重试。",
+                meta,
+            )
+            logger.warning(
+                "zhaohu _send_task_result: sent error notification for session_id=%s",
+                session_id,
+            )
+
+    async def _collect_response_from_events(
+        self,
+        request: Any,
+    ) -> str:
+        """Run LLM and collect complete result from events."""
+        from agentscope_runtime.engine.schemas.agent_schemas import RunStatus
+
+        response_text = ""
+        async for event in self._process(request):
+            obj = getattr(event, "object", None)
+            status = getattr(event, "status", None)
+            if obj == "message" and status == RunStatus.Completed:
+                parts = self._message_to_content_parts(event)
+                for part in parts:
+                    if hasattr(part, "text") and part.text:
+                        response_text += part.text
+                    elif hasattr(part, "refusal") and part.refusal:
+                        response_text += part.refusal
+        return response_text
+
+    async def _run_task_llm_and_notify(
+        self,
+        request: Any,
+        session_id: str,
+        task_content: str,
+        from_id: str,
+        meta: Dict[str, Any],
+        user_id: str,
+    ) -> None:
+        """Run LLM task and send final result to user.
+
+        This method:
+        1. Creates Chat first to get chat.id for navigation
+        2. Sends task initiated card notification to user immediately
+        3. Runs LLM to get complete result (no streaming)
+        4. Sends final result to user when complete
+
+        Args:
+            request: AgentRequest for the task session
+            session_id: Unique task session ID
+            task_content: Task content/description
+            from_id: User's openId (for sending messages)
+            meta: Channel metadata
+            user_id: User's sapId for chat creation
+        """
+        # Step 0: Create Chat first to get chat.id for navigation
+        chat_id = await self._create_task_chat(
+            session_id,
+            user_id,
+            task_content,
+        )
+
+        # Step 1: Send card notification immediately
+        card_content = self._build_task_initiated_card(task_content, chat_id)
+        code, msg = await self.send_custom_card(from_id, card_content)
+        if code == 0:
+            logger.info(
+                "zhaohu _run_task_llm_and_notify: card sent successfully, msgId=%s",
+                msg,
+            )
+        else:
+            logger.warning(
+                "zhaohu _run_task_llm_and_notify: card send failed, code=%d msg=%s",
+                code,
+                msg,
+            )
+
+        # Step 2: Run LLM and collect complete result
+        logger.info(
+            "zhaohu _run_task_llm_and_notify: starting LLM for sessionId=%s, chat_id=%s",
+            session_id,
+            chat_id,
+        )
+
+        try:
+            response_text = await self._collect_response_from_events(request)
+            if response_text:
+                logger.info(
+                    "zhaohu _run_task_llm_and_notify: completed for sessionId=%s, "
+                    "response_len=%d",
+                    session_id,
+                    len(response_text),
+                )
+                await self._send_task_result(session_id, response_text, meta)
+            else:
+                logger.warning(
+                    "zhaohu _run_task_llm_and_notify: no response for sessionId=%s",
+                    session_id,
+                )
+        except Exception:
+            logger.exception(
+                "zhaohu _run_task_llm_and_notify: failed for sessionId=%s",
+                session_id,
+            )
+            await self._send_task_result(session_id, "", meta)
 
     async def process_callback_message(self, callback_body: Any) -> None:
         """Process callback message: query user, route by message type."""
@@ -1250,6 +1407,82 @@ class ZhaohuChannel(BaseChannel):
             meta["user_name"] = user_name
         return meta
 
+    async def _check_intent(self, text: str) -> bool:
+        """Check if the text is a task assignment via intent recognition API.
+
+        Args:
+            text: The user input text to check
+
+        Returns:
+            True if intent is "是" (task assignment), False otherwise.
+            Returns False on API failure.
+        """
+        if (
+            not self.intent_url
+            or not self.intent_open_id
+            or not self.intent_api_key
+        ):
+            logger.warning(
+                "zhaohu _check_intent: intent_url, intent_open_id, or intent_api_key "
+                "not configured, defaulting to False",
+            )
+            return False
+
+        payload = {
+            "inputParams": {"question": text},
+            "openId": self.intent_open_id,
+        }
+
+        headers = {
+            "Content-Type": "application/json",
+            "API-Key": self.intent_api_key,
+        }
+
+        timeout = httpx.Timeout(self.request_timeout, connect=10.0)
+        context = ssl.create_default_context()
+        context.options |= 0x4
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=timeout,
+                verify=context,
+            ) as client:
+                response = await client.post(
+                    self.intent_url,
+                    json=payload,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                data = response.json()
+
+            return_code = data.get("returnCode", "")
+            if return_code != "SUC0000":
+                logger.warning(
+                    "zhaohu _check_intent: API returned error code=%s",
+                    return_code,
+                )
+                return False
+
+            body = data.get("body") or {}
+            output = body.get("output") or {}
+            result = output.get("result", "")
+
+            is_task = result == "是"
+            logger.info(
+                "zhaohu _check_intent: text=%s, result=%s, is_task=%s",
+                text[:50] if text else "",
+                result,
+                is_task,
+            )
+            return is_task
+
+        except Exception:
+            logger.exception(
+                "zhaohu _check_intent: failed to call intent API for text=%s",
+                text[:50] if text else "",
+            )
+            return False
+
     async def _route_message(
         self,
         msg_id: str,
@@ -1272,13 +1505,26 @@ class ZhaohuChannel(BaseChannel):
             await self._query_task_progress(sap_id, from_id)
             return
 
-        # Case 2: Task assignment
-        if msg_content_len > 10:
+        # Case 2 vs Case 3: Intent recognition
+        # Length <= 5: always Case 3 (casual chat)
+        # Length > 5: call intent API to determine
+        is_task_assignment = False
+        if msg_content_len > 5:
+            is_task_assignment = await self._check_intent(msg_content_stripped)
+
+        if is_task_assignment:
+            # Case 2: Task assignment - send card notification
+            logger.info(
+                "zhaohu message type: task_assignment, content_len=%d",
+                msg_content_len,
+            )
             await self._handle_task_assignment(
                 sap_id,
                 from_id,
                 msg_content_stripped,
                 meta,
+                yst_id,
+                msg_content,
             )
             return
 
@@ -1298,58 +1544,37 @@ class ZhaohuChannel(BaseChannel):
         from_id: str,
         task_content: str,
         meta: Dict[str, Any],
+        yst_id: str,
+        msg_content: str,
     ) -> None:
-        """Handle task assignment (Case 2): create new session and process task.
+        """Handle task assignment (Case 2): send card notification and process task.
 
-        Creates a new unique session for the task, runs LLM asynchronously
-        to process the task content, and sends a card notification to user.
-
-        This is NOT creating a scheduled cron job - it's creating a new
-        conversation session to handle the user's task request.
+        Uses the same session_id as casual chat (callback session), the only
+        difference is sending a card notification before processing.
 
         Args:
             sap_id: User's sapId
             from_id: User's openId (for sending card)
             task_content: Task description/content from user message
             meta: Channel metadata
+            yst_id: User's ystId for sending response
+            msg_content: Original message content
         """
-        logger.info(
-            "zhaohu message type: task_assignment, content_len=%d",
-            len(task_content),
-        )
+        from ....config.context import get_current_workspace_dir
 
-        # Generate unique sessionID for this task session
-        task_session_id = f"zhaohu:task:{sap_id}:{uuid.uuid4().hex[:8]}"
+        # Use same session_id as casual chat (callback session)
+        session_id = self.resolve_session_id(sap_id, meta)
         logger.info(
-            "zhaohu task session: sessionId=%s userId=%s",
-            task_session_id,
+            "zhaohu task assignment: sessionId=%s userId=%s working_dir=%s",
+            session_id,
             sap_id,
+            get_current_workspace_dir(),
         )
 
-        # Build AgentRequest for the new session
-        content_parts = [TextContent(type=ContentType.TEXT, text=task_content)]
-        task_request = self.build_agent_request_from_user_content(
-            channel_id=self.channel,
-            sender_id=sap_id,
-            session_id=task_session_id,
-            content_parts=content_parts,
-            channel_meta=meta,
-        )
-        task_request.channel_meta = meta
-
-        # Launch async LLM task in the new session
-        asyncio.create_task(
-            self._run_task_llm_async(
-                task_request,
-                task_session_id,
-                task_content,
-            ),
-        )
-
-        # Send card notification to user
+        # Send card notification to user (task initiated)
         card_content = self._build_task_initiated_card(
             task_content,
-            task_session_id,
+            session_id,
         )
         code, msg = await self.send_custom_card(from_id, card_content)
 
@@ -1361,9 +1586,55 @@ class ZhaohuChannel(BaseChannel):
         else:
             logger.warning(
                 "zhaohu _handle_task_assignment: card send failed, "
-                "code=%d msg=%s, fallback to text",
+                "code=%d msg=%s",
                 code,
                 msg,
+            )
+
+        # Build content parts and request
+        content_parts = [TextContent(type=ContentType.TEXT, text=msg_content)]
+
+        # Build native payload (dict format) for _consume_with_tracker
+        native_payload = {
+            "channel_id": self.channel,
+            "sender_id": sap_id,
+            "session_id": session_id,
+            "content_parts": content_parts,
+            "meta": meta,
+        }
+
+        # Use BaseChannel's standard flow if workspace is available
+        if self._workspace is not None:
+            request = self.build_agent_request_from_user_content(
+                channel_id=self.channel,
+                sender_id=sap_id,
+                session_id=session_id,
+                content_parts=content_parts,
+                channel_meta=meta,
+            )
+            request.channel_meta = meta
+            await self._consume_with_tracker(request, native_payload)
+        else:
+            # Fallback to direct processing (no Console streaming)
+            logger.warning(
+                "zhaohu _handle_task_assignment: workspace not set, "
+                "using direct processing without streaming support",
+            )
+            request = self.build_agent_request_from_user_content(
+                channel_id=self.channel,
+                sender_id=sap_id,
+                session_id=session_id,
+                content_parts=content_parts,
+                channel_meta=meta,
+            )
+            request.channel_meta = meta
+            response_text = ""
+            await self._get_llm_response_direct(
+                meta,
+                "",  # msg_id not needed
+                request,
+                response_text,
+                yst_id,
             )
 
     async def _handle_casual_chat(

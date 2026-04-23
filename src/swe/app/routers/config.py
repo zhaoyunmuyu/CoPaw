@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=no-name-in-module
 
 from datetime import datetime, timezone
 from typing import Any, List, Optional
@@ -46,10 +47,9 @@ _CHANNEL_CONFIG_CLASS_MAP = {
 )
 async def list_channels(request: Request) -> dict:
     """List all channel configs (filtered by available channels)."""
-    from ..agent_context import get_agent_for_request
+    from ..agent_context import get_agent_and_config_for_request
 
-    agent = await get_agent_for_request(request)
-    agent_config = agent.config
+    _, agent_config = await get_agent_and_config_for_request(request)
     available = get_available_channels()
 
     # Get channel configs from agent's config (with fallback to empty)
@@ -105,15 +105,23 @@ async def put_channels(
     ),
 ) -> ChannelConfig:
     """Update all channel configs."""
-    from ..agent_context import get_agent_for_request
+    from ..agent_context import get_agent_and_config_for_request
     from ...config.config import save_agent_config
 
-    agent = await get_agent_for_request(request)
-    agent.config.channels = channels_config
-    save_agent_config(agent.agent_id, agent.config, tenant_id=agent.tenant_id)
+    agent, agent_config = await get_agent_and_config_for_request(request)
+    agent_config.channels = channels_config
+    save_agent_config(
+        agent.agent_id,
+        agent_config,
+        tenant_id=agent.tenant_id,
+    )
 
     # Hot reload config (async, non-blocking)
-    schedule_agent_reload(request, agent.agent_id)
+    schedule_agent_reload(
+        request,
+        agent.agent_id,
+        tenant_id=agent.tenant_id,
+    )
 
     return channels_config
 
@@ -123,10 +131,10 @@ async def _get_weixin_base_url(request: Request) -> str:
     from ..channels.weixin.client import _DEFAULT_BASE_URL
 
     try:
-        from ..agent_context import get_agent_for_request
+        from ..agent_context import get_agent_and_config_for_request
 
-        agent = await get_agent_for_request(request)
-        channels = agent.config.channels
+        _, agent_config = await get_agent_and_config_for_request(request)
+        channels = agent_config.channels
         if channels is not None:
             weixin_cfg = getattr(channels, "weixin", None)
             if weixin_cfg is not None:
@@ -240,7 +248,7 @@ async def get_channel(
     ),
 ) -> ChannelConfigUnion:
     """Get a specific channel config by name."""
-    from ..agent_context import get_agent_for_request
+    from ..agent_context import get_agent_and_config_for_request
 
     available = get_available_channels()
     if channel_name not in available:
@@ -249,8 +257,8 @@ async def get_channel(
             detail=f"Channel '{channel_name}' not found",
         )
 
-    agent = await get_agent_for_request(request)
-    channels = agent.config.channels
+    _, agent_config = await get_agent_and_config_for_request(request)
+    channels = agent_config.channels
     if channels is None:
         raise HTTPException(
             status_code=404,
@@ -288,7 +296,7 @@ async def put_channel(
     ),
 ) -> ChannelConfigUnion:
     """Update a specific channel config by name."""
-    from ..agent_context import get_agent_for_request
+    from ..agent_context import get_agent_and_config_for_request
     from ...config.config import save_agent_config
 
     available = get_available_channels()
@@ -298,11 +306,11 @@ async def put_channel(
             detail=f"Channel '{channel_name}' not found",
         )
 
-    agent = await get_agent_for_request(request)
+    agent, agent_config = await get_agent_and_config_for_request(request)
 
     # Initialize channels if not exists
-    if agent.config.channels is None:
-        agent.config.channels = ChannelConfig()
+    if agent_config.channels is None:
+        agent_config.channels = ChannelConfig()
 
     config_class = _CHANNEL_CONFIG_CLASS_MAP.get(channel_name)
     if config_class is not None:
@@ -312,11 +320,19 @@ async def put_channel(
         channel_config = single_channel_config
 
     # Set channel config in agent's config
-    setattr(agent.config.channels, channel_name, channel_config)
-    save_agent_config(agent.agent_id, agent.config, tenant_id=agent.tenant_id)
+    setattr(agent_config.channels, channel_name, channel_config)
+    save_agent_config(
+        agent.agent_id,
+        agent_config,
+        tenant_id=agent.tenant_id,
+    )
 
     # Hot reload config (async, non-blocking)
-    schedule_agent_reload(request, agent.agent_id)
+    schedule_agent_reload(
+        request,
+        agent.agent_id,
+        tenant_id=agent.tenant_id,
+    )
 
     return channel_config
 
@@ -328,11 +344,11 @@ async def put_channel(
 )
 async def get_heartbeat(request: Request) -> Any:
     """Return effective heartbeat config (from file or default)."""
-    from ..agent_context import get_agent_for_request
+    from ..agent_context import get_agent_and_config_for_request
     from ...config.config import HeartbeatConfig as HeartbeatConfigModel
 
-    agent = await get_agent_for_request(request)
-    hb = agent.config.heartbeat
+    _, agent_config = await get_agent_and_config_for_request(request)
+    hb = agent_config.heartbeat
     if hb is None:
         # Use default if not configured
         hb = HeartbeatConfigModel()
@@ -349,18 +365,22 @@ async def put_heartbeat(
     body: HeartbeatBody = Body(..., description="Heartbeat configuration"),
 ) -> Any:
     """Update heartbeat config and reschedule the heartbeat job."""
-    from ..agent_context import get_agent_for_request
+    from ..agent_context import get_agent_and_config_for_request
     from ...config.config import save_agent_config
 
-    agent = await get_agent_for_request(request)
+    agent, agent_config = await get_agent_and_config_for_request(request)
     hb = HeartbeatConfig(
         enabled=body.enabled,
         every=body.every,
         target=body.target,
         active_hours=body.active_hours,
     )
-    agent.config.heartbeat = hb
-    save_agent_config(agent.agent_id, agent.config, tenant_id=agent.tenant_id)
+    agent_config.heartbeat = hb
+    save_agent_config(
+        agent.agent_id,
+        agent_config,
+        tenant_id=agent.tenant_id,
+    )
 
     # Reschedule heartbeat (async, non-blocking)
     import asyncio

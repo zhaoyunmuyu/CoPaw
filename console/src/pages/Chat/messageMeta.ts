@@ -18,6 +18,16 @@ export interface ChatRuntimeResponseCardData
   headerMeta?: ChatMessageHeaderMeta;
 }
 
+export interface ChatApprovalActionCardData {
+  requestId: string;
+  toolName: string;
+  toolInput: Record<string, unknown>;
+  triggerLabel: string;
+  approveCommand: string;
+  denyCommand: string;
+  status?: "pending" | "approved" | "denied" | "timeout" | "superseded";
+}
+
 type TimestampSource = {
   timestamp?: unknown;
 };

@@ -34,15 +34,14 @@ describe("headerMeta helpers", () => {
     ).toBe(currentTimestamp);
   });
 
-  it("falls back to response created_at or now when no live timestamp exists", () => {
+  it("falls back to now when no live timestamp exists", () => {
     const createdAt = Date.parse("2026-04-17T16:03:00+08:00");
+    const now = createdAt + 1000;
+    const dateNow = vi.spyOn(Date, "now").mockReturnValue(now);
 
-    expect(resolveResponseHeaderTimestamp({ created_at: createdAt })).toBe(
-      createdAt,
-    );
+    expect(resolveResponseHeaderTimestamp({ created_at: createdAt })).toBe(now);
+    expect(resolveResponseHeaderTimestamp(undefined)).toBe(now);
 
-    const dateNow = vi.spyOn(Date, "now").mockReturnValue(createdAt + 1000);
-    expect(resolveResponseHeaderTimestamp(undefined)).toBe(createdAt + 1000);
     dateNow.mockRestore();
   });
 

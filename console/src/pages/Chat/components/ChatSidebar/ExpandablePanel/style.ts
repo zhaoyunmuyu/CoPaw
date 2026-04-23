@@ -98,6 +98,12 @@ export default createGlobalStyle`
     background:
       linear-gradient(90deg, rgba(223, 146, 33, 0.12), rgba(223, 146, 33, 0.04));
   }
+
+  &--running {
+    background:
+      linear-gradient(90deg, rgba(55, 105, 252, 0.12), rgba(55, 105, 252, 0.04));
+    box-shadow: inset 0 0 0 1px rgba(55, 105, 252, 0.12);
+  }
 }
 
 .expandable-panel-task-title-row {
@@ -183,6 +189,7 @@ export default createGlobalStyle`
   &--manual {
     color: ${DESIGN_TOKENS.colorTextMuted};
   }
+
 }
 
 .expandable-panel-task-subtitle {

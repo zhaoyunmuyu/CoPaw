@@ -13,6 +13,7 @@ import api, {
 } from "../../../api";
 import { cronJobApi } from "../../../api/modules/cronjob";
 import type {
+  ChatApprovalActionCardData,
   ChatRuntimeRequestCardData,
   ChatRuntimeResponseCardData,
 } from "../messageMeta";
@@ -21,6 +22,12 @@ import { toDisplayUrl } from "../utils";
 import { applyPreferredSessionSelection } from "./preferredSession";
 import { shouldNotifySessionSelected } from "./sessionRaceGuard";
 import { filterStaleTaskSessions } from "./taskSessions";
+import {
+  forgetResolvedChatId,
+  forgetResolvedChatIdsForChat,
+  getResolvedChatId,
+  rememberResolvedChatId,
+} from "./resolvedSessionMapping";
 
 // ==================== userId 统一整改 (Kun He) ====================
 // 使用统一的 getUserId/getChannel helper
@@ -43,6 +50,7 @@ const ROLE_ASSISTANT = "assistant";
 const TYPE_PLUGIN_CALL_OUTPUT = "plugin_call_output";
 // const CARD_REQUEST = "AgentScopeRuntimeRequestCard";
 const CARD_RESPONSE = "AgentScopeRuntimeResponseCard";
+const CARD_APPROVAL_ACTION = "ApprovalAction";
 
 // ---------------------------------------------------------------------------
 // Window globals
@@ -70,8 +78,33 @@ interface ContentItem {
 /** A backend message after role-normalisation (output of toOutputMessage). */
 interface OutputMessage extends Omit<Message, "role"> {
   role: string;
-  metadata: null;
+  metadata: unknown;
   sequence_number?: number;
+}
+
+function extractApprovalAction(
+  message: OutputMessage,
+): ChatApprovalActionCardData | null {
+  const metadata =
+    message.metadata && typeof message.metadata === "object"
+      ? (message.metadata as Record<string, unknown>)
+      : null;
+  if (!metadata) return null;
+
+  const direct = metadata.approval_action;
+  if (direct && typeof direct === "object") {
+    return direct as ChatApprovalActionCardData;
+  }
+
+  const nested = metadata.metadata;
+  if (nested && typeof nested === "object") {
+    const approvalAction = (nested as Record<string, unknown>).approval_action;
+    if (approvalAction && typeof approvalAction === "object") {
+      return approvalAction as ChatApprovalActionCardData;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -172,7 +205,7 @@ const toOutputMessage = (msg: Message): OutputMessage => ({
     msg.type === TYPE_PLUGIN_CALL_OUTPUT && msg.role === "system"
       ? ROLE_TOOL
       : msg.role,
-  metadata: null,
+  metadata: msg.metadata ?? null,
 });
 
 /** Build a user card (AgentScopeRuntimeRequestCard) from a user message. */
@@ -216,7 +249,7 @@ const buildResponseCard = (
       timestamp: message.timestamp,
     })),
   );
-  const now = Math.floor(Date.now() / 1000);
+  const createdAt = timestamp ?? Date.now();
   const maxSeq = outputMessages.reduce(
     (max, m) => Math.max(max, m.sequence_number || 0),
     0,
@@ -227,28 +260,42 @@ const buildResponseCard = (
     content: normalizeOutputMessageContent(msg.content),
   }));
 
+  const approvalAction = normalizedMessages.reduce<ChatApprovalActionCardData | null>(
+    (found, message) => found ?? extractApprovalAction(message),
+    null,
+  );
+
+  const cards: NonNullable<IAgentScopeRuntimeWebUIMessage["cards"]> = [
+    {
+      code: CARD_RESPONSE,
+      data: {
+        id: `response_${generateId()}`,
+        output: normalizedMessages,
+        object: "response",
+        status: "completed",
+        created_at: createdAt,
+        sequence_number: maxSeq + 1,
+        error: null,
+        completed_at: createdAt,
+        usage: null,
+        headerMeta: {
+          timestamp,
+        },
+      } as unknown as ChatRuntimeResponseCardData,
+    },
+  ];
+
+  if (approvalAction) {
+    cards.push({
+      code: CARD_APPROVAL_ACTION,
+      data: approvalAction,
+    });
+  }
+
   return {
     id: generateId(),
     role: ROLE_ASSISTANT,
-    cards: [
-      {
-        code: CARD_RESPONSE,
-        data: {
-          id: `response_${generateId()}`,
-          output: normalizedMessages,
-          object: "response",
-          status: "completed",
-          created_at: now,
-          sequence_number: maxSeq + 1,
-          error: null,
-          completed_at: now,
-          usage: null,
-          headerMeta: {
-            timestamp,
-          },
-        } as unknown as ChatRuntimeResponseCardData,
-      },
-    ],
+    cards,
     msgStatus: "finished",
   };
 };
@@ -261,7 +308,7 @@ const buildResponseCard = (
  * - Consecutive non-user messages (assistant / system / tool) → grouped
  *   into a single AgentScopeRuntimeResponseCard with all output messages.
  */
-const convertMessages = (
+export const convertMessages = (
   messages: Message[],
 ): IAgentScopeRuntimeWebUIMessage[] => {
   const result: IAgentScopeRuntimeWebUIMessage[] = [];
@@ -366,7 +413,7 @@ function clearPendingUserMessage(sessionId: string): void {
 // SessionApi
 // ---------------------------------------------------------------------------
 
-class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
+export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
   private sessionList: IAgentScopeRuntimeWebUISession[] = [];
   private intendedSessionId: string | null = null;
 
@@ -513,15 +560,66 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     return this.createEmptySession(sessionId);
   }
 
+  private findSessionByIdentity(sessionId: string): ExtendedSession | undefined {
+    return this.sessionList.find((session) => {
+      const extendedSession = session as ExtendedSession;
+      return (
+        extendedSession.id === sessionId ||
+        extendedSession.realId === sessionId
+      );
+    }) as ExtendedSession | undefined;
+  }
+
+  getLogicalSessionId(sessionId: string): string {
+    if (!sessionId) {
+      return "";
+    }
+
+    if (this.pendingSession?.id === sessionId) {
+      return this.pendingSession.sessionId;
+    }
+
+    const session = this.findSessionByIdentity(sessionId);
+    return session?.sessionId || sessionId;
+  }
+
   /**
    * Returns the real backend UUID for a session identified by id (which may be
    * a local timestamp). Returns null when not yet resolved or not found.
    */
   getRealIdForSession(sessionId: string): string | null {
-    const s = this.sessionList.find((x) => x.id === sessionId) as
-      | ExtendedSession
-      | undefined;
-    return s?.realId ?? null;
+    return (
+      this.findSessionByIdentity(sessionId)?.realId ??
+      getResolvedChatId(sessionId)
+    );
+  }
+
+  getChatIdForSession(sessionId: string): string | null {
+    if (!sessionId) {
+      return null;
+    }
+
+    const session = this.findSessionByIdentity(sessionId);
+    if (session?.realId) {
+      return session.realId;
+    }
+
+    if (session && !isLocalTimestamp(session.id)) {
+      return session.id;
+    }
+
+    if (isLocalTimestamp(sessionId)) {
+      return getResolvedChatId(sessionId);
+    }
+
+    const matchesLogicalSessionId = this.sessionList.some(
+      (session) => (session as ExtendedSession).sessionId === sessionId,
+    );
+    if (matchesLogicalSessionId) {
+      return null;
+    }
+
+    return sessionId;
   }
 
   /**
@@ -561,6 +659,7 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     this.sessionList.unshift(session);
 
     // 触发回调更新URL
+    rememberResolvedChatId(this.pendingSession.id, realId);
     this.onSessionIdResolved?.(this.pendingSession.id, realId);
 
     // 清除临时会话
@@ -607,13 +706,15 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
             const tempId = this.pendingSession.id;
 
             // 触发回调更新URL
+            rememberResolvedChatId(tempId, realId);
             this.onSessionIdResolved?.(tempId, realId);
 
             // 清除临时会话
             this.pendingSession = null;
 
-            // 更新 window 变量使用真实UUID
-            window.currentSessionId = realId;
+            // 保持 window.currentSessionId 指向逻辑 session_id
+            window.currentSessionId =
+              matchedBackendSession.sessionId || tempId;
           }
         }
 
@@ -775,6 +876,7 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
           const { list, realId } = resolveRealId(this.sessionList, tempId);
           if (realId) {
             this.sessionList = list;
+            rememberResolvedChatId(tempId, realId);
             this.onSessionIdResolved?.(tempId, realId);
           }
         });
@@ -784,6 +886,7 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
           const { list, realId } = resolveRealId(this.sessionList, tempId);
           this.sessionList = list;
           if (realId) {
+            rememberResolvedChatId(tempId, realId);
             this.onSessionIdResolved?.(tempId, realId);
           }
         });
@@ -794,6 +897,7 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
         const { list, realId } = resolveRealId(this.sessionList, tempId);
         this.sessionList = list;
         if (realId) {
+          rememberResolvedChatId(tempId, realId);
           this.onSessionIdResolved?.(tempId, realId);
         }
       });
@@ -843,13 +947,18 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
       | undefined;
 
     const deleteId =
-      existing?.realId ?? (isLocalTimestamp(sessionId) ? null : sessionId);
+      this.getChatIdForSession(sessionId) ??
+      (isLocalTimestamp(sessionId) ? null : sessionId);
 
     if (deleteId) await api.deleteChat(deleteId);
 
     this.sessionList = this.sessionList.filter((s) => s.id !== sessionId);
 
     const resolvedId = existing?.realId ?? sessionId;
+    forgetResolvedChatId(sessionId);
+    if (deleteId) {
+      forgetResolvedChatIdsForChat(deleteId);
+    }
     this.onSessionRemoved?.(resolvedId);
 
     return [...this.sessionList];

@@ -8,53 +8,37 @@ import KnowledgeTabs from "../KnowledgeTabs";
 import FeaturedCases from "../FeaturedCases";
 import CaseDetailDrawer from "../CaseDetailDrawer";
 import { casesApi } from "@/api/modules/cases";
-import { greetingApi } from "@/api/modules/greeting";
+// TODO: 待对接接口
+// import { greetingApi } from "@/api/modules/greeting";
 import type { Case } from "@/api/types/cases";
 import type { GreetingDisplay } from "@/api/types/greeting";
-import { DESIGN_TOKENS } from "@/config/designTokens";
+import sendIcon from '../../../assets/icons/send_highlight.svg'
 
 interface WelcomeCenterLayoutProps {
   greeting?: string;
   onSubmit: (data: { query: string }) => void;
 }
 
-function SendIcon() {
-  return (
-    <svg width="16" height="17" viewBox="0 0 16 17" fill="none">
-      <path
-        d="M3.04 7.19L6.56 10.71L12.96 4.31"
-        stroke="white"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 export default function WelcomeCenterLayout(props: WelcomeCenterLayoutProps) {
-  const {
-    greeting: defaultGreeting = "你好，你的专属小龙虾，前来报到！",
-    onSubmit,
-  } = props;
+  const { greeting, onSubmit } = props;
   const [inputValue, setInputValue] = useState("");
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
+  const [randomPlaceholder, setRandomPlaceholder] = useState('');
   const [loadingCase, setLoadingCase] = useState(false);
   const uploadRef = useRef<any>(null);
+  // 随机placeholder文案数组
+  const placeholderOptions = [
+    '告诉我你要做什么，我将召唤对应专家，为你执行...',
+    '有什么要求都告诉我，我会越用越懂你...',
+    '你可以给我取个名字，甚至设定我的人设...'
+  ];
 
-  // Dynamic greeting config from API
-  const [greetingConfig, setGreetingConfig] = useState<GreetingDisplay | null>(null);
-
+  // 组件挂载时随机选择placeholder文案
   useEffect(() => {
-    greetingApi.getDisplayGreeting()
-      .then(setGreetingConfig)
-      .catch(() => setGreetingConfig(null));
+    const randomIndex = Math.floor(Math.random() * placeholderOptions.length);
+    setRandomPlaceholder(placeholderOptions[randomIndex]);
   }, []);
-
-  // Use dynamic config or default values
-  const greeting = greetingConfig?.greeting || defaultGreeting;
-  const placeholder = greetingConfig?.placeholder || "任何要求，尽管提…";
 
   const handleSend = useCallback(() => {
     const trimmed = inputValue.trim();
@@ -114,7 +98,7 @@ export default function WelcomeCenterLayout(props: WelcomeCenterLayoutProps) {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={placeholder}
+            placeholder={randomPlaceholder}
             autoSize={{ minRows: 1, maxRows: 5 }}
             bordered={false}
           />
@@ -149,15 +133,15 @@ export default function WelcomeCenterLayout(props: WelcomeCenterLayoutProps) {
               disabled={!inputValue.trim()}
               type="button"
             >
-              <SendIcon />
+              <img src={sendIcon} alt="发送" width={28} height={28} />
             </button>
           </div>
         </div>
 
         {/* Knowledge Tabs */}
-        <div className="welcome-tabs-area">
+        {/* <div className="welcome-tabs-area">
           <KnowledgeTabs />
-        </div>
+        </div> */}
 
         {/* Featured Cases */}
         <div className="welcome-cases-area">

@@ -11,11 +11,45 @@ from .manager import ChatManager
 from .models import (
     ChatSpec,
     ChatHistory,
+    ChatMessage,
 )
 from .utils import agentscope_msg_to_message
+from ..approvals import get_approval_service
 
 
 router = APIRouter(prefix="/chats", tags=["chats"])
+
+
+async def _annotate_approval_action_statuses(
+    messages: list[ChatMessage],
+) -> list[ChatMessage]:
+    """Attach current approval status to messages carrying approval metadata."""
+    approval_service = get_approval_service()
+
+    for message in messages:
+        metadata = getattr(message, "metadata", None)
+        if not isinstance(metadata, dict):
+            continue
+
+        nested = metadata.get("metadata")
+        if not isinstance(nested, dict):
+            continue
+
+        approval_action = nested.get("approval_action")
+        if not isinstance(approval_action, dict):
+            continue
+
+        request_id = approval_action.get("requestId")
+        if not isinstance(request_id, str) or not request_id:
+            continue
+
+        request = await approval_service.get_request(request_id)
+        if request is None:
+            continue
+
+        approval_action["status"] = request.status
+
+    return messages
 
 
 async def get_workspace(request: Request):
@@ -171,6 +205,7 @@ async def get_chat(
 
     memories = await memory.get_memory(prepend_summary=False)
     messages = agentscope_msg_to_message(memories)
+    messages = await _annotate_approval_action_statuses(messages)
     return ChatHistory(messages=messages, status=status)
 
 

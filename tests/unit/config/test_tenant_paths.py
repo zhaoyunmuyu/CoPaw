@@ -4,14 +4,15 @@
 Tests tenant-aware path computation and strict failure when
 tenant/workspace context is absent.
 """
+# pylint: disable=redefined-outer-name
 import importlib
 import sys
 import types
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
-
 import pytest
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
 
 config_stub = types.ModuleType("swe.config.config")
 config_stub.Config = object
@@ -28,6 +29,7 @@ utils_module = importlib.import_module("swe.config.utils")
 TenantContextError = context_module.TenantContextError
 get_tenant_working_dir_strict = utils_module.get_tenant_working_dir_strict
 get_tenant_config_path_strict = utils_module.get_tenant_config_path_strict
+list_logical_tenant_ids = utils_module.list_logical_tenant_ids
 WORKING_DIR = utils_module.WORKING_DIR
 
 
@@ -128,7 +130,9 @@ class TestTenantPathStrictHelpers:
         path = get_tenant_config_path_strict("tenant-a")
         assert path == WORKING_DIR / "tenant-a" / "config.json"
 
-    def test_tenant_sensitive_helper_call_does_not_fallback_to_global_path(self):
+    def test_tenant_sensitive_helper_call_does_not_fallback_to_global_path(
+        self,
+    ):
         with pytest.raises(TenantContextError):
             get_tenant_working_dir_strict(None)
 
@@ -149,6 +153,60 @@ class TestTenantPathStrictHelpers:
 
         with pytest.raises(TenantContextError):
             get_tenant_config_path_strict()
+
+
+class TestLogicalTenantListing:
+    """Tests logical tenant ID projection for source-scoped callers."""
+
+    def test_without_source_id_returns_raw_ids(self, monkeypatch):
+        monkeypatch.setattr(
+            utils_module,
+            "list_all_tenant_ids",
+            lambda: ["default", "tenant-a"],
+        )
+
+        assert list_logical_tenant_ids() == ["default", "tenant-a"]
+
+    def test_source_id_maps_effective_default_to_logical_default(
+        self,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(
+            utils_module,
+            "list_all_tenant_ids",
+            lambda: [
+                "default",
+                "default_ruice",
+                "default_other",
+                "tenant-a",
+            ],
+        )
+
+        assert list_logical_tenant_ids("ruice") == [
+            "default",
+            "default_other",
+            "tenant-a",
+        ]
+
+    def test_source_id_preserves_other_default_prefixed_tenants(
+        self,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(
+            utils_module,
+            "list_all_tenant_ids",
+            lambda: [
+                "default_ruice",
+                "default_sales",
+                "tenant-a",
+            ],
+        )
+
+        assert list_logical_tenant_ids("ruice") == [
+            "default",
+            "default_sales",
+            "tenant-a",
+        ]
 
 
 class TestTenantPathBackwardCompatibility:

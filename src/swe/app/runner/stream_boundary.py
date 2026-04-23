@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import logging
 from typing import AsyncGenerator, AsyncIterator, Iterable
@@ -24,6 +25,63 @@ from ...agents.utils.tool_summary import (
 
 
 logger = logging.getLogger(__name__)
+
+_STREAM_SUMMARY_TIMEOUT_SECONDS = 0.15
+
+
+def _consume_summary_task_result(task: asyncio.Task[str]) -> None:
+    """Drain background summary task result after timeout cancellation."""
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        return
+    except Exception as exc:
+        logger.debug("Background tool summary task failed: %s", exc)
+
+
+async def _resolve_summary_with_timeout(
+    coro,
+    *,
+    fallback: str,
+    summary_kind: str,
+    tool_name: str,
+) -> str:
+    """Return async summary quickly, or fallback without blocking the stream.
+
+    The summary model runs off the critical path with a hard timeout. If it
+    does not finish in time, the event stream falls back immediately instead of
+    waiting for cancellation cleanup, which may itself stall on buggy model
+    clients.
+    """
+    task = asyncio.create_task(coro)
+    try:
+        done, _pending = await asyncio.wait(
+            {task},
+            timeout=_STREAM_SUMMARY_TIMEOUT_SECONDS,
+        )
+        if not done:
+            task.cancel()
+            task.add_done_callback(_consume_summary_task_result)
+            logger.debug(
+                "Timed out generating %s summary for tool %s; using fallback",
+                summary_kind,
+                tool_name,
+            )
+            return fallback
+
+        summary = task.result()
+        return summary or fallback
+    except Exception as exc:
+        if not task.done():
+            task.cancel()
+            task.add_done_callback(_consume_summary_task_result)
+        logger.debug(
+            "Failed to generate %s summary for tool %s: %s",
+            summary_kind,
+            tool_name,
+            exc,
+        )
+        return fallback
 
 
 def _is_empty_reasoning_boundary_message(event: Event) -> bool:
@@ -95,28 +153,21 @@ async def _enrich_tool_message(event: Message) -> None:
             tool_name = data.get("name", "")
             arguments = data.get("arguments", "{}")
             server_label = data.get("server_label")
-            try:
-                data["summary"] = await async_generate_tool_call_summary(
+            fallback = generate_tool_call_summary(
+                tool_name=tool_name,
+                arguments=arguments,
+                server_label=server_label,
+            )
+            data["summary"] = await _resolve_summary_with_timeout(
+                async_generate_tool_call_summary(
                     tool_name=tool_name,
                     arguments=arguments,
                     server_label=server_label,
-                )
-            except Exception as exc:
-                logger.debug(
-                    "Failed to generate async tool call summary: %s",
-                    exc,
-                )
-                try:
-                    data["summary"] = generate_tool_call_summary(
-                        tool_name=tool_name,
-                        arguments=arguments,
-                        server_label=server_label,
-                    )
-                except Exception as sync_exc:
-                    logger.debug(
-                        "Failed to generate tool call summary: %s",
-                        sync_exc,
-                    )
+                ),
+                fallback=fallback,
+                summary_kind="call",
+                tool_name=tool_name,
+            )
 
     elif event.type in (
         MessageType.FUNCTION_CALL_OUTPUT,
@@ -130,27 +181,20 @@ async def _enrich_tool_message(event: Message) -> None:
             tool_name = data.get("name", "")
             output = data.get("output", "")
             arguments = data.get("arguments")
-            try:
-                data["output_summary"] = await async_generate_tool_output_summary(
+            fallback = generate_tool_output_summary(
+                tool_name=tool_name,
+                output=output,
+            )
+            data["output_summary"] = await _resolve_summary_with_timeout(
+                async_generate_tool_output_summary(
                     tool_name=tool_name,
                     output=output,
                     arguments=arguments,
-                )
-            except Exception as exc:
-                logger.debug(
-                    "Failed to generate async tool output summary: %s",
-                    exc,
-                )
-                try:
-                    data["output_summary"] = generate_tool_output_summary(
-                        tool_name=tool_name,
-                        output=output,
-                    )
-                except Exception as sync_exc:
-                    logger.debug(
-                        "Failed to generate tool output summary: %s",
-                        sync_exc,
-                    )
+                ),
+                fallback=fallback,
+                summary_kind="output",
+                tool_name=tool_name,
+            )
 
 
 async def normalize_reasoning_boundary_stream(

@@ -16,18 +16,15 @@ from ..utils import schedule_agent_reload
 from ...config.config import (
     AgentProfileConfig,
     AgentProfileRef,
-    load_agent_config,
-    save_agent_config,
     generate_short_agent_id,
 )
 from ...config.utils import (
     load_config,
     save_config,
-    get_tenant_working_dir,
     get_tenant_working_dir_strict,
-    get_tenant_config_path,
     get_tenant_config_path_strict,
 )
+from ...config.context import resolve_effective_tenant_id
 from ...agents.memory.agent_md_manager import AgentMdManager
 from ...agents.utils import copy_builtin_qa_md_files
 from ..multi_agent_manager import MultiAgentManager
@@ -37,16 +34,37 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agents", tags=["agents"])
 
 
+def _request_tenant_id(request: Request | None) -> str | None:
+    return getattr(request.state, "tenant_id", None) if request else None
+
+
+def _request_source_id(request: Request | None) -> str | None:
+    return getattr(request.state, "source_id", None) if request else None
+
+
+def _request_effective_tenant_id(request: Request | None) -> str | None:
+    tenant_id = _request_tenant_id(request)
+    if tenant_id is None:
+        return None
+    return resolve_effective_tenant_id(
+        tenant_id,
+        _request_source_id(request),
+    )
+
+
 def _get_tenant_config(request: Request | None):
     """Load the root config from the current tenant namespace."""
-    tenant_id = getattr(request.state, "tenant_id", None) if request else None
-    return load_config(get_tenant_config_path_strict(tenant_id))
+    return load_config(
+        get_tenant_config_path_strict(_request_effective_tenant_id(request)),
+    )
 
 
 def _save_tenant_config(config, request: Request | None) -> None:
     """Persist the root config into the current tenant namespace."""
-    tenant_id = getattr(request.state, "tenant_id", None) if request else None
-    save_config(config, get_tenant_config_path_strict(tenant_id))
+    save_config(
+        config,
+        get_tenant_config_path_strict(_request_effective_tenant_id(request)),
+    )
 
 
 def _load_agent_config_for_request(agent_id: str, request: Request | None):
@@ -276,8 +294,9 @@ async def create_agent(
 ) -> AgentProfileRef:
     """Create a new agent with auto-generated ID in tenant workspace."""
     # Get tenant working directory
-    tenant_id = getattr(http_request.state, "tenant_id", None)
-    tenant_dir = get_tenant_working_dir_strict(tenant_id)
+    tenant_dir = get_tenant_working_dir_strict(
+        _request_effective_tenant_id(http_request),
+    )
 
     config = _get_tenant_config(http_request)
 
@@ -393,7 +412,11 @@ async def update_agent(
     _save_agent_config_for_request(agentId, existing_config, request)
 
     # Trigger hot reload if agent is running (async, non-blocking)
-    schedule_agent_reload(request, agentId)
+    schedule_agent_reload(
+        request,
+        agentId,
+        tenant_id=_request_effective_tenant_id(request),
+    )
 
     return agent_config
 
@@ -426,7 +449,7 @@ async def delete_agent(
     manager = _get_multi_agent_manager(request)
     await manager.stop_agent(
         agentId,
-        tenant_id=getattr(request.state, "tenant_id", None),
+        tenant_id=_request_effective_tenant_id(request),
     )
 
     # Remove from config
@@ -480,7 +503,7 @@ async def toggle_agent_enabled(
     if not enabled and getattr(agent_ref, "enabled", True):
         await manager.stop_agent(
             agentId,
-            tenant_id=getattr(request.state, "tenant_id", None),
+            tenant_id=_request_effective_tenant_id(request),
         )
 
     # Update enabled status
@@ -492,7 +515,7 @@ async def toggle_agent_enabled(
         try:
             await manager.get_agent(
                 agentId,
-                tenant_id=getattr(request.state, "tenant_id", None),
+                tenant_id=_request_effective_tenant_id(request),
             )
             logger.info(f"Agent {agentId} started successfully")
         except Exception as e:
@@ -685,7 +708,9 @@ def _resolve_workspace_language(
 
     if working_dir is not None:
         try:
-            config = load_config(Path(working_dir).expanduser() / "config.json")
+            config = load_config(
+                Path(working_dir).expanduser() / "config.json",
+            )
             tenant_language = getattr(config.agents, "language", None)
             if tenant_language:
                 return tenant_language

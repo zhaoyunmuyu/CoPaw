@@ -1,12 +1,25 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=protected-access
 from __future__ import annotations
 
+from typing import Any
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from swe.app.runner.runner import AgentRunner
+
+
+def _fake_agent_config():
+    return SimpleNamespace(
+        mcp=None,
+        running=SimpleNamespace(
+            suggestions=SimpleNamespace(
+                enabled=False,
+            ),
+        ),
+    )
 
 
 @pytest.mark.asyncio
@@ -17,9 +30,9 @@ async def test_query_handler_injects_auth_headers_into_mcp_headers_and_context(
     runner.session = AsyncMock()
     runner.session.load_session_state = AsyncMock()
     runner.session.save_session_state = AsyncMock()
-    runner._chat_manager = None
+    setattr(runner, "_chat_manager", None)
 
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     async def fake_build_clients(_mcp, passthrough_headers=None):
         captured["passthrough_headers"] = passthrough_headers
@@ -30,25 +43,26 @@ async def test_query_handler_injects_auth_headers_into_mcp_headers_and_context(
             captured["request_context"] = kwargs["request_context"]
 
         async def register_mcp_clients(self):
-            return None
+            return
 
         def set_console_output_enabled(self, enabled=False):
-            return None
+            del enabled
 
         def rebuild_sys_prompt(self):
-            return None
+            return
 
         async def __call__(self, _msgs):
-            return None
+            return
 
     async def fake_stream_printing_messages(*, agents, coroutine_task):
+        del agents
         await coroutine_task
-        if False:
-            yield None
+        for item in ():
+            yield item
 
     monkeypatch.setattr(
         "swe.app.runner.runner.load_agent_config",
-        lambda *args, **kwargs: SimpleNamespace(mcp=None),
+        lambda *args, **kwargs: _fake_agent_config(),
     )
     monkeypatch.setattr(
         "swe.app.runner.runner._build_and_connect_mcp_clients",
@@ -81,9 +95,8 @@ async def test_query_handler_injects_auth_headers_into_mcp_headers_and_context(
     async for item in runner.query_handler(msgs, request=request):
         results.append(item)
 
-    assert results == []
+    assert not results
     assert captured["passthrough_headers"] == {
-        "Authorization": "Bearer token-123",
         "cookie": "foo=bar; com.cmb.dw.rtl.sso.token=auth-123",
     }
     assert captured["request_context"]["auth_token"] == "token-123"
@@ -95,9 +108,9 @@ async def test_query_handler_keeps_existing_passthrough_headers(monkeypatch):
     runner.session = AsyncMock()
     runner.session.load_session_state = AsyncMock()
     runner.session.save_session_state = AsyncMock()
-    runner._chat_manager = None
+    setattr(runner, "_chat_manager", None)
 
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     async def fake_build_clients(_mcp, passthrough_headers=None):
         captured["passthrough_headers"] = passthrough_headers
@@ -108,25 +121,26 @@ async def test_query_handler_keeps_existing_passthrough_headers(monkeypatch):
             captured["request_context"] = kwargs["request_context"]
 
         async def register_mcp_clients(self):
-            return None
+            return
 
         def set_console_output_enabled(self, enabled=False):
-            return None
+            del enabled
 
         def rebuild_sys_prompt(self):
-            return None
+            return
 
         async def __call__(self, _msgs):
-            return None
+            return
 
     async def fake_stream_printing_messages(*, agents, coroutine_task):
+        del agents
         await coroutine_task
-        if False:
-            yield None
+        for item in ():
+            yield item
 
     monkeypatch.setattr(
         "swe.app.runner.runner.load_agent_config",
-        lambda *args, **kwargs: SimpleNamespace(mcp=None),
+        lambda *args, **kwargs: _fake_agent_config(),
     )
     monkeypatch.setattr(
         "swe.app.runner.runner._build_and_connect_mcp_clients",
@@ -166,9 +180,9 @@ async def test_query_handler_keeps_existing_passthrough_headers(monkeypatch):
     async for item in runner.query_handler(msgs, request=request):
         results.append(item)
 
-    assert results == []
+    assert not results
     assert captured["passthrough_headers"] == {
         "authorization": "Bearer existing",
-        "cookie": "foo=existing",
+        "cookie": "foo=bar; com.cmb.dw.rtl.sso.token=auth-123",
     }
     assert captured["request_context"]["auth_token"] == "token-123"

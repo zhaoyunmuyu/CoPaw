@@ -9,13 +9,13 @@ export interface AgentRequest {
 export interface AgentInitRequest {
   filename: string;
   text: string;
+  agentId?: string;
 }
 
 export interface AgentInitResponse {
-  success: boolean;
-  file_path: string;
-  fileName: string;
-  content: string;
+  appended: boolean;
+  filename: string;
+  agent_id: string;
 }
 
 export interface ContextCompactConfig {

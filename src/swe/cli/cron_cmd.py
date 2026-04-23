@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from typing import Optional
@@ -310,6 +311,224 @@ def _infer_effective_user_id(
     return effective_user_id
 
 
+def _load_existing_job_spec(
+    http_client,
+    job_id: str,
+    agent_id: str,
+    tenant_id: Optional[str],
+) -> dict:
+    headers = _build_headers(agent_id, tenant_id)
+    response = http_client.get(f"/cron/jobs/{job_id}", headers=headers)
+    if response.status_code == 404:
+        raise click.ClickException("Job not found.")
+    response.raise_for_status()
+    data = response.json()
+    if isinstance(data, dict) and isinstance(data.get("spec"), dict):
+        return copy.deepcopy(data["spec"])
+    if isinstance(data, dict):
+        return copy.deepcopy(data)
+    raise click.ClickException("Invalid response when loading existing job.")
+
+
+def _normalize_extracted_text(text: str) -> Optional[str]:
+    normalized = text.strip()
+    return normalized or None
+
+
+def _extract_text_from_content_parts(parts: list[object]) -> Optional[str]:
+    text_parts = [
+        str(part["text"])
+        for part in parts
+        if isinstance(part, dict)
+        and part.get("type") == "text"
+        and part.get("text")
+    ]
+    if not text_parts:
+        return None
+    return _normalize_extracted_text("".join(text_parts))
+
+
+def _extract_text_from_content(content: object) -> Optional[str]:
+    if isinstance(content, str):
+        return _normalize_extracted_text(content)
+    if isinstance(content, list):
+        return _extract_text_from_content_parts(content)
+    return None
+
+
+def _extract_existing_text(payload: dict) -> Optional[str]:
+    if payload.get("task_type") == "text":
+        return _extract_text_from_content(payload.get("text"))
+
+    request = payload.get("request")
+    if not isinstance(request, dict):
+        return None
+    request_input = request.get("input")
+    if not isinstance(request_input, list):
+        return None
+
+    for item in request_input:
+        if not isinstance(item, dict):
+            continue
+        extracted = _extract_text_from_content(item.get("content"))
+        if extracted:
+            return extracted
+    return None
+
+
+def _apply_optional_updates(target: dict, updates: dict[str, object]) -> None:
+    for key, value in updates.items():
+        if value is not None:
+            target[key] = value
+
+
+def _merge_meta(
+    existing_meta: object,
+    creator_user: Optional[str],
+) -> dict:
+    meta = existing_meta if isinstance(existing_meta, dict) else {}
+    merged = dict(meta)
+    if creator_user is not None:
+        merged["creator_user_id"] = creator_user
+    return merged
+
+
+def _resolve_update_task_type(
+    payload: dict,
+    task_type: Optional[str],
+) -> str:
+    effective_task_type = task_type or payload.get("task_type")
+    if effective_task_type in {"text", "agent"}:
+        return effective_task_type
+    raise click.UsageError(
+        "Existing job is missing a supported task type; use -f/--file "
+        "or specify --type explicitly",
+    )
+
+
+def _resolve_update_text(
+    payload: dict,
+    text: Optional[str],
+    effective_task_type: str,
+) -> str:
+    effective_text = (
+        text.strip()
+        if isinstance(text, str) and text.strip()
+        else _extract_existing_text(payload)
+    )
+    if effective_text:
+        return effective_text
+    raise click.UsageError(
+        f"--text is required when task type is '{effective_task_type}'",
+    )
+
+
+def _apply_task_payload(
+    payload: dict,
+    effective_task_type: str,
+    effective_text: str,
+    target: dict,
+) -> dict:
+    payload["task_type"] = effective_task_type
+    if effective_task_type == "text":
+        payload["text"] = effective_text
+        payload.pop("request", None)
+        return payload
+
+    existing_request = payload.get("request")
+    if not isinstance(existing_request, dict):
+        existing_request = {}
+    request_session_id = existing_request.get("session_id") or target.get(
+        "session_id",
+    )
+    request_user_id = existing_request.get("user_id") or "cron"
+    payload["request"] = {
+        **existing_request,
+        "input": [
+            {
+                "role": "user",
+                "type": "message",
+                "content": [{"type": "text", "text": effective_text}],
+            },
+        ],
+        "session_id": request_session_id,
+        "user_id": request_user_id,
+    }
+    payload.pop("text", None)
+    return payload
+
+
+def _merge_update_payload(
+    existing_spec: dict,
+    *,
+    job_id: str,
+    task_type: Optional[str],
+    name: Optional[str],
+    cron: Optional[str],
+    channel: Optional[str],
+    target_user: Optional[str],
+    target_session: Optional[str],
+    creator_user: Optional[str],
+    text: Optional[str],
+    timezone: Optional[str],
+    enabled: Optional[bool],
+    mode: Optional[str],
+    tenant_id: Optional[str],
+) -> dict:
+    payload = copy.deepcopy(existing_spec)
+    payload["id"] = job_id
+
+    _apply_optional_updates(
+        payload,
+        {
+            "tenant_id": tenant_id,
+            "name": name,
+            "enabled": enabled,
+        },
+    )
+
+    schedule = payload.setdefault("schedule", {})
+    _apply_optional_updates(
+        schedule,
+        {
+            "cron": cron,
+            "timezone": timezone,
+        },
+    )
+
+    dispatch = payload.setdefault("dispatch", {})
+    target = dispatch.setdefault("target", {})
+    _apply_optional_updates(
+        dispatch,
+        {
+            "channel": channel,
+            "mode": mode,
+        },
+    )
+    _apply_optional_updates(
+        target,
+        {
+            "user_id": target_user,
+            "session_id": target_session,
+        },
+    )
+
+    payload["meta"] = _merge_meta(payload.get("meta"), creator_user)
+
+    effective_task_type = _resolve_update_task_type(payload, task_type)
+    effective_text = _resolve_update_text(
+        payload,
+        text,
+        effective_task_type,
+    )
+    return _apply_task_payload(
+        payload,
+        effective_task_type,
+        effective_text,
+        target,
+    )
+
+
 @cron_group.command("create")
 @click.option(
     "-f",
@@ -486,32 +705,54 @@ def _update_job_impl(
     creator_user: Optional[str],
     text: Optional[str],
     timezone: Optional[str],
-    enabled: bool,
-    mode: str,
+    enabled: Optional[bool],
+    mode: Optional[str],
     base_url: Optional[str],
     agent_id: str,
     tenant_id: Optional[str],
 ) -> None:
-    if timezone is None:
-        timezone = load_config().user_timezone or "UTC"
     base_url = _base_url(ctx, base_url)
-    payload = _build_payload_from_args(
-        file_=file_,
-        task_type=task_type,
-        name=name,
-        cron=cron,
-        channel=channel,
-        target_user=target_user,
-        target_session=target_session,
-        creator_user=creator_user,
-        text=text,
-        timezone=timezone,
-        enabled=enabled,
-        mode=mode,
-        tenant_id=tenant_id,
-        job_id=job_id,
-    )
     with client(base_url) as c:
+        if file_ is not None:
+            payload = _build_payload_from_args(
+                file_=file_,
+                task_type=task_type,
+                name=name,
+                cron=cron,
+                channel=channel,
+                target_user=target_user,
+                target_session=target_session,
+                creator_user=creator_user,
+                text=text,
+                timezone=timezone or "",
+                enabled=enabled if enabled is not None else True,
+                mode=mode or "final",
+                tenant_id=tenant_id,
+                job_id=job_id,
+            )
+        else:
+            existing_spec = _load_existing_job_spec(
+                c,
+                job_id,
+                agent_id,
+                tenant_id,
+            )
+            payload = _merge_update_payload(
+                existing_spec,
+                job_id=job_id,
+                task_type=task_type,
+                name=name,
+                cron=cron,
+                channel=channel,
+                target_user=target_user,
+                target_session=target_session,
+                creator_user=creator_user,
+                text=text,
+                timezone=timezone,
+                enabled=enabled,
+                mode=mode,
+                tenant_id=tenant_id,
+            )
         effective_user_id = _infer_effective_user_id(payload, creator_user)
         headers = _build_headers(agent_id, tenant_id, effective_user_id)
         r = c.put(f"/cron/jobs/{job_id}", json=payload, headers=headers)
@@ -584,14 +825,14 @@ def _update_job_impl(
 )
 @click.option(
     "--enabled/--no-enabled",
-    default=True,
-    help="Replace the job as enabled (--enabled) or disabled (--no-enabled).",
+    default=None,
+    help="Override enabled state only when this flag is provided.",
 )
 @click.option(
     "--mode",
     type=click.Choice(["stream", "final"], case_sensitive=False),
-    default="final",
-    help="Delivery mode for the replacement job.",
+    default=None,
+    help="Override delivery mode only when this option is provided.",
 )
 @click.option(
     "--base-url",
@@ -622,8 +863,8 @@ def update_job(
     creator_user: Optional[str],
     text: Optional[str],
     timezone: Optional[str],
-    enabled: bool,
-    mode: str,
+    enabled: Optional[bool],
+    mode: Optional[str],
     base_url: Optional[str],
     agent_id: str,
     tenant_id: Optional[str],

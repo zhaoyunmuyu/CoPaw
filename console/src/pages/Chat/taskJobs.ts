@@ -2,7 +2,7 @@ import type { CronJobSpecOutput } from "../../api/types";
 import { formatListTime } from "./listTimeFormat.ts";
 
 export interface TaskSidebarMeta {
-  state: "active" | "auto-paused" | "manual-paused";
+  state: "active" | "running" | "auto-paused" | "manual-paused";
   unreadCount: number;
   canResume: boolean;
   canDelete: boolean;
@@ -18,6 +18,16 @@ export function getTaskSidebarMeta(job: CronJobSpecOutput): TaskSidebarMeta {
   const unreadCount = Math.max(0, Number(job.task?.unread_execution_count || 0));
   const pauseReason = job.task?.pause_reason;
   const isPaused = Boolean(job.task?.is_paused || pauseReason);
+  const isRunning = Boolean(job.task?.is_running);
+
+  if (isRunning) {
+    return {
+      state: "running",
+      unreadCount,
+      canResume: false,
+      canDelete: false,
+    };
+  }
 
   if (pauseReason === AUTO_PAUSE_REASON) {
     return {
@@ -50,7 +60,12 @@ export function shouldMarkTaskReadOnOpen(job: CronJobSpecOutput): boolean {
 }
 
 export function getTaskNextRunText(job: CronJobSpecOutput): string | null {
-  if (getTaskSidebarMeta(job).canResume) {
+  const sidebarMeta = getTaskSidebarMeta(job);
+  if (sidebarMeta.state === "running") {
+    return "运行中...";
+  }
+
+  if (sidebarMeta.canResume) {
     return null;
   }
 

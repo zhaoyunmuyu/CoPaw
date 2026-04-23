@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef } from "react";
-import { useLocation } from "react-router-dom";
+import React, { useEffect, useRef } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 // ==================== 组件引入方式变更 (Kun He) ====================
 import { useChatAnywhereSessionsState } from "@/components/agentscope-chat";
 // ==================== 组件引入方式变更结束 ====================
+import { getInitialSessionSelection } from "../../sessionApi/initialSessionSelection";
 
 /**
  * URL chatId → context currentSessionId (one direction of bidirectional sync).
@@ -13,10 +14,7 @@ import { useChatAnywhereSessionsState } from "@/components/agentscope-chat";
  */
 const ChatSessionInitializer: React.FC = () => {
   const location = useLocation();
-  const chatId = useMemo(() => {
-    const match = location.pathname.match(/^\/chat\/(.+)$/);
-    return match?.[1];
-  }, [location.pathname]);
+  const navigate = useNavigate();
 
   const { sessions, currentSessionId, setCurrentSessionId } =
     useChatAnywhereSessionsState();
@@ -25,15 +23,29 @@ const ChatSessionInitializer: React.FC = () => {
   currentSessionIdRef.current = currentSessionId;
 
   useEffect(() => {
-    if (!chatId || !sessions.length) return;
-    const matching = sessions.find((s) => s.id === chatId);
+    if (!sessions.length) return;
+
+    const { requestedSessionId, resolvedSessionId } = getInitialSessionSelection({
+      pathname: location.pathname,
+      sessionList: sessions,
+    });
+
+    if (!resolvedSessionId) return;
+
+    const matching = sessions.find((s) => s.id === resolvedSessionId);
     if (matching && currentSessionIdRef.current !== matching.id) {
       setCurrentSessionId(matching.id);
     }
+
+    if (
+      requestedSessionId &&
+      resolvedSessionId !== requestedSessionId
+    ) {
+      navigate(`/chat/${resolvedSessionId}`, { replace: true });
+    }
     // Intentionally exclude currentSessionId from deps: only react to URL / session list changes.
     // currentSessionId is read via ref to avoid circular triggers.
-
-  }, [chatId, sessions, setCurrentSessionId]);
+  }, [location.pathname, navigate, sessions, setCurrentSessionId]);
 
   return null;
 };

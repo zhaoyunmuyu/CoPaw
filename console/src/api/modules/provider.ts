@@ -3,6 +3,8 @@ import type {
   ProviderInfo,
   ProviderConfigRequest,
   ActiveModelsInfo,
+  ActiveModelDistributionRequest,
+  ActiveModelDistributionResponse,
   GetActiveModelsRequest,
   ModelSlotRequest,
   CreateCustomProviderRequest,
@@ -12,6 +14,7 @@ import type {
   TestModelRequest,
   DiscoverModelsResponse,
   ProbeMultimodalResponse,
+  DistributionTenantListResponse,
 } from "../types";
 
 function buildActiveModelQuery(params?: GetActiveModelsRequest): string {
@@ -45,6 +48,15 @@ export const providerApi = {
   setActiveLlm: (body: ModelSlotRequest) =>
     request<ActiveModelsInfo>("/models/active", {
       method: "PUT",
+      body: JSON.stringify(body),
+    }),
+
+  listActiveModelDistributionTenants: () =>
+    request<DistributionTenantListResponse>("/models/distribution/tenants"),
+
+  distributeActiveLlm: (body: ActiveModelDistributionRequest) =>
+    request<ActiveModelDistributionResponse>("/models/distribution/active-llm", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
 

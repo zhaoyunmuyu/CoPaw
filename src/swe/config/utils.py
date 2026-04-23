@@ -32,7 +32,11 @@ from .config import (
     load_agent_config,
     save_agent_config,
 )
-from .context import get_current_tenant_id, TenantContextError
+from .context import (
+    TenantContextError,
+    get_current_tenant_id,
+    resolve_effective_tenant_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -541,19 +545,27 @@ def save_config(config: Config, config_path: Optional[Path] = None) -> None:
         )
 
 
-def get_heartbeat_config(agent_id: Optional[str] = None) -> HeartbeatConfig:
+def get_heartbeat_config(
+    agent_id: Optional[str] = None,
+    *,
+    tenant_id: str | None = None,
+) -> HeartbeatConfig:
     """Return effective heartbeat config (from agent config or default).
 
     Args:
         agent_id: Agent ID to load config from. If None, tries to load from
                   root config.agents.defaults (legacy behavior).
+        tenant_id: Optional tenant scope for agent config lookup.
 
     Returns:
         HeartbeatConfig: Heartbeat configuration or default.
     """
     if agent_id is not None:
         try:
-            agent_config = load_agent_config(agent_id)
+            agent_config = load_agent_config(
+                agent_id,
+                tenant_id=tenant_id,
+            )
             hb = agent_config.heartbeat
             return hb if hb is not None else HeartbeatConfig()
         except Exception:
@@ -572,6 +584,8 @@ def update_last_dispatch(
     user_id: str,
     session_id: str,
     agent_id: Optional[str] = None,
+    *,
+    tenant_id: str | None = None,
 ) -> None:
     """Persist last user-reply dispatch target (user send+reply only).
 
@@ -580,16 +594,24 @@ def update_last_dispatch(
         user_id: User ID
         session_id: Session ID
         agent_id: Agent ID to update. If None, updates root config (legacy).
+        tenant_id: Optional tenant scope for agent config lookup.
     """
     if agent_id is not None:
         try:
-            agent_config = load_agent_config(agent_id)
+            agent_config = load_agent_config(
+                agent_id,
+                tenant_id=tenant_id,
+            )
             agent_config.last_dispatch = LastDispatchConfig(
                 channel=channel,
                 user_id=user_id,
                 session_id=session_id,
             )
-            save_agent_config(agent_id, agent_config)
+            save_agent_config(
+                agent_id,
+                agent_config,
+                tenant_id=tenant_id,
+            )
             return
         except Exception:
             pass
@@ -822,3 +844,28 @@ def list_all_tenant_ids() -> list[str]:
             tenant_ids.append(entry.name)
 
     return sorted(tenant_ids)
+
+
+def list_logical_tenant_ids(source_id: str | None = None) -> list[str]:
+    """Return tenant IDs suitable for source-scoped API consumers."""
+    tenant_ids = list_all_tenant_ids()
+    if not source_id:
+        return tenant_ids
+
+    logical_tenant_ids: list[str] = []
+    effective_default_tenant_id = resolve_effective_tenant_id(
+        "default",
+        source_id,
+    )
+    has_default_tenant = False
+
+    for tenant_id in tenant_ids:
+        if tenant_id in {"default", effective_default_tenant_id}:
+            has_default_tenant = True
+            continue
+        logical_tenant_ids.append(tenant_id)
+
+    if has_default_tenant:
+        logical_tenant_ids.append("default")
+
+    return sorted(set(logical_tenant_ids))

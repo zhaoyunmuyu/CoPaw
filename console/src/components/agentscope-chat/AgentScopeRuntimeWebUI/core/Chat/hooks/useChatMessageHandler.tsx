@@ -6,13 +6,10 @@ import { useChatAnywhereMessages } from "../../Context/ChatAnywhereMessagesConte
 import AgentScopeRuntimeRequestBuilder from "../../AgentScopeRuntime/Request/Builder";
 import { InputProps } from "../Input";
 import { withRequestHeaderMeta } from "./headerMeta";
+import type { CurrentQARef } from "./currentQARef";
 
 interface UseChatMessageHandlerOptions {
-  currentQARef: React.MutableRefObject<{
-    request?: IAgentScopeRuntimeWebUIMessage;
-    response?: IAgentScopeRuntimeWebUIMessage;
-    abortController?: AbortController;
-  }>;
+  currentQARef: CurrentQARef;
 }
 
 /**
@@ -87,11 +84,13 @@ export default function useChatMessageHandler(
    * 创建助手响应消息
    */
   const createResponseMessage = useCallback(() => {
+    const responseTimestamp = Date.now();
     currentQARef.current.response = {
       id: uuid(),
       role: "assistant",
       cards: [],
       msgStatus: "generating",
+      liveHeaderTimestamp: responseTimestamp,
     };
 
     updateMessage(currentQARef.current.response);

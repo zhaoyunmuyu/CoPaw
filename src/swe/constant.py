@@ -384,3 +384,44 @@ CRON_LOCK_SAFETY_MARGIN_SECONDS = EnvVarLoader.get_int(
     30,
     min_value=5,
 )
+
+# WPlus integration configuration
+CRON_WPLUS_CLIENT_ID = EnvVarLoader.get_str(
+    "SWE_CRON_WPLUS_CLIENT_ID",
+    "",
+)
+
+CRON_WPLUS_TOKEN_SECRET = EnvVarLoader.get_str(
+    "SWE_CRON_WPLUS_TOKEN_SECRET",
+    "",
+)
+
+CRON_WPLUS_TOKEN_URL = EnvVarLoader.get_str(
+    "SWE_CRON_WPLUS_TOKEN_URL",
+    "",
+)
+
+CRON_WPLUS_INFO_SECRTET = EnvVarLoader.get_str(
+    "SWE_CRON_WPLUS_INFO_SECRTET",
+    "",
+)
+
+CRON_WPLUS_INFO_URL = EnvVarLoader.get_str(
+    "SWE_CRON_WPLUS_INFO_URL",
+    "",
+)
+
+CRON_WPLUS_HOLDER_ID = EnvVarLoader.get_str(
+    "SWE_CRON_WPLUS_HOLDER_ID",
+    "",
+)
+
+CRON_WPLUS_CHANNEL = EnvVarLoader.get_str(
+    "SWE_CRON_WPLUS_CHANNEL",
+    "",
+)
+
+CRON_WPLUS_PRIVATE_KEY = EnvVarLoader.get_str(
+    "SWE_CRON_WPLUS_PRIVATE_KEY",
+    "",
+)

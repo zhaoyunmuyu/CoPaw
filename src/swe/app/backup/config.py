@@ -37,6 +37,19 @@ class BackupTimeoutConfig(BaseModel):
     download: int = 30
 
 
+class ShellScriptConfig(BaseModel):
+    """Shell script backup configuration.
+
+    用于 Shell 脚本模式的备份压缩/解压配置。
+    """
+
+    compress_script_path: str = "/opt/deployments/app/src/scripts/backup/compress.sh"
+    decompress_script_path: str = "/opt/deployments/app/src/scripts/backup/decompress.sh"
+    timeout_seconds: int = Field(default=600, ge=60, le=3600)
+    working_dir: str = ""  # 空则使用 WORKING_DIR 常量
+    secret_dir: str = ""  # 空则使用 SECRET_DIR 常量
+
+
 class BackupConfig(BaseModel):
     """Root backup configuration."""
 
@@ -47,6 +60,7 @@ class BackupConfig(BaseModel):
         default_factory=BackupCompressionConfig,
     )
     timeout: BackupTimeoutConfig = Field(default_factory=BackupTimeoutConfig)
+    shell_script: ShellScriptConfig = Field(default_factory=ShellScriptConfig)
 
     def get_active_config(self) -> BackupEnvironmentConfig | None:
         """Get active environment config based on SWE_ENV."""
@@ -76,9 +90,16 @@ def load_backup_config_from_env(
         SWE_BACKUP_AWS_ACCESS_KEY_ID
         SWE_BACKUP_AWS_SECRET_ACCESS_KEY
         SWE_BACKUP_S3_BUCKET
-        SWE_BACKUP_S3_PREFIX (optional, default: "swe")
+        SWE_BACKUP_S3_PREFIX (optional, default: "swe_backup")
         SWE_BACKUP_S3_REGION (optional, default: "cn-north-1")
         SWE_BACKUP_ENDPOINT_URL (optional)
+
+    Shell script backup configuration:
+        SWE_BACKUP_COMPRESS_SCRIPT (optional)
+        SWE_BACKUP_DECOMPRESS_SCRIPT (optional)
+        SWE_BACKUP_SCRIPT_TIMEOUT (optional, default: "600")
+        SWE_BACKUP_SCRIPT_WORKING_DIR (optional)
+        SWE_BACKUP_SCRIPT_SECRET_DIR (optional)
 
     For multiple environments, use prefix:
         {ENV}_SWE_BACKUP_AWS_ACCESS_KEY_ID (e.g., DEV_SWE_BACKUP_AWS_ACCESS_KEY_ID)
@@ -132,8 +153,24 @@ def load_backup_config_from_env(
         endpoint_url=get_var("SWE_BACKUP_ENDPOINT_URL", ""),
     )
 
+    # Load shell script configuration
+    shell_config = ShellScriptConfig(
+        compress_script_path=get_var(
+            "SWE_BACKUP_COMPRESS_SCRIPT",
+            "/opt/deployments/app/src/scripts/backup/compress.sh",
+        ),
+        decompress_script_path=get_var(
+            "SWE_BACKUP_DECOMPRESS_SCRIPT",
+            "/opt/deployments/app/src/scripts/backup/decompress.sh",
+        ),
+        timeout_seconds=int(get_var("SWE_BACKUP_SCRIPT_TIMEOUT", "600")),
+        working_dir=get_var("SWE_BACKUP_SCRIPT_WORKING_DIR", ""),
+        secret_dir=get_var("SWE_BACKUP_SCRIPT_SECRET_DIR", ""),
+    )
+
     return BackupConfig(
         environments={env: env_config},
+        shell_script=shell_config,
     )
 
 

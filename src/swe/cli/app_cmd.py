@@ -9,7 +9,7 @@ import uvicorn
 
 from ..constant import LOG_LEVEL_ENV
 from ..config.utils import write_last_api
-from ..utils.logging import setup_logger, SuppressPathAccessLogFilter
+from ..utils.my_logging import setup_logger, SuppressPathAccessLogFilter
 
 
 @click.command("app")

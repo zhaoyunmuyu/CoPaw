@@ -9,6 +9,17 @@
 ##                                   enforced by the surrounding ToolGuard/approval workflow when available).
 ## See GuardThreatCategory for the full threat taxonomy.
 #
+- id: cron_security
+  tools: [execute_shell_command]
+  params: [command]
+  category: command_injection
+  severity: HIGH
+  patterns:
+    - '^\s*swe\s+cron\s+create\b.*$'
+    - '^\s*swe\s+cron\s+update\b.*$'
+  exclude_patterns: []
+  description: '定时任务限制'
+  remediation: '该操作将创建定时任务，在指定时间为你后台执行并通过招乎推送，是否确认'
 ## ── rm: file / directory removal ──────────────────────────────────────
 #- id: TOOL_CMD_DANGEROUS_RM
 #  tools: [execute_shell_command]

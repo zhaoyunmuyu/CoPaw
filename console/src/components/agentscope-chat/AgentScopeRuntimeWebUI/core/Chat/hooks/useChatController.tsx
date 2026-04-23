@@ -22,6 +22,8 @@ import {
   type FollowUpSubmitData,
 } from "./followUpSubmit";
 import { shouldEnqueueFollowUpSubmission } from "./followUpSubmitState";
+import type { CurrentQARef } from "./currentQARef";
+import { createChatRequestOwner, type ChatRequestOwner } from "./requestOwnership";
 // import mockdata from '../../mock/mock.json'
 
 /**
@@ -42,11 +44,7 @@ export default function useChatController() {
   );
   const sessionApi = useChatAnywhereOptions((v) => v.session.api);
 
-  const currentQARef = useRef<{
-    request?: IAgentScopeRuntimeWebUIMessage;
-    response?: IAgentScopeRuntimeWebUIMessage;
-    abortController?: AbortController;
-  }>({});
+  const currentQARef = useRef<CurrentQARef["current"]>({});
   const followUpCoordinatorRef = useRef<FollowUpSubmitCoordinator | null>(null);
   const followUpSessionIdRef = useRef<string | undefined>(undefined);
 
@@ -66,7 +64,10 @@ export default function useChatController() {
    * 完成响应
    */
   const finishResponse = useCallback(
-    (status: "finished" | "interrupted" = "finished") => {
+    (
+      status: "finished" | "interrupted" = "finished",
+      owner?: ChatRequestOwner,
+    ) => {
       if (!currentQARef.current.response) return;
 
       currentQARef.current.response.msgStatus = status;
@@ -75,7 +76,10 @@ export default function useChatController() {
         messageHandler.updateMessage(currentQARef.current.response);
       });
 
-      sessionHandler.syncSessionMessages(messageHandler.getMessages());
+      sessionHandler.syncSessionMessagesForSession(
+        owner?.sessionId ?? currentQARef.current.activeRequestOwner?.sessionId,
+        messageHandler.getMessages(),
+      );
 
       // 完成后轮询获取建议
       if (status === "finished") {
@@ -90,15 +94,39 @@ export default function useChatController() {
     currentQARef,
     updateMessage: messageHandler.updateMessage,
     getCurrentSessionId: sessionHandler.getCurrentSessionId,
-    onFinish: () => finishResponse("finished"),
+    onFinish: (owner) => finishResponse("finished", owner),
   });
+
+  const createRequestOwner = useCallback(
+    (kind: ChatRequestOwner["kind"], sessionId: string): ChatRequestOwner => {
+      const runtimeSessionApi = sessionApi as
+        | {
+            getLogicalSessionId?: (sessionId: string) => string;
+            getChatIdForSession?: (sessionId: string) => string | null;
+          }
+        | undefined;
+
+      return createChatRequestOwner({
+        kind,
+        sessionId,
+        logicalSessionId:
+          runtimeSessionApi?.getLogicalSessionId?.(sessionId) ?? sessionId,
+        chatId: runtimeSessionApi?.getChatIdForSession?.(sessionId) ?? null,
+      });
+    },
+    [sessionApi],
+  );
 
   const submitTurn = useCallback(
     async (data: FollowUpSubmitData) => {
       await sessionHandler.ensureSession(data.query);
+      const activeSessionId = sessionHandler.getCurrentSessionId();
+      if (!activeSessionId) {
+        return;
+      }
 
       const messages = messageHandler.getMessages();
-      if (sessionHandler.getCurrentSessionId()) {
+      if (activeSessionId) {
         await sessionHandler.updateSessionName(data.query, messages);
       }
 
@@ -107,13 +135,18 @@ export default function useChatController() {
       await sleep(100);
 
       messageHandler.createResponseMessage();
+      const owner = createRequestOwner("submit", activeSessionId);
+      currentQARef.current.activeRequestOwner = owner;
 
       const historyMessages = messageHandler.getHistoryMessages();
-      await sessionHandler.syncSessionMessages(messageHandler.getMessages());
+      await sessionHandler.syncSessionMessagesForSession(
+        activeSessionId,
+        messageHandler.getMessages(),
+      );
 
-      await request(historyMessages, data.biz_params);
+      await request(historyMessages, data.biz_params, owner);
     },
-    [messageHandler, request, sessionHandler, setLoading],
+    [createRequestOwner, messageHandler, request, sessionHandler, setLoading],
   );
 
   const isSessionGenerating = useCallback(async () => {
@@ -148,6 +181,7 @@ export default function useChatController() {
   }, []);
 
   const stopActiveRunInBackground = useCallback(async () => {
+    const owner = currentQARef.current.activeRequestOwner;
     await cancelActiveRequest();
 
     if (currentQARef.current.response) {
@@ -157,7 +191,10 @@ export default function useChatController() {
       });
     }
 
-    await sessionHandler.syncSessionMessages(messageHandler.getMessages());
+    await sessionHandler.syncSessionMessagesForSession(
+      owner?.sessionId,
+      messageHandler.getMessages(),
+    );
   }, [cancelActiveRequest, messageHandler, sessionHandler]);
 
   if (!followUpCoordinatorRef.current) {
@@ -232,24 +269,33 @@ export default function useChatController() {
   const handleApproval = useCallback(
     async ({ input }) => {
       messageHandler.createApprovalMessage(input);
+      const activeSessionId = sessionHandler.getCurrentSessionId();
+      if (!activeSessionId) {
+        return;
+      }
 
       setLoading(true);
       await sleep(100);
 
       messageHandler.createResponseMessage();
+      const owner = createRequestOwner("approval", activeSessionId);
+      currentQARef.current.activeRequestOwner = owner;
       const historyMessages = messageHandler.getHistoryMessages();
-      await sessionHandler.syncSessionMessages(messageHandler.getMessages());
+      await sessionHandler.syncSessionMessagesForSession(
+        activeSessionId,
+        messageHandler.getMessages(),
+      );
 
-      await request(historyMessages);
+      await request(historyMessages, undefined, owner);
     },
-    [messageHandler, request, sessionHandler, setLoading],
+    [createRequestOwner, messageHandler, request, sessionHandler, setLoading],
   );
 
   /**
    * 处理取消
    */
   const handleCancel = useCallback(() => {
-    finishResponse("interrupted");
+    finishResponse("interrupted", currentQARef.current.activeRequestOwner);
   }, [finishResponse]);
 
   /**
@@ -257,6 +303,11 @@ export default function useChatController() {
    */
   const handleRegenerate = useCallback(
     async (messageId: string) => {
+      const activeSessionId = sessionHandler.getCurrentSessionId();
+      if (!activeSessionId) {
+        return;
+      }
+
       setLoading(true);
 
       // 1. 移除旧消息
@@ -265,12 +316,14 @@ export default function useChatController() {
       // 2. 创建新的响应消息
       currentQARef.current.abortController = new AbortController();
       messageHandler.createResponseMessage();
+      const owner = createRequestOwner("regenerate", activeSessionId);
+      currentQARef.current.activeRequestOwner = owner;
 
       // 3. 发起请求
       const historyMessages = messageHandler.getHistoryMessages();
-      await request(historyMessages);
+      await request(historyMessages, undefined, owner);
     },
-    [messageHandler, request, setLoading],
+    [createRequestOwner, messageHandler, request, sessionHandler, setLoading],
   );
 
   /**
@@ -282,10 +335,12 @@ export default function useChatController() {
       setLoading(true);
 
       messageHandler.createResponseMessage();
+      const owner = createRequestOwner("reconnect", sessionId);
+      currentQARef.current.activeRequestOwner = owner;
 
-      await reconnect(sessionId);
+      await reconnect(sessionId, owner);
     },
-    [messageHandler, reconnect, setLoading],
+    [createRequestOwner, messageHandler, reconnect, setLoading],
   );
 
   // 监听会话切换，断开当前 SSE 连接（不通知后端取消）并重置状态
@@ -296,6 +351,7 @@ export default function useChatController() {
       request: undefined,
       response: undefined,
       abortController: undefined,
+      activeRequestOwner: undefined,
     };
   }, [currentSessionId]);
 

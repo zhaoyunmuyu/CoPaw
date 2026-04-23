@@ -20,8 +20,18 @@ export const greetingApi = {
     source_id?: string;
     page?: number;
     page_size?: number;
-  }) =>
-    request<GreetingConfigListResponse>("/greeting/admin/list", { params }),
+  }) => {
+    const query = params
+      ? new URLSearchParams(
+          Object.entries(params)
+            .filter(([_, v]) => v !== undefined)
+            .map(([k, v]) => [k, String(v)])
+        ).toString()
+      : "";
+    return request<GreetingConfigListResponse>(
+      `/greeting/admin/list${query ? `?${query}` : ""}`
+    );
+  },
 
   /** Admin: create greeting config */
   createConfig: (config: GreetingConfigCreate) =>

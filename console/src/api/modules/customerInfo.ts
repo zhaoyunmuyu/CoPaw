@@ -95,18 +95,23 @@ export function setUserInitialized(userId: string): void {
  * 用户初始化 API
  *
  * @param request - 请求参数
+ * @param agentId - Agent ID，默认使用 "default"
  * @returns 初始化响应
  */
 export async function fetchUserInit(
   req: UserInitRequest,
-): Promise<{ success: boolean } | null> {
+  agentId: string = "default",
+): Promise<{ appended: boolean; filename?: string; agentId?: string } | null> {
   try {
     const response = await agentApi.agentInit({
       filename: req.filename,
       text: req.text,
+      agentId: agentId,
     });
 
-    return response ? { success: response.success } : null;
+    return response
+      ? { appended: response.appended, filename: response.filename, agentId: response.agent_id }
+      : null;
   } catch (error) {
     console.error("[UserInit] API request error:", error);
     return null;
@@ -124,12 +129,12 @@ export async function fetchCustomerInfo(
 ): Promise<CustomerInfoResponse | null> {
   try {
     const baseUrl = window.__env__.baseUrl || "";
-    const isDev = baseUrl === "yourapi";
+    const isDev = window.location.href.indexOf('.paast.') !== -1;
     const env = isDev ? "dev" : "prd";
     // TODO: 替换为真实的 API Key
     const apiKey = isDev ? "xxxx" : "your-api-key";
     // TODO: 替换为真实的 API 地址
-    const apiUrl = `${baseUrl}/openapi/${env}/yourapi`;
+    const apiUrl = `${baseUrl}/openapi/.../${env}/...`;
     const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
