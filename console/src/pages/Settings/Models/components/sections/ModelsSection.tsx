@@ -5,6 +5,7 @@ import type { ModelSlotRequest } from "../../../../../api/types";
 import api from "../../../../../api";
 import { useTranslation } from "react-i18next";
 import { useAppMessage } from "../../../../../hooks/useAppMessage";
+import { useIframeStore } from "../../../../../stores/iframeStore";
 import { TenantTargetPicker } from "../../../../../components/TenantTargetPicker";
 import styles from "../../index.module.less";
 
@@ -35,6 +36,7 @@ export function ModelsSection({
   onSaved,
 }: ModelsSectionProps) {
   const { t } = useTranslation();
+  const manager = useIframeStore((state) => state.manager);
   const [saving, setSaving] = useState(false);
   const [selectedProviderId, setSelectedProviderId] = useState<
     string | undefined
@@ -213,7 +215,7 @@ export function ModelsSection({
     currentSlot.provider_id === selectedProviderId &&
     currentSlot.model === selectedModel;
   const canSave = dirty && !!selectedProviderId && !!selectedModel;
-  const canDistribute = !!currentSlot?.provider_id && !!currentSlot?.model;
+  const canDistribute = manager && !!currentSlot?.provider_id && !!currentSlot?.model;
 
   return (
     <div className={styles.slotSection}>
