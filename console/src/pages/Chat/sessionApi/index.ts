@@ -675,6 +675,31 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     return this.getPendingSessions()[0] ?? null;
   }
 
+  private isActivePendingSession(
+    pendingSessionId: string,
+    logicalSessionId: string = pendingSessionId,
+  ): boolean {
+    const currentSessionId = window.currentSessionId;
+    if (!currentSessionId) {
+      return this.getLatestPendingSession()?.id === pendingSessionId;
+    }
+
+    return (
+      currentSessionId === pendingSessionId ||
+      currentSessionId === logicalSessionId
+    );
+  }
+
+  private notifyResolvedSessionIfActive(
+    pendingSessionId: string,
+    realId: string,
+    logicalSessionId: string = pendingSessionId,
+  ): void {
+    if (this.isActivePendingSession(pendingSessionId, logicalSessionId)) {
+      this.onSessionIdResolved?.(pendingSessionId, realId);
+    }
+  }
+
   getLogicalSessionId(sessionId: string): string {
     if (!sessionId) {
       return "";
@@ -766,7 +791,11 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
 
     // 触发回调更新URL
     rememberResolvedChatId(pendingSession.id, realId);
-    this.onSessionIdResolved?.(pendingSession.id, realId);
+    this.notifyResolvedSessionIfActive(
+      pendingSession.id,
+      realId,
+      pendingSession.sessionId,
+    );
 
     // 更新 window 变量
     this.updateWindowVariables(session);
@@ -820,7 +849,11 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
           );
           resolvedPendingSessionIds.add(pendingSession.id);
           rememberResolvedChatId(pendingSession.id, realId);
-          this.onSessionIdResolved?.(pendingSession.id, realId);
+          this.notifyResolvedSessionIfActive(
+            pendingSession.id,
+            realId,
+            pendingSession.sessionId,
+          );
 
           if (
             window.currentSessionId === pendingSession.id ||
@@ -1057,7 +1090,7 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
           if (realId) {
             this.sessionList = list;
             rememberResolvedChatId(tempId, realId);
-            this.onSessionIdResolved?.(tempId, realId);
+            this.notifyResolvedSessionIfActive(tempId, realId);
           }
         });
       } else {
@@ -1067,7 +1100,7 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
           this.sessionList = list;
           if (realId) {
             rememberResolvedChatId(tempId, realId);
-            this.onSessionIdResolved?.(tempId, realId);
+            this.notifyResolvedSessionIfActive(tempId, realId);
           }
         });
       }
@@ -1085,7 +1118,7 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
         this.sessionList = list;
         if (realId) {
           rememberResolvedChatId(tempId, realId);
-          this.onSessionIdResolved?.(tempId, realId);
+          this.notifyResolvedSessionIfActive(tempId, realId);
         }
       });
     }

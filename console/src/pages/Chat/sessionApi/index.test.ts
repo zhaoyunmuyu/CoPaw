@@ -143,6 +143,66 @@ describe("SessionApi identity mapping", () => {
     );
   });
 
+  it("only notifies resolution for the active pending session when multiple local sessions resolve together", async () => {
+    const sessionApi = new SessionApi();
+
+    await sessionApi.createSession({
+      name: "chat A",
+      messages: [],
+    });
+    const firstSessionId = sessionApi.getPendingSessionId();
+
+    await sessionApi.createSession({
+      name: "chat B",
+      messages: [],
+    });
+    const secondSessionId = sessionApi.getPendingSessionId();
+
+    expect(firstSessionId).toBeTruthy();
+    expect(secondSessionId).toBeTruthy();
+    expect(secondSessionId).not.toBe(firstSessionId);
+
+    const runtimeWindow = window as Window & {
+      currentSessionId?: string;
+    };
+    runtimeWindow.currentSessionId = secondSessionId!;
+
+    const resolved = vi.fn();
+    sessionApi.onSessionIdResolved = resolved;
+
+    apiMocks.listChats.mockResolvedValue([
+      {
+        id: "chat-real-a",
+        name: "chat A",
+        session_id: firstSessionId,
+        user_id: "user-1",
+        channel: "console",
+        meta: {},
+        status: "idle",
+        created_at: "2026-04-22T00:00:00Z",
+      },
+      {
+        id: "chat-real-b",
+        name: "chat B",
+        session_id: secondSessionId,
+        user_id: "user-1",
+        channel: "console",
+        meta: {},
+        status: "idle",
+        created_at: "2026-04-22T00:00:01Z",
+      },
+    ]);
+
+    await sessionApi.getSessionList();
+
+    expect(resolved).toHaveBeenCalledTimes(1);
+    expect(resolved).toHaveBeenCalledWith(secondSessionId, "chat-real-b");
+    expect(sessionApi.getChatIdForSession(firstSessionId!)).toBe("chat-real-a");
+    expect(sessionApi.getChatIdForSession(secondSessionId!)).toBe(
+      "chat-real-b",
+    );
+  });
+
   it("keeps pending session messages accessible before backend persistence catches up", async () => {
     const sessionApi = new SessionApi();
 
