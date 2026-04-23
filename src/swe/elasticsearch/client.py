@@ -8,6 +8,9 @@ from .config import ElasticsearchConfig
 
 logger = logging.getLogger(__name__)
 
+# ES 6.x server requires doc_type for index/get operations
+_DOC_TYPE = "_doc"
+
 # Global client singleton
 _client: Optional["ESClient"] = None
 
@@ -35,7 +38,6 @@ class ESClient:
             )
             return
 
-        # Build URL with scheme (required by newer elasticsearch versions)
         scheme = "https" if self._config.port == 443 else "http"
         hosts = [f"{scheme}://{self._config.host}:{self._config.port}"]
         kwargs: dict = {"hosts": hosts}
@@ -46,8 +48,8 @@ class ESClient:
         try:
             self._es = AsyncElasticsearch(**kwargs)
             await self._es.ping()
-            self._connected = True
             await self._ensure_index()
+            self._connected = True
             logger.info(
                 "Elasticsearch connected: %s:%s, index=%s",
                 self._config.host,
@@ -60,28 +62,27 @@ class ESClient:
 
     async def _ensure_index(self) -> None:
         """Create index with mapping if it does not exist."""
-        if not self._es or not self._connected:
+        if not self._es:
             return
 
-        try:
-            exists = await self._es.indices.exists(index=self._config.index)
-            if not exists:
-                mapping = {
-                    "mappings": {
+        exists = await self._es.indices.exists(index=self._config.index)
+        if not exists:
+            body = {
+                "mappings": {
+                    _DOC_TYPE: {
                         "properties": {
                             "trace_id": {"type": "keyword"},
                             "model_output": {"type": "text"},
                             "created_at": {"type": "date"},
                         },
                     },
-                }
-                await self._es.indices.create(
-                    index=self._config.index,
-                    body=mapping,
-                )
-                logger.info("Created ES index: %s", self._config.index)
-        except Exception as e:
-            logger.warning("Failed to ensure ES index: %s", e)
+                },
+            }
+            await self._es.indices.create(
+                index=self._config.index,
+                body=body,
+            )
+            logger.info("Created ES index: %s", self._config.index)
 
     @property
     def is_connected(self) -> bool:
@@ -95,6 +96,7 @@ class ESClient:
             model_output: The assistant/model response text.
         """
         if not self._connected or not self._es:
+            logger.warning("ES index skipped: connected=%s", self._connected)
             return
 
         doc = {
@@ -103,12 +105,18 @@ class ESClient:
             "created_at": datetime.utcnow().isoformat(),
         }
         try:
-            await self._es.index(
+            result = await self._es.index(
                 index=self._config.index,
+                doc_type=_DOC_TYPE,
                 id=trace_id,
                 body=doc,
+                refresh=True,
             )
-            logger.debug("Indexed model_output for trace_id=%s", trace_id)
+            logger.info(
+                "ES index success: trace_id=%s, result=%s",
+                trace_id,
+                result.get("result") if result else "unknown",
+            )
         except Exception as e:
             logger.warning(
                 "Failed to index model_output for trace_id=%s: %s",
@@ -131,12 +139,12 @@ class ESClient:
         try:
             result = await self._es.get(
                 index=self._config.index,
+                doc_type=_DOC_TYPE,
                 id=trace_id,
             )
             if result and result.get("found"):
                 return result["_source"].get("model_output")
         except Exception:
-            # Document not found or other error
             pass
         return None
 

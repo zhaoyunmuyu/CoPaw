@@ -687,6 +687,11 @@ class AgentRunner(Runner):
             # Index model output to Elasticsearch
             if trace_id and agent is not None:
                 assistant_response = _extract_assistant_response(agent)
+                logger.info(
+                    "ES write check: trace_id=%s, response_len=%d",
+                    trace_id,
+                    len(assistant_response) if assistant_response else 0,
+                )
                 if assistant_response:
                     try:
                         from ...elasticsearch import get_es_client
@@ -697,11 +702,18 @@ class AgentRunner(Runner):
                                 trace_id,
                                 assistant_response,
                             )
+                        else:
+                            logger.warning(
+                                "ES client not available: connected=%s",
+                                es_client.is_connected if es_client else None,
+                            )
                     except Exception as es_err:
                         logger.warning(
                             "Failed to index model output to ES: %s",
                             es_err,
                         )
+                else:
+                    logger.info("ES write skipped: empty assistant_response")
 
             # End trace with success status
             if trace_id and has_trace_manager():
