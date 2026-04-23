@@ -34,7 +34,7 @@ from .config import (
 )
 from .context import (
     TenantContextError,
-    get_current_tenant_id,
+    get_current_effective_tenant_id,
     resolve_effective_tenant_id,
 )
 
@@ -670,7 +670,7 @@ def get_tenant_working_dir(tenant_id: str | None = None) -> Path:
         Path to tenant working directory.
     """
     if tenant_id is None:
-        tenant_id = get_current_tenant_id()
+        tenant_id = get_current_effective_tenant_id()
 
     # Always use tenant subdirectory; default to "default" tenant
     if not tenant_id:
@@ -797,7 +797,7 @@ def get_tenant_working_dir_strict(tenant_id: str | None = None) -> Path:
         TenantContextError: If tenant_id is None and no tenant in context.
     """
     if tenant_id is None:
-        tenant_id = get_current_tenant_id()
+        tenant_id = get_current_effective_tenant_id()
         if tenant_id is None:
             raise TenantContextError(
                 "Tenant context required. "

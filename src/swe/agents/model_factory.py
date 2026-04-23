@@ -704,9 +704,9 @@ def _get_agent_id(agent_id: Optional[str]) -> Optional[str]:
 def _get_tenant_id() -> Optional[str]:
     """Get current tenant ID."""
     try:
-        from ..config.context import get_current_tenant_id
+        from ..config.context import get_current_effective_tenant_id
 
-        return get_current_tenant_id()
+        return get_current_effective_tenant_id()
     except Exception:
         return None
 
@@ -824,9 +824,9 @@ def create_model_and_formatter(
 
     # Get tenant_id for tenant-aware ProviderManager
     try:
-        from swe.config.context import get_current_tenant_id
+        from swe.config.context import get_current_effective_tenant_id
 
-        tenant_id = get_current_tenant_id()
+        tenant_id = get_current_effective_tenant_id()
     except Exception:
         tenant_id = None
 

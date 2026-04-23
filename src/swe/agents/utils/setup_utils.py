@@ -232,9 +232,9 @@ def _get_tenant_directories(
     if tenant_id is not None:
         return WORKING_DIR / tenant_id, SECRET_DIR / tenant_id
 
-    from ...config.context import get_current_tenant_id
+    from ...config.context import get_current_effective_tenant_id
 
-    current_tenant = get_current_tenant_id()
+    current_tenant = get_current_effective_tenant_id()
     if current_tenant:
         return WORKING_DIR / current_tenant, SECRET_DIR / current_tenant
     return WORKING_DIR, SECRET_DIR
