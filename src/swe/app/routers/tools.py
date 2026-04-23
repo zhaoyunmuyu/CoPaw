@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """API routes for built-in tools management."""
+# pylint: disable=no-name-in-module
 
 from __future__ import annotations
 
@@ -41,11 +42,9 @@ async def list_tools(
     Returns:
         List of tool information
     """
-    from ..agent_context import get_agent_for_request
-    from ...config.config import load_agent_config
+    from ..agent_context import get_agent_and_config_for_request
 
-    workspace = await get_agent_for_request(request)
-    agent_config = load_agent_config(workspace.agent_id)
+    _, agent_config = await get_agent_and_config_for_request(request)
 
     # Ensure tools config exists with defaults
     if not agent_config.tools or not agent_config.tools.builtin_tools:
@@ -89,11 +88,10 @@ async def toggle_tool(
     Raises:
         HTTPException: If tool not found
     """
-    from ..agent_context import get_agent_for_request
-    from ...config.config import load_agent_config, save_agent_config
+    from ..agent_context import get_agent_and_config_for_request
+    from ...config.config import save_agent_config
 
-    workspace = await get_agent_for_request(request)
-    agent_config = load_agent_config(workspace.agent_id)
+    workspace, agent_config = await get_agent_and_config_for_request(request)
 
     if (
         not agent_config.tools
@@ -109,10 +107,18 @@ async def toggle_tool(
     tool_config.enabled = not tool_config.enabled
 
     # Save agent config
-    save_agent_config(workspace.agent_id, agent_config, tenant_id=workspace.tenant_id)
+    save_agent_config(
+        workspace.agent_id,
+        agent_config,
+        tenant_id=workspace.tenant_id,
+    )
 
     # Hot reload config (async, non-blocking)
-    schedule_agent_reload(request, workspace.agent_id)
+    schedule_agent_reload(
+        request,
+        workspace.agent_id,
+        tenant_id=workspace.tenant_id,
+    )
 
     # Return immediately (optimistic update)
     return ToolInfo(
@@ -142,11 +148,10 @@ async def update_tool_async_execution(
     Raises:
         HTTPException: If tool not found
     """
-    from ..agent_context import get_agent_for_request
-    from ...config.config import load_agent_config, save_agent_config
+    from ..agent_context import get_agent_and_config_for_request
+    from ...config.config import save_agent_config
 
-    workspace = await get_agent_for_request(request)
-    agent_config = load_agent_config(workspace.agent_id)
+    workspace, agent_config = await get_agent_and_config_for_request(request)
 
     if (
         not agent_config.tools
@@ -162,10 +167,18 @@ async def update_tool_async_execution(
     tool_config.async_execution = async_execution
 
     # Save agent config
-    save_agent_config(workspace.agent_id, agent_config, tenant_id=workspace.tenant_id)
+    save_agent_config(
+        workspace.agent_id,
+        agent_config,
+        tenant_id=workspace.tenant_id,
+    )
 
     # Hot reload config (async, non-blocking)
-    schedule_agent_reload(request, workspace.agent_id)
+    schedule_agent_reload(
+        request,
+        workspace.agent_id,
+        tenant_id=workspace.tenant_id,
+    )
 
     # Return immediately (optimistic update)
     return ToolInfo(

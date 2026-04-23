@@ -6,6 +6,7 @@
 
 | 文档 | 摘要 |
 |------|------|
+| [agent-config-read-consistency.md](agent-config-read-consistency.md) | agent 控制面读写一致性边界、排查入口和与 console agent switching 的职责分界 |
 | [common-errors.md](common-errors.md) | 常见报错模式、典型触发点和第一落点 |
 | [location-paths.md](location-paths.md) | 按问题类型给出优先查看的代码路径、配置路径和命令入口 |
 | [log-entrypoints.md](log-entrypoints.md) | 运行日志、daemon logs、query error dump、Tracing 的实际入口 |
@@ -15,4 +16,5 @@
 
 1. 先看 [troubleshooting-order.md](troubleshooting-order.md)，确定排查顺序。
 2. 遇到明确错误消息时，再查 [common-errors.md](common-errors.md)。
-3. 需要找入口时，看 [location-paths.md](location-paths.md) 和 [log-entrypoints.md](log-entrypoints.md)。
+3. 遇到 agent 控制面读写不一致时，先看 [agent-config-read-consistency.md](agent-config-read-consistency.md)。
+4. 需要找入口时，看 [location-paths.md](location-paths.md) 和 [log-entrypoints.md](log-entrypoints.md)。

@@ -24,7 +24,9 @@ class FakeMultiAgentManager:
 
     async def get_agent(self, agent_id: str, tenant_id: str | None = None):
         self.calls.append((agent_id, tenant_id))
-        workspace_dir = self.base_dir / (tenant_id or "default") / "agents" / agent_id
+        workspace_dir = (
+            self.base_dir / (tenant_id or "default") / "agents" / agent_id
+        )
         workspace_dir.mkdir(parents=True, exist_ok=True)
         return SimpleNamespace(
             workspace_dir=workspace_dir,
@@ -49,12 +51,20 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         agent_id: str | None = None,
     ):
         if agent_id == "missing":
-            raise HTTPException(status_code=404, detail="Agent 'missing' not found")
+            raise HTTPException(
+                status_code=404,
+                detail="Agent 'missing' not found",
+            )
         if agent_id == "disabled":
-            raise HTTPException(status_code=403, detail="Agent 'disabled' is disabled")
+            raise HTTPException(
+                status_code=403,
+                detail="Agent 'disabled' is disabled",
+            )
 
         tenant_id = request.state.tenant_id
-        workspace_dir = tmp_path / tenant_id / "agents" / (agent_id or "default")
+        workspace_dir = (
+            tmp_path / tenant_id / "agents" / (agent_id or "default")
+        )
         workspace_dir.mkdir(parents=True, exist_ok=True)
         return SimpleNamespace(
             workspace_dir=workspace_dir,
@@ -97,13 +107,16 @@ def client_real_resolver(
     )
     monkeypatch.setattr(
         "swe.app.agent_context._get_tenant_aware_config",
-        lambda tenant_id=None: fake_config,
+        lambda tenant_id=None, source_id=None: fake_config,
     )
 
     return TestClient(app, raise_server_exceptions=False), manager
 
 
-def test_init_happy_path_appends_existing_top_level_md(client: TestClient, tmp_path: Path):
+def test_init_happy_path_appends_existing_top_level_md(
+    client: TestClient,
+    tmp_path: Path,
+):
     workspace = tmp_path / "tenant-a" / "agents" / "agent-1"
     workspace.mkdir(parents=True, exist_ok=True)
     target = workspace / "PROFILE.md"
@@ -214,7 +227,10 @@ def test_init_isolates_same_agent_id_across_tenants(
     ]
 
 
-def test_init_normalizes_filename_with_md_suffix(client: TestClient, tmp_path: Path):
+def test_init_normalizes_filename_with_md_suffix(
+    client: TestClient,
+    tmp_path: Path,
+):
     response = client.post(
         "/api/agent/init",
         headers={"X-Tenant-Id": "tenant-b"},
@@ -231,7 +247,10 @@ def test_init_normalizes_filename_with_md_suffix(client: TestClient, tmp_path: P
     assert normalized.read_text(encoding="utf-8") == "hello"
 
 
-def test_init_normalizes_uppercase_md_extension(client: TestClient, tmp_path: Path):
+def test_init_normalizes_uppercase_md_extension(
+    client: TestClient,
+    tmp_path: Path,
+):
     workspace = tmp_path / "tenant-a" / "agents" / "agent-1"
     workspace.mkdir(parents=True, exist_ok=True)
     target = workspace / "PROFILE.md"
@@ -436,7 +455,10 @@ def test_init_rejects_missing_text_field(client: TestClient):
     assert response.json()["detail"] == "text is required"
 
 
-def test_init_accepts_empty_text_without_content_change(client: TestClient, tmp_path: Path):
+def test_init_accepts_empty_text_without_content_change(
+    client: TestClient,
+    tmp_path: Path,
+):
     workspace = tmp_path / "tenant-a" / "agents" / "agent-1"
     workspace.mkdir(parents=True, exist_ok=True)
     target = workspace / "PROFILE.md"
@@ -481,7 +503,10 @@ def test_init_rejects_null_body_with_400(client: TestClient):
     response = client.post(
         "/api/agent/init",
         data="null",
-        headers={"X-Tenant-Id": "tenant-a", "Content-Type": "application/json"},
+        headers={
+            "X-Tenant-Id": "tenant-a",
+            "Content-Type": "application/json",
+        },
     )
     assert response.status_code == 400
     assert response.json()["detail"] == "request body must be a JSON object"
@@ -495,7 +520,10 @@ def test_init_rejects_non_object_json_body_with_400(
     response = client.post(
         "/api/agent/init",
         data=raw_body,
-        headers={"X-Tenant-Id": "tenant-a", "Content-Type": "application/json"},
+        headers={
+            "X-Tenant-Id": "tenant-a",
+            "Content-Type": "application/json",
+        },
     )
     assert response.status_code == 400
     assert response.json()["detail"] == "request body must be a JSON object"
@@ -506,9 +534,9 @@ def test_init_openapi_schema_marks_fields_required_and_non_nullable(
 ):
     openapi = client.app.openapi()
     route_spec = openapi["paths"]["/api/agent/init"]["post"]
-    body_schema = route_spec["requestBody"][
-        "content"
-    ]["application/json"]["schema"]
+    body_schema = route_spec["requestBody"]["content"]["application/json"][
+        "schema"
+    ]
 
     assert set(body_schema["required"]) == {"filename", "text", "agentId"}
     assert body_schema["properties"]["filename"]["type"] == "string"
@@ -520,7 +548,11 @@ def test_init_openapi_schema_marks_fields_required_and_non_nullable(
     ]["schema"]["$ref"]
     response_schema_name = response_ref.rsplit("/", maxsplit=1)[-1]
     response_schema = openapi["components"]["schemas"][response_schema_name]
-    assert set(response_schema["required"]) == {"appended", "filename", "agent_id"}
+    assert set(response_schema["required"]) == {
+        "appended",
+        "filename",
+        "agent_id",
+    }
     assert response_schema["properties"]["appended"]["type"] == "boolean"
     assert response_schema["properties"]["filename"]["type"] == "string"
     assert response_schema["properties"]["agent_id"]["type"] == "string"

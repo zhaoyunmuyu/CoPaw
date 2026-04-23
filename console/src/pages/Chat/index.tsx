@@ -67,6 +67,7 @@ import {
 } from "./utils";
 import { deriveChatTaskState, shouldMarkTaskReadOnOpen } from "./taskJobs";
 import { shouldRefreshCurrentTaskMessages } from "./taskMessageRefresh";
+import { matchesResolvedChatId } from "./sessionApi/resolvedSessionMapping";
 
 import RuntimeRequestCard from "./components/RuntimeRequestCard";
 import { FOLLOW_UP_SUBMIT_FAILED_EVENT } from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/Chat/hooks/followUpSubmit";
@@ -386,7 +387,7 @@ export default function ChatPage() {
   // Register session API event callbacks for URL synchronization
 
   useEffect(() => {
-    sessionApi.onSessionIdResolved = (realId) => {
+    sessionApi.onSessionIdResolved = (_tempId, realId) => {
       if (!isChatActiveRef.current) return;
       // Update URL when realId is resolved, regardless of current chatId
       // (chatId may be undefined if URL was cleared in onSessionCreated)
@@ -423,7 +424,14 @@ export default function ChatPage() {
       // 3. A's request completes → onSessionSelected(A) fires
       // 4. Should NOT navigate back to A since user already chose B
       const currentUrlChatId = chatIdRef.current;
-      if (currentUrlChatId && currentUrlChatId !== targetId) {
+      if (
+        currentUrlChatId &&
+        currentUrlChatId !== targetId &&
+        !matchesResolvedChatId({
+          requestedSessionId: currentUrlChatId,
+          chatId: targetId,
+        })
+      ) {
         return;
       }
 
@@ -473,7 +481,7 @@ export default function ChatPage() {
 
   // ==================== URL 导航参数 (Kun He, 2026-04-15) ====================
   // 处理 iframe URL 传递的 sessionId/taskId 参数，自动跳转到对应聊天页面
-  // sessionId: 直接导航到 /chat/:sessionId
+  // sessionId: 可传 backend chat.id 或逻辑 session_id，后续由初始选择逻辑解析
   // taskId: 查找 task.chat_id 后导航
   const sessionIdRef = useRef<string | null>(null);
   const taskIdRef = useRef<string | null>(null);
@@ -794,7 +802,9 @@ export default function ChatPage() {
 
       const requestBody = {
         input: rewrittenInput,
-        session_id: window.currentSessionId || session?.session_id || "",
+        session_id: sessionApi.getLogicalSessionId(
+          window.currentSessionId || session?.session_id || "",
+        ),
         // ==================== userId 统一整改 (Kun He) ====================
         // 使用 getUserId()/getChannel() 获取，优先级：iframe > window > session > default
         user_id: getUserId(session?.user_id),
@@ -805,8 +815,8 @@ export default function ChatPage() {
       };
 
       const backendChatId =
-        sessionApi.getRealIdForSession(requestBody.session_id) ??
         chatIdRef.current ??
+        sessionApi.getChatIdForSession(requestBody.session_id) ??
         requestBody.session_id;
       if (backendChatId) {
         const userText = rewrittenInput
@@ -1054,7 +1064,9 @@ export default function ChatPage() {
         },
         cancel(data: { session_id: string }) {
           const chatId =
-            sessionApi.getRealIdForSession(data.session_id) ?? data.session_id;
+            chatIdRef.current ??
+            sessionApi.getChatIdForSession(data.session_id) ??
+            data.session_id;
           if (chatId) {
             chatApi.stopChat(chatId).catch((err) => {
               console.error("Failed to stop chat:", err);
@@ -1072,7 +1084,10 @@ export default function ChatPage() {
             headers,
             body: JSON.stringify({
               reconnect: true,
-              session_id: window.currentSessionId || data.session_id,
+              session_id:
+                chatIdRef.current ??
+                sessionApi.getChatIdForSession(data.session_id) ??
+                data.session_id,
               // ==================== userId 统一整改 (Kun He) ====================
               // 使用 getUserId()/getChannel() 获取
               user_id: getUserId(),

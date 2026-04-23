@@ -22,6 +22,12 @@ import { toDisplayUrl } from "../utils";
 import { applyPreferredSessionSelection } from "./preferredSession";
 import { shouldNotifySessionSelected } from "./sessionRaceGuard";
 import { filterStaleTaskSessions } from "./taskSessions";
+import {
+  forgetResolvedChatId,
+  forgetResolvedChatIdsForChat,
+  getResolvedChatId,
+  rememberResolvedChatId,
+} from "./resolvedSessionMapping";
 
 // ==================== userId 统一整改 (Kun He) ====================
 // 使用统一的 getUserId/getChannel helper
@@ -407,7 +413,7 @@ function clearPendingUserMessage(sessionId: string): void {
 // SessionApi
 // ---------------------------------------------------------------------------
 
-class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
+export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
   private sessionList: IAgentScopeRuntimeWebUISession[] = [];
   private intendedSessionId: string | null = null;
 
@@ -554,15 +560,66 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     return this.createEmptySession(sessionId);
   }
 
+  private findSessionByIdentity(sessionId: string): ExtendedSession | undefined {
+    return this.sessionList.find((session) => {
+      const extendedSession = session as ExtendedSession;
+      return (
+        extendedSession.id === sessionId ||
+        extendedSession.realId === sessionId
+      );
+    }) as ExtendedSession | undefined;
+  }
+
+  getLogicalSessionId(sessionId: string): string {
+    if (!sessionId) {
+      return "";
+    }
+
+    if (this.pendingSession?.id === sessionId) {
+      return this.pendingSession.sessionId;
+    }
+
+    const session = this.findSessionByIdentity(sessionId);
+    return session?.sessionId || sessionId;
+  }
+
   /**
    * Returns the real backend UUID for a session identified by id (which may be
    * a local timestamp). Returns null when not yet resolved or not found.
    */
   getRealIdForSession(sessionId: string): string | null {
-    const s = this.sessionList.find((x) => x.id === sessionId) as
-      | ExtendedSession
-      | undefined;
-    return s?.realId ?? null;
+    return (
+      this.findSessionByIdentity(sessionId)?.realId ??
+      getResolvedChatId(sessionId)
+    );
+  }
+
+  getChatIdForSession(sessionId: string): string | null {
+    if (!sessionId) {
+      return null;
+    }
+
+    const session = this.findSessionByIdentity(sessionId);
+    if (session?.realId) {
+      return session.realId;
+    }
+
+    if (session && !isLocalTimestamp(session.id)) {
+      return session.id;
+    }
+
+    if (isLocalTimestamp(sessionId)) {
+      return getResolvedChatId(sessionId);
+    }
+
+    const matchesLogicalSessionId = this.sessionList.some(
+      (session) => (session as ExtendedSession).sessionId === sessionId,
+    );
+    if (matchesLogicalSessionId) {
+      return null;
+    }
+
+    return sessionId;
   }
 
   /**
@@ -602,6 +659,7 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     this.sessionList.unshift(session);
 
     // 触发回调更新URL
+    rememberResolvedChatId(this.pendingSession.id, realId);
     this.onSessionIdResolved?.(this.pendingSession.id, realId);
 
     // 清除临时会话
@@ -648,13 +706,15 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
             const tempId = this.pendingSession.id;
 
             // 触发回调更新URL
+            rememberResolvedChatId(tempId, realId);
             this.onSessionIdResolved?.(tempId, realId);
 
             // 清除临时会话
             this.pendingSession = null;
 
-            // 更新 window 变量使用真实UUID
-            window.currentSessionId = realId;
+            // 保持 window.currentSessionId 指向逻辑 session_id
+            window.currentSessionId =
+              matchedBackendSession.sessionId || tempId;
           }
         }
 
@@ -816,6 +876,7 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
           const { list, realId } = resolveRealId(this.sessionList, tempId);
           if (realId) {
             this.sessionList = list;
+            rememberResolvedChatId(tempId, realId);
             this.onSessionIdResolved?.(tempId, realId);
           }
         });
@@ -825,6 +886,7 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
           const { list, realId } = resolveRealId(this.sessionList, tempId);
           this.sessionList = list;
           if (realId) {
+            rememberResolvedChatId(tempId, realId);
             this.onSessionIdResolved?.(tempId, realId);
           }
         });
@@ -835,6 +897,7 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
         const { list, realId } = resolveRealId(this.sessionList, tempId);
         this.sessionList = list;
         if (realId) {
+          rememberResolvedChatId(tempId, realId);
           this.onSessionIdResolved?.(tempId, realId);
         }
       });
@@ -884,13 +947,18 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
       | undefined;
 
     const deleteId =
-      existing?.realId ?? (isLocalTimestamp(sessionId) ? null : sessionId);
+      this.getChatIdForSession(sessionId) ??
+      (isLocalTimestamp(sessionId) ? null : sessionId);
 
     if (deleteId) await api.deleteChat(deleteId);
 
     this.sessionList = this.sessionList.filter((s) => s.id !== sessionId);
 
     const resolvedId = existing?.realId ?? sessionId;
+    forgetResolvedChatId(sessionId);
+    if (deleteId) {
+      forgetResolvedChatIdsForChat(deleteId);
+    }
     this.onSessionRemoved?.(resolvedId);
 
     return [...this.sessionList];

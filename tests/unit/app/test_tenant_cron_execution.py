@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Cron executor tenant context regression tests."""
+# pylint: disable=protected-access
 import asyncio
 import importlib
 import importlib.util
@@ -73,16 +74,16 @@ def _get_current_workspace_dir():
 
 
 class _Runner:
-    async def stream_query(self, req):
-        if False:
-            yield None
+    async def stream_query(self, _req):
+        for _item in ():
+            yield _item
 
 
 class _ChannelManager:
-    async def send_text(self, **kwargs):
+    async def send_text(self, **_kwargs):
         return None
 
-    async def send_event(self, **kwargs):
+    async def send_event(self, **_kwargs):
         return None
 
 
@@ -120,12 +121,30 @@ def _build_agent_job(workspace_dir: str, timeout_seconds: int = 1) -> object:
     )
 
 
-def test_execute_binds_workspace_dir_during_job_and_resets_afterward(monkeypatch):
+def test_job_runtime_defaults_allow_longer_cron_runs() -> None:
+    runtime = JobRuntimeSpec()
+
+    assert runtime.timeout_seconds == 7200
+    assert runtime.misfire_grace_seconds == 300
+
+
+def test_execute_binds_workspace_dir_during_job_and_resets_afterward(
+    monkeypatch,
+):
     observed = {}
-    executor = CronExecutor(runner=_Runner(), channel_manager=_ChannelManager())
+    executor = CronExecutor(
+        runner=_Runner(),
+        channel_manager=_ChannelManager(),
+    )
     job = _build_text_job("/tmp/tenant-a/workspaces/alpha")
 
-    async def fake_execute_job(self, job, target_user_id, target_session_id, dispatch_meta):
+    async def fake_execute_job(
+        _self,
+        _job,
+        _target_user_id,
+        _target_session_id,
+        dispatch_meta,
+    ):
         observed["workspace_in_job"] = _get_current_workspace_dir()
         observed["meta_workspace"] = dispatch_meta.get("workspace_dir")
 
@@ -133,7 +152,9 @@ def test_execute_binds_workspace_dir_during_job_and_resets_afterward(monkeypatch
 
     asyncio.run(executor.execute(job))
 
-    assert observed["workspace_in_job"] == Path("/tmp/tenant-a/workspaces/alpha")
+    assert observed["workspace_in_job"] == Path(
+        "/tmp/tenant-a/workspaces/alpha",
+    )
     assert _get_current_workspace_dir() is None
 
 
@@ -147,11 +168,11 @@ def test_execute_resets_workspace_dir_after_timeout(monkeypatch):
     job = _build_agent_job("/tmp/tenant-a/workspaces/beta")
 
     async def fake_execute_job(
-        self,
-        job,
-        target_user_id,
-        target_session_id,
-        dispatch_meta,
+        _self,
+        _job,
+        _target_user_id,
+        _target_session_id,
+        _dispatch_meta,
     ):
         observed["workspace_in_job"] = _get_current_workspace_dir()
         raise asyncio.TimeoutError
@@ -161,7 +182,9 @@ def test_execute_resets_workspace_dir_after_timeout(monkeypatch):
     with pytest.raises(asyncio.TimeoutError):
         asyncio.run(executor.execute(job))
 
-    assert observed["workspace_in_job"] == Path("/tmp/tenant-a/workspaces/beta")
+    assert observed["workspace_in_job"] == Path(
+        "/tmp/tenant-a/workspaces/beta",
+    )
     assert _get_current_workspace_dir() is None
 
 
@@ -177,6 +200,7 @@ def test_execute_aborts_agent_job_when_user_info_expired(monkeypatch):
         tenant_id=None,
         workspace_dir=None,
     ):
+        del tenant_id, workspace_dir
         raise ValueError("cron auth user_info is expired")
 
     monkeypatch.setattr(
@@ -212,6 +236,7 @@ def test_execute_allows_agent_job_when_user_info_missing(monkeypatch):
         tenant_id=None,
         workspace_dir=None,
     ):
+        del tenant_id, workspace_dir
         return auth_state_module.ResolvedAuthToken(
             token=None,
             expires_at=None,
@@ -221,8 +246,8 @@ def test_execute_allows_agent_job_when_user_info_missing(monkeypatch):
 
     async def fake_stream_query(req):
         observed["req"] = req
-        if False:
-            yield None
+        for _item in ():
+            yield _item
 
     monkeypatch.setattr(
         executor_module,
@@ -237,7 +262,7 @@ def test_execute_allows_agent_job_when_user_info_missing(monkeypatch):
             "user-a",
             "session-a",
             {"workspace_dir": "/tmp/tenant-a/workspaces/beta"},
-        )
+        ),
     )
 
     assert observed["req"]["user_id"] == "user-a"
@@ -259,6 +284,7 @@ def test_execute_injects_auth_token_and_cookie_into_agent_request(monkeypatch):
         tenant_id=None,
         workspace_dir=None,
     ):
+        del tenant_id, workspace_dir
         return auth_state_module.ResolvedAuthToken(
             token="auth-123",
             expires_at=None,
@@ -268,8 +294,8 @@ def test_execute_injects_auth_token_and_cookie_into_agent_request(monkeypatch):
 
     async def fake_stream_query(req):
         observed["req"] = req
-        if False:
-            yield None
+        for _item in ():
+            yield _item
 
     monkeypatch.setattr(
         executor_module,
@@ -284,7 +310,7 @@ def test_execute_injects_auth_token_and_cookie_into_agent_request(monkeypatch):
             "user-a",
             "session-a",
             {"workspace_dir": "/tmp/tenant-a/workspaces/beta"},
-        )
+        ),
     )
 
     assert observed["req"]["auth_token"] == "auth-123"
@@ -297,10 +323,15 @@ def test_execute_exposes_tenant_process_limit_policy_inside_cron_context(
     monkeypatch,
     tmp_path: Path,
 ):
-    from swe.security.process_limits import resolve_current_process_limit_policy
+    from swe.security.process_limits import (
+        resolve_current_process_limit_policy,
+    )
 
     observed = {}
-    executor = CronExecutor(runner=_Runner(), channel_manager=_ChannelManager())
+    executor = CronExecutor(
+        runner=_Runner(),
+        channel_manager=_ChannelManager(),
+    )
     job = _build_text_job("/tmp/tenant-a/workspaces/alpha")
 
     tenant_dir = tmp_path / "tenant-a"
@@ -321,7 +352,13 @@ def test_execute_exposes_tenant_process_limit_policy_inside_cron_context(
         tenant_dir / "config.json",
     )
 
-    async def fake_execute_job(self, job, target_user_id, target_session_id, dispatch_meta):
+    async def fake_execute_job(
+        _self,
+        _job,
+        _target_user_id,
+        _target_session_id,
+        _dispatch_meta,
+    ):
         policy = resolve_current_process_limit_policy("shell")
         observed["tenant_id"] = policy.tenant_id
         observed["enabled"] = policy.enabled

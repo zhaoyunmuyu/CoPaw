@@ -19,8 +19,6 @@ import { ChatAnywhereSessionsContext } from '@/components/agentscope-chat';
 import sessionApi from '../../sessionApi';
 import { HistorySessionRow } from './HistorySessionRow';
 import { HistorySkeleton } from './HistorySkeleton';
-import { chatApi } from '@/api/modules/chat';
-
 
 /** Extended session type with additional backend fields */
 interface ExtendedHistorySession extends HistorySession {
@@ -220,13 +218,9 @@ export default function ChatSidebar(props: ChatSidebarProps) {
   }, []);
 
   const handleDeleteSession = useCallback(
-    async (sessionId: string, backendId: string | null) => {
-      // const session = sessions.find((s) => s.id === sessionId) as ExtendedHistorySession | undefined;
-      // const backendId = session?.realId || (/^\d+$/.test(sessionId) ? null : sessionId);
+    async (sessionId: string, _backendId: string | null) => {
 
-      if (backendId) {
-        await chatApi.deleteChat(backendId);
-      }
+      await sessionApi.removeSession({ id: sessionId });
 
       if (currentChatIdRef.current === sessionId) {
         const next = sessionsRef.current.filter((s) => s.id !== sessionId);

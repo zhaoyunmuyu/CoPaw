@@ -123,6 +123,7 @@ export function useMCP() {
   return {
     clients,
     loading,
+    loadClients,
     createClient,
     updateClient,
     toggleEnabled,

@@ -122,10 +122,22 @@ async def run_command_path(  # pylint: disable=too-many-statements
 
         agent_id = runner.agent_id
         daemon_ctx = DaemonContext(
-            load_config_fn=lambda: load_agent_config(agent_id),
+            load_config_fn=lambda: load_agent_config(
+                agent_id,
+                tenant_id=getattr(
+                    getattr(runner, "_workspace", None),
+                    "tenant_id",
+                    None,
+                ),
+            ),
             memory_manager=runner.memory_manager,
             manager=manager,
             agent_id=agent_id,
+            tenant_id=getattr(
+                getattr(runner, "_workspace", None),
+                "tenant_id",
+                None,
+            ),
             session_id=session_id,
         )
         msg = await handler.handle_daemon_command(query, daemon_ctx)
