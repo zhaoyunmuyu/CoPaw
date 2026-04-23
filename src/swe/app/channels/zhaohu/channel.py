@@ -1827,7 +1827,11 @@ class ZhaohuChannel(BaseChannel):
         text: str,
         meta: dict,
     ) -> dict:
-        send_addr = str(meta.get("yst_id") or to_handle).strip()
+        # send_addr: prefer meta["send_addr"] (yst_id), then meta["yst_id"],
+        # then to_handle as fallback
+        send_addr = str(
+            meta.get("send_addr") or meta.get("yst_id") or to_handle,
+        ).strip()
         # 如果send_addr是8位，则可能是sapId，需要查询ystId
         send_addr = await self.deal_eight_sap(send_addr)
         session_id = str(meta.get("session_id") or "").strip()

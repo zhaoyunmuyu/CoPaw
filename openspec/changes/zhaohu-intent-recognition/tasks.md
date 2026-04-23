@@ -28,5 +28,6 @@
 ## Verification
 
 - [x] 语法检查通过（py_compile）
+- [x] 修复 `_build_push_payload` 中 `send_addr` 取值逻辑（从 `meta.get("send_addr")` 获取 yst_id）
 - [ ] 部署测试：配置环境变量后验证意图识别接口调用
 - [ ] 功能测试：验证 Case 2 和 Case 3 的正确路由
