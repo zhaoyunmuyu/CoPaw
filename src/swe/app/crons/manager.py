@@ -980,6 +980,10 @@ class CronManager:  # pylint: disable=too-many-public-methods
             (job.dispatch.target.user_id or "")[:40],
             (job.dispatch.target.session_id or "")[:40],
         )
+        st = self._states.get(job_id, CronJobState())
+        st.last_status = "running"
+        st.last_error = None
+        self._states[job_id] = st
         task = asyncio.create_task(
             self._execute_once(job),
             name=f"c ron-run-{job_id}",
@@ -1659,9 +1663,9 @@ class CronManager:  # pylint: disable=too-many-public-methods
 
         session_id = job.meta.get("task_chat_id")
         if not session_id:
-            logger.debug("Skip notification: job %s has no session_id", job.id)
+            logger.info("Skip notification: job %s has no session_id", job.id)
             return
-
+        creator_id = job.meta.get("creator_user_id")
         logger.info(
             "Sending cron task completion notification: "
             "job_id=%s job_name=%s session_id=%s",
@@ -1680,19 +1684,46 @@ class CronManager:  # pylint: disable=too-many-public-methods
         meta["link_text"] = "点击跳转小助claw版查看"
         meta["notification_summary"] = "小助claw定时任务完成提醒"
 
+        await self.push_message(creator_id, job, session_id, meta)
+
+    async def push_message(
+        self,
+        creator_id: Any | None,
+        job: CronJobSpec,
+        session_id: Any | None,
+        meta: Optional[Dict[str, Any]] | None,
+    ):
         # 固定使用 zhaohu 通道发送通知
-        await self._channel_manager.send_text(
-            channel="zhaohu",
-            user_id=job.dispatch.target.user_id,
-            session_id=session_id,
-            text=f"叮咚，你发起的定时任务【{job.name}】已完成，快来查收结果~",
-            meta=meta,
-        )
-        logger.info(
-            "Cron task completion notification sent: job_id=%s job_name=%s",
-            job.id,
-            job.name,
-        )
+        # 用 try-except 包裹，避免任务被取消时通知发送失败影响主流程
+        try:
+            await self._channel_manager.send_text(
+                channel="zhaohu",
+                user_id=creator_id,
+                session_id=session_id,
+                text=f"叮咚，你发起的定时任务【{job.name}】已完成，快来查收结果~",
+                meta=meta,
+            )
+            logger.info(
+                "Cron task completion notification sent: "
+                "job_id=%s job_name=%s",
+                job.id,
+                job.name,
+            )
+        except asyncio.CancelledError:
+            logger.warning(
+                "Cron task notification cancelled: job_id=%s job_name=%s",
+                job.id,
+                job.name,
+            )
+            raise
+        except Exception as exc:
+            logger.warning(
+                "Failed to send cron task notification: "
+                "job_id=%s job_name=%s error=%s",
+                job.id,
+                job.name,
+                repr(exc),
+            )
 
     @staticmethod
     def _extract_latest_assistant_preview(messages: list[Any]) -> str:
@@ -2060,7 +2091,17 @@ class CronManager:  # pylint: disable=too-many-public-methods
                 await self._executor.execute(job)
                 st.last_status = "success"
                 st.last_error = None
-                await self._push_task_success_notification(job)
+                # 通知用 shield 保护，避免任务取消时误标记状态
+                try:
+                    await asyncio.shield(
+                        self._push_task_success_notification(job),
+                    )
+                except asyncio.CancelledError:
+                    logger.info(
+                        "cron task notification/record cancelled but task succeeded: "
+                        "job_id=%s",
+                        job.id,
+                    )
                 await self._record_task_execution_success(job)
                 logger.info(
                     "cron _execute_once: job_id=%s status=success",

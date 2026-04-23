@@ -63,6 +63,11 @@ export default createGlobalStyle`
     &--paused {
       background: rgba(223, 146, 33, 0.06);
     }
+
+    &--running {
+      background: rgba(55, 105, 252, 0.06);
+      box-shadow: inset 0 0 0 1px rgba(55, 105, 252, 0.12);
+    }
   }
 
   &-item-header {
@@ -153,6 +158,7 @@ export default createGlobalStyle`
     &--manual {
       color: ${DESIGN_TOKENS.colorTextMuted};
     }
+
   }
 
   &-item-subtitle {

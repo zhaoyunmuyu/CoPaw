@@ -79,6 +79,7 @@ import type {
 } from "./messageMeta";
 
 const CHAT_ATTACHMENT_MAX_MB = 10;
+const TASK_RUNNING_POLL_MS = 30_000;
 const TASK_PAGE_POLL_MS = 30_000;
 const TASK_PENDING_POLL_MS = 30_000;
 
@@ -548,6 +549,10 @@ export default function ChatPage() {
     () => deriveChatTaskState(jobs, chatId),
     [jobs, chatId],
   );
+  const hasRunningTask = useMemo(
+    () => tasks.some((task) => task.task?.is_running),
+    [tasks],
+  );
 
   useEffect(() => {
     void refreshJobs();
@@ -567,8 +572,9 @@ export default function ChatPage() {
   }, [refreshJobs]);
 
   useEffect(() => {
-    const pollMs =
-      currentTask?.task?.has_scheduled_result === false
+    const pollMs = hasRunningTask
+      ? TASK_RUNNING_POLL_MS
+      : currentTask?.task?.has_scheduled_result === false
         ? TASK_PENDING_POLL_MS
         : TASK_PAGE_POLL_MS;
 
@@ -577,7 +583,7 @@ export default function ChatPage() {
     }, pollMs);
 
     return () => window.clearInterval(intervalId);
-  }, [currentTask?.task?.has_scheduled_result, refreshJobs]);
+  }, [currentTask?.task?.has_scheduled_result, hasRunningTask, refreshJobs]);
 
   useEffect(() => {
     const hadResult = Boolean(currentTask?.task?.has_scheduled_result);

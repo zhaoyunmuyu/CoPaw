@@ -79,14 +79,22 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
+}
 
-  &.enabled {
-    background-color: #52c41a;
-  }
+.statusDotSuccess {
+  background-color: #52c41a;
+}
 
-  &.disabled {
-    background-color: #d9d9d9;
-  }
+.statusDotIdle {
+  background-color: #d9d9d9;
+}
+
+.statusDotError {
+  background-color: #ff4d4f;
+}
+
+.statusDotRunning {
+  background-color: #1677ff;
 }
 
 /* Table text styles */
@@ -175,14 +183,20 @@
     color: rgba(255, 255, 255, 0.35);
   }
 
-  .statusDot {
-    &.enabled {
-      background-color: #73d13d;
-    }
+  .statusDotSuccess {
+    background-color: #73d13d;
+  }
 
-    &.disabled {
-      background-color: #5a5a5a;
-    }
+  .statusDotIdle {
+    background-color: #5a5a5a;
+  }
+
+  .statusDotError {
+    background-color: #ff7875;
+  }
+
+  .statusDotRunning {
+    background-color: #69b1ff;
   }
 
   /* Form extra text */

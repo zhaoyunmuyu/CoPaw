@@ -171,24 +171,24 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       path: "/heartbeat",
       label: t("nav.heartbeat"),
     },
-    {
-      key: "cases-management",
-      icon: <SparkFileTxtLine size={18} />,
-      path: "/cases-management",
-      label: t("nav.casesManagement", "案例管理"),
-    },
-    {
-      key: "greeting-management",
-      icon: <SparkMessageLine size={18} />,
-      path: "/greeting-management",
-      label: t("nav.greetingManagement", "引导文案管理"),
-    },
-    {
-      key: "featured-cases-management",
-      icon: <SparkFileTxtLine size={18} />,
-      path: "/featured-cases-management",
-      label: t("nav.featuredCasesManagement", "精选案例管理"),
-    },
+    // {
+    //   key: "cases-management",
+    //   icon: <SparkFileTxtLine size={18} />,
+    //   path: "/cases-management",
+    //   label: t("nav.casesManagement", "案例管理"),
+    // },
+    // {
+    //   key: "greeting-management",
+    //   icon: <SparkMessageLine size={18} />,
+    //   path: "/greeting-management",
+    //   label: t("nav.greetingManagement", "引导文案管理"),
+    // },
+    // {
+    //   key: "featured-cases-management",
+    //   icon: <SparkFileTxtLine size={18} />,
+    //   path: "/featured-cases-management",
+    //   label: t("nav.featuredCasesManagement", "精选案例管理"),
+    // },
     {
       key: "workspace",
       icon: <SparkLocalFileLine size={18} />,
@@ -249,18 +249,18 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       path: "/security",
       label: t("nav.security"),
     },
-    {
-      key: "token-usage",
-      icon: <SparkDataLine size={18} />,
-      path: "/token-usage",
-      label: t("nav.tokenUsage"),
-    },
-    {
-      key: "voice-transcription",
-      icon: <SparkMicLine size={18} />,
-      path: "/voice-transcription",
-      label: t("nav.voiceTranscription"),
-    },
+    // {
+    //   key: "token-usage",
+    //   icon: <SparkDataLine size={18} />,
+    //   path: "/token-usage",
+    //   label: t("nav.tokenUsage"),
+    // },
+    // {
+    //   key: "voice-transcription",
+    //   icon: <SparkMicLine size={18} />,
+    //   path: "/voice-transcription",
+    //   label: t("nav.voiceTranscription"),
+    // },
     {
       key: "analytics-overview",
       icon: <SparkBarChartLine size={18} />,
@@ -349,21 +349,21 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
           label: collapsed ? null : t("nav.heartbeat"),
           icon: <SparkVoiceChat01Line size={16} />,
         },
-        {
-          key: "cases-management",
-          label: collapsed ? null : t("nav.casesManagement", "案例管理"),
-          icon: <SparkFileTxtLine size={16} />,
-        },
-        {
-          key: "greeting-management",
-          label: collapsed ? null : t("nav.greetingManagement", "引导文案管理"),
-          icon: <SparkMessageLine size={16} />,
-        },
-        {
-          key: "featured-cases-management",
-          label: collapsed ? null : t("nav.featuredCasesManagement", "精选案例管理"),
-          icon: <SparkFileTxtLine size={16} />,
-        },
+        // {
+        //   key: "cases-management",
+        //   label: collapsed ? null : t("nav.casesManagement", "案例管理"),
+        //   icon: <SparkFileTxtLine size={16} />,
+        // },
+        // {
+        //   key: "greeting-management",
+        //   label: collapsed ? null : t("nav.greetingManagement", "引导文案管理"),
+        //   icon: <SparkMessageLine size={16} />,
+        // },
+        // {
+        //   key: "featured-cases-management",
+        //   label: collapsed ? null : t("nav.featuredCasesManagement", "精选案例管理"),
+        //   icon: <SparkFileTxtLine size={16} />,
+        // },
       ],
     },
     {
@@ -426,16 +426,16 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
           label: collapsed ? null : t("nav.security"),
           icon: <SparkBrowseLine size={16} />,
         },
-        {
-          key: "token-usage",
-          label: collapsed ? null : t("nav.tokenUsage"),
-          icon: <SparkDataLine size={16} />,
-        },
-        {
-          key: "voice-transcription",
-          label: collapsed ? null : t("nav.voiceTranscription"),
-          icon: <SparkMicLine size={16} />,
-        },
+        // {
+        //   key: "token-usage",
+        //   label: collapsed ? null : t("nav.tokenUsage"),
+        //   icon: <SparkDataLine size={16} />,
+        // },
+        // {
+        //   key: "voice-transcription",
+        //   label: collapsed ? null : t("nav.voiceTranscription"),
+        //   icon: <SparkMicLine size={16} />,
+        // },
       ],
     },
     {
@@ -469,34 +469,34 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
         },
       ],
     },
-    {
-      key: "instance-group",
-      label: collapsed ? null : t("nav.instance", "Instance"),
-      children: [
-        {
-          key: "instance-overview",
-          label: collapsed ? null : t("nav.instanceOverview", "Overview"),
-          icon: <SparkAdvancedMonitoringLine size={16} />,
-        },
-        {
-          key: "instance-instances",
-          label: collapsed ? null : t("nav.instanceInstances", "Instances"),
-          icon: <SparkDevicesLine size={16} />,
-        },
-        {
-          key: "instance-allocations",
-          label: collapsed ? null : t("nav.instanceAllocations", "Allocations"),
-          icon: <SparkOtherLine size={16} />,
-        },
-        {
-          key: "instance-operation-logs",
-          label: collapsed
-            ? null
-            : t("nav.instanceOperationLogs", "Operation Logs"),
-          icon: <SparkAuditLogLine size={16} />,
-        },
-      ],
-    },
+    // {
+    //   key: "instance-group",
+    //   label: collapsed ? null : t("nav.instance", "Instance"),
+    //   children: [
+    //     {
+    //       key: "instance-overview",
+    //       label: collapsed ? null : t("nav.instanceOverview", "Overview"),
+    //       icon: <SparkAdvancedMonitoringLine size={16} />,
+    //     },
+    //     {
+    //       key: "instance-instances",
+    //       label: collapsed ? null : t("nav.instanceInstances", "Instances"),
+    //       icon: <SparkDevicesLine size={16} />,
+    //     },
+    //     {
+    //       key: "instance-allocations",
+    //       label: collapsed ? null : t("nav.instanceAllocations", "Allocations"),
+    //       icon: <SparkOtherLine size={16} />,
+    //     },
+    //     {
+    //       key: "instance-operation-logs",
+    //       label: collapsed
+    //         ? null
+    //         : t("nav.instanceOperationLogs", "Operation Logs"),
+    //       icon: <SparkAuditLogLine size={16} />,
+    //     },
+    //   ],
+    // },
   ];
 
   // ── Render ────────────────────────────────────────────────────────────────
