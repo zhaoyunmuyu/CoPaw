@@ -846,8 +846,35 @@ def list_all_tenant_ids() -> list[str]:
     return sorted(tenant_ids)
 
 
-def list_logical_tenant_ids(source_id: str | None = None) -> list[str]:
-    """Return tenant IDs suitable for source-scoped API consumers."""
+async def list_logical_tenant_ids(
+    source_id: str | None = None,
+    *,
+    source_filter: bool = False,
+) -> list[str]:
+    """Return tenant IDs, optionally filtered by source_id.
+
+    Args:
+        source_id: Current request's source_id (from X-Source-Id header).
+        source_filter: Enable source_id filtering. When enabled:
+            - Database unavailable: return empty list
+            - source_id empty: return empty list
+            - Otherwise: return tenants from swe_tenant_init_source table
+
+    Returns:
+        List of tenant IDs.
+    """
+    if source_filter:
+        from ..app.workspace.tenant_init_source_store import (
+            get_tenant_init_source_store,
+        )
+
+        store = get_tenant_init_source_store()
+        if store is None or not source_id:
+            return []
+        rows = await store.get_by_source(source_id)
+        return sorted({row["tenant_id"] for row in rows})
+
+    # Existing logic: file system scan with source-based default resolution
     tenant_ids = list_all_tenant_ids()
     if not source_id:
         return tenant_ids

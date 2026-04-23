@@ -23,7 +23,10 @@ from ...config.config import (
     save_agent_config,
 )
 from ...config.context import resolve_effective_tenant_id
-from ...config.utils import get_tenant_working_dir_strict
+from ...config.utils import (
+    get_tenant_working_dir_strict,
+    list_logical_tenant_ids,
+)
 from ..workspace.tenant_initializer import TenantInitializer
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
@@ -185,6 +188,12 @@ class MCPDistributionResponse(BaseModel):
         default_factory=list,
         description="Per-tenant distribution results",
     )
+
+
+class MCPDistributionTenantListResponse(BaseModel):
+    """Response for MCP distribution tenant list."""
+
+    tenant_ids: List[str] = Field(default_factory=list)
 
 
 def _restore_original_values(
@@ -461,6 +470,23 @@ async def get_mcp_client(
     if client is None:
         raise HTTPException(404, detail=f"MCP client '{client_key}' not found")
     return _build_client_info(client_key, client)
+
+
+@router.get(
+    "/distribution/tenants",
+    response_model=MCPDistributionTenantListResponse,
+    summary="List tenants for MCP client distribution",
+)
+async def list_mcp_distribution_tenants(
+    request: Request,
+) -> MCPDistributionTenantListResponse:
+    """Return all tenants belonging to the current source_id."""
+    return MCPDistributionTenantListResponse(
+        tenant_ids=await list_logical_tenant_ids(
+            _request_source_id(request),
+            source_filter=True,
+        ),
+    )
 
 
 @router.post(

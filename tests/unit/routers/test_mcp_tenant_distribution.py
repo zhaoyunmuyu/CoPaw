@@ -679,3 +679,65 @@ def test_distribute_mcp_clients_rejects_missing_source_client(
 
     assert exc_info.value.status_code == 400
     assert "missing" in str(exc_info.value.detail)
+
+
+def test_list_mcp_distribution_tenants_returns_source_filtered_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[str | None] = []
+    observed_source_filter: list[bool] = []
+
+    async def fake_list_logical_tenant_ids(
+        source_id: str | None = None,
+        *,
+        source_filter: bool = False,
+    ) -> list[str]:
+        observed.append(source_id)
+        observed_source_filter.append(source_filter)
+        return ["default", "tenant-a"]
+
+    monkeypatch.setattr(
+        mcp_router,
+        "list_logical_tenant_ids",
+        fake_list_logical_tenant_ids,
+    )
+
+    result = asyncio.run(
+        mcp_router.list_mcp_distribution_tenants(
+            _request(source_id="ruice"),
+        ),
+    )
+
+    assert observed == ["ruice"]
+    assert observed_source_filter == [True]
+    assert result.tenant_ids == ["default", "tenant-a"]
+
+
+def test_list_mcp_distribution_tenants_empty_when_no_source_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[str | None] = []
+    observed_source_filter: list[bool] = []
+
+    async def fake_list_logical_tenant_ids(
+        source_id: str | None = None,
+        *,
+        source_filter: bool = False,
+    ) -> list[str]:
+        observed.append(source_id)
+        observed_source_filter.append(source_filter)
+        return []
+
+    monkeypatch.setattr(
+        mcp_router,
+        "list_logical_tenant_ids",
+        fake_list_logical_tenant_ids,
+    )
+
+    result = asyncio.run(
+        mcp_router.list_mcp_distribution_tenants(_request()),
+    )
+
+    assert observed == [None]
+    assert observed_source_filter == [True]
+    assert result.tenant_ids == []

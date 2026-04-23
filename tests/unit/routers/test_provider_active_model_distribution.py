@@ -129,10 +129,17 @@ def _storage_recorder(calls: list[str | None]):
 def test_list_active_model_distribution_tenants_returns_discovered_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    async def fake_list_logical_tenant_ids(
+        _source_id=None,
+        *,
+        _source_filter=False,
+    ):
+        return ["default", "tenant-a", "tenant-b"]
+
     monkeypatch.setattr(
         providers_router,
         "list_logical_tenant_ids",
-        lambda source_id=None: ["default", "tenant-a", "tenant-b"],
+        fake_list_logical_tenant_ids,
     )
 
     result = asyncio.run(
@@ -147,8 +154,10 @@ def test_list_active_model_distribution_tenants_maps_source_default(
 ) -> None:
     observed: list[str | None] = []
 
-    def fake_list_logical_tenant_ids(
+    async def fake_list_logical_tenant_ids(
         source_id: str | None = None,
+        *,
+        _source_filter: bool = False,
     ) -> list[str]:
         observed.append(source_id)
         return ["default", "tenant-a"]

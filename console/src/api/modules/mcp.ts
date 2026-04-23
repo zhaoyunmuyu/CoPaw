@@ -5,6 +5,7 @@ import type {
   MCPClientUpdateRequest,
   MCPDistributionRequest,
   MCPDistributionResponse,
+  MCPDistributionTenantListResponse,
 } from "../types";
 
 export const mcpApi = {
@@ -52,6 +53,12 @@ export const mcpApi = {
     request<{ message: string }>(`/mcp/${encodeURIComponent(clientKey)}`, {
       method: "DELETE",
     }),
+
+  /**
+   * List tenants for MCP client distribution
+   */
+  listMCPDistributionTenants: () =>
+    request<MCPDistributionTenantListResponse>("/mcp/distribution/tenants"),
 
   /**
    * Distribute selected MCP clients to target tenant default agents
