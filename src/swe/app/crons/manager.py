@@ -1318,6 +1318,8 @@ class CronManager:  # pylint: disable=too-many-public-methods
             if creator != user_id:
                 return False, False
             meta = dict(job.meta or {})
+            if meta.get("pause_reason"):
+                return False, True
             unread_count = int(meta.get("task_unread_execution_count", 0) or 0)
             if unread_count == 0:
                 return False, True
