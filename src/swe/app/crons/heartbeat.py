@@ -21,7 +21,10 @@ from ...config.utils import (
     load_config,
 )
 from ...constant import HEARTBEAT_FILE, HEARTBEAT_TARGET_LAST
-from ..crons.models import _crontab_dow_to_name
+from ..crons.models import (
+    DEFAULT_CRON_TIMEOUT_SECONDS,
+    _crontab_dow_to_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +206,10 @@ async def run_heartbeat_once(
                     )
 
             try:
-                await asyncio.wait_for(_run_and_dispatch(), timeout=120)
+                await asyncio.wait_for(
+                    _run_and_dispatch(),
+                    timeout=DEFAULT_CRON_TIMEOUT_SECONDS,
+                )
             except asyncio.TimeoutError:
                 logger.warning("heartbeat run timed out")
             return
@@ -214,6 +220,9 @@ async def run_heartbeat_once(
             pass
 
     try:
-        await asyncio.wait_for(_run_only(), timeout=120)
+        await asyncio.wait_for(
+            _run_only(),
+            timeout=DEFAULT_CRON_TIMEOUT_SECONDS,
+        )
     except asyncio.TimeoutError:
         logger.warning("heartbeat run timed out")

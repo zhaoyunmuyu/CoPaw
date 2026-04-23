@@ -9,10 +9,55 @@ from typing import Any
 
 import pytest
 
+from swe.app.crons import heartbeat as heartbeat_module
 from swe.app.crons.heartbeat import run_heartbeat_once
 from swe.app.crons.manager import CronManager
 from swe.config import config as config_module
 from swe.config import utils as config_utils
+
+
+@pytest.mark.asyncio
+async def test_run_heartbeat_once_uses_longer_default_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    observed: dict[str, Any] = {}
+    workspace_dir = tmp_path / "tenant-a" / "workspaces" / "default"
+    workspace_dir.mkdir(parents=True)
+    (workspace_dir / "HEARTBEAT.md").write_text("ping", encoding="utf-8")
+
+    class FakeRunner:
+        async def stream_query(self, request):
+            observed["request"] = request
+            yield {"type": "message", "text": "pong"}
+
+    class FakeChannelManager:
+        async def send_event(self, **kwargs) -> None:
+            observed["dispatch"] = kwargs
+
+    async def fake_wait_for(awaitable, timeout):
+        observed["timeout"] = timeout
+        return await awaitable
+
+    monkeypatch.setattr(heartbeat_module.asyncio, "wait_for", fake_wait_for)
+    monkeypatch.setattr(
+        heartbeat_module,
+        "get_heartbeat_config",
+        lambda agent_id=None, *, tenant_id=None: SimpleNamespace(
+            active_hours=None,
+            target="main",
+        ),
+    )
+
+    await run_heartbeat_once(
+        runner=FakeRunner(),
+        channel_manager=FakeChannelManager(),
+        agent_id="default",
+        tenant_id="tenant-a",
+        workspace_dir=workspace_dir,
+    )
+
+    assert observed["timeout"] == 7200
 
 
 def test_get_heartbeat_config_uses_tenant_scoped_agent_json(
@@ -220,7 +265,8 @@ async def test_run_heartbeat_once_loads_last_dispatch_from_runtime_tenant(
         )
 
     monkeypatch.setattr(
-        "swe.app.crons.heartbeat.get_heartbeat_config",
+        heartbeat_module,
+        "get_heartbeat_config",
         fake_get_heartbeat_config,
     )
     monkeypatch.setattr(
