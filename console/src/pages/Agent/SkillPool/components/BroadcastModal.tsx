@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Input, Modal } from "@agentscope-ai/design";
+import { Button, Modal } from "@agentscope-ai/design";
 import { CheckOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { PoolSkillSpec } from "../../../../api/types";
+import { TenantTargetPicker } from "../../../../components/TenantTargetPicker";
 import styles from "../../Skills/index.module.less";
 
 interface BroadcastModalProps {
@@ -12,17 +13,6 @@ interface BroadcastModalProps {
   initialSkillNames: string[];
   onCancel: () => void;
   onConfirm: (skillNames: string[], tenantIds: string[]) => Promise<void>;
-}
-
-function parseManualTenantIds(input: string): string[] {
-  return Array.from(
-    new Set(
-      input
-        .split(/[\s,]+/)
-        .map((item) => item.trim())
-        .filter(Boolean),
-    ),
-  );
 }
 
 export function BroadcastModal({
@@ -37,36 +27,26 @@ export function BroadcastModal({
   const [selectedSkillNames, setSelectedSkillNames] =
     useState<string[]>(initialSkillNames);
   const [selectedTenantIds, setSelectedTenantIds] = useState<string[]>([]);
-  const [manualTenantIdsText, setManualTenantIdsText] = useState("");
 
   const builtinSkillNames = useMemo(
     () => skills.filter((s) => s.source === "builtin").map((s) => s.name),
     [skills],
   );
 
-  const manualTenantIds = useMemo(
-    () => parseManualTenantIds(manualTenantIdsText),
-    [manualTenantIdsText],
-  );
-
   useEffect(() => {
     if (open) {
       setSelectedSkillNames(initialSkillNames);
       setSelectedTenantIds([]);
-      setManualTenantIdsText("");
     }
   }, [open, initialSkillNames]);
 
   const handleCancel = () => {
     setSelectedSkillNames([]);
     setSelectedTenantIds([]);
-    setManualTenantIdsText("");
     onCancel();
   };
 
-  const targetTenantIds = Array.from(
-    new Set([...selectedTenantIds, ...manualTenantIds]),
-  );
+  const targetTenantIds = Array.from(new Set(selectedTenantIds));
 
   return (
     <Modal
@@ -138,78 +118,12 @@ export function BroadcastModal({
           })}
         </div>
 
-        <div className={styles.pickerSection}>
-          <div className={styles.pickerHeader}>
-            <div className={styles.pickerLabel}>
-              {t("skillPool.selectWorkspaces")}
-            </div>
-            <div className={styles.bulkActions}>
-              <Button
-                size="small"
-                onClick={() => setSelectedTenantIds(Array.from(new Set(tenantIds)))}
-              >
-                {t("skillPool.allWorkspaces")}
-              </Button>
-              <Button size="small" onClick={() => setSelectedTenantIds([])}>
-                {t("skills.clearSelection")}
-              </Button>
-            </div>
-          </div>
-          <div style={{ marginTop: 8, color: "#666", fontSize: 12 }}>
-            {t("skillPool.broadcastHint")}
-          </div>
-        </div>
-
-        <div className={`${styles.pickerGrid} ${styles.compactPickerGrid}`}>
-          {tenantIds.map((tenantId) => {
-            const selected = selectedTenantIds.includes(tenantId);
-            return (
-              <div
-                key={tenantId}
-                className={`${styles.pickerCard} ${styles.compactPickerCard} ${
-                  selected ? styles.pickerCardSelected : ""
-                }`}
-                onClick={() =>
-                  setSelectedTenantIds(
-                    selected
-                      ? selectedTenantIds.filter((id) => id !== tenantId)
-                      : [...selectedTenantIds, tenantId],
-                  )
-                }
-              >
-                {selected && (
-                  <span
-                    className={`${styles.pickerCheck} ${styles.compactPickerCheck}`}
-                  >
-                    <CheckOutlined />
-                  </span>
-                )}
-                <div
-                  className={`${styles.pickerCardTitle} ${styles.compactPickerTitle}`}
-                >
-                  {tenantId}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className={styles.pickerSection}>
-          <div className={styles.pickerHeader}>
-            <div className={styles.pickerLabel}>
-              {t("skillPool.manualTenantIds")}
-            </div>
-          </div>
-          <div style={{ marginTop: 8, marginBottom: 8, color: "#666", fontSize: 12 }}>
-            {t("skillPool.manualTenantHint")}
-          </div>
-          <Input.TextArea
-            rows={4}
-            value={manualTenantIdsText}
-            onChange={(event) => setManualTenantIdsText(event.target.value)}
-            placeholder={t("skillPool.manualTenantPlaceholder")}
-          />
-        </div>
+        <TenantTargetPicker
+          tenantIds={tenantIds}
+          selectedTenantIds={selectedTenantIds}
+          onChange={setSelectedTenantIds}
+          hint={t("skillPool.broadcastHint")}
+        />
       </div>
     </Modal>
   );

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from agentscope_runtime.engine.schemas.agent_schemas import (
     DataContent,
@@ -136,10 +138,7 @@ async def test_stream_tool_call_uses_async_summary(monkeypatch) -> None:
         item async for item in normalize_reasoning_boundary_stream(source())
     ]
 
-    assert (
-        events[0].content[0].data["summary"]
-        == "搜索 tenant 相关代码"
-    )
+    assert events[0].content[0].data["summary"] == "搜索 tenant 相关代码"
 
 
 @pytest.mark.asyncio
@@ -178,7 +177,60 @@ async def test_stream_tool_output_falls_back_to_rule_summary(
         item async for item in normalize_reasoning_boundary_stream(source())
     ]
 
-    assert (
-        events[0].content[0].data["output_summary"]
-        == "共找到 2 项内容"
+    assert events[0].content[0].data["output_summary"] == "共找到 2 项内容"
+
+
+@pytest.mark.asyncio
+async def test_stream_tool_output_summary_timeout_does_not_block_stream(
+    monkeypatch,
+) -> None:
+    event = Message(
+        id="tool-3",
+        type=MessageType.FUNCTION_CALL_OUTPUT,
+        role=Role.ASSISTANT,
+        status=RunStatus.InProgress,
+        content=[
+            DataContent(
+                data={
+                    "name": "grep_search",
+                    "output": '["a.py:1", "b.py:2"]',
+                },
+                delta=False,
+                index=0,
+            ),
+        ],
     )
+
+    async def source():
+        yield event
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def hang_forever(**_kwargs):
+        started.set()
+        try:
+            await release.wait()
+        except asyncio.CancelledError:
+            await release.wait()
+
+    monkeypatch.setattr(
+        "swe.app.runner.stream_boundary.async_generate_tool_output_summary",
+        hang_forever,
+    )
+
+    events = await asyncio.wait_for(
+        asyncio.create_task(
+            _collect_events(normalize_reasoning_boundary_stream(source())),
+        ),
+        timeout=0.2,
+    )
+
+    assert started.is_set()
+    assert events[0].content[0].data["output_summary"] == "共找到 2 项内容"
+
+    release.set()
+
+
+async def _collect_events(stream) -> list[Message]:
+    return [item async for item in stream]

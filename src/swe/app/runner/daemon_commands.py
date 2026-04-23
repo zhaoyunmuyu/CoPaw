@@ -5,7 +5,7 @@ Shared by in-chat /daemon <sub> and CLI `swe daemon <sub>`.
 Logs: tail WORKING_DIR / "swe.log". Restart: in-process reload of channels,
 cron and MCP (no process exit); works on Mac/Windows without a process manager.
 """
-# pylint: disable=too-many-return-statements
+# pylint: disable=too-many-return-statements,no-name-in-module
 from __future__ import annotations
 
 import logging
@@ -55,6 +55,7 @@ class DaemonContext:
     # For /daemon restart: manager and agent_id for zero-downtime reload
     manager: Optional["MultiAgentManager"] = None
     agent_id: Optional[str] = None
+    tenant_id: Optional[str] = None
     # Session ID for approval commands.
     session_id: str = ""
 
@@ -127,7 +128,10 @@ async def run_daemon_restart(context: DaemonContext) -> str:
     """Trigger zero-downtime agent reload or instruct user."""
     if context.manager is not None and context.agent_id is not None:
         try:
-            success = await context.manager.reload_agent(context.agent_id)
+            success = await context.manager.reload_agent(
+                context.agent_id,
+                tenant_id=context.tenant_id,
+            )
             if success:
                 return (
                     "**Restart completed**\n\n"

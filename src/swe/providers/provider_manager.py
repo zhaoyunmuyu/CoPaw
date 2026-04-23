@@ -742,6 +742,33 @@ class ProviderManager:
         except OSError:
             pass
 
+    def overwrite_provider_payload(self, payload: Dict) -> Provider:
+        """Replace a tenant provider with the supplied payload.
+
+        The payload should come from an existing Provider instance's
+        ``model_dump()`` so secrets and model metadata are preserved. The write
+        path updates both in-memory state and on-disk storage in the same shape
+        that ProviderManager already uses for normal persistence.
+        """
+        provider = self._provider_from_data(payload)
+        is_builtin = not provider.is_custom
+
+        if is_builtin:
+            self.custom_providers.pop(provider.id, None)
+            custom_path = self.custom_path / f"{provider.id}.json"
+            if custom_path.exists():
+                custom_path.unlink()
+            self.builtin_providers[provider.id] = provider
+        else:
+            self.builtin_providers.pop(provider.id, None)
+            builtin_path = self.builtin_path / f"{provider.id}.json"
+            if builtin_path.exists():
+                builtin_path.unlink()
+            self.custom_providers[provider.id] = provider
+
+        self._save_provider(provider, is_builtin=is_builtin)
+        return provider
+
     def load_provider(
         self,
         provider_id: str,

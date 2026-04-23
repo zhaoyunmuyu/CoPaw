@@ -46,6 +46,29 @@ export interface ActiveModelsInfo {
   active_llm?: ModelSlotConfig;
 }
 
+export interface DistributionTenantListResponse {
+  tenant_ids: string[];
+}
+
+export interface ActiveModelDistributionRequest {
+  target_tenant_ids: string[];
+  overwrite: boolean;
+}
+
+export interface ActiveModelDistributionTenantResult {
+  tenant_id: string;
+  success: boolean;
+  bootstrapped: boolean;
+  provider_updated?: string;
+  active_llm_updated?: ModelSlotConfig;
+  error?: string;
+}
+
+export interface ActiveModelDistributionResponse {
+  source_active_llm: ModelSlotConfig;
+  results: ActiveModelDistributionTenantResult[];
+}
+
 export type ActiveModelScope = "effective" | "global" | "agent";
 
 export interface GetActiveModelsRequest {
