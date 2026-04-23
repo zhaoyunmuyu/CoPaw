@@ -800,7 +800,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
                             "last_run_at": state.last_run_at,
                             "last_status": state.last_status,
                             "time_info": time_info,
-                            "result_url": "",
+                            "meta": job.meta or {},
                         },
                     )
 
@@ -820,7 +820,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
                         "last_run_at": state.last_run_at,
                         "last_status": state.last_status,
                         "time_info": "等待执行",
-                        "result_url": "",
+                        "meta": job.meta or {},
                     },
                 )
 

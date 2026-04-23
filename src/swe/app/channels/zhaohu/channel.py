@@ -1041,7 +1041,6 @@ class ZhaohuChannel(BaseChannel):
                     today,
                 )
                 # Convert to format expected by _build_task_progress_card
-                # Use task_chat_id from task meta for navigation
                 for raw_task in raw_tasks:
                     task_meta = raw_task.get("meta") or {}
                     tasks.append(
@@ -1051,6 +1050,7 @@ class ZhaohuChannel(BaseChannel):
                             "status_text": raw_task.get("status_text", "待开始"),
                             "time_info": raw_task.get("time_info", ""),
                             "task_chat_id": task_meta.get("task_chat_id", ""),
+                            "job_id": raw_task.get("job_id", ""),
                         },
                     )
                 logger.info(
