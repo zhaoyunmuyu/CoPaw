@@ -366,7 +366,13 @@ const resolveRealId = (
   tempSessionId: string,
 ): { list: IAgentScopeRuntimeWebUISession[]; realId: string | null } => {
   const realSession = sessionList.find(
-    (s) => (s as ExtendedSession).sessionId === tempSessionId,
+    (s) => {
+      const extendedSession = s as ExtendedSession;
+      return (
+        extendedSession.sessionId === tempSessionId &&
+        (extendedSession.id !== tempSessionId || Boolean(extendedSession.realId))
+      );
+    },
   );
   if (!realSession) return { list: sessionList, realId: null };
 
@@ -377,6 +383,16 @@ const resolveRealId = (
     list: [realSession, ...sessionList.filter((s) => s !== realSession)],
     realId: realUUID,
   };
+};
+
+const mergePendingSession = (
+  sessionList: IAgentScopeRuntimeWebUISession[],
+  pendingSession: ExtendedSession,
+): IAgentScopeRuntimeWebUISession[] => {
+  return [
+    pendingSession,
+    ...sessionList.filter((session) => session.id !== pendingSession.id),
+  ];
 };
 
 // ---------------------------------------------------------------------------
@@ -644,6 +660,7 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
   async createSessionFromPending(realId: string, name?: string): Promise<void> {
     if (!this.pendingSession) return;
 
+    const pendingSessionId = this.pendingSession.id;
     const session: ExtendedSession = {
       id: realId,
       sessionId: this.pendingSession.sessionId,
@@ -656,7 +673,10 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     };
 
     // 添加到历史列表
-    this.sessionList.unshift(session);
+    this.sessionList = [
+      session,
+      ...this.sessionList.filter((item) => item.id !== pendingSessionId),
+    ];
 
     // 触发回调更新URL
     rememberResolvedChatId(this.pendingSession.id, realId);
@@ -720,6 +740,12 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
 
         // 合并后端会话列表
         this.sessionList = filteredList;
+        if (this.pendingSession) {
+          this.sessionList = mergePendingSession(
+            this.sessionList,
+            this.pendingSession,
+          );
+        }
 
         this.sessionList = applyPreferredSessionSelection({
           sessions: this.sessionList,
@@ -863,16 +889,31 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
   }
 
   async updateSession(session: Partial<IAgentScopeRuntimeWebUISession>) {
-    session.messages = [];
-    const index = this.sessionList.findIndex((s) => s.id === session.id);
+    const shouldKeepLocalMessages = Boolean(
+      session.id &&
+        isLocalTimestamp(session.id) &&
+        !this.getRealIdForSession(session.id),
+    );
+    const nextSession = {
+      ...session,
+      messages: shouldKeepLocalMessages ? session.messages || [] : [],
+    };
+
+    if (this.pendingSession?.id === nextSession.id) {
+      this.pendingSession = {
+        ...this.pendingSession,
+        ...nextSession,
+      } as ExtendedSession;
+    }
+    const index = this.sessionList.findIndex((s) => s.id === nextSession.id);
 
     if (index > -1) {
-      this.sessionList[index] = { ...this.sessionList[index], ...session };
+      this.sessionList[index] = { ...this.sessionList[index], ...nextSession };
 
       const existing = this.sessionList[index] as ExtendedSession;
       if (isLocalTimestamp(existing.id) && !existing.realId) {
         const tempId = existing.id;
-        this.getSessionList().then(() => {
+        await this.getSessionList().then(() => {
           const { list, realId } = resolveRealId(this.sessionList, tempId);
           if (realId) {
             this.sessionList = list;
@@ -881,7 +922,7 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
           }
         });
       } else {
-        const tempId = session.id!;
+        const tempId = nextSession.id!;
         await this.getSessionList().then(() => {
           const { list, realId } = resolveRealId(this.sessionList, tempId);
           this.sessionList = list;
@@ -892,7 +933,14 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
         });
       }
     } else {
-      const tempId = session.id!;
+      if (shouldKeepLocalMessages) {
+        this.sessionList = mergePendingSession(
+          this.sessionList,
+          nextSession as ExtendedSession,
+        );
+      }
+
+      const tempId = nextSession.id!;
       await this.getSessionList().then(() => {
         const { list, realId } = resolveRealId(this.sessionList, tempId);
         this.sessionList = list;
@@ -929,6 +977,7 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
 
     // 保存到 pendingSession，等消息发送完成后使用
     this.pendingSession = extended;
+    this.sessionList = mergePendingSession(this.sessionList, extended);
 
     // 触发回调（URL 清空，不导航到临时ID）
     this.onSessionCreated?.(session.id);

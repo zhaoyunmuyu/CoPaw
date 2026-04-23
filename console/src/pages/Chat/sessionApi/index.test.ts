@@ -95,6 +95,52 @@ describe("SessionApi identity mapping", () => {
     ).toBe(logicalSessionId);
   });
 
+  it("shows a pending local session in the history list immediately after creation", async () => {
+    const sessionApi = new SessionApi();
+
+    const list = await sessionApi.createSession({
+      name: "new chat",
+      messages: [],
+    });
+
+    const logicalSessionId = sessionApi.getPendingSessionId();
+    expect(logicalSessionId).toBeTruthy();
+    expect(list).toHaveLength(1);
+    expect(list[0]?.id).toBe(logicalSessionId);
+    expect(list[0]?.name).toBe("new chat");
+  });
+
+  it("keeps pending session messages accessible before backend persistence catches up", async () => {
+    const sessionApi = new SessionApi();
+
+    await sessionApi.createSession({
+      name: "new chat",
+      messages: [],
+    });
+
+    const logicalSessionId = sessionApi.getPendingSessionId();
+    const localMessages = [
+      {
+        id: "user-msg-1",
+        role: "user",
+        cards: [],
+      },
+    ];
+
+    apiMocks.listChats.mockResolvedValue([]);
+
+    await sessionApi.updateSession({
+      id: logicalSessionId!,
+      messages: localMessages,
+    });
+
+    const session = await sessionApi.getSession(logicalSessionId!);
+    const list = await sessionApi.getSessionList();
+
+    expect(session.messages).toEqual(localMessages);
+    expect(list.some((item) => item.id === logicalSessionId)).toBe(true);
+  });
+
   it("does not treat a persisted logical session id as a unique backend chat id", async () => {
     const sessionApi = new SessionApi();
 
