@@ -44,6 +44,7 @@ import { MarkdownCopy } from "../../../components/MarkdownCopy/MarkdownCopy";
 import { BroadcastModal } from "./components/BroadcastModal";
 import { ImportBuiltinModal } from "./components/ImportBuiltinModal";
 import { PageHeader } from "@/components/PageHeader";
+import { useIframeStore } from "../../../stores/iframeStore";
 import styles from "./index.module.less";
 
 type PoolMode = "broadcast" | "create" | "edit";
@@ -52,6 +53,7 @@ const SKILL_POOL_ZIP_MAX_MB = 100;
 
 function SkillPoolPage() {
   const { t } = useTranslation();
+  const manager = useIframeStore((state) => state.manager);
   const [skills, setSkills] = useState<PoolSkillSpec[]>([]);
   const [broadcastTenantIds, setBroadcastTenantIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -704,6 +706,7 @@ function SkillPoolPage() {
                     type="default"
                     className={styles.primaryTransferButton}
                     icon={<SendOutlined />}
+                    disabled={!manager}
                     onClick={handleBatchBroadcast}
                   >
                     {t("skillPool.broadcast")}
@@ -734,6 +737,7 @@ function SkillPoolPage() {
                       type="default"
                       className={styles.primaryTransferButton}
                       icon={<SendOutlined />}
+                      disabled={!manager}
                       onClick={() => openBroadcast()}
                     >
                       {t("skillPool.broadcast")}
@@ -865,6 +869,7 @@ function SkillPoolPage() {
                   <div className={styles.cardFooter}>
                     <Button
                       className={styles.actionButton}
+                      disabled={!manager}
                       onClick={(e) => {
                         e.stopPropagation();
                         openBroadcast(skill);
