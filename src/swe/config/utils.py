@@ -872,7 +872,10 @@ async def list_logical_tenant_ids(
         if store is None or not source_id:
             return []
         rows = await store.get_by_source(source_id)
-        return sorted({row["tenant_id"] for row in rows})
+        return sorted(
+            tid for tid in {row["tenant_id"] for row in rows}
+            if tid != "default"
+        )
 
     # Existing logic: file system scan with source-based default resolution
     tenant_ids = list_all_tenant_ids()
