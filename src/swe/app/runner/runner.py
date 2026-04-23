@@ -766,19 +766,45 @@ class AgentRunner(Runner):
                 session_id,
             )
 
-            if agent is not None and session_state_loaded:
-                await self.save_job_session_state(
-                    agent,
-                    session_id,
-                    skip_history,
-                    user_id,
-                )
+            async def _safe_cleanup() -> None:
+                """Safely run cleanup operations, ignoring CancelledError.
 
-            if self._chat_manager is not None and chat is not None:
-                await self._chat_manager.update_chat(chat)
+                When the outer scope is cancelled, await operations in finally
+                blocks may raise CancelledError due to asyncio checkpoint
+                behavior. These should be suppressed since the task is already
+                being cleaned up.
+                """
+                try:
+                    if agent is not None and session_state_loaded:
+                        await self.save_job_session_state(
+                            agent,
+                            session_id,
+                            skip_history,
+                            user_id,
+                        )
+                except asyncio.CancelledError:
+                    logger.debug(
+                        "Runner finally: session state save cancelled (session_id=%s)",
+                        session_id,
+                    )
+                try:
+                    if self._chat_manager is not None and chat is not None:
+                        await self._chat_manager.update_chat(chat)
+                except asyncio.CancelledError:
+                    logger.debug(
+                        "Runner finally: chat update cancelled (session_id=%s)",
+                        session_id,
+                    )
+                try:
+                    # Close all MCP clients created for this request
+                    await _cleanup_mcp_clients(mcp_clients)
+                except asyncio.CancelledError:
+                    logger.debug(
+                        "Runner finally: MCP cleanup cancelled (session_id=%s)",
+                        session_id,
+                    )
 
-            # Close all MCP clients created for this request
-            await _cleanup_mcp_clients(mcp_clients)
+            await _safe_cleanup()
 
             # 异步生成猜你想问建议（如果启用）
             logger.debug(
