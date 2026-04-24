@@ -15,6 +15,7 @@
  * - source: 来源标识
  * - hideMenu: 是否隐藏菜单
  * - isSuperManager: 是否为超级管理员
+ * - manager: 是否为普通管理员
  * - authHeaders: 自定义 headers 数组
  * - parentOrigin: 父窗口来源 origin
  *
@@ -75,6 +76,7 @@ const initialState: IframeContext = {
   source: null,
   hideMenu: false,
   isSuperManager: false,
+  manager: false,
   authHeaders: [],
   parentOrigin: null,
   receivedAt: null,
@@ -122,6 +124,7 @@ export const useIframeStore = create<IframeStore>()(
         source: state.source,
         hideMenu: state.hideMenu,
         isSuperManager: state.isSuperManager,
+        manager: state.manager,
         authHeaders: state.authHeaders,
         parentOrigin: state.parentOrigin,
         sysId: state.sysId,

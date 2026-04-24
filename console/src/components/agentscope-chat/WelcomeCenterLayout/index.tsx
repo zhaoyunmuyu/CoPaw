@@ -7,10 +7,8 @@ import Style from "./style";
 import KnowledgeTabs from "../KnowledgeTabs";
 import FeaturedCases from "../FeaturedCases";
 import CaseDetailDrawer from "../CaseDetailDrawer";
-import { casesApi } from "@/api/modules/cases";
-// TODO: 待对接接口
-// import { greetingApi } from "@/api/modules/greeting";
-import type { Case } from "@/api/types/cases";
+import { featuredCasesApi } from "@/api/modules/featuredCases";
+import type { FeaturedCase } from "@/api/types/featuredCases";
 import type { GreetingDisplay } from "@/api/types/greeting";
 import sendIcon from '../../../assets/icons/send_highlight.svg'
 
@@ -23,7 +21,7 @@ export default function WelcomeCenterLayout(props: WelcomeCenterLayoutProps) {
   const { greeting, onSubmit } = props;
   const [inputValue, setInputValue] = useState("");
   const [drawerVisible, setDrawerVisible] = useState(false);
-  const [selectedCase, setSelectedCase] = useState<Case | null>(null);
+  const [selectedCase, setSelectedCase] = useState<FeaturedCase | null>(null);
   const [randomPlaceholder, setRandomPlaceholder] = useState('');
   const [loadingCase, setLoadingCase] = useState(false);
   const uploadRef = useRef<any>(null);
@@ -68,7 +66,7 @@ export default function WelcomeCenterLayout(props: WelcomeCenterLayoutProps) {
     setSelectedCase(null); // Clear previous case
 
     try {
-      const caseData = await casesApi.getCaseDetail(caseId);
+      const caseData = await featuredCasesApi.getCaseDetail(caseId);
       setSelectedCase(caseData);
     } catch (error) {
       console.error("Failed to load case detail:", error);

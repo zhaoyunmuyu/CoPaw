@@ -1061,7 +1061,7 @@ export default function ChatPage() {
             greeting={
               typeof greeting === "string"
                 ? greeting
-                : "你好，你的专属小龙虾，前来报到！"
+                : "你好，有什么可以帮您？"
             }
             onSubmit={(data) => onSubmit(data)}
           />

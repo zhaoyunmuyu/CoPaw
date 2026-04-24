@@ -51,6 +51,8 @@ from .tools import (
 from .utils import process_file_and_media_blocks_in_message
 from ..utils.fs_text import sanitize_text_for_json
 from ..constant import (
+    AGENT_INTERRUPT_TIMEOUT,
+    AGENT_WATCHDOG_TIMEOUT,
     WORKING_DIR,
 )
 from ..agents.memory.base_memory_manager import BaseMemoryManager
@@ -740,6 +742,64 @@ class SWEAgent(ToolGuardMixin, ReActAgent):
             return None
 
     # ------------------------------------------------------------------
+    # Watchdog: detect and recover from agent stalls.
+    # ------------------------------------------------------------------
+
+    _watchdog_task: asyncio.Task | None = None
+
+    def _start_watchdog(self, timeout: float = AGENT_WATCHDOG_TIMEOUT) -> None:
+        """Start a watchdog that interrupts the agent if no output is
+        produced within *timeout* seconds.
+
+        The watchdog is a lightweight asyncio Task that sleeps for
+        *timeout* seconds and then cancels ``self._reply_task``.  Call
+        ``_reset_watchdog()`` each time the agent produces output to
+        postpone the interrupt.
+
+        Args:
+            timeout: Maximum seconds of silence before interrupt
+                (default: ``AGENT_WATCHDOG_TIMEOUT``).
+        """
+        self._stop_watchdog()
+
+        async def _watchdog() -> None:
+            try:
+                await asyncio.sleep(timeout)
+            except asyncio.CancelledError:
+                return
+            # Watchdog expired — interrupt the agent
+            logger.warning(
+                "Agent watchdog expired (%.0fs no output), interrupting "
+                "reply task for agent '%s'",
+                timeout,
+                self.name,
+            )
+            if self._reply_task and not self._reply_task.done():
+                self._reply_task.cancel(
+                    asyncio.CancelledError(
+                        f"Agent watchdog: no output for {timeout:.0f}s"
+                    )
+                )
+
+        self._watchdog_task = asyncio.create_task(_watchdog())
+
+    def _reset_watchdog(self, timeout: float = AGENT_WATCHDOG_TIMEOUT) -> None:
+        """Reset the watchdog timer (call on each agent output event).
+
+        Cancels the existing watchdog and starts a fresh one.
+
+        Args:
+            timeout: Maximum seconds of silence before interrupt.
+        """
+        self._start_watchdog(timeout)
+
+    def _stop_watchdog(self) -> None:
+        """Stop the watchdog without interrupting the agent."""
+        if self._watchdog_task is not None:
+            self._watchdog_task.cancel()
+            self._watchdog_task = None
+
+    # ------------------------------------------------------------------
     # Media-block fallback: strip unsupported media blocks (image, audio,
     # video) from memory and retry when the model rejects them.
     # ------------------------------------------------------------------
@@ -879,7 +939,13 @@ class SWEAgent(ToolGuardMixin, ReActAgent):
         round-end notice so users see it immediately instead of only
         after a page refresh.  Intermediate events that become empty
         after filtering are silently skipped to avoid blank UI flashes.
+
+        Also resets the agent watchdog timer on each output event to
+        prevent false stall interrupts while the agent is actively
+        producing output.
         """
+        # Reset watchdog on every output — agent is still alive
+        self._reset_watchdog()
 
         if not getattr(self, "_in_summarizing", False):
             return await super().print(msg, last, speech=speech)
@@ -1115,18 +1181,34 @@ class SWEAgent(ToolGuardMixin, ReActAgent):
         channel_name = request_context.get("channel", "console")
         workspace_dir = Path(self._workspace_dir or WORKING_DIR)
         with apply_skill_config_env_overrides(workspace_dir, channel_name):
-            return await super().reply(
-                msg=msg,
-                structured_model=structured_model,
-            )
+            try:
+                self._start_watchdog()
+                return await super().reply(
+                    msg=msg,
+                    structured_model=structured_model,
+                )
+            finally:
+                self._stop_watchdog()
 
     async def interrupt(self, msg: Msg | list[Msg] | None = None) -> None:
-        """Interrupt the current reply process and wait for cleanup."""
+        """Interrupt the current reply process and wait for cleanup.
+
+        If the reply task does not finish within
+        ``AGENT_INTERRUPT_TIMEOUT`` seconds, the wait is abandoned.
+        """
+        self._stop_watchdog()
         if self._reply_task and not self._reply_task.done():
             task = self._reply_task
             task.cancel(msg)
             try:
-                await task
+                await asyncio.wait_for(task, timeout=AGENT_INTERRUPT_TIMEOUT)
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Agent interrupt timed out (%.0fs) for agent '%s', "
+                    "abandoning wait",
+                    AGENT_INTERRUPT_TIMEOUT,
+                    self.name,
+                )
             except asyncio.CancelledError:
                 if not task.cancelled():
                     raise

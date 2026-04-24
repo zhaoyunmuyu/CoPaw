@@ -60,13 +60,23 @@ class SkillContextManager:
         "skill_context",
         default=None,
     )
-    _context_stack: ContextVar[list[SkillExecutionContext]] = ContextVar(
+    _context_stack: ContextVar[
+        Optional[list[SkillExecutionContext]]
+    ] = ContextVar(
         "skill_context_stack",
+        default=None,
     )
+
+    def _get_stack(self) -> list[SkillExecutionContext]:
+        """Get the context stack, initializing if needed."""
+        stack = self._context_stack.get()
+        if stack is None:
+            stack = []
+            self._context_stack.set(stack)
+        return stack
 
     def __init__(self) -> None:
         """Initialize the context manager."""
-        # Initialize empty stack
         self._context_stack.set([])
 
     def push_skill(
@@ -99,7 +109,7 @@ class SkillContextManager:
         )
 
         # Get current stack and append (ContextVar requires re-assignment)
-        stack = self._context_stack.get()
+        stack = self._get_stack()
         stack = stack + [context]
         self._context_stack.set(stack)
         self._current_context.set(context)
@@ -113,7 +123,7 @@ class SkillContextManager:
         Returns:
             The ended skill context, or None if stack is empty
         """
-        stack = self._context_stack.get()
+        stack = self._get_stack()
         if not stack:
             return None
 
@@ -150,7 +160,7 @@ class SkillContextManager:
         Returns:
             List of skill names in execution order
         """
-        stack = self._context_stack.get()
+        stack = self._get_stack()
         return [ctx.skill_name for ctx in stack]
 
     @property
@@ -160,7 +170,7 @@ class SkillContextManager:
         Returns:
             Number of nested skills currently active
         """
-        return len(self._context_stack.get())
+        return len(self._get_stack())
 
     def record_tool_call(
         self,
@@ -200,7 +210,7 @@ class SkillContextManager:
         Returns:
             List of all contexts from bottom to top
         """
-        return list(self._context_stack.get())
+        return list(self._get_stack())
 
 
 # Global instance for convenience

@@ -10,6 +10,7 @@ import { useMCP } from "./useMCP";
 import { useTranslation } from "react-i18next";
 import { PageHeader } from "@/components/PageHeader";
 import { useAgentStore } from "../../../stores/agentStore";
+import { useIframeStore } from "../../../stores/iframeStore";
 import { getUserId } from "../../../utils/identity";
 import styles from "./index.module.less";
 
@@ -62,6 +63,7 @@ function MCPPage() {
   const { message } = useAppMessage();
   const { selectedAgent } = useAgentStore();
   const currentTenantId = getUserId();
+  const manager = useIframeStore((state) => state.manager);
   const {
     clients,
     loading,
@@ -307,7 +309,7 @@ function MCPPage() {
               </span>
             ) : null}
             <Button
-              disabled={!selectedClientKeys.length}
+              disabled={!manager || !selectedClientKeys.length}
               icon={<SendOutlined />}
               onClick={openDistributionModal}
             >

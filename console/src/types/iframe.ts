@@ -41,6 +41,7 @@ export interface AuthHeaderItem {
  *   - source: 来源标识
  *   - hideMenu: 是否隐藏菜单（支持 boolean 或字符串 "true"/"false"）
  *   - isSuperManager: 是否为超级管理员
+ *   - manager: 是否为普通管理员
  *   - auth: 自定义 headers 数组
  */
 export interface IframeUserDataMessage {
@@ -58,6 +59,8 @@ export interface IframeUserDataMessage {
     hideMenu?: boolean | string;
     /** 是否为超级管理员（支持 boolean 或字符串 "true"/"false"） */
     isSuperManager?: boolean | string;
+    /** 是否为普通管理员（支持 boolean 或字符串 "true"/"false"） */
+    manager?: boolean | string;
     /** 自定义 headers 数组，每项包含 headerName 和 headerValue */
     auth?: AuthHeaderItem[];
     /** 其他任意参数 */
@@ -112,6 +115,7 @@ export type IframeOutgoingMessage = IframeReadyResponse;
  * - clawName, space, source: 上下文信息
  * - hideMenu: 控制 Sidebar 显示
  * - isSuperManager: 权限标识
+ * - manager: 普通管理员标识
  * - authHeaders: 自定义 headers（包含 sapId 转换的 X-User-Id）
  * - parentOrigin: 父窗口来源（用于安全验证）
  */
@@ -130,6 +134,8 @@ export interface IframeContext {
   hideMenu: boolean;
   /** 是否为超级管理员 */
   isSuperManager: boolean;
+  /** 是否为普通管理员 */
+  manager: boolean;
   /** 自定义 headers 数组 */
   authHeaders: AuthHeaderItem[];
   /** 来源 origin */

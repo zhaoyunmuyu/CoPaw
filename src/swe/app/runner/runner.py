@@ -36,6 +36,8 @@ from ...agents.react_agent import SWEAgent
 from ...security.tool_guard.models import TOOL_GUARD_DENIED_MARK
 from ...config.config import MCPClientConfig, MCPConfig, load_agent_config
 from ...constant import (
+    QUERY_CLEANUP_TIMEOUT,
+    QUERY_TIMEOUT_SECONDS,
     TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS,
     WORKING_DIR,
 )
@@ -121,7 +123,6 @@ async def _build_and_connect_mcp_clients(
                 await client.connect()
                 clients.append(client)
                 logger.info(f"MCP client '{key}' created and connected")
-                print("passthrough_headers", passthrough_headers)
         except Exception as e:
             logger.warning(
                 f"Failed to create MCP client '{key}': {e}",
@@ -707,11 +708,46 @@ class AgentRunner(Runner):
             # in the session state.
             agent.rebuild_sys_prompt()
 
-            async for msg, last in stream_printing_messages(
-                agents=[agent],
-                coroutine_task=agent(msgs),
+            async for msg, last in self._enforce_query_timeout(
+                stream_printing_messages(
+                    agents=[agent],
+                    coroutine_task=agent(msgs),
+                ),
+                session_id=session_id,
+                agent=agent,
             ):
                 yield msg, last
+
+            # Index model output to Elasticsearch
+            if trace_id and agent is not None:
+                assistant_response = _extract_assistant_response(agent)
+                logger.info(
+                    "ES write check: trace_id=%s, response_len=%d",
+                    trace_id,
+                    len(assistant_response) if assistant_response else 0,
+                )
+                if assistant_response:
+                    try:
+                        from ...elasticsearch import get_es_client
+
+                        es_client = get_es_client()
+                        if es_client and es_client.is_connected:
+                            await es_client.index_message(
+                                trace_id,
+                                assistant_response,
+                            )
+                        else:
+                            logger.warning(
+                                "ES client not available: connected=%s",
+                                es_client.is_connected if es_client else None,
+                            )
+                    except Exception as es_err:
+                        logger.warning(
+                            "Failed to index model output to ES: %s",
+                            es_err,
+                        )
+                else:
+                    logger.info("ES write skipped: empty assistant_response")
 
             # End trace with success status
             if trace_id and has_trace_manager():
@@ -786,15 +822,29 @@ class AgentRunner(Runner):
                 blocks may raise CancelledError due to asyncio checkpoint
                 behavior. These should be suppressed since the task is already
                 being cleaned up.
+
+                Each cleanup step is guarded by an ``asyncio.wait_for`` with
+                ``QUERY_CLEANUP_TIMEOUT`` to prevent a stalled cleanup
+                (e.g. database unreachable) from blocking the request forever.
                 """
                 try:
                     if agent is not None and session_state_loaded:
-                        await self.save_job_session_state(
-                            agent,
-                            session_id,
-                            skip_history,
-                            user_id,
+                        await asyncio.wait_for(
+                            self.save_job_session_state(
+                                agent,
+                                session_id,
+                                skip_history,
+                                user_id,
+                            ),
+                            timeout=QUERY_CLEANUP_TIMEOUT,
                         )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Runner finally: session state save timed out "
+                        "(session_id=%s, timeout=%.0fs)",
+                        session_id,
+                        QUERY_CLEANUP_TIMEOUT,
+                    )
                 except asyncio.CancelledError:
                     logger.debug(
                         "Runner finally: session state save cancelled (session_id=%s)",
@@ -802,7 +852,17 @@ class AgentRunner(Runner):
                     )
                 try:
                     if self._chat_manager is not None and chat is not None:
-                        await self._chat_manager.update_chat(chat)
+                        await asyncio.wait_for(
+                            self._chat_manager.update_chat(chat),
+                            timeout=QUERY_CLEANUP_TIMEOUT,
+                        )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Runner finally: chat update timed out "
+                        "(session_id=%s, timeout=%.0fs)",
+                        session_id,
+                        QUERY_CLEANUP_TIMEOUT,
+                    )
                 except asyncio.CancelledError:
                     logger.debug(
                         "Runner finally: chat update cancelled (session_id=%s)",
@@ -810,7 +870,19 @@ class AgentRunner(Runner):
                     )
                 try:
                     # Close all MCP clients created for this request
-                    await _cleanup_mcp_clients(mcp_clients)
+                    # Check if mcp_clients exists in scope (may not if init failed early)
+                    if "mcp_clients" in locals() and mcp_clients:
+                        await asyncio.wait_for(
+                            _cleanup_mcp_clients(mcp_clients),
+                            timeout=QUERY_CLEANUP_TIMEOUT,
+                        )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Runner finally: MCP cleanup timed out "
+                        "(session_id=%s, timeout=%.0fs)",
+                        session_id,
+                        QUERY_CLEANUP_TIMEOUT,
+                    )
                 except asyncio.CancelledError:
                     logger.debug(
                         "Runner finally: MCP cleanup cancelled (session_id=%s)",
@@ -1076,6 +1148,74 @@ class AgentRunner(Runner):
                 session_id,
                 exc_info=True,
             )
+
+    async def _enforce_query_timeout(
+        self,
+        msg_stream,
+        session_id: str,
+        agent=None,
+        timeout_seconds: float = QUERY_TIMEOUT_SECONDS,
+    ):
+        """Wrap an async message stream with global wall-clock timeout.
+
+        Iterates over *msg_stream* and yields each ``(msg, last)`` pair.
+        If the total elapsed time since the first call exceeds
+        *timeout_seconds*, a timeout notification message is yielded,
+        the stream is terminated, and the agent is interrupted.
+
+        Args:
+            msg_stream: Async iterable of ``(msg, last)`` tuples.
+            session_id: Session identifier for logging.
+            agent: Agent instance to interrupt on timeout.
+            timeout_seconds: Maximum wall-clock seconds for the entire
+                query (default: ``QUERY_TIMEOUT_SECONDS``).
+
+        Yields:
+            ``(msg, last)`` tuples, with a final timeout notification if
+            the limit is exceeded.
+        """
+        start = time.monotonic()
+        async for msg, last in msg_stream:
+            elapsed = time.monotonic() - start
+            if elapsed > timeout_seconds:
+                logger.warning(
+                    "Query timeout (%.0fs > %.0fs) for session %s",
+                    elapsed,
+                    timeout_seconds,
+                    session_id,
+                )
+                # Interrupt the agent to stop it from continuing
+                if agent is not None:
+                    try:
+                        await agent.interrupt()
+                        logger.info(
+                            "Agent interrupted after query timeout for session %s",
+                            session_id,
+                        )
+                    except Exception as interrupt_err:
+                        logger.warning(
+                            "Failed to interrupt agent on query timeout: %s",
+                            interrupt_err,
+                        )
+                yield (
+                    Msg(
+                        name="Friday",
+                        role="assistant",
+                        content=[
+                            TextBlock(
+                                type="text",
+                                text=(
+                                    f"⏰ 任务执行超时"
+                                    f"（{int(elapsed)}s > {int(timeout_seconds)}s），"
+                                    f"已自动终止。"
+                                ),
+                            ),
+                        ],
+                    ),
+                    True,
+                )
+                return
+            yield msg, last
 
     async def stream_query(
         self,

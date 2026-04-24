@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Table, Card, Input, Select, Button, Tag, Drawer, Descriptions, Timeline, Spin, Empty, DatePicker } from "antd";
-import { FileText, Clock, Zap } from "lucide-react";
+import { FileText, Clock, Zap, Bot, User } from "lucide-react";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import { tracingApi, TraceDetail } from "../../../api/modules/tracing";
@@ -319,6 +319,32 @@ export default function TracesPage() {
                 </Tag>
               </Descriptions.Item>
             </Descriptions>
+
+            {/* 用户输入 */}
+            {selectedTrace.trace.user_message && (
+              <div className={styles.userMessageSection}>
+                <h4>
+                  <User size={14} style={{ marginRight: 8 }} />
+                  {t("analytics.userInput", "User Input")}
+                </h4>
+                <div className={styles.userMessageContent}>
+                  {selectedTrace.trace.user_message}
+                </div>
+              </div>
+            )}
+
+            {/* 模型输出 */}
+            {selectedTrace.trace.model_output && (
+              <div className={styles.modelOutputSection}>
+                <h4>
+                  <Bot size={14} style={{ marginRight: 8 }} />
+                  {t("analytics.modelOutput", "Model Output")}
+                </h4>
+                <div className={styles.modelOutputContent}>
+                  {selectedTrace.trace.model_output}
+                </div>
+              </div>
+            )}
 
             {selectedTrace.trace.error && (
               <div className={styles.errorSection}>

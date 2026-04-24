@@ -175,6 +175,7 @@ async function handleUserDataMessage(
     source: message.data.source ?? null,
     hideMenu: toBoolean(message.data.hideMenu),
     isSuperManager: toBoolean(message.data.isSuperManager),
+    manager: toBoolean(message.data.manager),
     authHeaders,
     parentOrigin: origin,
   });
@@ -190,6 +191,7 @@ async function handleUserDataMessage(
     source: message.data.source,
     hideMenu: message.data.hideMenu,
     isSuperManager: message.data.isSuperManager,
+    manager: message.data.manager,
     authHeadersCount: authHeaders.length,
   });
 }

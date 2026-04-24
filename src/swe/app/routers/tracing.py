@@ -488,6 +488,18 @@ async def get_trace_detail(
     if detail is None:
         raise HTTPException(status_code=404, detail="Trace not found")
 
+    # Query model_output from Elasticsearch
+    try:
+        from ...elasticsearch import get_es_client
+
+        es_client = get_es_client()
+        if es_client and es_client.is_connected:
+            model_output = await es_client.get_message(trace_id)
+            if model_output:
+                detail.trace.model_output = model_output
+    except Exception as es_err:
+        logger.warning("Failed to query model_output from ES: %s", es_err)
+
     return detail
 
 

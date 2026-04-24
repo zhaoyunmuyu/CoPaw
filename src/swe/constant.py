@@ -311,6 +311,77 @@ LLM_ACQUIRE_TIMEOUT = EnvVarLoader.get_float(
     min_value=10.0,
 )
 
+# MCP runtime call timeout (seconds).
+# Applied to call_tool() and list_tools() to prevent indefinite hangs
+# when an MCP server process stalls.
+MCP_CALL_TIMEOUT = EnvVarLoader.get_float(
+    "SWE_MCP_CALL_TIMEOUT",
+    120.0,
+    min_value=10.0,
+)
+
+# Query global timeout (seconds).
+# Maximum wall-clock time for a single user request.  When exceeded the
+# runner yields a timeout notification and terminates the query.
+QUERY_TIMEOUT_SECONDS = EnvVarLoader.get_float(
+    "SWE_QUERY_TIMEOUT_SECONDS",
+    1800.0,  # 30 minutes
+    min_value=60.0,
+)
+
+# LLM single-call timeout (seconds).
+# Upper bound for a *single* LLM API call (including retries within the
+# SDK).  Does not include back-off wait between retry attempts.
+LLM_CALL_TIMEOUT = EnvVarLoader.get_float(
+    "SWE_LLM_CALL_TIMEOUT",
+    600.0,  # 10 minutes
+    min_value=30.0,
+)
+
+# LLM streaming stall timeout (seconds).
+# If no chunk arrives from a streaming LLM response within this window,
+# the call is considered stalled and aborted.
+LLM_STREAM_STALL_TIMEOUT = EnvVarLoader.get_float(
+    "SWE_LLM_STREAM_STALL_TIMEOUT",
+    120.0,  # 2 minutes
+    min_value=10.0,
+)
+
+# Agent watchdog timeout (seconds).
+# If the agent produces no output for this duration, it is considered
+# stuck and will be automatically interrupted.
+AGENT_WATCHDOG_TIMEOUT = EnvVarLoader.get_float(
+    "SWE_AGENT_WATCHDOG_TIMEOUT",
+    300.0,  # 5 minutes
+    min_value=30.0,
+)
+
+# Query cleanup timeout (seconds).
+# Applied to each operation in the query_handler finally block to prevent
+# cleanup from blocking indefinitely (e.g. when the database is down).
+QUERY_CLEANUP_TIMEOUT = EnvVarLoader.get_float(
+    "SWE_QUERY_CLEANUP_TIMEOUT",
+    30.0,
+    min_value=5.0,
+)
+
+# Agent interrupt timeout (seconds).
+# Maximum time to wait for the agent to finish after being interrupted.
+AGENT_INTERRUPT_TIMEOUT = EnvVarLoader.get_float(
+    "SWE_AGENT_INTERRUPT_TIMEOUT",
+    60.0,
+    min_value=5.0,
+)
+
+# Channel consume timeout (seconds).
+# Maximum time allowed to process a single batch of channel messages.
+# Should be slightly larger than QUERY_TIMEOUT_SECONDS.
+CHANNEL_CONSUME_TIMEOUT = EnvVarLoader.get_float(
+    "SWE_CHANNEL_CONSUME_TIMEOUT",
+    1900.0,
+    min_value=60.0,
+)
+
 # Tool guard approval timeout (seconds).
 try:
     TOOL_GUARD_APPROVAL_TIMEOUT_SECONDS = max(

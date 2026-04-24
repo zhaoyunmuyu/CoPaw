@@ -4,6 +4,7 @@ import {
   Input,
   Switch,
   Button,
+  InputNumber,
 } from "@agentscope-ai/design";
 import { MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
 import type { FormInstance } from "antd";
@@ -20,9 +21,11 @@ interface CaseDrawerProps {
 
 const DEFAULT_CASE: Partial<FeaturedCase> = {
   is_active: true,
+  bbk_id: "",
   iframe_url: "",
   iframe_title: "",
   steps: [],
+  sort_order: 0,
 };
 
 export function CaseDrawer({
@@ -56,6 +59,12 @@ export function CaseDrawer({
         onFinish={onSubmit}
         initialValues={DEFAULT_CASE}
       >
+        {/* source_id NOT displayed - comes from X-Source-Id header */}
+
+        <Form.Item name="bbk_id" label="BBK ID（可选）">
+          <Input placeholder="如 bbk-001，留空表示默认配置" />
+        </Form.Item>
+
         <Form.Item
           name="case_id"
           label="案例 ID"
@@ -91,6 +100,10 @@ export function CaseDrawer({
 
         <Form.Item name="image_url" label="图片 URL">
           <Input placeholder="https://..." />
+        </Form.Item>
+
+        <Form.Item name="sort_order" label="排序序号">
+          <InputNumber min={0} placeholder="0" style={{ width: "100%" }} />
         </Form.Item>
 
         <Form.Item name="is_active" label="启用" valuePropName="checked">

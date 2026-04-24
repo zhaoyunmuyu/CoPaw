@@ -362,12 +362,9 @@ def resolve_effective_tenant_id(
 ) -> str:
     """Resolve the effective tenant ID considering source isolation.
 
-    When the default tenant accesses via a source, the effective tenant
-    directory becomes ``default_{source_id}`` instead of ``default``.
-    This ensures the default user's working directory is isolated per source.
-
-    The default tenant MUST access via a source. If source_id is None when
-    tenant_id is "default", a TenantContextError is raised.
+    - Default tenant with source_id: effective = ``default_{source_id}``
+    - Default tenant without source_id: effective = ``default``
+    - Non-default tenant: effective = tenant_id (unchanged)
 
     Args:
         tenant_id: The original tenant ID from X-Tenant-Id header.
@@ -375,15 +372,9 @@ def resolve_effective_tenant_id(
 
     Returns:
         The effective tenant ID to use for directory resolution.
-
-    Raises:
-        TenantContextError: If tenant_id is "default" but source_id is None.
     """
     if tenant_id == "default":
-        if not source_id:
-            raise TenantContextError(
-                "Default tenant must access via a source. "
-                "X-Source-Id header is required for default tenant.",
-            )
-        return f"default_{source_id}"
+        if source_id:
+            return f"default_{source_id}"
+        return "default"
     return tenant_id
