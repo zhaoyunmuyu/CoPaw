@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Featured case models."""
+"""Featured case models (simplified - merged tables)."""
 
 from datetime import datetime
 from typing import List, Optional
@@ -23,11 +23,13 @@ class CaseDetail(BaseModel):
 
 
 class FeaturedCase(BaseModel):
-    """Featured case definition."""
+    """Featured case with dimension info."""
 
     model_config = ConfigDict(use_enum_values=True)
 
     id: Optional[int] = None
+    source_id: str = Field(..., min_length=1, max_length=64)
+    bbk_id: Optional[str] = Field(None, max_length=64)
     case_id: str = Field(..., min_length=1, max_length=64)
     label: str = Field(..., min_length=1, max_length=512)
     value: str = Field(..., min_length=1)
@@ -35,14 +37,19 @@ class FeaturedCase(BaseModel):
     iframe_url: Optional[str] = Field(None, max_length=1024)
     iframe_title: Optional[str] = Field(None, max_length=256)
     steps: Optional[List[CaseStep]] = None
+    sort_order: int = 0
     is_active: bool = True
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
 
 class FeaturedCaseCreate(BaseModel):
-    """Create featured case request."""
+    """Create featured case request.
 
+    Note: source_id is NOT a form field - it comes from X-Source-Id header.
+    """
+
+    bbk_id: Optional[str] = Field(None, max_length=64)
     case_id: str = Field(..., min_length=1, max_length=64)
     label: str = Field(..., min_length=1, max_length=512)
     value: str = Field(..., min_length=1)
@@ -50,33 +57,21 @@ class FeaturedCaseCreate(BaseModel):
     iframe_url: Optional[str] = Field(None, max_length=1024)
     iframe_title: Optional[str] = Field(None, max_length=256)
     steps: Optional[List[CaseStep]] = None
+    sort_order: int = 0
 
 
 class FeaturedCaseUpdate(BaseModel):
     """Update featured case request."""
 
+    bbk_id: Optional[str] = Field(None, max_length=64)
     label: Optional[str] = Field(None, min_length=1, max_length=512)
     value: Optional[str] = None
     image_url: Optional[str] = Field(None, max_length=1024)
     iframe_url: Optional[str] = Field(None, max_length=1024)
     iframe_title: Optional[str] = Field(None, max_length=256)
     steps: Optional[List[CaseStep]] = None
+    sort_order: Optional[int] = None
     is_active: Optional[bool] = None
-
-
-class CaseConfigItem(BaseModel):
-    """Case config item for dimension mapping."""
-
-    case_id: str = Field(..., min_length=1, max_length=64)
-    sort_order: int = 0
-
-
-class CaseConfigCreate(BaseModel):
-    """Create case config request."""
-
-    source_id: str = Field(..., min_length=1, max_length=64)
-    bbk_id: Optional[str] = Field(None, max_length=64)
-    case_ids: List[CaseConfigItem] = []
 
 
 class FeaturedCaseListResponse(BaseModel):
@@ -84,26 +79,3 @@ class FeaturedCaseListResponse(BaseModel):
 
     cases: List[FeaturedCase]
     total: int
-
-
-class CaseConfigListItem(BaseModel):
-    """Case config list item."""
-
-    source_id: str
-    bbk_id: Optional[str] = None
-    case_count: int = 0
-
-
-class CaseConfigListResponse(BaseModel):
-    """Case config list response."""
-
-    configs: List[CaseConfigListItem]
-    total: int
-
-
-class CaseConfigDetail(BaseModel):
-    """Case config detail response."""
-
-    source_id: str
-    bbk_id: Optional[str] = None
-    case_ids: List[str] = []

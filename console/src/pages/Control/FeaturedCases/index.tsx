@@ -1,92 +1,56 @@
 import { useState, useEffect } from "react";
-import { Button, Card, Table, Modal, Tabs, Input } from "antd";
+import { Button, Card, Table, Modal, Input } from "antd";
 import { Form } from "@agentscope-ai/design";
 import { PageHeader } from "@/components/PageHeader";
 import { useFeaturedCases } from "./components/hooks";
-import { createCaseColumns, createConfigColumns } from "./components/columns";
+import { createCaseColumns } from "./components/columns";
 import { CaseDrawer } from "./components/CaseDrawer";
-import { ConfigDrawer } from "./components/ConfigDrawer";
-import type { FeaturedCase, CaseConfigListItem } from "@/api/types/featuredCases";
+import type { FeaturedCase } from "@/api/types/featuredCases";
 import styles from "./index.module.less";
 
 function FeaturedCasesPage() {
-  const {
-    cases,
-    casesLoading,
-    casesTotal,
-    configs,
-    configsLoading,
-    configsTotal,
-    loadCases,
-    loadConfigs,
-    createCase,
-    updateCase,
-    deleteCase,
-    upsertConfig,
-    deleteConfig,
-    getConfigDetail,
-  } = useFeaturedCases();
+  const { cases, loading, total, loadCases, createCase, updateCase, deleteCase } =
+    useFeaturedCases();
 
-  // Case drawer state
-  const [caseDrawerOpen, setCaseDrawerOpen] = useState(false);
+  // Drawer state
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingCase, setEditingCase] = useState<FeaturedCase | null>(null);
-  const [caseSaving, setCaseSaving] = useState(false);
-  const [caseForm] = Form.useForm<FeaturedCase>();
-
-  // Config drawer state
-  const [configDrawerOpen, setConfigDrawerOpen] = useState(false);
-  const [editingSourceId, setEditingSourceId] = useState<string | null>(null);
-  const [editingBbkId, setEditingBbkId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [form] = Form.useForm<FeaturedCase>();
 
   // Pagination
-  const [casesPagination, setCasesPagination] = useState({
-    current: 1,
-    pageSize: 20,
-  });
-  const [configsPagination, setConfigsPagination] = useState({
+  const [pagination, setPagination] = useState({
     current: 1,
     pageSize: 20,
   });
 
-  // Filters
-  const [sourceIdFilter, setSourceIdFilter] = useState("");
+  // Filter
+  const [bbkIdFilter, setBbkIdFilter] = useState<string | undefined>(undefined);
 
   // Load data on mount
   useEffect(() => {
     loadCases({
-      page: casesPagination.current,
-      page_size: casesPagination.pageSize,
+      bbk_id: bbkIdFilter,
+      page: pagination.current,
+      page_size: pagination.pageSize,
     });
-    loadConfigs({
-      source_id: sourceIdFilter || undefined,
-      page: configsPagination.current,
-      page_size: configsPagination.pageSize,
-    });
-  }, [
-    loadCases,
-    loadConfigs,
-    casesPagination.current,
-    casesPagination.pageSize,
-    configsPagination.current,
-    configsPagination.pageSize,
-    sourceIdFilter,
-  ]);
+  }, [loadCases, pagination.current, pagination.pageSize, bbkIdFilter]);
 
-  // ==================== Case handlers ====================
+  // ==================== Handlers ====================
 
-  const handleCreateCase = () => {
+  const handleCreate = () => {
     setEditingCase(null);
-    caseForm.resetFields();
-    setCaseDrawerOpen(true);
+    form.resetFields();
+    setDrawerOpen(true);
   };
 
-  const handleEditCase = (caseItem: FeaturedCase) => {
+  const handleEdit = (caseItem: FeaturedCase) => {
     setEditingCase(caseItem);
-    caseForm.setFieldsValue(caseItem);
-    setCaseDrawerOpen(true);
+    form.setFieldsValue(caseItem);
+    setDrawerOpen(true);
   };
 
-  const handleDeleteCase = (caseId: string) => {
+  const handleDelete = (caseId: string) => {
     Modal.confirm({
       title: "确认删除",
       content: `确定要删除案例 "${caseId}" 吗？`,
@@ -96,95 +60,42 @@ function FeaturedCasesPage() {
       onOk: async () => {
         await deleteCase(caseId);
         loadCases({
-          page: casesPagination.current,
-          page_size: casesPagination.pageSize,
+          bbk_id: bbkIdFilter,
+          page: pagination.current,
+          page_size: pagination.pageSize,
         });
       },
     });
   };
 
-  const handleCaseDrawerClose = () => {
-    setCaseDrawerOpen(false);
+  const handleClose = () => {
+    setDrawerOpen(false);
     setEditingCase(null);
   };
 
-  const handleCaseSubmit = async (values: FeaturedCase) => {
-    setCaseSaving(true);
+  const handleSubmit = async (values: FeaturedCase) => {
+    setSaving(true);
     try {
       if (editingCase) {
         await updateCase(editingCase.case_id, values);
       } else {
         await createCase(values);
       }
-      setCaseDrawerOpen(false);
+      setDrawerOpen(false);
       loadCases({
-        page: casesPagination.current,
-        page_size: casesPagination.pageSize,
+        bbk_id: bbkIdFilter,
+        page: pagination.current,
+        page_size: pagination.pageSize,
       });
     } catch (error) {
       // Error handled in hooks
     } finally {
-      setCaseSaving(false);
+      setSaving(false);
     }
   };
 
-  // ==================== Config handlers ====================
-
-  const handleCreateConfig = () => {
-    setEditingSourceId(null);
-    setEditingBbkId(null);
-    setConfigDrawerOpen(true);
-  };
-
-  const handleEditConfig = (config: CaseConfigListItem) => {
-    setEditingSourceId(config.source_id);
-    setEditingBbkId(config.bbk_id);
-    setConfigDrawerOpen(true);
-  };
-
-  const handleDeleteConfig = (config: CaseConfigListItem) => {
-    Modal.confirm({
-      title: "确认删除",
-      content: `确定要删除维度配置 "${config.source_id}${config.bbk_id ? `/${config.bbk_id}` : ""}" 吗？`,
-      okText: "删除",
-      okType: "danger",
-      cancelText: "取消",
-      onOk: async () => {
-        await deleteConfig(config.source_id, config.bbk_id);
-        loadConfigs({
-          source_id: sourceIdFilter || undefined,
-          page: configsPagination.current,
-          page_size: configsPagination.pageSize,
-        });
-      },
-    });
-  };
-
-  const handleConfigDrawerClose = () => {
-    setConfigDrawerOpen(false);
-    setEditingSourceId(null);
-    setEditingBbkId(null);
-  };
-
-  const handleConfigSuccess = () => {
-    loadConfigs({
-      source_id: sourceIdFilter || undefined,
-      page: configsPagination.current,
-      page_size: configsPagination.pageSize,
-    });
-  };
-
-  // ==================== Table change handlers ====================
-
-  const handleCasesTableChange = (pag: { current?: number; pageSize?: number }) => {
-    setCasesPagination({
-      current: pag.current || 1,
-      pageSize: pag.pageSize || 20,
-    });
-  };
-
-  const handleConfigsTableChange = (pag: { current?: number; pageSize?: number }) => {
-    setConfigsPagination({
+  const handleTableChange = (pag: { current?: number; pageSize?: number }) => {
+    setPagination({
       current: pag.current || 1,
       pageSize: pag.pageSize || 20,
     });
@@ -192,111 +103,59 @@ function FeaturedCasesPage() {
 
   // ==================== Columns ====================
 
-  const caseColumns = createCaseColumns({
-    onEdit: handleEditCase,
-    onDelete: handleDeleteCase,
+  const columns = createCaseColumns({
+    onEdit: handleEdit,
+    onDelete: handleDelete,
   });
-
-  const configColumns = createConfigColumns({
-    onConfig: handleEditConfig,
-    onDelete: handleDeleteConfig,
-  });
-
-  // ==================== Tabs ====================
-
-  const tabItems = [
-    {
-      key: "cases",
-      label: "案例定义",
-      children: (
-        <Card className={styles.tableCard} bodyStyle={{ padding: 0 }}>
-          <Table
-            columns={caseColumns}
-            dataSource={cases}
-            loading={casesLoading}
-            rowKey="case_id"
-            pagination={{
-              current: casesPagination.current,
-              pageSize: casesPagination.pageSize,
-              total: casesTotal,
-              showSizeChanger: true,
-              showTotal: (t) => `共 ${t} 条`,
-            }}
-            onChange={handleCasesTableChange}
-          />
-        </Card>
-      ),
-    },
-    {
-      key: "configs",
-      label: "维度配置",
-      children: (
-        <Card className={styles.tableCard}>
-          <div style={{ marginBottom: 16 }}>
-            <Input.Search
-              placeholder="搜索 Source ID"
-              allowClear
-              onSearch={(val) => {
-                setSourceIdFilter(val);
-                setConfigsPagination({ ...configsPagination, current: 1 });
-              }}
-              style={{ width: 200, marginRight: 16 }}
-            />
-            <Button type="primary" onClick={handleCreateConfig}>
-              + 新建配置
-            </Button>
-          </div>
-
-          <Table
-            columns={configColumns}
-            dataSource={configs}
-            loading={configsLoading}
-            rowKey={(r) => `${r.source_id}-${r.bbk_id || "null"}`}
-            pagination={{
-              current: configsPagination.current,
-              pageSize: configsPagination.pageSize,
-              total: configsTotal,
-              showSizeChanger: true,
-              showTotal: (t) => `共 ${t} 条`,
-            }}
-            onChange={handleConfigsTableChange}
-          />
-        </Card>
-      ),
-    },
-  ];
 
   return (
     <div className={styles.featuredCasesPage}>
       <PageHeader
         items={[{ title: "控制" }, { title: "精选案例管理" }]}
         extra={
-          <Button type="primary" onClick={handleCreateCase}>
+          <Button type="primary" onClick={handleCreate}>
             + 新建案例
           </Button>
         }
       />
 
-      <Tabs items={tabItems} />
+      <Card className={styles.tableCard}>
+        <div style={{ marginBottom: 16 }}>
+          <Input
+            placeholder="筛选 BBK ID"
+            allowClear
+            value={bbkIdFilter || ""}
+            onChange={(e) => {
+              setBbkIdFilter(e.target.value || undefined);
+              setPagination({ ...pagination, current: 1 });
+            }}
+            style={{ width: 200 }}
+          />
+        </div>
+
+        <Table
+          columns={columns}
+          dataSource={cases}
+          loading={loading}
+          rowKey="case_id"
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: total,
+            showSizeChanger: true,
+            showTotal: (t) => `共 ${t} 条`,
+          }}
+          onChange={handleTableChange}
+        />
+      </Card>
 
       <CaseDrawer
-        open={caseDrawerOpen}
+        open={drawerOpen}
         editingCase={editingCase}
-        form={caseForm}
-        saving={caseSaving}
-        onClose={handleCaseDrawerClose}
-        onSubmit={handleCaseSubmit}
-      />
-
-      <ConfigDrawer
-        open={configDrawerOpen}
-        editingSourceId={editingSourceId}
-        editingBbkId={editingBbkId}
-        onClose={handleConfigDrawerClose}
-        onSuccess={handleConfigSuccess}
-        allCases={cases}
-        upsertConfig={upsertConfig}
-        getConfigDetail={getConfigDetail}
+        form={form}
+        saving={saving}
+        onClose={handleClose}
+        onSubmit={handleSubmit}
       />
     </div>
   );
