@@ -115,6 +115,49 @@ class TestTenantWorkspaceHelpers:
             if mock_request.state.workspace is None:
                 raise RuntimeError("Workspace not set")
 
+    @pytest.mark.asyncio
+    async def test_dispatch_uses_effective_tenant_id_for_source_scoped_default(
+        self,
+    ):
+        """Workspace loading should use effective_tenant_id when present."""
+        from swe.app.middleware.tenant_workspace import (
+            TenantWorkspaceMiddleware,
+        )
+
+        effective_root = Path("/tmp/default_RMASSIST")
+
+        mock_req = MagicMock(spec=Request)
+        mock_req.method = "GET"
+        mock_req.state = MagicMock()
+        mock_req.state.tenant_id = "default"
+        mock_req.state.effective_tenant_id = "default_RMASSIST"
+        mock_req.state.source_id = "RMASSIST"
+        mock_req.url = MagicMock()
+        mock_req.url.path = "/api/test"
+        mock_req.app = MagicMock()
+        mock_req.app.state = MagicMock()
+
+        pool = MagicMock()
+        pool.ensure_bootstrap = AsyncMock()
+        pool.get_tenant_workspace_dir = MagicMock(return_value=effective_root)
+        mock_req.app.state.tenant_workspace_pool = pool
+
+        middleware = TenantWorkspaceMiddleware(app=MagicMock())
+
+        async def call_next(_request):
+            return Response(content=b"OK", status_code=200)
+
+        response = await middleware.dispatch(mock_req, call_next)
+
+        assert response.status_code == 200
+        pool.ensure_bootstrap.assert_awaited_once_with(
+            "default_RMASSIST",
+            source_id="RMASSIST",
+        )
+        pool.get_tenant_workspace_dir.assert_called_once_with(
+            "default_RMASSIST",
+        )
+
 
 class TestTenantWorkspaceContextReset:
     """Tests for context reset after request."""
@@ -442,9 +485,7 @@ class TestTenantProviderConfigInitialization:
         from swe.constant import SECRET_DIR
 
         # Setup: Create default tenant with config
-        default_providers = (
-            tmp_path / ".swe.secret" / "default" / "providers"
-        )
+        default_providers = tmp_path / ".swe.secret" / "default" / "providers"
         default_providers.mkdir(parents=True)
         (default_providers / "builtin").mkdir()
         (default_providers / "custom").mkdir()

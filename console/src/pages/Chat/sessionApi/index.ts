@@ -22,6 +22,12 @@ import { toDisplayUrl } from "../utils";
 import { applyPreferredSessionSelection } from "./preferredSession";
 import { shouldNotifySessionSelected } from "./sessionRaceGuard";
 import { filterStaleTaskSessions } from "./taskSessions";
+import {
+  forgetResolvedChatId,
+  forgetResolvedChatIdsForChat,
+  getResolvedChatId,
+  rememberResolvedChatId,
+} from "./resolvedSessionMapping";
 
 // ==================== userId 统一整改 (Kun He) ====================
 // 使用统一的 getUserId/getChannel helper
@@ -254,10 +260,11 @@ const buildResponseCard = (
     content: normalizeOutputMessageContent(msg.content),
   }));
 
-  const approvalAction = normalizedMessages.reduce<ChatApprovalActionCardData | null>(
-    (found, message) => found ?? extractApprovalAction(message),
-    null,
-  );
+  const approvalAction =
+    normalizedMessages.reduce<ChatApprovalActionCardData | null>(
+      (found, message) => found ?? extractApprovalAction(message),
+      null,
+    );
 
   const cards: NonNullable<IAgentScopeRuntimeWebUIMessage["cards"]> = [
     {
@@ -339,6 +346,21 @@ const chatSpecToSession = (chat: ChatSpec): ExtendedSession =>
 /** Returns true when id is a pure numeric local timestamp (not a backend UUID). */
 const isLocalTimestamp = (id: string): boolean => /^\d+$/.test(id);
 
+let lastLocalSessionTimestamp = 0;
+let localSessionSequence = 0;
+
+function createLocalSessionId(): string {
+  const now = Date.now();
+  if (now === lastLocalSessionTimestamp) {
+    localSessionSequence += 1;
+  } else {
+    lastLocalSessionTimestamp = now;
+    localSessionSequence = 0;
+  }
+
+  return `${now}${localSessionSequence.toString().padStart(3, "0")}`;
+}
+
 /** Detect if backend is still generating content for this chat. */
 const isGenerating = (chatHistory: ChatHistory): boolean => {
   if (chatHistory.status === "running") return true;
@@ -349,29 +371,109 @@ const isGenerating = (chatHistory: ChatHistory): boolean => {
   return last.role === ROLE_USER;
 };
 
+const mergeGeneratingState = (
+  backendStatus?: string,
+  backendGenerating?: boolean,
+  localGenerating?: boolean,
+): boolean => {
+  if (backendStatus === "running") return true;
+  if (backendStatus === "idle") return false;
+  if (typeof backendGenerating === "boolean") return backendGenerating;
+  return Boolean(localGenerating);
+};
+
 /**
  * Resolve and persist the real backend UUID for a local timestamp session.
  * Stores the real UUID as realId while keeping the timestamp as id, so the
  * library's internal currentSessionId (timestamp) remains valid.
  * Returns the resolved real UUID, or null if not found.
  */
+const mergeResolvedSession = (
+  resolvedSession: ExtendedSession,
+  localSession?: ExtendedSession,
+  tempSessionId?: string,
+): ExtendedSession => {
+  const realId = resolvedSession.realId || resolvedSession.id;
+
+  return {
+    ...resolvedSession,
+    id: localSession?.id || tempSessionId || resolvedSession.id,
+    realId,
+    sessionId: localSession?.sessionId || resolvedSession.sessionId,
+    name: localSession?.name || resolvedSession.name,
+    userId: localSession?.userId || resolvedSession.userId,
+    channel: localSession?.channel || resolvedSession.channel,
+    meta: localSession?.meta || resolvedSession.meta || {},
+    createdAt: localSession?.createdAt || resolvedSession.createdAt,
+    messages:
+      resolvedSession.messages?.length > 0
+        ? resolvedSession.messages
+        : localSession?.messages || [],
+    generating: mergeGeneratingState(
+      resolvedSession.status,
+      resolvedSession.generating,
+      localSession?.generating,
+    ),
+  } as ExtendedSession;
+};
+
 const resolveRealId = (
   sessionList: IAgentScopeRuntimeWebUISession[],
   tempSessionId: string,
 ): { list: IAgentScopeRuntimeWebUISession[]; realId: string | null } => {
-  const realSession = sessionList.find(
-    (s) => (s as ExtendedSession).sessionId === tempSessionId,
-  );
+  const localSession = sessionList.find((s) => s.id === tempSessionId) as
+    | ExtendedSession
+    | undefined;
+  const realSession = sessionList.find((s) => {
+    const extendedSession = s as ExtendedSession;
+    return (
+      extendedSession.sessionId === tempSessionId &&
+      (extendedSession.id !== tempSessionId || Boolean(extendedSession.realId))
+    );
+  });
   if (!realSession) return { list: sessionList, realId: null };
 
-  const realUUID = realSession.id;
-  (realSession as ExtendedSession).realId = realUUID;
-  realSession.id = tempSessionId;
+  const realUUID = (realSession as ExtendedSession).realId || realSession.id;
+  const resolvedSession = mergeResolvedSession(
+    realSession as ExtendedSession,
+    localSession,
+  );
   return {
-    list: [realSession, ...sessionList.filter((s) => s !== realSession)],
+    list: [
+      resolvedSession,
+      ...sessionList.filter((s) => s !== realSession && s !== localSession),
+    ],
     realId: realUUID,
   };
 };
+
+const isPendingLocalSession = (
+  session: IAgentScopeRuntimeWebUISession,
+): session is ExtendedSession => {
+  const extendedSession = session as ExtendedSession;
+  return isLocalTimestamp(extendedSession.id) && !extendedSession.realId;
+};
+
+const mergePendingSession = (
+  sessionList: IAgentScopeRuntimeWebUISession[],
+  pendingSession: ExtendedSession,
+): IAgentScopeRuntimeWebUISession[] => {
+  return [
+    pendingSession,
+    ...sessionList.filter((session) => session.id !== pendingSession.id),
+  ];
+};
+
+const mergePendingSessions = (
+  sessionList: IAgentScopeRuntimeWebUISession[],
+  pendingSessions: ExtendedSession[],
+): IAgentScopeRuntimeWebUISession[] =>
+  [...pendingSessions]
+    .reverse()
+    .reduce(
+      (list, pendingSession) => mergePendingSession(list, pendingSession),
+      sessionList,
+    );
 
 // ---------------------------------------------------------------------------
 // Per-session user message persistence (survives page refresh)
@@ -395,6 +497,17 @@ function loadPendingUserMessage(sessionId: string): string {
   }
 }
 
+function loadPendingUserMessageFromCandidates(sessionIds: string[]): string {
+  for (const sessionId of sessionIds) {
+    const text = loadPendingUserMessage(sessionId);
+    if (text) {
+      return text;
+    }
+  }
+
+  return "";
+}
+
 function clearPendingUserMessage(sessionId: string): void {
   try {
     sessionStorage.removeItem(`${STORAGE_PREFIX}${sessionId}`);
@@ -407,7 +520,7 @@ function clearPendingUserMessage(sessionId: string): void {
 // SessionApi
 // ---------------------------------------------------------------------------
 
-class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
+export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
   private sessionList: IAgentScopeRuntimeWebUISession[] = [];
   private intendedSessionId: string | null = null;
 
@@ -472,11 +585,6 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
   onSessionCreated: ((sessionId: string) => void) | null = null;
 
   /**
-   * 临时会话（未同步到后端的），等消息发送完成后使用真实UUID创建历史记录
-   */
-  private pendingSession: ExtendedSession | null = null;
-
-  /**
    * When reconnecting to a running conversation, the backend history may not
    * include the latest user message (it's only persisted after generation
    * completes). If generating, look up the cached text from sessionStorage
@@ -488,13 +596,19 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     messages: IAgentScopeRuntimeWebUIMessage[],
     generating: boolean,
     backendSessionId: string,
+    fallbackSessionIds: string[] = [],
   ): void {
+    const candidateSessionIds = Array.from(
+      new Set([backendSessionId, ...fallbackSessionIds].filter(Boolean)),
+    );
+
     if (!generating) {
-      clearPendingUserMessage(backendSessionId);
+      candidateSessionIds.forEach(clearPendingUserMessage);
       return;
     }
 
-    const cachedText = loadPendingUserMessage(backendSessionId);
+    const cachedText =
+      loadPendingUserMessageFromCandidates(candidateSessionIds);
     if (!cachedText) return;
 
     const lastMsg = messages[messages.length - 1];
@@ -554,29 +668,122 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     return this.createEmptySession(sessionId);
   }
 
+  private findSessionByIdentity(
+    sessionId: string,
+  ): ExtendedSession | undefined {
+    return this.sessionList.find((session) => {
+      const extendedSession = session as ExtendedSession;
+      return (
+        extendedSession.id === sessionId || extendedSession.realId === sessionId
+      );
+    }) as ExtendedSession | undefined;
+  }
+
+  private getPendingSessions(): ExtendedSession[] {
+    return this.sessionList.filter(isPendingLocalSession) as ExtendedSession[];
+  }
+
+  private getLatestPendingSession(): ExtendedSession | null {
+    return this.getPendingSessions()[0] ?? null;
+  }
+
+  private isActivePendingSession(
+    pendingSessionId: string,
+    logicalSessionId: string = pendingSessionId,
+  ): boolean {
+    const currentSessionId = window.currentSessionId;
+    if (!currentSessionId) {
+      return this.getLatestPendingSession()?.id === pendingSessionId;
+    }
+
+    return (
+      currentSessionId === pendingSessionId ||
+      currentSessionId === logicalSessionId
+    );
+  }
+
+  private notifyResolvedSessionIfActive(
+    pendingSessionId: string,
+    realId: string,
+    logicalSessionId: string = pendingSessionId,
+  ): void {
+    if (this.isActivePendingSession(pendingSessionId, logicalSessionId)) {
+      this.onSessionIdResolved?.(pendingSessionId, realId);
+    }
+  }
+
+  getLogicalSessionId(sessionId: string): string {
+    if (!sessionId) {
+      return "";
+    }
+
+    const session = this.findSessionByIdentity(sessionId);
+    return session?.sessionId || sessionId;
+  }
+
   /**
    * Returns the real backend UUID for a session identified by id (which may be
    * a local timestamp). Returns null when not yet resolved or not found.
    */
   getRealIdForSession(sessionId: string): string | null {
-    const s = this.sessionList.find((x) => x.id === sessionId) as
-      | ExtendedSession
-      | undefined;
-    return s?.realId ?? null;
+    return (
+      this.findSessionByIdentity(sessionId)?.realId ??
+      getResolvedChatId(sessionId)
+    );
+  }
+
+  getChatIdForSession(sessionId: string): string | null {
+    if (!sessionId) {
+      return null;
+    }
+
+    const session = this.findSessionByIdentity(sessionId);
+    if (session?.realId) {
+      return session.realId;
+    }
+
+    if (session && !isLocalTimestamp(session.id)) {
+      return session.id;
+    }
+
+    if (isLocalTimestamp(sessionId)) {
+      const resolvedChatId = getResolvedChatId(sessionId);
+      if (resolvedChatId) {
+        return resolvedChatId;
+      }
+
+      const matches = this.sessionList.filter(
+        (session) => (session as ExtendedSession).sessionId === sessionId,
+      ) as ExtendedSession[];
+      if (matches.length === 1) {
+        return matches[0].realId || matches[0].id;
+      }
+
+      return null;
+    }
+
+    const matchesLogicalSessionId = this.sessionList.some(
+      (session) => (session as ExtendedSession).sessionId === sessionId,
+    );
+    if (matchesLogicalSessionId) {
+      return null;
+    }
+
+    return sessionId;
   }
 
   /**
    * 获取当前的临时会话ID（用于发送消息时作为 session_id）
    */
   getPendingSessionId(): string | null {
-    return this.pendingSession?.id ?? null;
+    return this.getLatestPendingSession()?.id ?? null;
   }
 
   /**
    * 清除临时会话（消息发送完成后调用）
    */
   clearPendingSession(): void {
-    this.pendingSession = null;
+    return;
   }
 
   /**
@@ -585,27 +792,34 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
    * @param name 会话名称（可选，默认使用临时会话的名称）
    */
   async createSessionFromPending(realId: string, name?: string): Promise<void> {
-    if (!this.pendingSession) return;
+    const pendingSession = this.getLatestPendingSession();
+    if (!pendingSession) return;
 
+    const pendingSessionId = pendingSession.id;
     const session: ExtendedSession = {
       id: realId,
-      sessionId: this.pendingSession.sessionId,
-      userId: this.pendingSession.userId,
-      channel: this.pendingSession.channel,
-      name: name || this.pendingSession.name || DEFAULT_SESSION_NAME,
+      sessionId: pendingSession.sessionId,
+      userId: pendingSession.userId,
+      channel: pendingSession.channel,
+      name: name || pendingSession.name || DEFAULT_SESSION_NAME,
       messages: [],
-      meta: this.pendingSession.meta || {},
-      createdAt: this.pendingSession.createdAt,
+      meta: pendingSession.meta || {},
+      createdAt: pendingSession.createdAt,
     };
 
     // 添加到历史列表
-    this.sessionList.unshift(session);
+    this.sessionList = [
+      session,
+      ...this.sessionList.filter((item) => item.id !== pendingSessionId),
+    ];
 
     // 触发回调更新URL
-    this.onSessionIdResolved?.(this.pendingSession.id, realId);
-
-    // 清除临时会话
-    this.pendingSession = null;
+    rememberResolvedChatId(pendingSession.id, realId);
+    this.notifyResolvedSessionIfActive(
+      pendingSession.id,
+      realId,
+      pendingSession.sessionId,
+    );
 
     // 更新 window 变量
     this.updateWindowVariables(session);
@@ -617,6 +831,7 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     this.sessionListRequest = (async () => {
       try {
         const allowPreferredSelection = this.sessionList.length === 0;
+        const pendingSessions = this.getPendingSessions();
 
         const [chats, jobsResult] = await Promise.all([
           api.listChats(),
@@ -636,30 +851,92 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
           .reverse();
         const filteredList = filterStaleTaskSessions(newList, activeTaskJobIds);
 
-        // 如果匹配，创建真实会话记录并触发回调
-        if (this.pendingSession) {
-          const matchedBackendSession = filteredList.find(
-            (s) => (s as ExtendedSession).sessionId === this.pendingSession!.sessionId
-          ) as ExtendedSession | undefined;
-
-          if (matchedBackendSession) {
-            // 后端已创建会话，使用真实UUID
-            const realId = matchedBackendSession.id;
-            const tempId = this.pendingSession.id;
-
-            // 触发回调更新URL
-            this.onSessionIdResolved?.(tempId, realId);
-
-            // 清除临时会话
-            this.pendingSession = null;
-
-            // 更新 window 变量使用真实UUID
-            window.currentSessionId = realId;
+        const resolvedPendingSessionIds = new Set<string>();
+        pendingSessions.forEach((pendingSession) => {
+          const matchedIndex = filteredList.findIndex(
+            (session) =>
+              (session as ExtendedSession).sessionId ===
+              pendingSession.sessionId,
+          );
+          if (matchedIndex === -1) {
+            return;
           }
-        }
+
+          const matchedBackendSession = filteredList[
+            matchedIndex
+          ] as ExtendedSession;
+          const realId = matchedBackendSession.id;
+          filteredList[matchedIndex] = mergeResolvedSession(
+            matchedBackendSession,
+            pendingSession,
+            pendingSession.id,
+          );
+          resolvedPendingSessionIds.add(pendingSession.id);
+          rememberResolvedChatId(pendingSession.id, realId);
+          this.notifyResolvedSessionIfActive(
+            pendingSession.id,
+            realId,
+            pendingSession.sessionId,
+          );
+
+          if (
+            window.currentSessionId === pendingSession.id ||
+            window.currentSessionId === pendingSession.sessionId
+          ) {
+            window.currentSessionId =
+              matchedBackendSession.sessionId || pendingSession.id;
+          }
+        });
+
+        const previousResolvedSessions = this.sessionList.filter((session) => {
+          const extendedSession = session as ExtendedSession;
+          return (
+            isLocalTimestamp(extendedSession.id) &&
+            Boolean(extendedSession.realId)
+          );
+        }) as ExtendedSession[];
+
+        previousResolvedSessions.forEach((localResolvedSession) => {
+          const matchedIndex = filteredList.findIndex(
+            (session) => session.id === localResolvedSession.realId,
+          );
+          if (matchedIndex > -1) {
+            const backendSession = filteredList[
+              matchedIndex
+            ] as ExtendedSession;
+            filteredList[matchedIndex] = {
+              ...backendSession,
+              id: localResolvedSession.id,
+              realId: localResolvedSession.realId,
+              sessionId:
+                localResolvedSession.sessionId || backendSession.sessionId,
+              name: localResolvedSession.name || backendSession.name,
+              userId: localResolvedSession.userId || backendSession.userId,
+              channel: localResolvedSession.channel || backendSession.channel,
+              meta: localResolvedSession.meta || backendSession.meta || {},
+              createdAt:
+                localResolvedSession.createdAt || backendSession.createdAt,
+              messages:
+                backendSession.messages?.length > 0
+                  ? backendSession.messages
+                  : localResolvedSession.messages || [],
+              generating: mergeGeneratingState(
+                backendSession.status,
+                backendSession.generating,
+                localResolvedSession.generating,
+              ),
+            } as ExtendedSession;
+          }
+        });
 
         // 合并后端会话列表
-        this.sessionList = filteredList;
+        this.sessionList = mergePendingSessions(
+          filteredList,
+          pendingSessions.filter(
+            (pendingSession) =>
+              !resolvedPendingSessionIds.has(pendingSession.id),
+          ),
+        );
 
         this.sessionList = applyPreferredSessionSelection({
           sessions: this.sessionList,
@@ -712,68 +989,80 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     }
   }
 
+  private async getResolvedLocalTimestampSession(
+    sessionId: string,
+    fromList: ExtendedSession,
+  ): Promise<ExtendedSession> {
+    const realId = fromList.realId;
+    if (!realId) {
+      return this.getLocalSession(sessionId) as ExtendedSession;
+    }
+
+    const chatHistory = await api.getChat(realId);
+    const backendGenerating = isGenerating(chatHistory);
+    const backendMessages = convertMessages(chatHistory.messages || []);
+    const messages =
+      backendMessages.length > 0 ? backendMessages : fromList.messages || [];
+    const generating = mergeGeneratingState(
+      chatHistory.status,
+      backendGenerating,
+      fromList.generating,
+    );
+    this.patchLastUserMessage(messages, generating, realId, [
+      sessionId,
+      fromList.sessionId,
+    ]);
+    const session: ExtendedSession = {
+      id: sessionId,
+      name: fromList.name || DEFAULT_SESSION_NAME,
+      sessionId: fromList.sessionId || sessionId,
+      // ==================== userId 统一整改 (Kun He) ====================
+      userId: getUserIdWithoutWindow(fromList.userId),
+      channel: getChannelWithoutWindow(fromList.channel),
+      // ==================== userId 统一整改结束 ====================
+      messages,
+      meta: fromList.meta || {},
+      realId,
+      generating,
+    };
+    this.updateWindowVariables(session);
+    return session;
+  }
+
   private async _doGetSession(
     sessionId: string,
   ): Promise<IAgentScopeRuntimeWebUISession> {
     // --- Local timestamp ID (New Chat before first reply) ---
     if (isLocalTimestamp(sessionId)) {
-      const fromList = this.sessionList.find((s) => s.id === sessionId) as
+      let fromList = this.sessionList.find((s) => s.id === sessionId) as
         | ExtendedSession
         | undefined;
 
       // If realId is already resolved, use it directly to fetch history.
       if (fromList?.realId) {
-        const chatHistory = await api.getChat(fromList.realId);
-        const generating = isGenerating(chatHistory);
-        const messages = convertMessages(chatHistory.messages || []);
-        this.patchLastUserMessage(messages, generating, fromList.realId);
-        const session: ExtendedSession = {
-          id: sessionId,
-          name: fromList.name || DEFAULT_SESSION_NAME,
-          sessionId: fromList.sessionId || sessionId,
-          // ==================== userId 统一整改 (Kun He) ====================
-          userId: getUserIdWithoutWindow(fromList.userId),
-          channel: getChannelWithoutWindow(fromList.channel),
-          // ==================== userId 统一整改结束 ====================
-          messages,
-          meta: fromList.meta || {},
-          realId: fromList.realId,
-          generating,
-        };
-        this.updateWindowVariables(session);
-        return session;
+        return this.getResolvedLocalTimestampSession(sessionId, fromList);
       }
 
-      // Pure local session (not yet sent to backend):
-      // If realId is not resolved yet, return empty local session immediately.
-      // No need to wait - realId will be resolved after first message is sent.
+      // The stream may already have created a backend chat while this tab still
+      // only knows the local timestamp id. Refresh once so switching back to a
+      // running local session can resolve its backend status before reconnecting.
       if (!fromList?.realId) {
+        await this.getSessionList();
+        fromList = this.sessionList.find((s) => s.id === sessionId) as
+          | ExtendedSession
+          | undefined;
+
+        if (fromList?.realId) {
+          return this.getResolvedLocalTimestampSession(sessionId, fromList);
+        }
+
         return this.getLocalSession(sessionId);
       }
-
-      // realId resolved: fetch history from backend
-      const chatHistory = await api.getChat(fromList.realId);
-      const generating = isGenerating(chatHistory);
-      const messages = convertMessages(chatHistory.messages || []);
-      this.patchLastUserMessage(messages, generating, fromList.realId);
-      const session: ExtendedSession = {
-        id: sessionId,
-        name: fromList.name || DEFAULT_SESSION_NAME,
-        sessionId: fromList.sessionId || sessionId,
-        userId: getUserIdWithoutWindow(fromList.userId),
-        channel: getChannelWithoutWindow(fromList.channel),
-        messages,
-        meta: fromList.meta || {},
-        realId: fromList.realId,
-        generating,
-      };
-      this.updateWindowVariables(session);
-      return session;
     }
 
     // --- No session selected (e.g. after delete) ---
     if (!sessionId || sessionId === "undefined" || sessionId === "null") {
-      return this.createEmptySession(Date.now().toString());
+      return this.createEmptySession(createLocalSessionId());
     }
 
     // --- Regular backend UUID ---
@@ -784,7 +1073,10 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     const chatHistory = await api.getChat(sessionId);
     const generating = isGenerating(chatHistory);
     const messages = convertMessages(chatHistory.messages || []);
-    this.patchLastUserMessage(messages, generating, sessionId);
+    this.patchLastUserMessage(messages, generating, sessionId, [
+      fromList?.sessionId,
+      fromList?.realId,
+    ]);
     const session: ExtendedSession = {
       id: sessionId,
       name: fromList?.name || sessionId,
@@ -803,39 +1095,57 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
   }
 
   async updateSession(session: Partial<IAgentScopeRuntimeWebUISession>) {
-    session.messages = [];
-    const index = this.sessionList.findIndex((s) => s.id === session.id);
+    const shouldKeepLocalMessages = Boolean(
+      session.id &&
+        isLocalTimestamp(session.id) &&
+        !this.getRealIdForSession(session.id),
+    );
+    const nextSession = {
+      ...session,
+      messages: shouldKeepLocalMessages ? session.messages || [] : [],
+    };
+    const index = this.sessionList.findIndex((s) => s.id === nextSession.id);
 
     if (index > -1) {
-      this.sessionList[index] = { ...this.sessionList[index], ...session };
+      this.sessionList[index] = { ...this.sessionList[index], ...nextSession };
 
       const existing = this.sessionList[index] as ExtendedSession;
       if (isLocalTimestamp(existing.id) && !existing.realId) {
         const tempId = existing.id;
-        this.getSessionList().then(() => {
+        await this.getSessionList().then(() => {
           const { list, realId } = resolveRealId(this.sessionList, tempId);
           if (realId) {
             this.sessionList = list;
-            this.onSessionIdResolved?.(tempId, realId);
+            rememberResolvedChatId(tempId, realId);
+            this.notifyResolvedSessionIfActive(tempId, realId);
           }
         });
       } else {
-        const tempId = session.id!;
+        const tempId = nextSession.id!;
         await this.getSessionList().then(() => {
           const { list, realId } = resolveRealId(this.sessionList, tempId);
           this.sessionList = list;
           if (realId) {
-            this.onSessionIdResolved?.(tempId, realId);
+            rememberResolvedChatId(tempId, realId);
+            this.notifyResolvedSessionIfActive(tempId, realId);
           }
         });
       }
     } else {
-      const tempId = session.id!;
+      if (shouldKeepLocalMessages) {
+        this.sessionList = mergePendingSession(
+          this.sessionList,
+          nextSession as ExtendedSession,
+        );
+      }
+
+      const tempId = nextSession.id!;
       await this.getSessionList().then(() => {
         const { list, realId } = resolveRealId(this.sessionList, tempId);
         this.sessionList = list;
         if (realId) {
-          this.onSessionIdResolved?.(tempId, realId);
+          rememberResolvedChatId(tempId, realId);
+          this.notifyResolvedSessionIfActive(tempId, realId);
         }
       });
     }
@@ -845,7 +1155,7 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
 
   async createSession(session: Partial<IAgentScopeRuntimeWebUISession>) {
     // 生成临时时间戳ID（只在内存中使用，不添加到历史列表）
-    session.id = Date.now().toString();
+    session.id = createLocalSessionId();
 
     // ==================== userId 统一整改 (Kun He) ====================
     // 使用 getUserId() 获取用户 ID
@@ -864,8 +1174,7 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     // 等消息发送完成后，后端返回真实UUID时才创建历史记录
     this.updateWindowVariables(extended);
 
-    // 保存到 pendingSession，等消息发送完成后使用
-    this.pendingSession = extended;
+    this.sessionList = mergePendingSession(this.sessionList, extended);
 
     // 触发回调（URL 清空，不导航到临时ID）
     this.onSessionCreated?.(session.id);
@@ -884,13 +1193,18 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
       | undefined;
 
     const deleteId =
-      existing?.realId ?? (isLocalTimestamp(sessionId) ? null : sessionId);
+      this.getChatIdForSession(sessionId) ??
+      (isLocalTimestamp(sessionId) ? null : sessionId);
 
     if (deleteId) await api.deleteChat(deleteId);
 
     this.sessionList = this.sessionList.filter((s) => s.id !== sessionId);
 
     const resolvedId = existing?.realId ?? sessionId;
+    forgetResolvedChatId(sessionId);
+    if (deleteId) {
+      forgetResolvedChatIdsForChat(deleteId);
+    }
     this.onSessionRemoved?.(resolvedId);
 
     return [...this.sessionList];

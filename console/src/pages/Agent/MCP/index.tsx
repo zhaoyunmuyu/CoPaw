@@ -1,11 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Empty, Modal, Input } from "@agentscope-ai/design";
-import { PlusOutlined } from "@ant-design/icons";
+import { PlusOutlined, SendOutlined } from "@ant-design/icons";
+import api from "../../../api";
 import type { MCPClientInfo } from "../../../api/types";
+import { TenantTargetPicker } from "../../../components/TenantTargetPicker";
+import { useAppMessage } from "../../../hooks/useAppMessage";
 import { MCPClientCard } from "./components";
 import { useMCP } from "./useMCP";
 import { useTranslation } from "react-i18next";
 import { PageHeader } from "@/components/PageHeader";
+import { useAgentStore } from "../../../stores/agentStore";
+import { useIframeStore } from "../../../stores/iframeStore";
+import { getUserId } from "../../../utils/identity";
 import styles from "./index.module.less";
 
 type MCPTransport = "stdio" | "streamable_http" | "sse";
@@ -54,6 +60,10 @@ function normalizeClientData(key: string, rawData: any) {
 
 function MCPPage() {
   const { t } = useTranslation();
+  const { message } = useAppMessage();
+  const { selectedAgent } = useAgentStore();
+  const currentTenantId = getUserId();
+  const manager = useIframeStore((state) => state.manager);
   const {
     clients,
     loading,
@@ -61,9 +71,19 @@ function MCPPage() {
     deleteClient,
     createClient,
     updateClient,
+    loadClients,
   } = useMCP();
   const [hoverKey, setHoverKey] = useState<string | null>(null);
+  const [selectedClientKeys, setSelectedClientKeys] = useState<string[]>([]);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [distributionOpen, setDistributionOpen] = useState(false);
+  const [distributionLoading, setDistributionLoading] = useState(false);
+  const [distributionSubmitting, setDistributionSubmitting] = useState(false);
+  const [distributionTenantIds, setDistributionTenantIds] = useState<string[]>([]);
+  const [selectedTenantIds, setSelectedTenantIds] = useState<string[]>([]);
+  const sanitizedSelectedTenantIds = selectedTenantIds.filter(
+    (tenantId) => tenantId !== currentTenantId,
+  );
   const [newClientJson, setNewClientJson] = useState(`{
   "mcpServers": {
     "example-client": {
@@ -87,6 +107,122 @@ function MCPPage() {
   const handleDelete = async (client: MCPClientInfo, e?: React.MouseEvent) => {
     e?.stopPropagation();
     await deleteClient(client);
+  };
+
+  useEffect(() => {
+    setSelectedClientKeys((current) =>
+      current.filter((clientKey) =>
+        clients.some((client) => client.key === clientKey),
+      ),
+    );
+  }, [clients]);
+
+  const handleToggleSelectedClient = (clientKey: string) => {
+    setSelectedClientKeys((current) =>
+      current.includes(clientKey)
+        ? current.filter((item) => item !== clientKey)
+        : [...current, clientKey],
+    );
+  };
+
+  const openDistributionModal = async () => {
+    if (!selectedClientKeys.length) return;
+
+    setDistributionOpen(true);
+    setSelectedTenantIds([]);
+    setDistributionLoading(true);
+    try {
+      const result = await api.listMCPDistributionTenants();
+      setDistributionTenantIds(
+        (result.tenant_ids || []).filter(
+          (tenantId) => tenantId !== currentTenantId,
+        ),
+      );
+    } catch (error) {
+      const errMsg =
+        error instanceof Error ? error.message : t("mcp.distributeFailed");
+      message.error(errMsg);
+    } finally {
+      setDistributionLoading(false);
+    }
+  };
+
+  const closeDistributionModal = () => {
+    if (distributionSubmitting) return;
+    setDistributionOpen(false);
+    setSelectedTenantIds([]);
+  };
+
+  const handleDistributeSelectedClients = async () => {
+    if (!selectedClientKeys.length || !sanitizedSelectedTenantIds.length) return;
+
+    setDistributionSubmitting(true);
+    try {
+      const result = await api.distributeMCPClientsToDefaultAgents({
+        client_keys: selectedClientKeys,
+        target_tenant_ids: sanitizedSelectedTenantIds,
+        overwrite: true,
+      });
+      const items = Array.isArray(result.results) ? result.results : [];
+      const succeeded = items.filter((item) => item.success);
+      const failed = items.filter((item) => !item.success);
+
+      if (succeeded.length > 0) {
+        const lines = succeeded.map((item) => {
+          const suffix = item.bootstrapped
+            ? ` (${t("mcp.distributeBootstrapped")})`
+            : "";
+          return `• ${item.tenant_id}${suffix}`;
+        });
+        message.success(t("mcp.distributeSuccess", { count: succeeded.length }));
+        Modal.confirm({
+          title: t("mcp.distributeResultTitle"),
+          content: (
+            <div style={{ display: "grid", gap: 8 }}>
+              <div>{t("mcp.distributeSuccessList")}</div>
+              <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+                {lines.join("\n")}
+              </pre>
+              {failed.length > 0 ? (
+                <div>{t("mcp.distributeFailureInlineHint")}</div>
+              ) : null}
+            </div>
+          ),
+          okText: t("common.close"),
+          cancelButtonProps: { style: { display: "none" } },
+        });
+      }
+
+      if (failed.length > 0) {
+        const failureLines = failed.map(
+          (item) => `• ${item.tenant_id}: ${item.error || t("mcp.distributeFailed")}`,
+        );
+        if (succeeded.length === 0) {
+          message.error(t("mcp.distributeFailed"));
+        }
+        Modal.confirm({
+          title: t("mcp.distributePartialFailureTitle"),
+          content: (
+            <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+              {failureLines.join("\n")}
+            </pre>
+          ),
+          okText: t("common.close"),
+          cancelButtonProps: { style: { display: "none" } },
+        });
+      }
+
+      setDistributionOpen(false);
+      setSelectedTenantIds([]);
+      setSelectedClientKeys([]);
+      await loadClients();
+    } catch (error) {
+      const errMsg =
+        error instanceof Error ? error.message : t("mcp.distributeFailed");
+      message.error(errMsg);
+    } finally {
+      setDistributionSubmitting(false);
+    }
   };
 
   const handleCreateClient = async () => {
@@ -166,13 +302,27 @@ function MCPPage() {
       <PageHeader
         items={[{ title: t("nav.agent") }, { title: t("mcp.title") }]}
         extra={
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => setCreateModalOpen(true)}
-          >
-            {t("mcp.create")}
-          </Button>
+          <div className={styles.headerActions}>
+            {selectedClientKeys.length > 0 ? (
+              <span className={styles.selectionSummary}>
+                {t("mcp.selectedCount", { count: selectedClientKeys.length })}
+              </span>
+            ) : null}
+            <Button
+              disabled={!manager || !selectedClientKeys.length}
+              icon={<SendOutlined />}
+              onClick={openDistributionModal}
+            >
+              {t("mcp.distribute")}
+            </Button>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => setCreateModalOpen(true)}
+            >
+              {t("mcp.create")}
+            </Button>
+          </div>
         }
       />
 
@@ -191,6 +341,8 @@ function MCPPage() {
               onToggle={handleToggleEnabled}
               onDelete={handleDelete}
               onUpdate={updateClient}
+              selected={selectedClientKeys.includes(client.key)}
+              onSelectToggle={handleToggleSelectedClient}
               isHovered={hoverKey === client.key}
               onMouseEnter={() => setHoverKey(client.key)}
               onMouseLeave={() => setHoverKey(null)}
@@ -198,6 +350,44 @@ function MCPPage() {
           ))}
         </div>
       )}
+
+      <Modal
+        open={distributionOpen}
+        title={t("mcp.distributeTitle")}
+        onCancel={closeDistributionModal}
+        onOk={handleDistributeSelectedClients}
+        okButtonProps={{
+          disabled: !sanitizedSelectedTenantIds.length,
+          loading: distributionSubmitting,
+        }}
+      >
+        <div style={{ display: "grid", gap: 12 }}>
+          <div style={{ color: "#666", fontSize: 12 }}>{t("mcp.distributeHint")}</div>
+          <div style={{ fontWeight: 500 }}>
+            {t("mcp.distributeCurrentSource", {
+              agent: selectedAgent || "default",
+              count: selectedClientKeys.length,
+            })}
+          </div>
+          <div className={styles.distributionWarning}>
+            <div>{t("mcp.distributeDefaultAgentWarning")}</div>
+            <div>{t("mcp.distributeOverwriteWarning")}</div>
+          </div>
+          {distributionLoading ? (
+            <div>{t("common.loading")}</div>
+          ) : (
+            <TenantTargetPicker
+              tenantIds={distributionTenantIds}
+              selectedTenantIds={selectedTenantIds}
+              onChange={(tenantIds) =>
+                setSelectedTenantIds(
+                  tenantIds.filter((tenantId) => tenantId !== currentTenantId),
+                )
+              }
+            />
+          )}
+        </div>
+      </Modal>
 
       <Modal
         title={t("mcp.create")}

@@ -548,7 +548,10 @@ class CronManager:  # pylint: disable=too-many-public-methods
 
         from ...config.utils import get_heartbeat_config
 
-        hb = get_heartbeat_config(self._agent_id)
+        hb = get_heartbeat_config(
+            self._agent_id,
+            tenant_id=self._tenant_id,
+        )
         if getattr(hb, "enabled", False):
             trigger = self._build_heartbeat_trigger(hb.every)
             self._scheduler.add_job(
@@ -774,6 +777,26 @@ class CronManager:  # pylint: disable=too-many-public-methods
                 continue
 
             state = self.get_state(job.id)
+            # Use persisted last_run_at from job.meta if memory state is empty
+            job_meta = job.meta or {}
+            persisted_last_run = job_meta.get("task_last_scheduled_run_at")
+            if persisted_last_run and not state.last_run_at:
+                # Restore state from persisted meta (may be string from JSON)
+                if isinstance(persisted_last_run, str):
+                    # Parse ISO format datetime string
+                    try:
+                        persisted_last_run = datetime.fromisoformat(
+                            persisted_last_run.replace("Z", "+00:00"),
+                        )
+                    except ValueError:
+                        logger.warning(
+                            "Failed to parse task_last_scheduled_run_at: %s",
+                            persisted_last_run,
+                        )
+                        persisted_last_run = None
+                state.last_run_at = persisted_last_run
+                if job_meta.get("task_has_scheduled_result"):
+                    state.last_status = "success"
 
             try:
                 run_times = self._calculate_run_times_on_date(job, date)
@@ -800,7 +823,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
                             "last_run_at": state.last_run_at,
                             "last_status": state.last_status,
                             "time_info": time_info,
-                            "result_url": "",
+                            "meta": job.meta or {},
                         },
                     )
 
@@ -820,7 +843,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
                         "last_run_at": state.last_run_at,
                         "last_status": state.last_status,
                         "time_info": "等待执行",
-                        "result_url": "",
+                        "meta": job.meta or {},
                     },
                 )
 
@@ -1315,6 +1338,8 @@ class CronManager:  # pylint: disable=too-many-public-methods
             if creator != user_id:
                 return False, False
             meta = dict(job.meta or {})
+            if meta.get("pause_reason"):
+                return False, True
             unread_count = int(meta.get("task_unread_execution_count", 0) or 0)
             if unread_count == 0:
                 return False, True
@@ -2073,6 +2098,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
             runner=self._runner,
             channel_manager=self._channel_manager,
             agent_id=self._agent_id,
+            tenant_id=self._tenant_id,
             workspace_dir=workspace_dir,
         )
 

@@ -31,15 +31,10 @@ def test_broadcast_modal_supports_discovered_and_manual_tenant_selection() -> (
     content = BROADCAST_MODAL.read_text(encoding="utf-8")
 
     assert "tenantIds: string[];" in content
-    assert "function parseManualTenantIds(input: string): string[]" in content
-    assert ".split(/[\\s,]+/)" in content
-    assert "const targetTenantIds = Array.from(" in content
-    assert "[...selectedTenantIds, ...manualTenantIds]" in content
-    assert 't("skillPool.selectWorkspaces")' in content
-    assert 't("skillPool.allWorkspaces")' in content
-    assert 't("skillPool.manualTenantIds")' in content
-    assert 't("skillPool.manualTenantHint")' in content
-    assert 'placeholder={t("skillPool.manualTenantPlaceholder")}' in content
+    assert 'from "../../../../../components/TenantTargetPicker"' in content
+    assert "<TenantTargetPicker" in content
+    assert "selectedTenantIds={selectedTenantIds}" in content
+    assert "onChange={setSelectedTenantIds}" in content
     assert (
         "onOk={() => onConfirm(selectedSkillNames, targetTenantIds)}"
         in content

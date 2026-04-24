@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Featured case API router."""
+"""Featured case API router (simplified - merged tables)."""
 
 import logging
 from typing import Optional
@@ -7,10 +7,6 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from .models import (
-    CaseConfigCreate,
-    CaseConfigDetail,
-    CaseConfigListResponse,
-    CaseConfigListItem,
     FeaturedCaseCreate,
     FeaturedCaseListResponse,
     FeaturedCaseUpdate,
@@ -101,7 +97,7 @@ async def get_case_detail(case_id: str) -> dict:
     return case.model_dump()
 
 
-# ==================== Admin endpoints - Case definitions ====================
+# ==================== Admin endpoints ====================
 
 
 @router.get(
@@ -110,12 +106,30 @@ async def get_case_detail(case_id: str) -> dict:
     summary="List all cases (admin)",
 )
 async def list_all_cases(
+    request: Request,
+    bbk_id: Optional[str] = Query(None, description="Filter by BBK ID"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
 ) -> FeaturedCaseListResponse:
-    """List all case definitions."""
+    """List all cases for the current source_id context.
+
+    Headers:
+        X-Source-Id: Source ID (required, used as filter)
+    """
+    source_id = request.headers.get("X-Source-Id")
+    if not source_id:
+        raise HTTPException(
+            status_code=400,
+            detail="X-Source-Id header required",
+        )
+
     service = get_service()
-    cases, total = await service.list_cases(page=page, page_size=page_size)
+    cases, total = await service.list_cases(
+        source_id=source_id,
+        bbk_id=bbk_id,
+        page=page,
+        page_size=page_size,
+    )
     return FeaturedCaseListResponse(cases=cases, total=total)
 
 
@@ -123,11 +137,21 @@ async def list_all_cases(
     "/admin/cases",
     summary="Create case (admin)",
 )
-async def create_case(case: FeaturedCaseCreate) -> dict:
-    """Create case definition."""
+async def create_case(request: Request, case: FeaturedCaseCreate) -> dict:
+    """Create case definition.
+
+    source_id comes from X-Source-Id header (not from request body).
+    """
+    source_id = request.headers.get("X-Source-Id")
+    if not source_id:
+        raise HTTPException(
+            status_code=400,
+            detail="X-Source-Id header required",
+        )
+
     service = get_service()
     try:
-        created = await service.create_case(case)
+        created = await service.create_case(source_id, case)
         return {"success": True, "data": created.model_dump()}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
@@ -156,88 +180,6 @@ async def delete_case(case_id: str) -> dict:
     service = get_service()
     try:
         await service.delete_case(case_id)
-        return {"success": True}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-
-# ==================== Admin endpoints - Case configs ====================
-
-
-@router.get(
-    "/admin/configs",
-    response_model=CaseConfigListResponse,
-    summary="List case configs (admin)",
-)
-async def list_configs(
-    source_id: Optional[str] = Query(None, description="Filter by source_id"),
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-) -> CaseConfigListResponse:
-    """List case configs with pagination."""
-    service = get_service()
-    configs, total = await service.list_configs(
-        source_id=source_id,
-        page=page,
-        page_size=page_size,
-    )
-    config_items = [
-        CaseConfigListItem(
-            source_id=c["source_id"],
-            bbk_id=c["bbk_id"],
-            case_count=c["case_count"],
-        )
-        for c in configs
-    ]
-    return CaseConfigListResponse(configs=config_items, total=total)
-
-
-@router.get(
-    "/admin/configs/detail",
-    summary="Get config detail (admin)",
-)
-async def get_config_detail(
-    source_id: str = Query(..., description="Source ID"),
-    bbk_id: Optional[str] = Query(None, description="BBK ID"),
-) -> CaseConfigDetail:
-    """Get config detail with case_ids."""
-    service = get_service()
-    case_ids = await service.get_config_cases(source_id, bbk_id)
-    if not case_ids:
-        raise HTTPException(status_code=404, detail="Config not found")
-    return CaseConfigDetail(
-        source_id=source_id,
-        bbk_id=bbk_id,
-        case_ids=case_ids,
-    )
-
-
-@router.put(
-    "/admin/configs",
-    summary="Upsert case config (admin)",
-)
-async def upsert_config(config: CaseConfigCreate) -> dict:
-    """Upsert case config for dimension."""
-    service = get_service()
-    try:
-        await service.upsert_config(config)
-        return {"success": True}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-
-@router.delete(
-    "/admin/configs",
-    summary="Delete case config (admin)",
-)
-async def delete_config(
-    source_id: str = Query(..., description="Source ID"),
-    bbk_id: Optional[str] = Query(None, description="BBK ID"),
-) -> dict:
-    """Delete case config for dimension."""
-    service = get_service()
-    try:
-        await service.delete_config(source_id, bbk_id)
         return {"success": True}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

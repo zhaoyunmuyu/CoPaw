@@ -31,7 +31,7 @@ export const DEFAULT_FORM_VALUES = {
   },
   runtime: {
     max_concurrency: 1,
-    timeout_seconds: 120,
-    misfire_grace_seconds: 60,
+    timeout_seconds: 7200,
+    misfire_grace_seconds: 300,
   },
 };

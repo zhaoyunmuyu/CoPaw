@@ -67,6 +67,7 @@ import {
 } from "./utils";
 import { deriveChatTaskState, shouldMarkTaskReadOnOpen } from "./taskJobs";
 import { shouldRefreshCurrentTaskMessages } from "./taskMessageRefresh";
+import { matchesResolvedChatId } from "./sessionApi/resolvedSessionMapping";
 
 import RuntimeRequestCard from "./components/RuntimeRequestCard";
 import { FOLLOW_UP_SUBMIT_FAILED_EVENT } from "@/components/agentscope-chat/AgentScopeRuntimeWebUI/core/Chat/hooks/followUpSubmit";
@@ -87,6 +88,12 @@ interface SessionInfo {
   session_id?: string;
   user_id?: string;
   channel?: string;
+}
+
+interface ChatRequestTarget {
+  session_id?: string;
+  logical_session_id?: string;
+  chat_id?: string | null;
 }
 
 interface CustomWindow extends Window {
@@ -386,7 +393,7 @@ export default function ChatPage() {
   // Register session API event callbacks for URL synchronization
 
   useEffect(() => {
-    sessionApi.onSessionIdResolved = (realId) => {
+    sessionApi.onSessionIdResolved = (_tempId, realId) => {
       if (!isChatActiveRef.current) return;
       // Update URL when realId is resolved, regardless of current chatId
       // (chatId may be undefined if URL was cleared in onSessionCreated)
@@ -423,7 +430,14 @@ export default function ChatPage() {
       // 3. A's request completes → onSessionSelected(A) fires
       // 4. Should NOT navigate back to A since user already chose B
       const currentUrlChatId = chatIdRef.current;
-      if (currentUrlChatId && currentUrlChatId !== targetId) {
+      if (
+        currentUrlChatId &&
+        currentUrlChatId !== targetId &&
+        !matchesResolvedChatId({
+          requestedSessionId: currentUrlChatId,
+          chatId: targetId,
+        })
+      ) {
         return;
       }
 
@@ -473,7 +487,7 @@ export default function ChatPage() {
 
   // ==================== URL 导航参数 (Kun He, 2026-04-15) ====================
   // 处理 iframe URL 传递的 sessionId/taskId 参数，自动跳转到对应聊天页面
-  // sessionId: 直接导航到 /chat/:sessionId
+  // sessionId: 可传 backend chat.id 或逻辑 session_id，后续由初始选择逻辑解析
   // taskId: 查找 task.chat_id 后导航
   const sessionIdRef = useRef<string | null>(null);
   const taskIdRef = useRef<string | null>(null);
@@ -750,11 +764,47 @@ export default function ChatPage() {
     [t],
   );
 
+  const resolveLogicalRequestSessionId = useCallback(
+    (
+      target: ChatRequestTarget,
+      session?: SessionInfo,
+    ): string => {
+      if (target.logical_session_id) {
+        return target.logical_session_id;
+      }
+
+      return sessionApi.getLogicalSessionId(
+        target.session_id || window.currentSessionId || session?.session_id || "",
+      );
+    },
+    [],
+  );
+
+  const resolveRequestChatId = useCallback(
+    (
+      target: ChatRequestTarget,
+      logicalSessionId: string,
+    ): string => {
+      return (
+        target.chat_id ||
+        sessionApi.getChatIdForSession(logicalSessionId) ||
+        sessionApi.getChatIdForSession(target.session_id || "") ||
+        target.session_id ||
+        chatIdRef.current ||
+        logicalSessionId
+      );
+    },
+    [],
+  );
+
   const customFetch = useCallback(
     async (data: {
       input?: Array<Record<string, unknown>>;
       biz_params?: Record<string, unknown>;
       signal?: AbortSignal;
+      session_id?: string;
+      logical_session_id?: string;
+      chat_id?: string | null;
     }): Promise<Response> => {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
@@ -778,7 +828,13 @@ export default function ChatPage() {
         return buildModelError();
       }
 
-      const { input = [], biz_params } = data;
+      const {
+        input = [],
+        biz_params,
+        session_id,
+        logical_session_id,
+        chat_id,
+      } = data;
       const session: SessionInfo = input[input.length - 1]?.session || {};
       const lastInput = input.slice(-1);
       const lastMsg = lastInput[0];
@@ -792,9 +848,18 @@ export default function ChatPage() {
             ]
           : lastInput;
 
+      const resolvedLogicalSessionId = resolveLogicalRequestSessionId(
+        {
+          session_id,
+          logical_session_id,
+          chat_id,
+        },
+        session,
+      );
+
       const requestBody = {
         input: rewrittenInput,
-        session_id: window.currentSessionId || session?.session_id || "",
+        session_id: resolvedLogicalSessionId,
         // ==================== userId 统一整改 (Kun He) ====================
         // 使用 getUserId()/getChannel() 获取，优先级：iframe > window > session > default
         user_id: getUserId(session?.user_id),
@@ -804,10 +869,14 @@ export default function ChatPage() {
         ...biz_params,
       };
 
-      const backendChatId =
-        sessionApi.getRealIdForSession(requestBody.session_id) ??
-        chatIdRef.current ??
-        requestBody.session_id;
+      const backendChatId = resolveRequestChatId(
+        {
+          session_id,
+          logical_session_id: resolvedLogicalSessionId,
+          chat_id,
+        },
+        requestBody.session_id,
+      );
       if (backendChatId) {
         const userText = rewrittenInput
           .filter((m: InputMessage) => m.role === "user")
@@ -828,7 +897,7 @@ export default function ChatPage() {
 
       return response;
     },
-    [selectedAgent],
+    [resolveLogicalRequestSessionId, resolveRequestChatId, selectedAgent],
   );
 
   const handleFileUpload = useCallback(
@@ -992,7 +1061,7 @@ export default function ChatPage() {
             greeting={
               typeof greeting === "string"
                 ? greeting
-                : "你好，你的专属小龙虾，前来报到！"
+                : "你好，有什么可以帮您？"
             }
             onSubmit={(data) => onSubmit(data)}
           />
@@ -1052,27 +1121,41 @@ export default function ChatPage() {
         replaceMediaURL: (url: string) => {
           return toDisplayUrl(url);
         },
-        cancel(data: { session_id: string }) {
-          const chatId =
-            sessionApi.getRealIdForSession(data.session_id) ?? data.session_id;
+        cancel(data: {
+          session_id: string;
+          logical_session_id?: string;
+          chat_id?: string | null;
+        }) {
+          const logicalSessionId = resolveLogicalRequestSessionId(data);
+          const chatId = resolveRequestChatId(data, logicalSessionId);
           if (chatId) {
             chatApi.stopChat(chatId).catch((err) => {
               console.error("Failed to stop chat:", err);
             });
           }
         },
-        async reconnect(data: { session_id: string; signal?: AbortSignal }) {
+        async reconnect(data: {
+          session_id: string;
+          signal?: AbortSignal;
+          logical_session_id?: string;
+          chat_id?: string | null;
+        }) {
           const headers: Record<string, string> = {
             "Content-Type": "application/json",
             ...buildAuthHeaders(),
           };
+          const logicalSessionId = resolveLogicalRequestSessionId(data);
+          const reconnectSessionId = resolveRequestChatId(
+            data,
+            logicalSessionId,
+          );
 
           return fetch(getApiUrl("/console/chat"), {
             method: "POST",
             headers,
             body: JSON.stringify({
               reconnect: true,
-              session_id: window.currentSessionId || data.session_id,
+              session_id: reconnectSessionId,
               // ==================== userId 统一整改 (Kun He) ====================
               // 使用 getUserId()/getChannel() 获取
               user_id: getUserId(),
@@ -1113,6 +1196,8 @@ export default function ChatPage() {
     isComposingRef,
     isDark,
     multimodalCaps,
+    resolveLogicalRequestSessionId,
+    resolveRequestChatId,
     t,
   ]);
 

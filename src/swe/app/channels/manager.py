@@ -23,6 +23,7 @@ from .command_registry import CommandRegistry
 from .registry import get_channel_registry
 from .unified_queue_manager import UnifiedQueueManager
 from ...config import get_available_channels
+from ...constant import CHANNEL_CONSUME_TIMEOUT
 
 if TYPE_CHECKING:
     from ....config.config import Config
@@ -412,7 +413,20 @@ class ChannelManager:
                         break
 
                 # Process batch (with merge logic)
-                await _process_batch(ch, batch)
+                try:
+                    await asyncio.wait_for(
+                        _process_batch(ch, batch),
+                        timeout=CHANNEL_CONSUME_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    logger.error(
+                        "Consumer timeout: channel=%s session=%s "
+                        "batch_size=%d timeout=%.0fs",
+                        channel_id,
+                        session_id[:30],
+                        len(batch),
+                        CHANNEL_CONSUME_TIMEOUT,
+                    )
 
                 # Update processed count
                 if self._queue_manager is not None:

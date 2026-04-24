@@ -1,5 +1,5 @@
 /**
- * Featured Cases API types
+ * Featured Cases API types (simplified - merged tables)
  */
 
 export interface CaseStep {
@@ -15,6 +15,8 @@ export interface CaseDetail {
 
 export interface FeaturedCase {
   id: number;
+  source_id: string; // From X-Source-Id header
+  bbk_id?: string | null;
   case_id: string;
   label: string;
   value: string;
@@ -22,12 +24,15 @@ export interface FeaturedCase {
   iframe_url?: string;
   iframe_title?: string;
   steps?: CaseStep[];
+  sort_order: number;
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
 }
 
 export interface FeaturedCaseCreate {
+  // source_id NOT included - comes from X-Source-Id header
+  bbk_id?: string | null;
   case_id: string;
   label: string;
   value: string;
@@ -35,44 +40,19 @@ export interface FeaturedCaseCreate {
   iframe_url?: string;
   iframe_title?: string;
   steps?: CaseStep[];
+  sort_order?: number;
 }
 
 export interface FeaturedCaseUpdate {
+  bbk_id?: string | null;
   label?: string;
   value?: string;
   image_url?: string;
   iframe_url?: string;
   iframe_title?: string;
   steps?: CaseStep[];
+  sort_order?: number;
   is_active?: boolean;
-}
-
-export interface CaseConfigItem {
-  case_id: string;
-  sort_order: number;
-}
-
-export interface CaseConfigCreate {
-  source_id: string;
-  bbk_id?: string | null;
-  case_ids: CaseConfigItem[];
-}
-
-export interface CaseConfigListItem {
-  source_id: string;
-  bbk_id: string | null;
-  case_count: number;
-}
-
-export interface CaseConfigListResponse {
-  configs: CaseConfigListItem[];
-  total: number;
-}
-
-export interface CaseConfigDetail {
-  source_id: string;
-  bbk_id: string | null;
-  case_ids: string[];
 }
 
 export interface FeaturedCaseListResponse {

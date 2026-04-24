@@ -63,7 +63,8 @@ async def create_channel_service(ws: "Workspace", service):
     if not ws._config.channels:
         return None
 
-    from ...config import Config, update_last_dispatch
+    from ...config.config import Config
+    from ...config.utils import update_last_dispatch
     from ..channels.manager import ChannelManager
     from ..channels.utils import make_process_from_runner
 
@@ -76,6 +77,7 @@ async def create_channel_service(ws: "Workspace", service):
             user_id=user_id,
             session_id=session_id,
             agent_id=ws.agent_id,
+            tenant_id=ws.tenant_id,
         )
 
     cm = ChannelManager.from_config(
@@ -93,7 +95,7 @@ async def create_channel_service(ws: "Workspace", service):
     runner.set_workspace(ws)
 
     return cm
-    # pylint: enable=protected-accesss
+    # pylint: enable=protected-access
 
 
 async def create_agent_config_watcher(ws: "Workspace", _):

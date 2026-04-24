@@ -12,11 +12,14 @@ from ..config.utils import load_config, get_tenant_config_path
 from ..config.context import (
     get_current_tenant_id,
     get_current_user_id,
+    get_current_source_id,
     TenantContextError,
+    resolve_effective_tenant_id,
 )
 from .middleware.tenant_workspace import TenantWorkspaceContext
 
 if TYPE_CHECKING:
+    from ..config.config import AgentProfileConfig
     from .workspace import Workspace
 
 # Context variable to store current agent ID across async calls
@@ -32,6 +35,26 @@ def _resolve_tenant_id(request: Request) -> Optional[str]:
     if tenant_id is None:
         tenant_id = getattr(request.state, "tenant_id", None)
     return tenant_id
+
+
+def _resolve_source_id(request: Request) -> Optional[str]:
+    """Resolve source ID from context or request state."""
+    source_id = get_current_source_id()
+    if source_id is None:
+        source_id = getattr(request.state, "source_id", None)
+    return source_id
+
+
+def _resolve_effective_tenant_id(
+    tenant_id: Optional[str],
+    source_id: Optional[str] = None,
+) -> Optional[str]:
+    """Resolve source-scoped effective tenant without changing logical ID."""
+    if tenant_id is None:
+        return None
+    if tenant_id != "default" or not source_id:
+        return tenant_id
+    return resolve_effective_tenant_id(tenant_id, source_id)
 
 
 def _resolve_user_id(request: Request) -> Optional[str]:
@@ -84,7 +107,10 @@ def _get_cached_workspace(
     return workspace
 
 
-def _get_tenant_aware_config(tenant_id: Optional[str] = None):
+def _get_tenant_aware_config(
+    tenant_id: Optional[str] = None,
+    source_id: Optional[str] = None,
+):
     """Get config with tenant awareness.
 
     When tenant_id is provided, loads config from tenant workspace.
@@ -98,9 +124,12 @@ def _get_tenant_aware_config(tenant_id: Optional[str] = None):
     """
     if tenant_id is None:
         tenant_id = get_current_tenant_id()
-    if tenant_id is None:
+    if source_id is None:
+        source_id = get_current_source_id()
+    effective_tenant_id = _resolve_effective_tenant_id(tenant_id, source_id)
+    if effective_tenant_id is None:
         return load_config()
-    return load_config(get_tenant_config_path(tenant_id))
+    return load_config(get_tenant_config_path(effective_tenant_id))
 
 
 async def get_agent_for_request(
@@ -128,6 +157,8 @@ async def get_agent_for_request(
 
     # Resolve contexts and target agent
     tenant_id = _resolve_tenant_id(request)
+    source_id = _resolve_source_id(request)
+    effective_tenant_id = _resolve_effective_tenant_id(tenant_id, source_id)
     user_id = _resolve_user_id(request)
     target_agent_id, explicit_agent_requested = _resolve_target_agent_id(
         request,
@@ -144,7 +175,7 @@ async def get_agent_for_request(
         return workspace
 
     # Load config and determine target agent
-    config = _get_tenant_aware_config(tenant_id)
+    config = _get_tenant_aware_config(tenant_id, source_id=source_id)
     if not target_agent_id:
         target_agent_id = config.agents.active_agent or "default"
 
@@ -172,6 +203,10 @@ async def get_agent_for_request(
     # Store tenant/user context in request state for downstream use
     if tenant_id:
         request.state.tenant_id = tenant_id
+    if effective_tenant_id:
+        request.state.effective_tenant_id = effective_tenant_id
+    if source_id:
+        request.state.source_id = source_id
     if user_id:
         request.state.user_id = user_id
 
@@ -180,7 +215,7 @@ async def get_agent_for_request(
     try:
         workspace = await manager.get_agent(
             target_agent_id,
-            tenant_id=tenant_id,
+            tenant_id=effective_tenant_id,
         )
         if not workspace:
             raise HTTPException(
@@ -198,6 +233,21 @@ async def get_agent_for_request(
             status_code=500,
             detail=f"Failed to get agent: {str(e)}",
         ) from e
+
+
+async def get_agent_and_config_for_request(
+    request: Request,
+    agent_id: Optional[str] = None,
+) -> tuple["Workspace", "AgentProfileConfig"]:
+    """Resolve the request workspace and authoritative tenant-scoped config."""
+    from ..config.config import load_agent_config
+
+    workspace = await get_agent_for_request(request, agent_id=agent_id)
+    agent_config = load_agent_config(
+        workspace.agent_id,
+        tenant_id=getattr(workspace, "tenant_id", None),
+    )
+    return workspace, agent_config
 
 
 def get_active_agent_id(tenant_id: Optional[str] = None) -> str:
@@ -275,6 +325,7 @@ def get_tenant_workspace_strict(request: Request) -> "Workspace":
 
 __all__ = [
     "get_agent_for_request",
+    "get_agent_and_config_for_request",
     "get_active_agent_id",
     "set_current_agent_id",
     "get_current_agent_id",

@@ -191,10 +191,18 @@ class TenantWorkspacePool:
                     )
 
                 # Record init source mapping
+                # init_source records the direct template source:
+                # - default user: always "default"
+                # - non-default user with source: "default_{source_id}"
+                # - non-default user without source: "default"
+                if tenant_id == "default":
+                    init_source = "default"
+                else:
+                    init_source = initializer.template_name
                 await self._record_init_source_mapping(
                     tenant_id,
                     source_id,
-                    initializer.template_name,
+                    init_source,
                 )
 
                 # Register in pool (no workspace runtime created)

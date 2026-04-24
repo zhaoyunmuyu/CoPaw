@@ -18,9 +18,17 @@ from fastapi import (
 )
 from pydantic import BaseModel, Field
 
-from ...config.context import get_current_tenant_id
+from ...config.context import (
+    get_current_effective_tenant_id,
+)
+from ...config.utils import (
+    get_tenant_working_dir_strict,
+    list_logical_tenant_ids,
+)
+from ...providers.models import ModelSlotConfig
 from ...providers.provider import ProviderInfo, ModelInfo
 from ...providers.provider_manager import ActiveModelsInfo, ProviderManager
+from ..workspace.tenant_initializer import TenantInitializer
 
 
 logger = logging.getLogger(__name__)
@@ -135,6 +143,99 @@ def _validate_model_slot(
                 f"'{provider_id}'."
             ),
         )
+
+
+def _request_tenant_id(request: Request) -> str | None:
+    return getattr(request.state, "tenant_id", None)
+
+
+def _request_tenant_working_dir(request: Request):
+    return get_tenant_working_dir_strict(_request_tenant_id(request))
+
+
+def _request_source_id(request: Request) -> str | None:
+    return getattr(request.state, "source_id", None)
+
+
+def _validate_target_tenant_id(tenant_id: str) -> str:
+    tenant_id = str(tenant_id or "").strip()
+    if not tenant_id:
+        raise ValueError("tenant_id is required")
+    if len(tenant_id) > 256:
+        raise ValueError(f"Invalid tenant ID format: {tenant_id}")
+    if ".." in tenant_id or "/" in tenant_id or "\\" in tenant_id:
+        raise ValueError(f"Invalid tenant ID format: {tenant_id}")
+    if any(ord(c) < 32 for c in tenant_id):
+        raise ValueError(f"Invalid tenant ID format: {tenant_id}")
+    return tenant_id
+
+
+def _resolve_distribution_source(
+    manager: ProviderManager,
+) -> tuple[ModelSlotConfig, dict]:
+    active_model = manager.get_active_model()
+    if (
+        active_model is None
+        or not active_model.provider_id
+        or not active_model.model
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="No active model configured for the current tenant",
+        )
+
+    provider = manager.get_provider(active_model.provider_id)
+    if provider is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Provider '{active_model.provider_id}' not found.",
+        )
+    if not provider.has_model(active_model.model):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Model '{active_model.model}' not found in provider "
+                f"'{active_model.provider_id}'."
+            ),
+        )
+
+    return active_model, provider.model_dump()
+
+
+async def _distribute_active_model_to_tenant(
+    *,
+    source_working_dir,
+    target_tenant_id: str,
+    provider_payload: dict,
+    source_active_model: ModelSlotConfig,
+    source_id: str | None,
+) -> ActiveModelDistributionTenantResult:
+    initializer = TenantInitializer(
+        source_working_dir.parent,
+        target_tenant_id,
+        source_id=source_id,
+    )
+    was_bootstrapped = initializer.has_seeded_bootstrap()
+    if not was_bootstrapped:
+        initializer.ensure_seeded_bootstrap()
+
+    ProviderManager.ensure_tenant_provider_storage(target_tenant_id)
+    target_manager = ProviderManager.get_instance(target_tenant_id)
+    target_manager.overwrite_provider_payload(provider_payload)
+    await target_manager.activate_model(
+        source_active_model.provider_id,
+        source_active_model.model,
+    )
+    return ActiveModelDistributionTenantResult(
+        tenant_id=target_tenant_id,
+        success=True,
+        bootstrapped=not was_bootstrapped,
+        provider_updated=source_active_model.provider_id,
+        active_llm_updated=ModelSlotConfig(
+            provider_id=source_active_model.provider_id,
+            model=source_active_model.model,
+        ),
+    )
 
 
 # Agent-level model configuration is deprecated
@@ -266,6 +367,31 @@ class DiscoverModelsResponse(BaseModel):
     added_count: int = Field(
         default=0,
         description="How many new models were added into provider config",
+    )
+
+
+class DistributionTenantListResponse(BaseModel):
+    tenant_ids: List[str] = Field(default_factory=list)
+
+
+class ActiveModelDistributionRequest(BaseModel):
+    target_tenant_ids: List[str] = Field(default_factory=list)
+    overwrite: bool = Field(...)
+
+
+class ActiveModelDistributionTenantResult(BaseModel):
+    tenant_id: str = Field(...)
+    success: bool = Field(...)
+    bootstrapped: bool = Field(default=False)
+    provider_updated: Optional[str] = Field(default=None)
+    active_llm_updated: ModelSlotConfig | None = Field(default=None)
+    error: Optional[str] = Field(default=None)
+
+
+class ActiveModelDistributionResponse(BaseModel):
+    source_active_llm: ModelSlotConfig
+    results: List[ActiveModelDistributionTenantResult] = Field(
+        default_factory=list,
     )
 
 
@@ -540,6 +666,75 @@ async def set_active_model(
     )
 
 
+@router.get(
+    "/distribution/tenants",
+    response_model=DistributionTenantListResponse,
+    summary="List discovered tenants for model distribution",
+)
+async def list_active_model_distribution_tenants(
+    request: Request,
+) -> (DistributionTenantListResponse):
+    return DistributionTenantListResponse(
+        tenant_ids=await list_logical_tenant_ids(
+            _request_source_id(request),
+            source_filter=True,
+        ),
+    )
+
+
+@router.post(
+    "/distribution/active-llm",
+    response_model=ActiveModelDistributionResponse,
+    summary="Distribute current tenant active model to target tenants",
+)
+async def distribute_active_model(
+    request: Request,
+    body: ActiveModelDistributionRequest = Body(...),
+    manager: ProviderManager = Depends(get_provider_manager),
+) -> ActiveModelDistributionResponse:
+    if not body.overwrite:
+        raise HTTPException(
+            status_code=400,
+            detail="overwrite=true is required for active-model distribution",
+        )
+    if not body.target_tenant_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No target tenant IDs provided",
+        )
+
+    source_active_model, provider_payload = _resolve_distribution_source(
+        manager,
+    )
+    source_working_dir = _request_tenant_working_dir(request)
+    source_id = _request_source_id(request)
+    results: list[ActiveModelDistributionTenantResult] = []
+    for tenant_id in body.target_tenant_ids:
+        try:
+            validated_tenant_id = _validate_target_tenant_id(tenant_id)
+            result = await _distribute_active_model_to_tenant(
+                source_working_dir=source_working_dir,
+                target_tenant_id=validated_tenant_id,
+                provider_payload=provider_payload,
+                source_active_model=source_active_model,
+                source_id=source_id,
+            )
+            results.append(result)
+        except Exception as exc:
+            results.append(
+                ActiveModelDistributionTenantResult(
+                    tenant_id=str(tenant_id),
+                    success=False,
+                    error=str(exc),
+                ),
+            )
+
+    return ActiveModelDistributionResponse(
+        source_active_llm=source_active_model,
+        results=results,
+    )
+
+
 # ============================================================================
 # Deprecated: Tenant Model Configuration Endpoints
 # ============================================================================
@@ -573,7 +768,7 @@ async def get_tenant_providers():
         HTTPException: 400 if tenant ID not set in context
     """
     # Get tenant ID from context
-    tenant_id = get_current_tenant_id()
+    tenant_id = get_current_effective_tenant_id()
     if tenant_id is None:
         raise HTTPException(
             status_code=400,

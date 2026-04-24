@@ -24,6 +24,8 @@ interface MCPClientCardProps {
   onToggle: (client: MCPClientInfo, e: React.MouseEvent) => void;
   onDelete: (client: MCPClientInfo, e: React.MouseEvent) => void;
   onUpdate: (key: string, updates: MCPClientUpdate) => Promise<boolean>;
+  selected: boolean;
+  onSelectToggle: (clientKey: string) => void;
   isHovered: boolean;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
@@ -34,6 +36,8 @@ export function MCPClientCard({
   onToggle,
   onDelete,
   onUpdate,
+  selected,
+  onSelectToggle,
   isHovered,
   onMouseEnter,
   onMouseLeave,
@@ -99,7 +103,9 @@ export function MCPClientCard({
         onMouseLeave={onMouseLeave}
         className={`${styles.mcpCard} ${
           client.enabled ? styles.enabledCard : ""
-        } ${isHovered ? styles.hover : styles.normal}`}
+        } ${isHovered ? styles.hover : styles.normal} ${
+          selected ? styles.selectedCard : ""
+        }`}
       >
         <div className={styles.cardHeader}>
           <Tooltip title={client.name}>
@@ -125,6 +131,17 @@ export function MCPClientCard({
         <p className={styles.mcpDescription}>{client.description || "-"}</p>
 
         <div className={styles.cardFooter}>
+          <Button
+            className={`${styles.selectButton} ${
+              selected ? styles.selectButtonActive : ""
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectToggle(client.key);
+            }}
+          >
+            {selected ? t("mcp.selected") : t("mcp.select")}
+          </Button>
           <Button
             className={styles.toggleButton}
             onClick={(e) => {

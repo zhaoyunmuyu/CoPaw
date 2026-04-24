@@ -7,6 +7,11 @@ import { TasksIconSmall, HistoryIconSmall } from '../CollapsedToolbar/icons';
 import Style from './style';
 import { getTaskNextRunText, getTaskSidebarMeta } from '../../../taskJobs';
 import { formatListTime } from '../../../listTimeFormat';
+import {
+  getHistorySessionTargetId,
+  isHistorySessionActive,
+  type HistorySession,
+} from '../historySessions';
 
 export interface ExpandablePanelProps {
   visible: boolean;
@@ -214,16 +219,25 @@ function HistoryContent({
   onClose: () => void;
 }) {
   const navigate = useNavigate();
-  const { setSessionLoading } = useChatAnywhereSessionsState();
+  const { currentSessionId, setSessionLoading } = useChatAnywhereSessionsState();
 
   const handleSessionClick = useCallback(
-    (sessionId: string) => {
+    (session: IAgentScopeRuntimeWebUISession) => {
+      if (isHistorySessionActive(session as HistorySession, currentSessionId)) {
+        return;
+      }
+
+      const targetSessionId = getHistorySessionTargetId(
+        session as HistorySession,
+      );
+      if (!targetSessionId) return;
+
       // 先设置 loading 状态，避免导航后闪现欢迎页
       setSessionLoading(true);
-      navigate(`/chat/${sessionId}`, { replace: true });
+      navigate(`/chat/${targetSessionId}`, { replace: true });
       onClose();
     },
-    [navigate, onClose, setSessionLoading],
+    [currentSessionId, navigate, onClose, setSessionLoading],
   );
 
   return (
@@ -242,7 +256,7 @@ function HistoryContent({
             <div
               key={session.id}
               className="expandable-panel-history-item"
-              onClick={() => handleSessionClick(session.id!)}
+              onClick={() => handleSessionClick(session)}
               role="button"
               tabIndex={0}
             >

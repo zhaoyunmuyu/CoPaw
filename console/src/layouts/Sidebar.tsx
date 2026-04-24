@@ -172,23 +172,17 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       label: t("nav.heartbeat"),
     },
     // {
-    //   key: "cases-management",
-    //   icon: <SparkFileTxtLine size={18} />,
-    //   path: "/cases-management",
-    //   label: t("nav.casesManagement", "案例管理"),
-    // },
-    // {
     //   key: "greeting-management",
     //   icon: <SparkMessageLine size={18} />,
     //   path: "/greeting-management",
     //   label: t("nav.greetingManagement", "引导文案管理"),
     // },
-    // {
-    //   key: "featured-cases-management",
-    //   icon: <SparkFileTxtLine size={18} />,
-    //   path: "/featured-cases-management",
-    //   label: t("nav.featuredCasesManagement", "精选案例管理"),
-    // },
+    {
+      key: "featured-cases-management",
+      icon: <SparkFileTxtLine size={18} />,
+      path: "/featured-cases-management",
+      label: t("nav.featuredCasesManagement", "精选案例管理"),
+    },
     {
       key: "workspace",
       icon: <SparkLocalFileLine size={18} />,
@@ -350,20 +344,15 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
           icon: <SparkVoiceChat01Line size={16} />,
         },
         // {
-        //   key: "cases-management",
-        //   label: collapsed ? null : t("nav.casesManagement", "案例管理"),
-        //   icon: <SparkFileTxtLine size={16} />,
-        // },
-        // {
         //   key: "greeting-management",
         //   label: collapsed ? null : t("nav.greetingManagement", "引导文案管理"),
         //   icon: <SparkMessageLine size={16} />,
         // },
-        // {
-        //   key: "featured-cases-management",
-        //   label: collapsed ? null : t("nav.featuredCasesManagement", "精选案例管理"),
-        //   icon: <SparkFileTxtLine size={16} />,
-        // },
+        {
+          key: "featured-cases-management",
+          label: collapsed ? null : t("nav.featuredCasesManagement", "精选案例管理"),
+          icon: <SparkFileTxtLine size={16} />,
+        },
       ],
     },
     {

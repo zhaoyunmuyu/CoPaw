@@ -1,15 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Featured case service."""
+"""Featured case service (simplified - merged tables)."""
 
 import logging
 from typing import Optional
 
-from .models import (
-    CaseConfigCreate,
-    FeaturedCase,
-    FeaturedCaseCreate,
-    FeaturedCaseUpdate,
-)
+from .models import FeaturedCase, FeaturedCaseCreate, FeaturedCaseUpdate
 from .store import FeaturedCaseStore
 
 logger = logging.getLogger(__name__)
@@ -59,37 +54,57 @@ class FeaturedCaseService:
 
     async def list_cases(
         self,
+        source_id: str,
+        bbk_id: Optional[str] = None,
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[FeaturedCase], int]:
-        """List all cases with pagination.
+        """List cases for a specific source_id.
 
         Args:
+            source_id: Source identifier (required)
+            bbk_id: BBK identifier (optional filter)
             page: Page number (1-based)
             page_size: Items per page
 
         Returns:
             Tuple of (cases list, total count)
         """
-        return await self.store.list_cases(page=page, page_size=page_size)
+        return await self.store.list_cases(
+            source_id=source_id,
+            bbk_id=bbk_id,
+            page=page,
+            page_size=page_size,
+        )
 
-    async def create_case(self, request: FeaturedCaseCreate) -> FeaturedCase:
-        """Create case.
+    async def create_case(
+        self,
+        source_id: str,
+        request: FeaturedCaseCreate,
+    ) -> FeaturedCase:
+        """Create case with source_id from context.
 
         Args:
-            request: Create request
+            source_id: Source identifier (from X-Source-Id header)
+            request: Create request (without source_id)
 
         Returns:
             Created FeaturedCase
 
         Raises:
-            ValueError: If case already exists
+            ValueError: If case already exists for this dimension
         """
-        exists = await self.store.check_case_exists(request.case_id)
+        exists = await self.store.check_case_exists(
+            source_id,
+            request.case_id,
+            request.bbk_id,
+        )
         if exists:
-            raise ValueError(f"案例 {request.case_id} 已存在")
+            raise ValueError(f"案例 {request.case_id} 在当前维度下已存在")
 
         case = FeaturedCase(
+            source_id=source_id,
+            bbk_id=request.bbk_id,
             case_id=request.case_id,
             label=request.label,
             value=request.value,
@@ -97,6 +112,7 @@ class FeaturedCaseService:
             iframe_url=request.iframe_url,
             iframe_title=request.iframe_title,
             steps=request.steps,
+            sort_order=request.sort_order,
             is_active=True,
         )
         return await self.store.create_case(case)
@@ -120,12 +136,14 @@ class FeaturedCaseService:
         """
         updated = await self.store.update_case(
             case_id=case_id,
+            bbk_id=request.bbk_id,
             label=request.label,
             value=request.value,
             image_url=request.image_url,
             iframe_url=request.iframe_url,
             iframe_title=request.iframe_title,
             steps=request.steps,
+            sort_order=request.sort_order,
             is_active=request.is_active,
         )
         if not updated:
@@ -144,82 +162,3 @@ class FeaturedCaseService:
         deleted = await self.store.delete_case(case_id)
         if not deleted:
             raise ValueError("案例不存在")
-
-    # ==================== Case-Config operations ====================
-
-    async def list_configs(
-        self,
-        source_id: Optional[str] = None,
-        page: int = 1,
-        page_size: int = 20,
-    ) -> tuple[list[dict], int]:
-        """List all configs with pagination.
-
-        Args:
-            source_id: Filter by source_id (optional)
-            page: Page number (1-based)
-            page_size: Items per page
-
-        Returns:
-            Tuple of (configs list, total count)
-        """
-        return await self.store.list_configs(
-            source_id=source_id,
-            page=page,
-            page_size=page_size,
-        )
-
-    async def get_config_cases(
-        self,
-        source_id: str,
-        bbk_id: Optional[str] = None,
-    ) -> list[str]:
-        """Get case_ids for a dimension config.
-
-        Args:
-            source_id: Source identifier
-            bbk_id: BBK identifier (optional)
-
-        Returns:
-            List of case_ids
-        """
-        return await self.store.get_config_cases(source_id, bbk_id)
-
-    async def upsert_config(self, request: CaseConfigCreate) -> None:
-        """Upsert case config for dimension.
-
-        Args:
-            request: Create request
-
-        Raises:
-            ValueError: If invalid case_id provided
-        """
-        # Validate all case_ids exist
-        for item in request.case_ids:
-            if not await self.store.check_case_exists(item.case_id):
-                raise ValueError(f"无效的案例 ID: {item.case_id}")
-
-        case_ids = [item.model_dump() for item in request.case_ids]
-        await self.store.upsert_config(
-            source_id=request.source_id,
-            bbk_id=request.bbk_id,
-            case_ids=case_ids,
-        )
-
-    async def delete_config(
-        self,
-        source_id: str,
-        bbk_id: Optional[str] = None,
-    ) -> None:
-        """Delete case config for dimension.
-
-        Args:
-            source_id: Source identifier
-            bbk_id: BBK identifier (optional)
-
-        Raises:
-            ValueError: If config not found
-        """
-        deleted = await self.store.delete_config(source_id, bbk_id)
-        if not deleted:
-            raise ValueError("配置不存在")

@@ -77,3 +77,37 @@ export interface MCPClientUpdateRequest {
   /** Working directory for stdio command */
   cwd?: string;
 }
+
+export interface MCPDistributionRequest {
+  /** Selected source MCP client keys */
+  client_keys: string[];
+  /** Target tenant IDs */
+  target_tenant_ids: string[];
+  /** Must be true for v1 overwrite semantics */
+  overwrite: boolean;
+}
+
+export interface MCPDistributionTenantResult {
+  /** Target tenant ID */
+  tenant_id: string;
+  /** Whether distribution succeeded */
+  success: boolean;
+  /** Whether the tenant was bootstrapped during write */
+  bootstrapped?: boolean;
+  /** Selected client keys written to target default agent */
+  default_agent_updated?: string[];
+  /** Failure details when success=false */
+  error?: string;
+}
+
+export interface MCPDistributionResponse {
+  /** Source agent ID */
+  source_agent_id: string;
+  /** Per-tenant results */
+  results: MCPDistributionTenantResult[];
+}
+
+export interface MCPDistributionTenantListResponse {
+  /** Tenant IDs belonging to the current source */
+  tenant_ids: string[];
+}

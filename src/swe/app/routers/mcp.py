@@ -3,13 +3,31 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Literal
+from pathlib import Path as FilePath
+from typing import Any, Dict, List, Optional, Literal
 
-from fastapi import APIRouter, Body, HTTPException, Path, Request
+from fastapi import (
+    APIRouter,
+    Body,
+    HTTPException,
+    Path as FastAPIPath,
+    Request,
+)
 from pydantic import BaseModel, Field
 
 from ..utils import schedule_agent_reload
-from ...config.config import MCPClientConfig
+from ...config.config import (
+    MCPClientConfig,
+    MCPConfig,
+    load_agent_config,
+    save_agent_config,
+)
+from ...config.context import resolve_effective_tenant_id
+from ...config.utils import (
+    get_tenant_working_dir_strict,
+    list_logical_tenant_ids,
+)
+from ..workspace.tenant_initializer import TenantInitializer
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 
@@ -129,6 +147,55 @@ class MCPClientUpdateRequest(BaseModel):
     )
 
 
+class MCPDistributionRequest(BaseModel):
+    """Request body for distributing MCP clients to target tenants."""
+
+    client_keys: List[str] = Field(
+        default_factory=list,
+        description="Selected source MCP client keys",
+    )
+    target_tenant_ids: List[str] = Field(
+        default_factory=list,
+        description="Target tenant IDs to update",
+    )
+    overwrite: bool = Field(
+        default=False,
+        description="Must be true for MCP distribution",
+    )
+
+
+class MCPDistributionTenantResult(BaseModel):
+    """Per-tenant MCP distribution result."""
+
+    tenant_id: str = Field(..., description="Target tenant ID")
+    success: bool = Field(..., description="Whether distribution succeeded")
+    bootstrapped: bool = Field(
+        default=False,
+        description="Whether the target tenant was bootstrapped during write",
+    )
+    default_agent_updated: List[str] = Field(
+        default_factory=list,
+        description="Selected client keys written to target default agent",
+    )
+    error: str = Field(default="", description="Failure details if any")
+
+
+class MCPDistributionResponse(BaseModel):
+    """Response payload for MCP distribution requests."""
+
+    source_agent_id: str = Field(..., description="Source agent ID")
+    results: List[MCPDistributionTenantResult] = Field(
+        default_factory=list,
+        description="Per-tenant distribution results",
+    )
+
+
+class MCPDistributionTenantListResponse(BaseModel):
+    """Response for MCP distribution tenant list."""
+
+    tenant_ids: List[str] = Field(default_factory=list)
+
+
 def _restore_original_values(
     incoming: Dict[str, str],
     existing: Dict[str, str],
@@ -141,6 +208,165 @@ def _restore_original_values(
         else:
             restored[k] = v
     return restored
+
+
+def _request_tenant_id(request: Request) -> str | None:
+    return getattr(request.state, "tenant_id", None)
+
+
+def _request_source_id(request: Request) -> str | None:
+    return getattr(request.state, "source_id", None)
+
+
+def _request_effective_tenant_id(request: Request) -> str | None:
+    tenant_id = _request_tenant_id(request)
+    if tenant_id is None:
+        return None
+    return resolve_effective_tenant_id(tenant_id, _request_source_id(request))
+
+
+def _request_tenant_working_dir(request: Request) -> FilePath:
+    return get_tenant_working_dir_strict(_request_effective_tenant_id(request))
+
+
+def _get_multi_agent_manager(request: Request) -> Any:
+    manager = getattr(request.app.state, "multi_agent_manager", None)
+    if manager is None:
+        raise RuntimeError("MultiAgentManager not initialized")
+    return manager
+
+
+def _validate_target_tenant_id(tenant_id: str) -> str:
+    tenant_id = str(tenant_id or "").strip()
+    if not tenant_id:
+        raise ValueError("tenant_id is required")
+    if len(tenant_id) > 256:
+        raise ValueError(f"Invalid tenant ID format: {tenant_id}")
+    if ".." in tenant_id or "/" in tenant_id or "\\" in tenant_id:
+        raise ValueError(f"Invalid tenant ID format: {tenant_id}")
+    if any(ord(c) < 32 for c in tenant_id):
+        raise ValueError(f"Invalid tenant ID format: {tenant_id}")
+    return tenant_id
+
+
+def _clone_mcp_client_config(client: MCPClientConfig) -> MCPClientConfig:
+    return MCPClientConfig.model_validate(client.model_dump(mode="json"))
+
+
+async def _resolve_source_mcp_clients(
+    request: Request,
+    client_keys: List[str],
+) -> tuple[Any, Dict[str, MCPClientConfig]]:
+    from ..agent_context import get_agent_for_request
+
+    source_agent = await get_agent_for_request(request)
+    source_config = load_agent_config(
+        source_agent.agent_id,
+        tenant_id=source_agent.tenant_id,
+    )
+    source_clients_by_key = (
+        source_config.mcp.clients
+        if source_config.mcp is not None and source_config.mcp.clients
+        else {}
+    )
+
+    source_clients: Dict[str, MCPClientConfig] = {}
+    missing_client_keys: List[str] = []
+    for client_key in client_keys:
+        client = source_clients_by_key.get(client_key)
+        if client is None:
+            missing_client_keys.append(client_key)
+            continue
+        source_clients[client_key] = _clone_mcp_client_config(client)
+
+    if missing_client_keys:
+        missing = ", ".join(missing_client_keys)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Source MCP client(s) not found: {missing}",
+        )
+
+    return source_agent, source_clients
+
+
+async def _distribute_mcp_clients_to_tenant(
+    request: Request,
+    *,
+    target_tenant_id: str,
+    source_clients: Dict[str, MCPClientConfig],
+) -> MCPDistributionTenantResult:
+    initializer = TenantInitializer(
+        _request_tenant_working_dir(request).parent,
+        target_tenant_id,
+        source_id=_request_source_id(request),
+    )
+    was_bootstrapped = initializer.has_seeded_bootstrap()
+    if not was_bootstrapped:
+        initializer.ensure_seeded_bootstrap()
+
+    effective_target_tenant_id = getattr(
+        initializer,
+        "effective_tenant_id",
+        target_tenant_id,
+    )
+    target_config = load_agent_config(
+        "default",
+        tenant_id=effective_target_tenant_id,
+    )
+    original_target_config = target_config.model_copy(deep=True)
+    if target_config.mcp is None:
+        target_config.mcp = MCPConfig(clients={})
+
+    for client_key, source_client in source_clients.items():
+        target_config.mcp.clients[client_key] = _clone_mcp_client_config(
+            source_client,
+        )
+
+    manager = _get_multi_agent_manager(request)
+    try:
+        save_agent_config(
+            "default",
+            target_config,
+            tenant_id=effective_target_tenant_id,
+        )
+        await manager.reload_agent(
+            "default",
+            tenant_id=effective_target_tenant_id,
+        )
+    except Exception as exc:
+        rollback_errors: List[str] = []
+        try:
+            save_agent_config(
+                "default",
+                original_target_config,
+                tenant_id=effective_target_tenant_id,
+            )
+        except Exception as rollback_save_exc:
+            rollback_errors.append(
+                f"rollback save failed: {rollback_save_exc}",
+            )
+        else:
+            try:
+                await manager.reload_agent(
+                    "default",
+                    tenant_id=effective_target_tenant_id,
+                )
+            except Exception as rollback_reload_exc:
+                rollback_errors.append(
+                    f"rollback reload failed: {rollback_reload_exc}",
+                )
+        if rollback_errors:
+            raise RuntimeError(
+                f"{exc}; {'; '.join(rollback_errors)}",
+            ) from exc
+        raise
+
+    return MCPDistributionTenantResult(
+        tenant_id=target_tenant_id,
+        success=True,
+        bootstrapped=not was_bootstrapped,
+        default_agent_updated=list(source_clients.keys()),
+    )
 
 
 def _mask_env_value(value: str) -> str:
@@ -210,10 +436,10 @@ def _build_client_info(key: str, client: MCPClientConfig) -> MCPClientInfo:
 )
 async def list_mcp_clients(request: Request) -> List[MCPClientInfo]:
     """Get list of all configured MCP clients."""
-    from ..agent_context import get_agent_for_request
+    from ..agent_context import get_agent_and_config_for_request
 
-    agent = await get_agent_for_request(request)
-    mcp_config = agent.config.mcp
+    _, agent_config = await get_agent_and_config_for_request(request)
+    mcp_config = agent_config.mcp
     if mcp_config is None or not mcp_config.clients:
         return []
 
@@ -230,13 +456,13 @@ async def list_mcp_clients(request: Request) -> List[MCPClientInfo]:
 )
 async def get_mcp_client(
     request: Request,
-    client_key: str = Path(...),
+    client_key: str = FastAPIPath(...),
 ) -> MCPClientInfo:
     """Get details of a specific MCP client."""
-    from ..agent_context import get_agent_for_request
+    from ..agent_context import get_agent_and_config_for_request
 
-    agent = await get_agent_for_request(request)
-    mcp_config = agent.config.mcp
+    _, agent_config = await get_agent_and_config_for_request(request)
+    mcp_config = agent_config.mcp
     if mcp_config is None:
         raise HTTPException(404, detail=f"MCP client '{client_key}' not found")
 
@@ -244,6 +470,80 @@ async def get_mcp_client(
     if client is None:
         raise HTTPException(404, detail=f"MCP client '{client_key}' not found")
     return _build_client_info(client_key, client)
+
+
+@router.get(
+    "/distribution/tenants",
+    response_model=MCPDistributionTenantListResponse,
+    summary="List tenants for MCP client distribution",
+)
+async def list_mcp_distribution_tenants(
+    request: Request,
+) -> MCPDistributionTenantListResponse:
+    """Return all tenants belonging to the current source_id."""
+    return MCPDistributionTenantListResponse(
+        tenant_ids=await list_logical_tenant_ids(
+            _request_source_id(request),
+            source_filter=True,
+        ),
+    )
+
+
+@router.post(
+    "/distribute/default-agents",
+    response_model=MCPDistributionResponse,
+    summary="Distribute selected MCP clients to target tenant default agents",
+)
+async def distribute_mcp_clients_to_default_agents(
+    request: Request,
+    body: MCPDistributionRequest = Body(...),
+) -> MCPDistributionResponse:
+    """Copy selected source-agent MCP clients into target default agents."""
+    if not body.overwrite:
+        raise HTTPException(
+            status_code=400,
+            detail="overwrite=true is required for MCP distribution",
+        )
+    if not body.client_keys:
+        raise HTTPException(
+            status_code=400,
+            detail="No MCP client keys provided",
+        )
+    if not body.target_tenant_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No target tenant IDs provided",
+        )
+
+    source_agent, source_clients = await _resolve_source_mcp_clients(
+        request,
+        body.client_keys,
+    )
+
+    results: List[MCPDistributionTenantResult] = []
+    for tenant_id in body.target_tenant_ids:
+        try:
+            validated_tenant_id = _validate_target_tenant_id(tenant_id)
+            results.append(
+                await _distribute_mcp_clients_to_tenant(
+                    request,
+                    target_tenant_id=validated_tenant_id,
+                    source_clients=source_clients,
+                ),
+            )
+        except Exception as exc:
+            results.append(
+                MCPDistributionTenantResult(
+                    tenant_id=str(tenant_id),
+                    success=False,
+                    error=str(exc),
+                ),
+            )
+
+    return MCPDistributionResponse(
+        source_agent_id=source_agent.agent_id,
+        results=results,
+    )
 
 
 @router.post(
@@ -258,17 +558,16 @@ async def create_mcp_client(
     client: MCPClientCreateRequest = Body(..., embed=True),
 ) -> MCPClientInfo:
     """Create a new MCP client configuration."""
-    from ..agent_context import get_agent_for_request
-    from ...config.config import save_agent_config, MCPConfig
+    from ..agent_context import get_agent_and_config_for_request
 
-    agent = await get_agent_for_request(request)
+    workspace, agent_config = await get_agent_and_config_for_request(request)
 
     # Initialize mcp config if not exists
-    if agent.config.mcp is None:
-        agent.config.mcp = MCPConfig(clients={})
+    if agent_config.mcp is None:
+        agent_config.mcp = MCPConfig(clients={})
 
     # Check if client already exists
-    if client_key in agent.config.mcp.clients:
+    if client_key in agent_config.mcp.clients:
         raise HTTPException(
             400,
             detail=f"MCP client '{client_key}' already exists. Use PUT to "
@@ -290,11 +589,19 @@ async def create_mcp_client(
     )
 
     # Add to agent's config and save
-    agent.config.mcp.clients[client_key] = new_client
-    save_agent_config(agent.agent_id, agent.config, tenant_id=agent.tenant_id)
+    agent_config.mcp.clients[client_key] = new_client
+    save_agent_config(
+        workspace.agent_id,
+        agent_config,
+        tenant_id=workspace.tenant_id,
+    )
 
     # Hot reload config (async, non-blocking)
-    schedule_agent_reload(request, agent.agent_id)
+    schedule_agent_reload(
+        request,
+        workspace.agent_id,
+        tenant_id=workspace.tenant_id,
+    )
 
     return _build_client_info(client_key, new_client)
 
@@ -306,19 +613,18 @@ async def create_mcp_client(
 )
 async def update_mcp_client(
     request: Request,
-    client_key: str = Path(...),
+    client_key: str = FastAPIPath(...),
     updates: MCPClientUpdateRequest = Body(...),
 ) -> MCPClientInfo:
     """Update an existing MCP client configuration."""
-    from ..agent_context import get_agent_for_request
-    from ...config.config import save_agent_config
+    from ..agent_context import get_agent_and_config_for_request
 
-    agent = await get_agent_for_request(request)
+    workspace, agent_config = await get_agent_and_config_for_request(request)
 
-    if agent.config.mcp is None or client_key not in agent.config.mcp.clients:
+    if agent_config.mcp is None or client_key not in agent_config.mcp.clients:
         raise HTTPException(404, detail=f"MCP client '{client_key}' not found")
 
-    existing = agent.config.mcp.clients[client_key]
+    existing = agent_config.mcp.clients[client_key]
 
     # Update fields if provided
     update_data = updates.model_dump(exclude_unset=True)
@@ -339,13 +645,21 @@ async def update_mcp_client(
     merged_data = existing.model_dump(mode="json")
     merged_data.update(update_data)
     updated_client = MCPClientConfig.model_validate(merged_data)
-    agent.config.mcp.clients[client_key] = updated_client
+    agent_config.mcp.clients[client_key] = updated_client
 
     # Save updated config
-    save_agent_config(agent.agent_id, agent.config, tenant_id=agent.tenant_id)
+    save_agent_config(
+        workspace.agent_id,
+        agent_config,
+        tenant_id=workspace.tenant_id,
+    )
 
     # Hot reload config (async, non-blocking)
-    schedule_agent_reload(request, agent.agent_id)
+    schedule_agent_reload(
+        request,
+        workspace.agent_id,
+        tenant_id=workspace.tenant_id,
+    )
 
     return _build_client_info(client_key, updated_client)
 
@@ -357,25 +671,32 @@ async def update_mcp_client(
 )
 async def toggle_mcp_client(
     request: Request,
-    client_key: str = Path(...),
+    client_key: str = FastAPIPath(...),
 ) -> MCPClientInfo:
     """Toggle the enabled status of an MCP client."""
-    from ..agent_context import get_agent_for_request
-    from ...config.config import save_agent_config
+    from ..agent_context import get_agent_and_config_for_request
 
-    agent = await get_agent_for_request(request)
+    workspace, agent_config = await get_agent_and_config_for_request(request)
 
-    if agent.config.mcp is None or client_key not in agent.config.mcp.clients:
+    if agent_config.mcp is None or client_key not in agent_config.mcp.clients:
         raise HTTPException(404, detail=f"MCP client '{client_key}' not found")
 
-    client = agent.config.mcp.clients[client_key]
+    client = agent_config.mcp.clients[client_key]
 
     # Toggle enabled status
     client.enabled = not client.enabled
-    save_agent_config(agent.agent_id, agent.config, tenant_id=agent.tenant_id)
+    save_agent_config(
+        workspace.agent_id,
+        agent_config,
+        tenant_id=workspace.tenant_id,
+    )
 
     # Hot reload config (async, non-blocking)
-    schedule_agent_reload(request, agent.agent_id)
+    schedule_agent_reload(
+        request,
+        workspace.agent_id,
+        tenant_id=workspace.tenant_id,
+    )
 
     return _build_client_info(client_key, client)
 
@@ -387,22 +708,29 @@ async def toggle_mcp_client(
 )
 async def delete_mcp_client(
     request: Request,
-    client_key: str = Path(...),
+    client_key: str = FastAPIPath(...),
 ) -> Dict[str, str]:
     """Delete an MCP client configuration."""
-    from ..agent_context import get_agent_for_request
-    from ...config.config import save_agent_config
+    from ..agent_context import get_agent_and_config_for_request
 
-    agent = await get_agent_for_request(request)
+    workspace, agent_config = await get_agent_and_config_for_request(request)
 
-    if agent.config.mcp is None or client_key not in agent.config.mcp.clients:
+    if agent_config.mcp is None or client_key not in agent_config.mcp.clients:
         raise HTTPException(404, detail=f"MCP client '{client_key}' not found")
 
     # Remove client
-    del agent.config.mcp.clients[client_key]
-    save_agent_config(agent.agent_id, agent.config, tenant_id=agent.tenant_id)
+    del agent_config.mcp.clients[client_key]
+    save_agent_config(
+        workspace.agent_id,
+        agent_config,
+        tenant_id=workspace.tenant_id,
+    )
 
     # Hot reload config (async, non-blocking)
-    schedule_agent_reload(request, agent.agent_id)
+    schedule_agent_reload(
+        request,
+        workspace.agent_id,
+        tenant_id=workspace.tenant_id,
+    )
 
     return {"message": f"MCP client '{client_key}' deleted successfully"}

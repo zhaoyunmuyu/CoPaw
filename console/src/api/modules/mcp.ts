@@ -3,6 +3,9 @@ import type {
   MCPClientInfo,
   MCPClientCreateRequest,
   MCPClientUpdateRequest,
+  MCPDistributionRequest,
+  MCPDistributionResponse,
+  MCPDistributionTenantListResponse,
 } from "../types";
 
 export const mcpApi = {
@@ -49,5 +52,20 @@ export const mcpApi = {
   deleteMCPClient: (clientKey: string) =>
     request<{ message: string }>(`/mcp/${encodeURIComponent(clientKey)}`, {
       method: "DELETE",
+    }),
+
+  /**
+   * List tenants for MCP client distribution
+   */
+  listMCPDistributionTenants: () =>
+    request<MCPDistributionTenantListResponse>("/mcp/distribution/tenants"),
+
+  /**
+   * Distribute selected MCP clients to target tenant default agents
+   */
+  distributeMCPClientsToDefaultAgents: (payload: MCPDistributionRequest) =>
+    request<MCPDistributionResponse>("/mcp/distribute/default-agents", {
+      method: "POST",
+      body: JSON.stringify(payload),
     }),
 };

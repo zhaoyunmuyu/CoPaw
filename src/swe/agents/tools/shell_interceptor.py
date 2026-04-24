@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import List, Tuple
 
 from ...config.context import (
-    get_current_tenant_id,
+    get_current_effective_tenant_id,
     get_current_user_id,
 )
 
@@ -84,7 +84,7 @@ def intercept_command(command: str) -> Tuple[str, bool]:
     Returns:
         Tuple of (modified_command, was_intercepted)
     """
-    tenant_id = get_current_tenant_id()
+    tenant_id = get_current_effective_tenant_id()
     user_id = get_current_user_id()
 
     # 如果没有用户上下文，不修改命令

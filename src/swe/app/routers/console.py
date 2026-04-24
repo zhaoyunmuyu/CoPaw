@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import asyncio
 import uuid
 from pathlib import Path
 from typing import AsyncGenerator, Union, List, Any
@@ -25,6 +26,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/console", tags=["console"])
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+_RECONNECT_ATTACH_ATTEMPTS = 10
+_RECONNECT_ATTACH_RETRY_DELAY_SECONDS = 0.1
 
 
 def _safe_filename(name: str) -> str:
@@ -84,6 +87,53 @@ def _extract_session_and_payload(request_data: Union[AgentRequest, dict]):
     return native_payload
 
 
+def _derive_chat_name(native_payload: dict) -> str:
+    """Build a display name for a newly created chat."""
+    if not native_payload["content_parts"]:
+        return "New Chat"
+
+    content = native_payload["content_parts"][0]
+    if not content:
+        return "Media Message"
+    if isinstance(content, dict):
+        return content.get("text", "New Chat")[:10]
+    if hasattr(content, "text"):
+        return content.text[:10]
+    return "Media Message"
+
+
+async def _attach_reconnect_queue(
+    workspace,
+    tracker,
+    session_id: str,
+    channel_id: str,
+) -> tuple[asyncio.Queue, str]:
+    """Attach to a running chat by chat_id or logical session_id."""
+    for attempt in range(_RECONNECT_ATTACH_ATTEMPTS):
+        chat = await workspace.chat_manager.get_chat(session_id)
+        if chat is not None:
+            queue = await tracker.attach(chat.id)
+            if queue is not None:
+                return queue, chat.id
+
+        chat_id = await workspace.chat_manager.get_chat_id_by_session(
+            session_id,
+            channel_id,
+        )
+        if chat_id is not None:
+            queue = await tracker.attach(chat_id)
+            if queue is not None:
+                return queue, chat_id
+
+        if attempt < _RECONNECT_ATTACH_ATTEMPTS - 1:
+            await asyncio.sleep(_RECONNECT_ATTACH_RETRY_DELAY_SECONDS)
+
+    raise HTTPException(
+        status_code=404,
+        detail="No running chat for this session",
+    )
+
+
 @router.post(
     "/chat",
     status_code=200,
@@ -127,25 +177,6 @@ async def post_console_chat(
         "Console chat: resolved session_id=%s",
         session_id,
     )
-    name = "New Chat"
-    if len(native_payload["content_parts"]) > 0:
-        content = native_payload["content_parts"][0]
-        if content:
-            # content can be dict or object with 'text' attribute
-            if isinstance(content, dict):
-                name = content.get("text", "New Chat")[:10]
-            elif hasattr(content, "text"):
-                name = content.text[:10]
-            else:
-                name = "Media Message"
-        else:
-            name = "Media Message"
-    chat = await workspace.chat_manager.get_or_create_chat(
-        session_id,
-        native_payload["sender_id"],
-        native_payload["channel_id"],
-        name=name,
-    )
     tracker = workspace.task_tracker
 
     is_reconnect = False
@@ -153,23 +184,40 @@ async def post_console_chat(
         is_reconnect = request_data.get("reconnect") is True
 
     if is_reconnect:
-        queue = await tracker.attach(chat.id)
+        queue, run_key = await _attach_reconnect_queue(
+            workspace,
+            tracker,
+            session_id,
+            native_payload["channel_id"],
+        )
         if queue is None:
             raise HTTPException(
                 status_code=404,
                 detail="No running chat for this session",
             )
     else:
+        chat = await workspace.chat_manager.get_or_create_chat(
+            session_id,
+            native_payload["sender_id"],
+            native_payload["channel_id"],
+            name=_derive_chat_name(native_payload),
+            meta={
+                "agent_id": workspace.agent_id,
+            }
+            if getattr(workspace, "agent_id", None)
+            else None,
+        )
         queue, _ = await tracker.attach_or_start(
             chat.id,
             native_payload,
             console_channel.stream_one,
         )
+        run_key = chat.id
 
     async def event_generator() -> AsyncGenerator[str, None]:
         # Hold iterator so finally can aclose(); guarantees stream_from_queue's
         # finally (detach_subscriber) on client abort / generator teardown.
-        stream_it = tracker.stream_from_queue(queue, chat.id)
+        stream_it = tracker.stream_from_queue(queue, run_key)
         try:
             try:
                 async for event_data in stream_it:

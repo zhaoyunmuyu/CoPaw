@@ -125,13 +125,32 @@ class ZhaohuConfig(BaseChannelConfig):
     )
     client_secret: str = Field(
         default_factory=lambda: EnvVarLoader.get_str(
-            "SWE_ZHAOHU_CLIENT_SECRET",
+            "SWE_ZHAOHU_CLIENT_SECRET_POSEIDON",
             "",
         ),
     )
     custom_card_url: str = Field(
         default_factory=lambda: EnvVarLoader.get_str(
             "SWE_ZHAOHU_CUSTOM_CARD_URL",
+            "",
+        ),
+    )
+    # Intent recognition API configuration
+    intent_url: str = Field(
+        default_factory=lambda: EnvVarLoader.get_str(
+            "SWE_ZHAOHU_INTENT_URL",
+            "",
+        ),
+    )
+    intent_open_id: str = Field(
+        default_factory=lambda: EnvVarLoader.get_str(
+            "SWE_ZHAOHU_INTENT_OPEN_ID",
+            "",
+        ),
+    )
+    intent_api_key: str = Field(
+        default_factory=lambda: EnvVarLoader.get_str(
+            "SWE_ZHAOHU_INTENT_API_KEY",
             "",
         ),
     )

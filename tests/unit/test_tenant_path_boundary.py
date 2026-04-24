@@ -66,7 +66,8 @@ def other_tenant_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def mock_working_dir(
-    temp_tenant_dir: Path, other_tenant_dir: Path
+    temp_tenant_dir: Path,
+    other_tenant_dir: Path,
 ) -> Generator[Path, None, None]:
     """Mock WORKING_DIR to use temporary directory."""
     parent_dir = temp_tenant_dir.parent
@@ -100,12 +101,26 @@ class TestGetCurrentTenantRoot:
             assert result == expected_root
             assert result.is_absolute()
 
+    def test_default_tenant_with_source_uses_effective_tenant_root(
+        self,
+        mock_working_dir: Path,
+    ):
+        """default + source should resolve to the source-scoped tenant root."""
+        effective_root = mock_working_dir / "default_RMASSIST"
+        effective_root.mkdir(parents=True)
+
+        with tenant_context(tenant_id="default", source_id="RMASSIST"):
+            result = get_current_tenant_root()
+
+        assert result == effective_root
+
 
 class TestGetCurrentToolBaseDir:
     """Tests for get_current_tool_base_dir helper."""
 
     def test_get_current_tool_base_dir_prefers_workspace_dir(
-        self, mock_working_dir: Path
+        self,
+        mock_working_dir: Path,
     ):
         tenant_id = "test_tenant"
         workspace_dir = mock_working_dir / tenant_id / "workspaces" / "agent_a"
@@ -117,7 +132,8 @@ class TestGetCurrentToolBaseDir:
         assert result == workspace_dir.resolve()
 
     def test_get_current_tool_base_dir_falls_back_to_tenant_root(
-        self, mock_working_dir: Path
+        self,
+        mock_working_dir: Path,
     ):
         tenant_id = "test_tenant"
 
@@ -127,14 +143,36 @@ class TestGetCurrentToolBaseDir:
         assert result == (mock_working_dir / tenant_id).resolve()
 
     def test_get_current_tool_base_dir_rejects_workspace_outside_tenant(
-        self, mock_working_dir: Path
+        self,
+        mock_working_dir: Path,
     ):
         tenant_id = "test_tenant"
         outside_workspace = mock_working_dir / "other_tenant"
 
-        with tenant_context(tenant_id=tenant_id, workspace_dir=outside_workspace):
+        with tenant_context(
+            tenant_id=tenant_id, workspace_dir=outside_workspace
+        ):
             with pytest.raises(PathTraversalError):
                 get_current_tool_base_dir()
+
+    def test_get_current_tool_base_dir_allows_source_scoped_workspace(
+        self,
+        mock_working_dir: Path,
+    ):
+        """default + source should accept workspace_dir under default_SOURCE."""
+        workspace_dir = (
+            mock_working_dir / "default_RMASSIST" / "workspaces" / "default"
+        )
+        workspace_dir.mkdir(parents=True)
+
+        with tenant_context(
+            tenant_id="default",
+            source_id="RMASSIST",
+            workspace_dir=workspace_dir,
+        ):
+            result = get_current_tool_base_dir()
+
+        assert result == workspace_dir.resolve()
 
 
 # =============================================================================
@@ -161,7 +199,9 @@ class TestResolveTenantPath:
         with tenant_context(tenant_id=tenant_id):
             result = resolve_tenant_path("subdir/nested_file.txt")
             expected = mock_working_dir / tenant_id / "subdir/nested_file.txt"
-            assert result == result.resolve()  # Should be absolute and resolved
+            assert (
+                result == result.resolve()
+            )  # Should be absolute and resolved
             assert result.name == "nested_file.txt"
 
     def test_resolve_with_explicit_base_dir(self, mock_working_dir: Path):
@@ -204,7 +244,9 @@ class TestResolveTenantPath:
             with pytest.raises(AbsolutePathDeniedError) as exc_info:
                 resolve_tenant_path(str(other_path))
 
-            assert "Absolute paths outside the tenant workspace" in str(exc_info.value)
+            assert "Absolute paths outside the tenant workspace" in str(
+                exc_info.value
+            )
 
     def test_allow_absolute_path_within_tenant(self, mock_working_dir: Path):
         """Should allow absolute paths within tenant root."""
@@ -225,7 +267,9 @@ class TestResolveTenantPath:
         tenant_id = "test_tenant"
 
         with tenant_context(tenant_id=tenant_id):
-            result = resolve_tenant_path("new_file.txt", allow_nonexistent=True)
+            result = resolve_tenant_path(
+                "new_file.txt", allow_nonexistent=True
+            )
             expected = mock_working_dir / tenant_id / "new_file.txt"
             assert result == expected
 
@@ -354,7 +398,10 @@ class TestIsPathWithinTenant:
         tenant_id = "test_tenant"
 
         with tenant_context(tenant_id=tenant_id):
-            assert is_path_within_tenant(mock_working_dir / "other_tenant") is False
+            assert (
+                is_path_within_tenant(mock_working_dir / "other_tenant")
+                is False
+            )
 
     def test_returns_false_when_no_context(self):
         """Should return False when tenant context is missing."""
@@ -370,10 +417,13 @@ class TestIsPathWithinTenantWithBase:
     """Tests for is_path_within_tenant_with_base function."""
 
     def test_returns_true_for_path_within_tenant_using_base(
-        self, mock_working_dir: Path
+        self,
+        mock_working_dir: Path,
     ):
         """Should return True for paths within tenant when using base_dir."""
-        from swe.security.tenant_path_boundary import is_path_within_tenant_with_base
+        from swe.security.tenant_path_boundary import (
+            is_path_within_tenant_with_base,
+        )
 
         tenant_id = "test_tenant"
         tenant_dir = mock_working_dir / tenant_id
@@ -382,7 +432,8 @@ class TestIsPathWithinTenantWithBase:
         with tenant_context(tenant_id=tenant_id):
             # Relative path from subdir should resolve to within tenant
             assert (
-                is_path_within_tenant_with_base("file.txt", base_dir=subdir) is True
+                is_path_within_tenant_with_base("file.txt", base_dir=subdir)
+                is True
             )
             assert (
                 is_path_within_tenant_with_base("../file.txt", base_dir=subdir)
@@ -390,10 +441,13 @@ class TestIsPathWithinTenantWithBase:
             )
 
     def test_returns_false_for_path_escaping_tenant_via_base(
-        self, mock_working_dir: Path
+        self,
+        mock_working_dir: Path,
     ):
         """Should return False for paths that escape tenant via base_dir."""
-        from swe.security.tenant_path_boundary import is_path_within_tenant_with_base
+        from swe.security.tenant_path_boundary import (
+            is_path_within_tenant_with_base,
+        )
 
         tenant_id = "test_tenant"
         tenant_dir = mock_working_dir / tenant_id
@@ -402,13 +456,19 @@ class TestIsPathWithinTenantWithBase:
         with tenant_context(tenant_id=tenant_id):
             # ../../ should escape tenant from subdir
             assert (
-                is_path_within_tenant_with_base("../../other_tenant", base_dir=subdir)
+                is_path_within_tenant_with_base(
+                    "../../other_tenant", base_dir=subdir
+                )
                 is False
             )
 
-    def test_returns_false_when_base_dir_outside_tenant(self, mock_working_dir: Path):
+    def test_returns_false_when_base_dir_outside_tenant(
+        self, mock_working_dir: Path
+    ):
         """Should return False when base_dir itself is outside tenant."""
-        from swe.security.tenant_path_boundary import is_path_within_tenant_with_base
+        from swe.security.tenant_path_boundary import (
+            is_path_within_tenant_with_base,
+        )
 
         tenant_id = "test_tenant"
         other_dir = mock_working_dir / "other_tenant"
@@ -422,15 +482,22 @@ class TestIsPathWithinTenantWithBase:
 
     def test_uses_tenant_root_when_base_dir_none(self, mock_working_dir: Path):
         """Should use tenant root as base when base_dir is None."""
-        from swe.security.tenant_path_boundary import is_path_within_tenant_with_base
+        from swe.security.tenant_path_boundary import (
+            is_path_within_tenant_with_base,
+        )
 
         tenant_id = "test_tenant"
 
         with tenant_context(tenant_id=tenant_id):
             # Should work like is_path_within_tenant when base_dir is None
-            assert is_path_within_tenant_with_base("file.txt", base_dir=None) is True
             assert (
-                is_path_within_tenant_with_base("../other_tenant", base_dir=None)
+                is_path_within_tenant_with_base("file.txt", base_dir=None)
+                is True
+            )
+            assert (
+                is_path_within_tenant_with_base(
+                    "../other_tenant", base_dir=None
+                )
                 is False
             )
 

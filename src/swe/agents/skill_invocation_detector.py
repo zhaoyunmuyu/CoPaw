@@ -389,7 +389,7 @@ class SkillInvocationDetector:
             await self._end_skill(current)
 
         # Start the new skill
-        await self._start_skill(
+        await self.start_skill(
             skill_name,
             trigger_tool=trigger_tool,
             trigger_reason="inferred",

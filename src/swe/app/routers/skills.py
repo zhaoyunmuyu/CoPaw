@@ -52,7 +52,11 @@ from ...agents.skills_manager import (
     suggest_conflict_name,
     update_single_builtin,
 )
-from ...config.utils import get_tenant_working_dir_strict, list_all_tenant_ids
+from ...config.utils import (
+    get_tenant_working_dir_strict,
+    list_logical_tenant_ids,
+)
+from ...config.context import resolve_effective_tenant_id
 from ...security.skill_scanner import SkillScanError
 from ..utils import schedule_agent_reload
 
@@ -264,8 +268,19 @@ def _request_tenant_id(request: Request) -> str | None:
     return getattr(request.state, "tenant_id", None)
 
 
+def _request_effective_tenant_id(request: Request) -> str | None:
+    tenant_id = _request_tenant_id(request)
+    if tenant_id is None:
+        return None
+    return resolve_effective_tenant_id(tenant_id, _request_source_id(request))
+
+
 def _request_tenant_working_dir(request: Request) -> Path:
-    return get_tenant_working_dir_strict(_request_tenant_id(request))
+    return get_tenant_working_dir_strict(_request_effective_tenant_id(request))
+
+
+def _request_source_id(request: Request) -> str | None:
+    return getattr(request.state, "source_id", None)
 
 
 def _workspace_dir_for_agent(
@@ -369,14 +384,16 @@ def _broadcast_skills_to_tenant(
     source_working_dir: Path,
     target_tenant_id: str,
     skill_names: list[str],
+    source_id: str | None,
 ) -> BroadcastDefaultAgentTenantResult:
     from ..workspace.tenant_initializer import TenantInitializer
 
-    target_working_dir = get_tenant_working_dir_strict(target_tenant_id)
     initializer = TenantInitializer(
-        base_working_dir=source_working_dir.parent,
-        tenant_id=target_tenant_id,
+        source_working_dir.parent,
+        target_tenant_id,
+        source_id=source_id,
     )
+    target_working_dir = initializer.tenant_dir
     was_bootstrapped = initializer.has_seeded_bootstrap()
     if not was_bootstrapped:
         initializer.ensure_seeded_bootstrap()
@@ -424,6 +441,7 @@ async def _broadcast_default_agents(
     source_working_dir: Path,
     target_tenant_ids: list[str],
     skill_names: list[str],
+    source_id: str | None,
 ) -> BroadcastDefaultAgentsResponse:
     results: list[BroadcastDefaultAgentTenantResult] = []
     for tenant_id in target_tenant_ids:
@@ -434,6 +452,7 @@ async def _broadcast_default_agents(
                 source_working_dir=source_working_dir,
                 target_tenant_id=validated_tenant_id,
                 skill_names=skill_names,
+                source_id=source_id,
             )
             results.append(result)
         except Exception as exc:
@@ -753,7 +772,9 @@ async def list_workspace_skill_sources(
     request: Request,
 ) -> list[WorkspaceSkillSummary]:
     summaries: list[WorkspaceSkillSummary] = []
-    workspaces = list_workspaces(tenant_id=_request_tenant_id(request))
+    workspaces = list_workspaces(
+        tenant_id=_request_effective_tenant_id(request),
+    )
     for workspace in workspaces:
         workspace_dir = Path(workspace["workspace_dir"])
         summaries.append(
@@ -891,7 +912,7 @@ async def create_skill(
             },
         )
     if body.enable:
-        schedule_agent_reload(request, workspace.agent_id)
+        _schedule_workspace_reload(request, workspace)
     return {"created": True, "name": created}
 
 
@@ -939,7 +960,7 @@ async def upload_skill_zip(
     if result.get("conflicts"):
         raise HTTPException(status_code=409, detail=result)
     if enable and result.get("count", 0) > 0:
-        schedule_agent_reload(request, workspace.agent_id)
+        _schedule_workspace_reload(request, workspace)
     return result
 
 
@@ -1084,7 +1105,7 @@ async def upload_workspace_skill_to_pool(
     request: Request,
     body: UploadToPoolRequest,
 ) -> dict[str, Any]:
-    tenant_id = _request_tenant_id(request)
+    tenant_id = _request_effective_tenant_id(request)
     workspace_dir = _workspace_dir_for_agent(
         body.workspace_id,
         tenant_id=tenant_id,
@@ -1214,7 +1235,7 @@ async def download_pool_skill_to_workspaces(
 
     All-or-nothing: if any target conflicts, reject everything.
     """
-    tenant_id = _request_tenant_id(request)
+    tenant_id = _request_effective_tenant_id(request)
     targets, hub_service = _resolve_and_preflight(
         body,
         tenant_id=tenant_id,
@@ -1293,8 +1314,15 @@ async def import_pool_builtins(
     "/pool/broadcast/tenants",
     response_model=BroadcastTenantListResponse,
 )
-async def list_broadcast_tenants() -> BroadcastTenantListResponse:
-    return BroadcastTenantListResponse(tenant_ids=list_all_tenant_ids())
+async def list_broadcast_tenants(
+    request: Request,
+) -> BroadcastTenantListResponse:
+    return BroadcastTenantListResponse(
+        tenant_ids=await list_logical_tenant_ids(
+            _request_source_id(request),
+            source_filter=True,
+        ),
+    )
 
 
 @router.post(
@@ -1317,6 +1345,7 @@ async def broadcast_pool_skills_to_default_agents(
         )
 
     source_working_dir = _request_tenant_working_dir(request)
+    source_id = _request_source_id(request)
     await _ensure_source_pool_skills_exist(
         working_dir=source_working_dir,
         skill_names=body.skill_names,
@@ -1325,6 +1354,7 @@ async def broadcast_pool_skills_to_default_agents(
         source_working_dir=source_working_dir,
         target_tenant_ids=body.target_tenant_ids,
         skill_names=body.skill_names,
+        source_id=source_id,
     )
 
 
@@ -1608,7 +1638,7 @@ async def save_workspace_skill(
             raise HTTPException(status_code=409, detail=result)
         raise HTTPException(status_code=404, detail="Skill not found")
     if result.get("mode") != "noop":
-        schedule_agent_reload(request, workspace.agent_id)
+        _schedule_workspace_reload(request, workspace)
     return result
 
 
@@ -1628,7 +1658,7 @@ async def update_skill_channels_endpoint(
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Skill not found")
-    schedule_agent_reload(request, workspace.agent_id)
+    _schedule_workspace_reload(request, workspace)
     return {"updated": True, "channels": channels}
 
 

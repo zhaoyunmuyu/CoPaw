@@ -9,9 +9,11 @@ import {
   type IAgentScopeRuntimeWebUISession,
 } from "@/components/agentscope-chat";
 // ==================== 组件引入方式变更结束 ====================
+import { useAgentStore } from "@/stores/agentStore";
 import { useTranslation } from "react-i18next";
 import { chatApi } from "../../../../api/modules/chat";
 import sessionApi from "../../sessionApi";
+import { getSessionAgentId } from "../../sessionApi/sessionAgent";
 import ChatSessionItem from "../ChatSessionItem";
 import { getChannelLabel } from "../../../Control/Channels/components";
 import styles from "./index.module.less";
@@ -47,18 +49,16 @@ const formatCreatedAt = (raw: string | null | undefined): string => {
   )}`;
 };
 
-/** Resolve the real backend UUID from an extended session (id may be a local timestamp) */
 const getBackendId = (session: ExtendedChatSession): string | null => {
   if (session.realId) return session.realId;
-  const id = session.id;
-  if (!/^\d+$/.test(id)) return id;
-  return null;
+  return /^\d+$/.test(session.id) ? null : session.id;
 };
 
 const ChatSessionDrawer: React.FC<ChatSessionDrawerProps> = (props) => {
   const { t } = useTranslation();
   const { sessions, currentSessionId, setCurrentSessionId, setSessions } =
     useChatAnywhereSessionsState();
+  const { selectedAgent, setSelectedAgent } = useAgentStore();
 
   const { createSession } = useChatAnywhereSessions();
 
@@ -93,26 +93,30 @@ const ChatSessionDrawer: React.FC<ChatSessionDrawerProps> = (props) => {
 
   const handleSessionClick = useCallback(
     (sessionId: string) => {
-      setCurrentSessionId(sessionId);
-    },
-    [setCurrentSessionId],
-  );
-
-  /** Delete a session: call deleteChat API then refresh the list */
-  const handleDelete = useCallback(
-    async (sessionId: string) => {
-      const session = sessions.find((s) => s.id === sessionId) as
+      const session = sessions.find((item) => item.id === sessionId) as
         | ExtendedChatSession
         | undefined;
-      const backendId = session ? getBackendId(session) : null;
-
-      if (backendId) {
-        await chatApi.deleteChat(backendId);
+      const sessionAgentId = getSessionAgentId(session?.meta);
+      if (sessionAgentId && sessionAgentId !== selectedAgent) {
+        setSelectedAgent(sessionAgentId);
       }
+      setCurrentSessionId(sessionId);
+    },
+    [selectedAgent, sessions, setCurrentSessionId, setSelectedAgent],
+  );
+
+  /** Delete a session and clear any persisted identity mapping */
+  const handleDelete = useCallback(
+    async (sessionId: string) => {
+      const nextSessionId =
+        currentSessionId === sessionId
+          ? sessions.filter((s) => s.id !== sessionId)[0]?.id
+          : currentSessionId;
+
+      await sessionApi.removeSession({ id: sessionId });
 
       if (currentSessionId === sessionId) {
-        const next = sessions.filter((s) => s.id !== sessionId);
-        setCurrentSessionId(next[0]?.id);
+        setCurrentSessionId(nextSessionId);
       }
 
       await refreshSessions();

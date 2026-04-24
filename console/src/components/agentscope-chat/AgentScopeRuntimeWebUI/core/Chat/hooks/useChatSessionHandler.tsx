@@ -50,10 +50,30 @@ export default function useChatSessionHandler() {
     [getCurrentSessionId, updateSession],
   );
 
+  const syncSessionMessagesForSession = useCallback(
+    async (
+      sessionId: string | undefined,
+      messages: IAgentScopeRuntimeWebUIMessage[],
+      generating?: boolean,
+    ) => {
+      if (!sessionId) {
+        return;
+      }
+
+      await updateSession({
+        id: sessionId,
+        messages,
+        ...(typeof generating === "boolean" ? { generating } : {}),
+      });
+    },
+    [updateSession],
+  );
+
   return {
     ensureSession,
     updateSessionName,
     syncSessionMessages,
+    syncSessionMessagesForSession,
     getCurrentSessionId,
   };
 }
