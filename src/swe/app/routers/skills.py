@@ -1318,7 +1318,10 @@ async def list_broadcast_tenants(
     request: Request,
 ) -> BroadcastTenantListResponse:
     return BroadcastTenantListResponse(
-        tenant_ids=list_logical_tenant_ids(_request_source_id(request)),
+        tenant_ids=await list_logical_tenant_ids(
+            _request_source_id(request),
+            source_filter=True,
+        ),
     )
 
 

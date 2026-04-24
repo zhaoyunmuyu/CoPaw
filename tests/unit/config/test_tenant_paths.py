@@ -9,6 +9,7 @@ import importlib
 import sys
 import types
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -22,6 +23,31 @@ config_stub.LastDispatchConfig = object
 config_stub.load_agent_config = lambda *args, **kwargs: None
 config_stub.save_agent_config = lambda *args, **kwargs: None
 sys.modules["swe.config.config"] = config_stub
+
+# Stub tenant_init_source_store module for source_filter tests
+tenant_init_source_store_stub = types.ModuleType(
+    "swe.app.workspace.tenant_init_source_store",
+)
+
+
+def _get_tenant_init_source_store():
+    """Default store getter returns None (database unavailable)."""
+    return None
+
+
+tenant_init_source_store_stub.get_tenant_init_source_store = (
+    _get_tenant_init_source_store
+)
+tenant_init_source_store_stub.TenantInitSourceStore = object
+sys.modules[
+    "swe.app.workspace.tenant_init_source_store"
+] = tenant_init_source_store_stub
+
+# Stub swe.app namespace and submodules
+app_stub = types.ModuleType("swe.app")
+sys.modules["swe.app"] = app_stub
+app_workspace_stub = types.ModuleType("swe.app.workspace")
+sys.modules["swe.app.workspace"] = app_workspace_stub
 
 context_module = importlib.import_module("swe.config.context")
 utils_module = importlib.import_module("swe.config.utils")
@@ -158,16 +184,16 @@ class TestTenantPathStrictHelpers:
 class TestLogicalTenantListing:
     """Tests logical tenant ID projection for source-scoped callers."""
 
-    def test_without_source_id_returns_raw_ids(self, monkeypatch):
+    async def test_without_source_id_returns_raw_ids(self, monkeypatch):
         monkeypatch.setattr(
             utils_module,
             "list_all_tenant_ids",
             lambda: ["default", "tenant-a"],
         )
 
-        assert list_logical_tenant_ids() == ["default", "tenant-a"]
+        assert await list_logical_tenant_ids() == ["default", "tenant-a"]
 
-    def test_source_id_maps_effective_default_to_logical_default(
+    async def test_source_id_maps_effective_default_to_logical_default(
         self,
         monkeypatch,
     ):
@@ -182,13 +208,13 @@ class TestLogicalTenantListing:
             ],
         )
 
-        assert list_logical_tenant_ids("ruice") == [
+        assert await list_logical_tenant_ids("ruice") == [
             "default",
             "default_other",
             "tenant-a",
         ]
 
-    def test_source_id_preserves_other_default_prefixed_tenants(
+    async def test_source_id_preserves_other_default_prefixed_tenants(
         self,
         monkeypatch,
     ):
@@ -202,11 +228,62 @@ class TestLogicalTenantListing:
             ],
         )
 
-        assert list_logical_tenant_ids("ruice") == [
+        assert await list_logical_tenant_ids("ruice") == [
             "default",
             "default_sales",
             "tenant-a",
         ]
+
+    async def test_source_filter_returns_tenants_from_store(self, monkeypatch):
+        """source_filter=True returns tenants from TenantInitSourceStore."""
+        fake_store = AsyncMock()
+        fake_store.get_by_source.return_value = [
+            {"tenant_id": "tenant-a", "source_id": "ruice"},
+            {"tenant_id": "tenant-b", "source_id": "ruice"},
+        ]
+
+        monkeypatch.setattr(
+            tenant_init_source_store_stub,
+            "get_tenant_init_source_store",
+            lambda: fake_store,
+        )
+
+        result = await list_logical_tenant_ids("ruice", source_filter=True)
+        assert result == ["tenant-a", "tenant-b"]
+        fake_store.get_by_source.assert_called_once_with("ruice")
+
+    async def test_source_filter_returns_empty_when_store_unavailable(
+        self,
+        monkeypatch,
+    ):
+        """source_filter=True returns empty list when store is None."""
+        monkeypatch.setattr(
+            tenant_init_source_store_stub,
+            "get_tenant_init_source_store",
+            lambda: None,
+        )
+
+        result = await list_logical_tenant_ids("ruice", source_filter=True)
+        assert result == []
+
+    async def test_source_filter_returns_empty_when_source_id_missing(
+        self,
+        _monkeypatch,
+    ):
+        """source_filter=True returns empty list when source_id is None."""
+        result = await list_logical_tenant_ids(None, source_filter=True)
+        assert result == []
+
+    async def test_source_filter_false_uses_existing_logic(self, monkeypatch):
+        """source_filter=False uses existing file system scan logic."""
+        monkeypatch.setattr(
+            utils_module,
+            "list_all_tenant_ids",
+            lambda: ["default", "tenant-a"],
+        )
+
+        result = await list_logical_tenant_ids("ruice", source_filter=False)
+        assert result == ["default", "tenant-a"]
 
 
 class TestTenantPathBackwardCompatibility:

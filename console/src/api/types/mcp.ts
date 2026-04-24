@@ -106,3 +106,8 @@ export interface MCPDistributionResponse {
   /** Per-tenant results */
   results: MCPDistributionTenantResult[];
 }
+
+export interface MCPDistributionTenantListResponse {
+  /** Tenant IDs belonging to the current source */
+  tenant_ids: string[];
+}

@@ -315,10 +315,17 @@ def test_update_pool_skill_config_only_mutates_current_tenant(
 def test_list_broadcast_tenants_returns_discovered_tenant_ids(
     monkeypatch,
 ) -> None:
+    async def fake_list_logical_tenant_ids(
+        _source_id=None,
+        *,
+        _source_filter=False,
+    ):
+        return ["default", "tenant-a", "tenant-b"]
+
     monkeypatch.setattr(
         skills_router,
         "list_logical_tenant_ids",
-        lambda source_id=None: ["default", "tenant-a", "tenant-b"],
+        fake_list_logical_tenant_ids,
     )
 
     result = asyncio.run(skills_router.list_broadcast_tenants(_request()))
@@ -331,8 +338,10 @@ def test_list_broadcast_tenants_uses_source_scoped_logical_ids(
 ) -> None:
     observed: list[str | None] = []
 
-    def fake_list_logical_tenant_ids(
+    async def fake_list_logical_tenant_ids(
         source_id: str | None = None,
+        *,
+        _source_filter: bool = False,
     ) -> list[str]:
         observed.append(source_id)
         return ["default", "tenant-a"]

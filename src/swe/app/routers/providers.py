@@ -675,7 +675,10 @@ async def list_active_model_distribution_tenants(
     request: Request,
 ) -> (DistributionTenantListResponse):
     return DistributionTenantListResponse(
-        tenant_ids=list_logical_tenant_ids(_request_source_id(request)),
+        tenant_ids=await list_logical_tenant_ids(
+            _request_source_id(request),
+            source_filter=True,
+        ),
     )
 
 
