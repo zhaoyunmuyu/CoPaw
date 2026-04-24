@@ -285,6 +285,45 @@ describe("SessionApi identity mapping", () => {
     expect(list[0]?.generating).toBe(true);
   });
 
+  it("refreshes backend state before returning an unresolved local timestamp session", async () => {
+    const sessionApi = new SessionApi();
+
+    await sessionApi.createSession({
+      name: "new chat",
+      messages: [],
+    });
+
+    const logicalSessionId = sessionApi.getPendingSessionId();
+    expect(logicalSessionId).toBeTruthy();
+
+    apiMocks.listChats.mockResolvedValue([
+      {
+        id: "chat-real-1",
+        name: "new chat",
+        session_id: logicalSessionId,
+        user_id: "user-1",
+        channel: "console",
+        meta: {},
+        status: "running",
+        created_at: "2026-04-22T00:00:00Z",
+      },
+    ]);
+    apiMocks.getChat.mockResolvedValue({
+      id: "chat-real-1",
+      status: "running",
+      messages: [],
+    });
+
+    const session = await sessionApi.getSession(logicalSessionId!);
+
+    expect(apiMocks.listChats).toHaveBeenCalled();
+    expect(apiMocks.getChat).toHaveBeenCalledWith("chat-real-1");
+    expect(session.generating).toBe(true);
+    expect(sessionApi.getChatIdForSession(logicalSessionId!)).toBe(
+      "chat-real-1",
+    );
+  });
+
   it("clears stale local generating when the resolved backend chat is idle", async () => {
     const sessionApi = new SessionApi();
 

@@ -989,78 +989,75 @@ export class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     }
   }
 
+  private async getResolvedLocalTimestampSession(
+    sessionId: string,
+    fromList: ExtendedSession,
+  ): Promise<ExtendedSession> {
+    const realId = fromList.realId;
+    if (!realId) {
+      return this.getLocalSession(sessionId) as ExtendedSession;
+    }
+
+    const chatHistory = await api.getChat(realId);
+    const backendGenerating = isGenerating(chatHistory);
+    const backendMessages = convertMessages(chatHistory.messages || []);
+    const messages =
+      backendMessages.length > 0 ? backendMessages : fromList.messages || [];
+    const generating = mergeGeneratingState(
+      chatHistory.status,
+      backendGenerating,
+      fromList.generating,
+    );
+    this.patchLastUserMessage(messages, generating, realId, [
+      sessionId,
+      fromList.sessionId,
+    ]);
+    const session: ExtendedSession = {
+      id: sessionId,
+      name: fromList.name || DEFAULT_SESSION_NAME,
+      sessionId: fromList.sessionId || sessionId,
+      // ==================== userId 统一整改 (Kun He) ====================
+      userId: getUserIdWithoutWindow(fromList.userId),
+      channel: getChannelWithoutWindow(fromList.channel),
+      // ==================== userId 统一整改结束 ====================
+      messages,
+      meta: fromList.meta || {},
+      realId,
+      generating,
+    };
+    this.updateWindowVariables(session);
+    return session;
+  }
+
   private async _doGetSession(
     sessionId: string,
   ): Promise<IAgentScopeRuntimeWebUISession> {
     // --- Local timestamp ID (New Chat before first reply) ---
     if (isLocalTimestamp(sessionId)) {
-      const fromList = this.sessionList.find((s) => s.id === sessionId) as
+      let fromList = this.sessionList.find((s) => s.id === sessionId) as
         | ExtendedSession
         | undefined;
 
       // If realId is already resolved, use it directly to fetch history.
       if (fromList?.realId) {
-        const chatHistory = await api.getChat(fromList.realId);
-        const backendGenerating = isGenerating(chatHistory);
-        const backendMessages = convertMessages(chatHistory.messages || []);
-        const messages =
-          backendMessages.length > 0
-            ? backendMessages
-            : fromList.messages || [];
-        const generating = mergeGeneratingState(
-          chatHistory.status,
-          backendGenerating,
-          fromList.generating,
-        );
-        this.patchLastUserMessage(messages, generating, fromList.realId, [
-          sessionId,
-          fromList.sessionId,
-        ]);
-        const session: ExtendedSession = {
-          id: sessionId,
-          name: fromList.name || DEFAULT_SESSION_NAME,
-          sessionId: fromList.sessionId || sessionId,
-          // ==================== userId 统一整改 (Kun He) ====================
-          userId: getUserIdWithoutWindow(fromList.userId),
-          channel: getChannelWithoutWindow(fromList.channel),
-          // ==================== userId 统一整改结束 ====================
-          messages,
-          meta: fromList.meta || {},
-          realId: fromList.realId,
-          generating,
-        };
-        this.updateWindowVariables(session);
-        return session;
+        return this.getResolvedLocalTimestampSession(sessionId, fromList);
       }
 
-      // Pure local session (not yet sent to backend):
-      // If realId is not resolved yet, return empty local session immediately.
-      // No need to wait - realId will be resolved after first message is sent.
+      // The stream may already have created a backend chat while this tab still
+      // only knows the local timestamp id. Refresh once so switching back to a
+      // running local session can resolve its backend status before reconnecting.
       if (!fromList?.realId) {
+        await this.getSessionList();
+        fromList = this.sessionList.find((s) => s.id === sessionId) as
+          | ExtendedSession
+          | undefined;
+
+        if (fromList?.realId) {
+          return this.getResolvedLocalTimestampSession(sessionId, fromList);
+        }
+
         return this.getLocalSession(sessionId);
       }
-
-      // realId resolved: fetch history from backend
-      const chatHistory = await api.getChat(fromList.realId);
-      const generating = isGenerating(chatHistory);
-      const messages = convertMessages(chatHistory.messages || []);
-      this.patchLastUserMessage(messages, generating, fromList.realId, [
-        sessionId,
-        fromList.sessionId,
-      ]);
-      const session: ExtendedSession = {
-        id: sessionId,
-        name: fromList.name || DEFAULT_SESSION_NAME,
-        sessionId: fromList.sessionId || sessionId,
-        userId: getUserIdWithoutWindow(fromList.userId),
-        channel: getChannelWithoutWindow(fromList.channel),
-        messages,
-        meta: fromList.meta || {},
-        realId: fromList.realId,
-        generating,
-      };
-      this.updateWindowVariables(session);
-      return session;
     }
 
     // --- No session selected (e.g. after delete) ---
