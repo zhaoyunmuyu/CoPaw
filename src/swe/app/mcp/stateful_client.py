@@ -283,12 +283,19 @@ class StdIOStatefulClient(StatefulClientBase):
         self._cached_tools = res.tools
         return res.tools
 
-    async def call_tool(self, name: str, arguments: dict | None = None):
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Any:
         """Call a tool on the MCP server.
 
         Args:
             name: Tool name
             arguments: Tool arguments (optional)
+            meta: Optional meta dict forwarded as _meta in JSON-RPC request
+                (e.g. {"progressToken": "..."})
 
         Returns:
             Tool call result
@@ -298,7 +305,8 @@ class StdIOStatefulClient(StatefulClientBase):
         """
         self._validate_connection()
 
-        return await self.session.call_tool(name, arguments or {})
+        res = await self.session.call_tool(name, arguments or {}, meta=meta)
+        return res
 
     def _validate_connection(self) -> None:
         """Validate the connection to the MCP server.
@@ -563,12 +571,19 @@ class HttpStatefulClient(StatefulClientBase):
         self._cached_tools = res.tools
         return res.tools
 
-    async def call_tool(self, name: str, arguments: dict | None = None):
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> Any:
         """Call a tool on the MCP server.
 
         Args:
             name: Tool name
             arguments: Tool arguments (optional)
+            meta: Optional meta dict forwarded as _meta in JSON-RPC request
+                (e.g. {"progressToken": "..."})
 
         Returns:
             Tool call result
@@ -578,7 +593,8 @@ class HttpStatefulClient(StatefulClientBase):
         """
         self._validate_connection()
 
-        return await self.session.call_tool(name, arguments or {})
+        res = await self.session.call_tool(name, arguments or {}, meta=meta)
+        return res
 
     def _validate_connection(self) -> None:
         """Validate the connection to the MCP server.
