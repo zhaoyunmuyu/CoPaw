@@ -53,6 +53,35 @@ describe("ExpandablePanel history", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("ignores clicks when the active session is addressed by realId", () => {
+    const onClose = vi.fn();
+
+    render(
+      <ExpandablePanel
+        visible
+        type="history"
+        onClose={onClose}
+        tasks={[]}
+        sessions={[
+          {
+            id: "temp-1",
+            realId: "chat-1",
+            name: "current chat by real id",
+            messages: [],
+          } as any,
+        ]}
+        onTaskClick={vi.fn()}
+        toolbarRef={{ current: document.createElement("div") }}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("current chat by real id"));
+
+    expect(mocks.setSessionLoading).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("loads and navigates when clicking a different session", () => {
     const onClose = vi.fn();
 

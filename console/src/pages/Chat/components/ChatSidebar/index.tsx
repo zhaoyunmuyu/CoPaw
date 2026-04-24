@@ -11,6 +11,7 @@ import { DESIGN_TOKENS } from '@/config/designTokens';
 import CollapsedToolbar, { type PanelType } from './CollapsedToolbar';
 import ExpandablePanel from './ExpandablePanel';
 import type { HistorySession } from './historySessions';
+import { isHistorySessionActive } from './historySessions';
 import sendIcon from '../../../../assets/icons/new_chat.svg'
 import operateIcon from '../../../../assets/icons/operate.svg'
 import guideImage from '@/assets/others/note.png'
@@ -173,10 +174,9 @@ export default function ChatSidebar(props: ChatSidebarProps) {
 
   const handleSessionClick = useCallback(
     (sessionId: string) => {
-      // Skip if already on the same session
-      if (currentChatIdRef.current === sessionId) return;
-
       const targetSession = sessionsRef.current.find((session) => session.id === sessionId);
+      if (isHistorySessionActive(targetSession, currentChatIdRef.current)) return;
+
       const sessionAgentId = getSessionAgentId(targetSession?.meta);
       if (sessionAgentId && sessionAgentId !== selectedAgent) {
         setSelectedAgent(sessionAgentId);
@@ -364,7 +364,7 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                               key={session.id}
                               name={session.name || '新会话'}
                               session={ext}
-                              active={session.id === currentChatId}
+                              active={isHistorySessionActive(ext, currentChatId)}
                               onSessionClick={handleSessionClick}
                               onSessionDelete={handleDeleteSession}
                               style={{
