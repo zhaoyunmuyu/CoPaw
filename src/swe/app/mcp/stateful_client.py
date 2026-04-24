@@ -30,7 +30,36 @@ from mcp.client.streamable_http import streamable_http_client
 
 from agentscope.mcp import StatefulClientBase
 
+from ...constant import MCP_CALL_TIMEOUT
+
 logger = logging.getLogger(__name__)
+
+
+async def _call_with_timeout(coro, timeout: float, operation: str, client_name: str):
+    """Execute an async coroutine with a timeout guard.
+
+    Args:
+        coro: The awaitable to execute.
+        timeout: Maximum seconds to wait before raising TimeoutError.
+        operation: Human-readable operation name for logging (e.g. "call_tool").
+        client_name: MCP client name for logging.
+
+    Returns:
+        The result of the coroutine.
+
+    Raises:
+        asyncio.TimeoutError: If the coroutine exceeds *timeout*.
+    """
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.error(
+            "MCP client '%s' %s timed out after %.0fs",
+            client_name,
+            operation,
+            timeout,
+        )
+        raise
 
 
 class StdIOStatefulClient(StatefulClientBase):
@@ -266,39 +295,57 @@ class StdIOStatefulClient(StatefulClientBase):
             )
             raise
 
-    async def list_tools(self):
+    async def list_tools(self, timeout: float = MCP_CALL_TIMEOUT):
         """Get all available tools from the server.
+
+        Args:
+            timeout: Maximum seconds to wait for the server response
+                (default: ``MCP_CALL_TIMEOUT``).
 
         Returns:
             List of available MCP tools
 
         Raises:
             RuntimeError: If not connected
+            asyncio.TimeoutError: If the call exceeds *timeout*
         """
         self._validate_connection()
 
-        res = await self.session.list_tools()
+        res = await _call_with_timeout(
+            self.session.list_tools(),
+            timeout=timeout,
+            operation="list_tools",
+            client_name=self.name,
+        )
 
         # Cache the tools for later use
         self._cached_tools = res.tools
         return res.tools
 
-    async def call_tool(self, name: str, arguments: dict | None = None):
+    async def call_tool(self, name: str, arguments: dict | None = None, timeout: float = MCP_CALL_TIMEOUT):
         """Call a tool on the MCP server.
 
         Args:
             name: Tool name
             arguments: Tool arguments (optional)
+            timeout: Maximum seconds to wait for the server response
+                (default: ``MCP_CALL_TIMEOUT``).
 
         Returns:
             Tool call result
 
         Raises:
             RuntimeError: If not connected
+            asyncio.TimeoutError: If the call exceeds *timeout*
         """
         self._validate_connection()
 
-        return await self.session.call_tool(name, arguments or {})
+        return await _call_with_timeout(
+            self.session.call_tool(name, arguments or {}),
+            timeout=timeout,
+            operation=f"call_tool({name})",
+            client_name=self.name,
+        )
 
     def _validate_connection(self) -> None:
         """Validate the connection to the MCP server.
@@ -548,37 +595,55 @@ class HttpStatefulClient(StatefulClientBase):
                 f"Error closing MCP client '{self.name}': {e}",
             )
 
-    async def list_tools(self):
+    async def list_tools(self, timeout: float = MCP_CALL_TIMEOUT):
         """Get all available tools from the server.
+
+        Args:
+            timeout: Maximum seconds to wait for the server response
+                (default: ``MCP_CALL_TIMEOUT``).
 
         Returns:
             List of available MCP tools
 
         Raises:
             RuntimeError: If not connected
+            asyncio.TimeoutError: If the call exceeds *timeout*
         """
         self._validate_connection()
 
-        res = await self.session.list_tools()
+        res = await _call_with_timeout(
+            self.session.list_tools(),
+            timeout=timeout,
+            operation="list_tools",
+            client_name=self.name,
+        )
         self._cached_tools = res.tools
         return res.tools
 
-    async def call_tool(self, name: str, arguments: dict | None = None):
+    async def call_tool(self, name: str, arguments: dict | None = None, timeout: float = MCP_CALL_TIMEOUT):
         """Call a tool on the MCP server.
 
         Args:
             name: Tool name
             arguments: Tool arguments (optional)
+            timeout: Maximum seconds to wait for the server response
+                (default: ``MCP_CALL_TIMEOUT``).
 
         Returns:
             Tool call result
 
         Raises:
             RuntimeError: If not connected
+            asyncio.TimeoutError: If the call exceeds *timeout*
         """
         self._validate_connection()
 
-        return await self.session.call_tool(name, arguments or {})
+        return await _call_with_timeout(
+            self.session.call_tool(name, arguments or {}),
+            timeout=timeout,
+            operation=f"call_tool({name})",
+            client_name=self.name,
+        )
 
     def _validate_connection(self) -> None:
         """Validate the connection to the MCP server.

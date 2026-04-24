@@ -130,9 +130,10 @@ class CronExecutor:
         """Execute agent-type job: run agent query and send events."""
         tenant_id = dispatch_meta.get("tenant_id") or "default"
         logger.info(
-            "cron agent: job_id=%s channel=%s stream_query then send_event",
+            "cron agent: job_id=%s channel=%s timeout=%ss",
             job.id,
             job.dispatch.channel,
+            job.runtime.timeout_seconds,
         )
         assert job.request is not None
         req = self._build_agent_request(job, target_user_id, target_session_id)
@@ -140,14 +141,30 @@ class CronExecutor:
 
         console_text_parts: list[str] = []
         try:
-            await self._run_agent_stream(
-                job,
-                target_user_id,
-                target_session_id,
-                dispatch_meta,
-                req,
-                console_text_parts,
-            )
+            # Wrap the entire agent execution in a timeout so that
+            # initialization delays + streaming are both covered.
+            if hasattr(asyncio, "timeout"):
+                async with asyncio.timeout(job.runtime.timeout_seconds):
+                    await self._run_agent_stream(
+                        job,
+                        target_user_id,
+                        target_session_id,
+                        dispatch_meta,
+                        req,
+                        console_text_parts,
+                    )
+            else:
+                await asyncio.wait_for(
+                    self._run_agent_stream(
+                        job,
+                        target_user_id,
+                        target_session_id,
+                        dispatch_meta,
+                        req,
+                        console_text_parts,
+                    ),
+                    timeout=job.runtime.timeout_seconds,
+                )
             task_chat_id: Optional[str] = (job.meta or {}).get("task_chat_id")
             if (
                 job.dispatch.channel != CONSOLE_CHANNEL
@@ -165,6 +182,7 @@ class CronExecutor:
                 job.id,
                 job.runtime.timeout_seconds,
             )
+            await self._notify_timeout(job, tenant_id)
             raise
         except asyncio.CancelledError:
             logger.info("cron execute: job_id=%s cancelled", job.id)
@@ -237,10 +255,38 @@ class CronExecutor:
                 if text:
                     console_text_parts.append(text)
 
-        await asyncio.wait_for(
-            _stream(),
-            timeout=job.runtime.timeout_seconds,
+        # Timeout is handled by _execute_agent_job which wraps this call
+        await _stream()
+
+    async def _notify_timeout(self, job: CronJobSpec, tenant_id: str) -> None:
+        """Push a timeout notification to the console so the user is aware.
+
+        Falls back to logging if the push fails; never raises.
+        """
+        task_chat_id: Optional[str] = (job.meta or {}).get("task_chat_id")
+        target_session_id = task_chat_id or job.dispatch.target.session_id
+        if not target_session_id:
+            logger.warning(
+                "cron timeout: no session_id for job_id=%s",
+                job.id,
+            )
+            return
+        timeout_text = (
+            f"⏰ 定时任务 [{job.name}] 执行超时"
+            f"（{job.runtime.timeout_seconds}s），已自动终止。"
         )
+        try:
+            await self._push_to_console(
+                target_session_id,
+                timeout_text,
+                tenant_id,
+            )
+        except Exception:  # pylint: disable=broad-except
+            logger.warning(
+                "Failed to push timeout notification for job_id=%s",
+                job.id,
+                exc_info=True,
+            )
 
     async def _push_to_console(
         self,
