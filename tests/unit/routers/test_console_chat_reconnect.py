@@ -80,6 +80,46 @@ class _FakeTaskTracker:
         yield 'data: {"done": true}\n\n'
 
 
+def test_console_chat_reconnect_waits_for_recently_started_run() -> None:
+    class _EventuallyAvailableChatManager:
+        def __init__(self) -> None:
+            self.lookup_count = 0
+
+        async def get_chat(self, _chat_id: str):
+            return None
+
+        async def get_chat_id_by_session(self, session_id: str, channel: str):
+            assert session_id == "1777001065201000"
+            assert channel == "console"
+            self.lookup_count += 1
+            if self.lookup_count == 1:
+                return None
+            return "chat-real-1"
+
+    class _EventuallyAvailableTaskTracker:
+        async def attach(self, run_key: str):
+            if run_key == "chat-real-1":
+                return object()
+            return None
+
+    async def _run() -> tuple[object, str, int]:
+        chat_manager = _EventuallyAvailableChatManager()
+        # pylint: disable=protected-access
+        queue, run_key = await console_router._attach_reconnect_queue(
+            SimpleNamespace(chat_manager=chat_manager),
+            _EventuallyAvailableTaskTracker(),
+            "1777001065201000",
+            "console",
+        )
+        return queue, run_key, chat_manager.lookup_count
+
+    queue, run_key, lookup_count = asyncio.run(_run())
+
+    assert queue is not None
+    assert run_key == "chat-real-1"
+    assert lookup_count == 2
+
+
 def test_console_chat_reconnect_accepts_chat_id_without_creating_new_chat(
     monkeypatch,
 ) -> None:

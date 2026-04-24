@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/console", tags=["console"])
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+_RECONNECT_ATTACH_ATTEMPTS = 10
+_RECONNECT_ATTACH_RETRY_DELAY_SECONDS = 0.1
 
 
 def _safe_filename(name: str) -> str:
@@ -107,23 +109,29 @@ async def _attach_reconnect_queue(
     channel_id: str,
 ) -> tuple[asyncio.Queue, str]:
     """Attach to a running chat by chat_id or logical session_id."""
-    chat = await workspace.chat_manager.get_chat(session_id)
-    if chat is not None:
-        queue = await tracker.attach(chat.id)
-        return queue, chat.id
+    for attempt in range(_RECONNECT_ATTACH_ATTEMPTS):
+        chat = await workspace.chat_manager.get_chat(session_id)
+        if chat is not None:
+            queue = await tracker.attach(chat.id)
+            if queue is not None:
+                return queue, chat.id
 
-    chat_id = await workspace.chat_manager.get_chat_id_by_session(
-        session_id,
-        channel_id,
-    )
-    if chat_id is None:
-        raise HTTPException(
-            status_code=404,
-            detail="No running chat for this session",
+        chat_id = await workspace.chat_manager.get_chat_id_by_session(
+            session_id,
+            channel_id,
         )
+        if chat_id is not None:
+            queue = await tracker.attach(chat_id)
+            if queue is not None:
+                return queue, chat_id
 
-    queue = await tracker.attach(chat_id)
-    return queue, chat_id
+        if attempt < _RECONNECT_ATTACH_ATTEMPTS - 1:
+            await asyncio.sleep(_RECONNECT_ATTACH_RETRY_DELAY_SECONDS)
+
+    raise HTTPException(
+        status_code=404,
+        detail="No running chat for this session",
+    )
 
 
 @router.post(
