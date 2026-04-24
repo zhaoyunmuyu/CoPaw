@@ -4,7 +4,7 @@ import { getApiToken } from "./config";
 // 使用统一的 getUserId helper，遵循优先级：iframe > window > session > default
 import { getUserId } from "../utils/identity";
 import { getIframeContext } from "../stores/iframeStore";
-import { DEFAULT_SOURCE_ID } from "../constants/identity";
+import { DEFAULT_SOURCE_ID, DEFAULT_BBK_ID } from "../constants/identity";
 // ==================== userId 统一整改结束 ====================
 
 /**
@@ -74,8 +74,10 @@ export function buildAuthHeaders(): Record<string, string> {
   }
 
   // 6. BBK ID（来自 iframe context，用于维度配置匹配）
-  if (iframeContext.bbk) {
-    headers["X-Bbk-Id"] = iframeContext.bbk;
+  // 非 iframe 模式下使用 DEFAULT_BBK_ID
+  const bbkId = iframeContext.bbk || DEFAULT_BBK_ID;
+  if (bbkId) {
+    headers["X-Bbk-Id"] = bbkId;
   }
 
   // 7. Space（来自 iframe context）

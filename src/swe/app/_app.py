@@ -30,6 +30,7 @@ from .routers import router as api_router, create_agent_scoped_router
 from .routers.agent_scoped import AgentContextMiddleware
 from .routers.voice import voice_router
 from ..envs import load_envs_into_environ
+from ..config.envs import load_env_defaults
 from .multi_agent_manager import MultiAgentManager
 from .workspace.tenant_pool import TenantWorkspacePool
 from .migration import (
@@ -52,8 +53,9 @@ mimetypes.add_type("application/javascript", ".mjs")
 mimetypes.add_type("text/css", ".css")
 mimetypes.add_type("application/wasm", ".wasm")
 
-# Load persisted env vars into os.environ at module import time
-# so they are available before the lifespan starts.
+# Load environment defaults (dev.json/prd.json based on SWE_ENV)
+# then load persisted env vars (envs.json) which can override defaults.
+load_env_defaults()
 load_envs_into_environ()
 
 

@@ -80,7 +80,7 @@ export default createGlobalStyle`
     overflow: hidden;
     cursor: pointer;
     display: flex;
-    flex:1;
+    // flex:1;
     flex-direction: column;
     transition: box-shadow 0.2s ease;
 
