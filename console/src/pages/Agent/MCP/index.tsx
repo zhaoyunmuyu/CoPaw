@@ -132,7 +132,7 @@ function MCPPage() {
     setSelectedTenantIds([]);
     setDistributionLoading(true);
     try {
-      const result = await api.listActiveModelDistributionTenants();
+      const result = await api.listMCPDistributionTenants();
       setDistributionTenantIds(
         (result.tenant_ids || []).filter(
           (tenantId) => tenantId !== currentTenantId,

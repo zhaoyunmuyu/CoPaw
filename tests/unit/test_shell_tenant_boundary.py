@@ -451,6 +451,24 @@ class TestResolveCwd:
 
         assert result == workspace_dir.resolve()
 
+    def test_resolve_cwd_allows_source_scoped_workspace_for_default_tenant(
+        self,
+        mock_working_dir: Path,
+    ):
+        """default + source should accept cwd under default_SOURCE."""
+        workspace_dir = (
+            mock_working_dir / "default_RMASSIST" / "workspaces" / "default"
+        )
+        workspace_dir.mkdir(parents=True)
+
+        with tenant_context(
+            tenant_id="default",
+            source_id="RMASSIST",
+        ):
+            result = _resolve_cwd(workspace_dir)
+
+        assert result == workspace_dir.resolve()
+
     def test_returns_resolved_cwd_when_within_tenant(
         self,
         mock_working_dir: Path,
@@ -495,6 +513,25 @@ class TestResolveCwd:
 
 class TestExecuteShellCommand:
     """Integration tests for execute_shell_command with tenant boundary."""
+
+    @pytest.mark.asyncio
+    async def test_accepts_string_cwd_within_tenant(
+        self,
+        mock_working_dir: Path,
+    ):
+        """String cwd values from the tool layer should still execute."""
+        tenant_dir = mock_working_dir / "test_tenant"
+        (tenant_dir / "test.txt").write_text("hello from string cwd")
+
+        from swe.agents.tools.shell import execute_shell_command
+
+        with tenant_context(tenant_id="test_tenant"):
+            result = await execute_shell_command(
+                "cat test.txt",
+                cwd=str(tenant_dir),
+            )
+
+            assert result.content[0]["text"] == "hello from string cwd"
 
     @pytest.mark.asyncio
     async def test_executes_within_tenant(self, mock_working_dir: Path):

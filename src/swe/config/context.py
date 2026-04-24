@@ -104,6 +104,24 @@ def get_current_source_id() -> str | None:
     return current_source_id.get()
 
 
+def resolve_runtime_tenant_id(
+    tenant_id: str | None,
+    source_id: str | None,
+) -> str | None:
+    """Resolve the tenant ID used by runtime-scoped storage and workspaces.
+
+    Unlike :func:`resolve_effective_tenant_id`, this helper is tolerant of
+    missing ``source_id`` and simply returns the original ``tenant_id`` in that
+    case. This makes it safe for generic runtime code paths that may run in
+    both source-scoped and non-source-scoped contexts.
+    """
+    if tenant_id is None:
+        return None
+    if tenant_id != "default" or not source_id:
+        return tenant_id
+    return resolve_effective_tenant_id(tenant_id, source_id)
+
+
 def set_current_source_id(source_id: str | None) -> Token:
     """Set the current source ID in context.
 
@@ -132,6 +150,14 @@ def get_current_workspace_dir() -> Path | None:
         Path to the current agent's workspace directory, or None if not set.
     """
     return current_workspace_dir.get()
+
+
+def get_current_effective_tenant_id() -> str | None:
+    """Get the current runtime tenant ID with default+source isolation."""
+    return resolve_runtime_tenant_id(
+        get_current_tenant_id(),
+        get_current_source_id(),
+    )
 
 
 def set_current_workspace_dir(workspace_dir: Path | None) -> Token:

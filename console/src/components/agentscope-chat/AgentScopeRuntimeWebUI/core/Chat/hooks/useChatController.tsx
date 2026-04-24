@@ -79,6 +79,7 @@ export default function useChatController() {
       sessionHandler.syncSessionMessagesForSession(
         owner?.sessionId ?? currentQARef.current.activeRequestOwner?.sessionId,
         messageHandler.getMessages(),
+        false,
       );
 
       // 完成后轮询获取建议
@@ -131,6 +132,11 @@ export default function useChatController() {
       }
 
       messageHandler.createRequestMessage(data);
+      await sessionHandler.syncSessionMessagesForSession(
+        activeSessionId,
+        messageHandler.getMessages(),
+        true,
+      );
       setLoading(true);
       await sleep(100);
 
@@ -142,6 +148,7 @@ export default function useChatController() {
       await sessionHandler.syncSessionMessagesForSession(
         activeSessionId,
         messageHandler.getMessages(),
+        true,
       );
 
       await request(historyMessages, data.biz_params, owner);
@@ -275,6 +282,11 @@ export default function useChatController() {
       }
 
       setLoading(true);
+      await sessionHandler.syncSessionMessagesForSession(
+        activeSessionId,
+        messageHandler.getMessages(),
+        true,
+      );
       await sleep(100);
 
       messageHandler.createResponseMessage();
@@ -284,6 +296,7 @@ export default function useChatController() {
       await sessionHandler.syncSessionMessagesForSession(
         activeSessionId,
         messageHandler.getMessages(),
+        true,
       );
 
       await request(historyMessages, undefined, owner);

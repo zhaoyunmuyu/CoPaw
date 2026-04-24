@@ -3,7 +3,9 @@ import { useLocation, useNavigate } from "react-router-dom";
 // ==================== 组件引入方式变更 (Kun He) ====================
 import { useChatAnywhereSessionsState } from "@/components/agentscope-chat";
 // ==================== 组件引入方式变更结束 ====================
+import { useAgentStore } from "@/stores/agentStore";
 import { getInitialSessionSelection } from "../../sessionApi/initialSessionSelection";
+import { getSessionAgentId } from "../../sessionApi/sessionAgent";
 
 /**
  * URL chatId → context currentSessionId (one direction of bidirectional sync).
@@ -18,6 +20,7 @@ const ChatSessionInitializer: React.FC = () => {
 
   const { sessions, currentSessionId, setCurrentSessionId } =
     useChatAnywhereSessionsState();
+  const { selectedAgent, setSelectedAgent } = useAgentStore();
 
   const currentSessionIdRef = useRef(currentSessionId);
   currentSessionIdRef.current = currentSessionId;
@@ -34,6 +37,12 @@ const ChatSessionInitializer: React.FC = () => {
 
     const matching = sessions.find((s) => s.id === resolvedSessionId);
     if (matching && currentSessionIdRef.current !== matching.id) {
+      const sessionAgentId = getSessionAgentId(
+        (matching as { meta?: Record<string, unknown> | null }).meta,
+      );
+      if (sessionAgentId && sessionAgentId !== selectedAgent) {
+        setSelectedAgent(sessionAgentId);
+      }
       setCurrentSessionId(matching.id);
     }
 
@@ -45,7 +54,14 @@ const ChatSessionInitializer: React.FC = () => {
     }
     // Intentionally exclude currentSessionId from deps: only react to URL / session list changes.
     // currentSessionId is read via ref to avoid circular triggers.
-  }, [location.pathname, navigate, sessions, setCurrentSessionId]);
+  }, [
+    location.pathname,
+    navigate,
+    selectedAgent,
+    sessions,
+    setCurrentSessionId,
+    setSelectedAgent,
+  ]);
 
   return null;
 };

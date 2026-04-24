@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => {
 
   return {
     fetch: vi.fn(),
+    reconnect: vi.fn(),
     cancel: vi.fn(),
     streamGate,
   };
@@ -86,6 +87,7 @@ vi.mock("../../Context/ChatAnywhereOptionsContext", () => ({
     selector({
       api: {
         fetch: mocks.fetch,
+        reconnect: mocks.reconnect,
         cancel: mocks.cancel,
         responseParser: JSON.parse,
       },
@@ -125,6 +127,7 @@ function Harness(props: {
 describe("useChatRequest", () => {
   beforeEach(() => {
     mocks.fetch.mockReset();
+    mocks.reconnect.mockReset();
     mocks.cancel.mockReset();
     let resolveGate: () => void = () => {};
     mocks.streamGate.promise = new Promise<void>((resolve) => {
@@ -207,5 +210,101 @@ describe("useChatRequest", () => {
 
     expect(updateMessage).toHaveBeenCalledTimes(1);
     expect(onFinish).not.toHaveBeenCalled();
+  });
+
+  it("passes the owning session identifiers through fetch", async () => {
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      body: null,
+    } as Response);
+
+    const currentQARef = {
+      current: {
+        response: {
+          id: "ui-response-a",
+          msgStatus: "generating",
+          cards: [
+            {
+              code: "AgentScopeRuntimeResponseCard",
+              data: {
+                id: "response-1",
+                status: "created",
+                created_at: 0,
+                output: [],
+              },
+            },
+          ],
+        },
+        activeRequestOwner: createOwner(),
+      },
+    } as CurrentQARef;
+
+    render(
+      <Harness
+        currentQARef={currentQARef}
+        updateMessage={vi.fn()}
+        onFinish={vi.fn()}
+      />,
+    );
+
+    await act(async () => {
+      await hookApi.request([], undefined, createOwner());
+    });
+
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        session_id: "chat-a",
+        logical_session_id: "logical-a",
+        chat_id: "chat-real-a",
+      }),
+    );
+  });
+
+  it("passes the owning session identifiers through reconnect", async () => {
+    mocks.reconnect.mockResolvedValue({
+      ok: true,
+      body: null,
+    } as Response);
+
+    const currentQARef = {
+      current: {
+        response: {
+          id: "ui-response-a",
+          msgStatus: "generating",
+          cards: [
+            {
+              code: "AgentScopeRuntimeResponseCard",
+              data: {
+                id: "response-1",
+                status: "created",
+                created_at: 0,
+                output: [],
+              },
+            },
+          ],
+        },
+        activeRequestOwner: createOwner(),
+      },
+    } as CurrentQARef;
+
+    render(
+      <Harness
+        currentQARef={currentQARef}
+        updateMessage={vi.fn()}
+        onFinish={vi.fn()}
+      />,
+    );
+
+    await act(async () => {
+      await hookApi.reconnect("chat-a", createOwner());
+    });
+
+    expect(mocks.reconnect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        session_id: "chat-a",
+        logical_session_id: "logical-a",
+        chat_id: "chat-real-a",
+      }),
+    );
   });
 });

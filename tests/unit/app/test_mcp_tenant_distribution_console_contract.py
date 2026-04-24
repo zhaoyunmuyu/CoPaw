@@ -33,7 +33,7 @@ def test_mcp_page_supports_batch_selection_and_shared_tenant_picker() -> None:
         "const [selectedClientKeys, setSelectedClientKeys] = useState<string[]>("
         in content
     )
-    assert "api.listActiveModelDistributionTenants()" in content
+    assert "api.listMCPDistributionTenants()" in content
     assert 'from "../../../utils/identity"' in content
     assert "const currentTenantId = getUserId();" in content
     assert 'from "../../../components/TenantTargetPicker"' in content
@@ -73,6 +73,8 @@ def test_mcp_api_exposes_distribution_endpoint() -> None:
 
     assert "distributeMCPClientsToDefaultAgents" in content
     assert '"/mcp/distribute/default-agents"' in content
+    assert "listMCPDistributionTenants" in content
+    assert '"/mcp/distribution/tenants"' in content
 
 
 def test_mcp_types_cover_distribution_contract() -> None:
@@ -86,6 +88,8 @@ def test_mcp_types_cover_distribution_contract() -> None:
     assert "default_agent_updated?: string[];" in content
     assert "export interface MCPDistributionResponse" in content
     assert "source_agent_id: string;" in content
+    assert "export interface MCPDistributionTenantListResponse" in content
+    assert "tenant_ids: string[];" in content
 
 
 def test_mcp_locales_cover_distribution_copy() -> None:

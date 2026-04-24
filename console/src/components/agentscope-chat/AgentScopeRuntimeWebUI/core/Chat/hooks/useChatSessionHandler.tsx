@@ -54,6 +54,7 @@ export default function useChatSessionHandler() {
     async (
       sessionId: string | undefined,
       messages: IAgentScopeRuntimeWebUIMessage[],
+      generating?: boolean,
     ) => {
       if (!sessionId) {
         return;
@@ -62,6 +63,7 @@ export default function useChatSessionHandler() {
       await updateSession({
         id: sessionId,
         messages,
+        ...(typeof generating === "boolean" ? { generating } : {}),
       });
     },
     [updateSession],

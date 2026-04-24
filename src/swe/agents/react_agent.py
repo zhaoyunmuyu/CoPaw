@@ -142,10 +142,10 @@ class SWEAgent(ToolGuardMixin, ReActAgent):
 
         # Get model info from ProviderManager (single source of truth)
         try:
-            from swe.config.context import get_current_tenant_id
+            from swe.config.context import get_current_effective_tenant_id
             from swe.providers.provider_manager import ProviderManager
 
-            tenant_id = get_current_tenant_id()
+            tenant_id = get_current_effective_tenant_id()
             manager = ProviderManager.get_instance(tenant_id)
             active = manager.get_active_model()
             if active:

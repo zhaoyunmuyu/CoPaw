@@ -9,9 +9,11 @@ import {
   type IAgentScopeRuntimeWebUISession,
 } from "@/components/agentscope-chat";
 // ==================== 组件引入方式变更结束 ====================
+import { useAgentStore } from "@/stores/agentStore";
 import { useTranslation } from "react-i18next";
 import { chatApi } from "../../../../api/modules/chat";
 import sessionApi from "../../sessionApi";
+import { getSessionAgentId } from "../../sessionApi/sessionAgent";
 import ChatSessionItem from "../ChatSessionItem";
 import { getChannelLabel } from "../../../Control/Channels/components";
 import styles from "./index.module.less";
@@ -56,6 +58,7 @@ const ChatSessionDrawer: React.FC<ChatSessionDrawerProps> = (props) => {
   const { t } = useTranslation();
   const { sessions, currentSessionId, setCurrentSessionId, setSessions } =
     useChatAnywhereSessionsState();
+  const { selectedAgent, setSelectedAgent } = useAgentStore();
 
   const { createSession } = useChatAnywhereSessions();
 
@@ -90,9 +93,16 @@ const ChatSessionDrawer: React.FC<ChatSessionDrawerProps> = (props) => {
 
   const handleSessionClick = useCallback(
     (sessionId: string) => {
+      const session = sessions.find((item) => item.id === sessionId) as
+        | ExtendedChatSession
+        | undefined;
+      const sessionAgentId = getSessionAgentId(session?.meta);
+      if (sessionAgentId && sessionAgentId !== selectedAgent) {
+        setSelectedAgent(sessionAgentId);
+      }
       setCurrentSessionId(sessionId);
     },
-    [setCurrentSessionId],
+    [selectedAgent, sessions, setCurrentSessionId, setSelectedAgent],
   );
 
   /** Delete a session and clear any persisted identity mapping */

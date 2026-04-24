@@ -31,13 +31,20 @@ export interface IAgentScopeRuntimeWebUIAPIOptions {
     input: any[];
     biz_params?: IAgentScopeRuntimeWebUIInputData["biz_params"];
     signal?: AbortSignal;
+    session_id?: string;
+    logical_session_id?: string;
+    chat_id?: string | null;
   }) => Promise<Response>;
 
   /**
    * @description 取消当前会话生成
    * @descriptionEn Cancel current session generation
    */
-  cancel?: (data: { session_id: string }) => void;
+  cancel?: (data: {
+    session_id: string;
+    logical_session_id?: string;
+    chat_id?: string | null;
+  }) => void;
 
   /**
    * @description 重连会话流式响应
@@ -46,6 +53,8 @@ export interface IAgentScopeRuntimeWebUIAPIOptions {
   reconnect?: (data: {
     session_id: string;
     signal?: AbortSignal;
+    logical_session_id?: string;
+    chat_id?: string | null;
   }) => Promise<Response>;
 
   /**

@@ -1,5 +1,5 @@
 import React from "react";
-import { act, render } from "@testing-library/react";
+import { act, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import useChatController from "./useChatController";
 import type { CurrentQARef } from "./currentQARef";
@@ -27,12 +27,19 @@ const mocks = vi.hoisted(() => ({
   syncSessionMessages: vi.fn(),
   syncSessionMessagesForSession: vi.fn(),
   pollSuggestions: vi.fn(),
+  sleep: vi.fn(async () => {}),
 }));
 
 let latestCurrentQARef: CurrentQARef | undefined;
 let latestRequestOptions:
   | {
       onFinish: (owner: ChatRequestOwner) => void;
+    }
+  | undefined;
+let latestController:
+  | {
+      handleSubmit: (data: { query: string; fileList?: unknown[] }) => Promise<void>;
+      handleCancel: () => void;
     }
   | undefined;
 
@@ -140,7 +147,7 @@ vi.mock("./useSuggestionsPolling", () => ({
 }));
 
 vi.mock("@/components/agentscope-chat", () => ({
-  sleep: vi.fn(async () => {}),
+  sleep: (...args: unknown[]) => mocks.sleep(...args),
 }));
 
 vi.mock("react-dom", () => ({
@@ -151,7 +158,7 @@ vi.mock("react-dom", () => ({
 }));
 
 function Harness() {
-  useChatController();
+  latestController = useChatController();
   return null;
 }
 
@@ -167,6 +174,7 @@ describe("useChatController", () => {
     mocks.getMessages.mockReturnValue([{ id: "message-1" }]);
     latestCurrentQARef = undefined;
     latestRequestOptions = undefined;
+    latestController = undefined;
   });
 
   it("syncs completion-time messages back to the request's owning session", async () => {
@@ -201,6 +209,38 @@ describe("useChatController", () => {
     expect(mocks.syncSessionMessagesForSession).toHaveBeenCalledWith(
       "chat-a",
       [{ id: "message-1" }],
+      false,
     );
+  });
+
+  it("marks the owning session as generating before waiting for the first frame", async () => {
+    let releaseSleep: (() => void) | undefined;
+    mocks.sleep.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseSleep = resolve;
+        }),
+    );
+
+    render(<Harness />);
+    expect(latestController).toBeTruthy();
+
+    await act(async () => {
+      const submitPromise = latestController!.handleSubmit({
+        query: "hello",
+        fileList: [],
+      });
+
+      await waitFor(() =>
+        expect(mocks.syncSessionMessagesForSession).toHaveBeenCalledWith(
+          "chat-b",
+          [{ id: "message-1" }],
+          true,
+        ),
+      );
+
+      releaseSleep?.();
+      await submitPromise;
+    });
   });
 });
