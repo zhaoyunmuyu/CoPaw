@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Global LLM request rate limiter.
+"""Agent-scoped LLM request rate limiter.
 
 How it works:
 1. QPM sliding window: tracks request timestamps in a 60-second window.
    Before each call, if the window is full, the caller waits until the
    oldest timestamp slides out — proactively preventing 429s.
 2. asyncio.Semaphore caps the number of concurrent in-flight LLM calls.
-3. A global pause timestamp: when a 429 is received every subsequent
-   acquire() waits until the pause expires, eliminating thundering-herd
-   retries.
+3. A scoped pause timestamp: when a 429 is received every subsequent acquire()
+   in the same tenant-local agent scope waits until the pause expires,
+   eliminating thundering-herd retries inside that scope.
 4. Per-waiter jitter: each caller adds a small random offset on top of
    the remaining pause time, so they spread out when waking up.
 
@@ -23,12 +23,36 @@ import collections
 import logging
 import random
 import time
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True, slots=True)
+class RateLimiterScopeKey:
+    """Tenant-local agent identity for process-local LLM limiting."""
+
+    tenant_id: str
+    agent_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class _RateLimiterConfigFingerprint:
+    max_concurrent: int
+    max_qpm: int
+    default_pause_seconds: float
+    jitter_range: float
+
+
+@dataclass(slots=True)
+class _RateLimiterRegistryEntry:
+    limiter: "LLMRateLimiter"
+    config: _RateLimiterConfigFingerprint
+    last_used_at: float
+
+
 class LLMRateLimiter:
-    """Global LLM request rate limiter.
+    """Scoped LLM request rate limiter.
 
     Coroutine-safe: all mutable state is protected by asyncio primitives and
     is intended for use within a single event loop.
@@ -36,7 +60,7 @@ class LLMRateLimiter:
     Args:
         max_concurrent: Maximum concurrent in-flight LLM calls (semaphore).
         max_qpm: Maximum queries per minute (sliding window). 0 = disabled.
-        default_pause_seconds: Global pause duration on a 429 response.
+        default_pause_seconds: Scope-local pause duration on a 429 response.
         jitter_range: Random jitter (seconds) added on top of the pause.
     """
 
@@ -71,7 +95,7 @@ class LLMRateLimiter:
         """Acquire an execution permit.
 
         Execution order:
-        1. If a global 429 pause is active, wait until it expires (plus
+        1. If a scoped 429 pause is active, wait until it expires (plus
            per-waiter jitter to avoid a new burst on wake-up).  The while-loop
            re-checks after each sleep because a new 429 may have extended the
            pause while we were waiting.
@@ -153,7 +177,7 @@ class LLMRateLimiter:
         self,
         retry_after: float | None = None,
     ) -> None:
-        """Record a 429 rate-limit response and set the global pause timestamp.
+        """Record a 429 response and set the scoped pause timestamp.
 
         Args:
             retry_after: Seconds from the API's Retry-After header.
@@ -166,7 +190,7 @@ class LLMRateLimiter:
                 self._pause_until = new_until
                 self._total_rate_limited += 1
                 logger.warning(
-                    "LLM rate limiter: global pause set for %.1fs "
+                    "LLM rate limiter: scoped pause set for %.1fs "
                     "(total_rate_limited=%d)",
                     pause,
                     self._total_rate_limited,
@@ -196,83 +220,208 @@ class LLMRateLimiter:
         }
 
 
-# Global singleton
-_global_limiter: LLMRateLimiter | None = None
-_init_lock: asyncio.Lock | None = None
+# Process-local scoped registry.
+_limiter_registry: dict[
+    RateLimiterScopeKey,
+    _RateLimiterRegistryEntry,
+] = {}
+_registry_lock: asyncio.Lock | None = None
 
 
 def _get_init_lock() -> asyncio.Lock:
-    global _init_lock
-    if _init_lock is None:
-        _init_lock = asyncio.Lock()
-    return _init_lock
+    global _registry_lock
+    if _registry_lock is None:
+        _registry_lock = asyncio.Lock()
+    return _registry_lock
+
+
+def _normalize_scope_key(
+    scope_key: RateLimiterScopeKey | None,
+    tenant_id: str | None = None,
+    agent_id: str | None = None,
+) -> RateLimiterScopeKey:
+    if scope_key is not None:
+        return RateLimiterScopeKey(
+            tenant_id=scope_key.tenant_id or "default",
+            agent_id=scope_key.agent_id or "default",
+        )
+
+    resolved_tenant_id = tenant_id
+    if not resolved_tenant_id:
+        try:
+            from ..config.context import get_current_effective_tenant_id
+
+            resolved_tenant_id = get_current_effective_tenant_id()
+        except Exception:
+            resolved_tenant_id = None
+
+    resolved_agent_id = agent_id
+    if not resolved_agent_id:
+        try:
+            from ..app.agent_context import get_current_agent_id
+
+            resolved_agent_id = get_current_agent_id(resolved_tenant_id)
+        except Exception:
+            resolved_agent_id = None
+
+    return RateLimiterScopeKey(
+        tenant_id=resolved_tenant_id or "default",
+        agent_id=resolved_agent_id or "default",
+    )
+
+
+def _normalize_config_fingerprint(
+    max_concurrent: int | None,
+    max_qpm: int | None,
+    default_pause_seconds: float | None,
+    jitter_range: float | None,
+) -> _RateLimiterConfigFingerprint:
+    from ..constant import (
+        LLM_MAX_CONCURRENT,
+        LLM_MAX_QPM,
+        LLM_RATE_LIMIT_JITTER,
+        LLM_RATE_LIMIT_PAUSE,
+    )
+
+    return _RateLimiterConfigFingerprint(
+        max_concurrent=max(
+            1,
+            (
+                max_concurrent
+                if max_concurrent is not None
+                else LLM_MAX_CONCURRENT
+            ),
+        ),
+        max_qpm=max(0, max_qpm if max_qpm is not None else LLM_MAX_QPM),
+        default_pause_seconds=max(
+            1.0,
+            (
+                default_pause_seconds
+                if default_pause_seconds is not None
+                else LLM_RATE_LIMIT_PAUSE
+            ),
+        ),
+        jitter_range=max(
+            0.0,
+            (
+                jitter_range
+                if jitter_range is not None
+                else LLM_RATE_LIMIT_JITTER
+            ),
+        ),
+    )
 
 
 async def get_rate_limiter(
+    scope_key: RateLimiterScopeKey | None = None,
+    tenant_id: str | None = None,
+    agent_id: str | None = None,
     max_concurrent: int | None = None,
     max_qpm: int | None = None,
     default_pause_seconds: float | None = None,
     jitter_range: float | None = None,
 ) -> LLMRateLimiter:
-    """Return the global LLMRateLimiter singleton, lazily initialised
-    (coroutine-safe).
+    """Return the scoped LLMRateLimiter, lazily initialised.
 
-    On the *first* call the provided values (or env-var constants as fallback)
-    are used to construct the singleton.  All subsequent calls return the same
-    instance regardless of the arguments passed.
+    Limiters are process-local and keyed by effective tenant plus resolved
+    agent. If a later lookup for the same scope uses changed limiter settings,
+    the registry entry is replaced for subsequent calls while any in-flight
+    calls on the old limiter drain naturally.
 
     Args:
+        scope_key: Explicit tenant-local agent limiter scope.
+        tenant_id: Effective tenant ID when no scope key is provided.
+        agent_id: Resolved agent ID when no scope key is provided.
         max_concurrent: Cap on concurrent in-flight LLM calls.
         max_qpm: Maximum queries per minute (sliding window). 0 = disabled.
         default_pause_seconds: Pause duration (s) applied on a 429 response.
         jitter_range: Random jitter (s) added on top of the pause.
     """
-    global _global_limiter  # noqa: PLW0603
-    if _global_limiter is not None:
-        return _global_limiter
+    resolved_scope = _normalize_scope_key(
+        scope_key,
+        tenant_id=tenant_id,
+        agent_id=agent_id,
+    )
+    config = _normalize_config_fingerprint(
+        max_concurrent=max_concurrent,
+        max_qpm=max_qpm,
+        default_pause_seconds=default_pause_seconds,
+        jitter_range=jitter_range,
+    )
+    now = time.monotonic()
+
+    entry = _limiter_registry.get(resolved_scope)
+    if entry is not None and entry.config == config:
+        entry.last_used_at = now
+        return entry.limiter
+
     async with _get_init_lock():
-        if _global_limiter is not None:
-            return _global_limiter
-        from ..constant import (
-            LLM_MAX_CONCURRENT,
-            LLM_MAX_QPM,
-            LLM_RATE_LIMIT_JITTER,
-            LLM_RATE_LIMIT_PAUSE,
-        )
+        entry = _limiter_registry.get(resolved_scope)
+        if entry is not None and entry.config == config:
+            entry.last_used_at = time.monotonic()
+            return entry.limiter
 
-        resolved_max = (
-            max_concurrent
-            if max_concurrent is not None
-            else LLM_MAX_CONCURRENT
+        limiter = LLMRateLimiter(
+            max_concurrent=config.max_concurrent,
+            max_qpm=config.max_qpm,
+            default_pause_seconds=config.default_pause_seconds,
+            jitter_range=config.jitter_range,
         )
-        resolved_qpm = max_qpm if max_qpm is not None else LLM_MAX_QPM
-        resolved_pause = (
-            default_pause_seconds
-            if default_pause_seconds is not None
-            else LLM_RATE_LIMIT_PAUSE
+        _limiter_registry[resolved_scope] = _RateLimiterRegistryEntry(
+            limiter=limiter,
+            config=config,
+            last_used_at=time.monotonic(),
         )
-        resolved_jitter = (
-            jitter_range if jitter_range is not None else LLM_RATE_LIMIT_JITTER
-        )
+        if entry is None:
+            logger.info(
+                "LLM rate limiter initialized: scope=%s/%s, "
+                "max_concurrent=%d, max_qpm=%d, default_pause=%.1fs, "
+                "jitter=%.1fs",
+                resolved_scope.tenant_id,
+                resolved_scope.agent_id,
+                config.max_concurrent,
+                config.max_qpm,
+                config.default_pause_seconds,
+                config.jitter_range,
+            )
+        else:
+            logger.info(
+                "LLM rate limiter replaced: scope=%s/%s, "
+                "max_concurrent=%d, max_qpm=%d, default_pause=%.1fs, "
+                "jitter=%.1fs",
+                resolved_scope.tenant_id,
+                resolved_scope.agent_id,
+                config.max_concurrent,
+                config.max_qpm,
+                config.default_pause_seconds,
+                config.jitter_range,
+            )
+    return limiter
 
-        _global_limiter = LLMRateLimiter(
-            max_concurrent=resolved_max,
-            max_qpm=resolved_qpm,
-            default_pause_seconds=resolved_pause,
-            jitter_range=resolved_jitter,
-        )
+
+def cleanup_idle_rate_limiters(max_idle_seconds: float) -> int:
+    """Remove idle scoped limiter entries with no in-flight calls.
+
+    This helper is intentionally explicit so service lifecycle code can choose
+    when to run cleanup. Entries with active calls are never removed.
+    """
+    now = time.monotonic()
+    removed = 0
+    for scope, entry in list(_limiter_registry.items()):
+        if entry.limiter.stats()["current_in_flight"] > 0:
+            continue
+        if now - entry.last_used_at < max_idle_seconds:
+            continue
+        del _limiter_registry[scope]
+        removed += 1
         logger.info(
-            "LLM rate limiter initialized: max_concurrent=%d, max_qpm=%d, "
-            "default_pause=%.1fs, jitter=%.1fs",
-            resolved_max,
-            resolved_qpm,
-            resolved_pause,
-            resolved_jitter,
+            "LLM rate limiter cleaned up: scope=%s/%s",
+            scope.tenant_id,
+            scope.agent_id,
         )
-    return _global_limiter
+    return removed
 
 
 def reset_rate_limiter() -> None:
-    """Reset the global singleton (for testing or service restart)."""
-    global _global_limiter  # noqa: PLW0603
-    _global_limiter = None
+    """Reset all scoped limiter entries (for testing or service restart)."""
+    _limiter_registry.clear()

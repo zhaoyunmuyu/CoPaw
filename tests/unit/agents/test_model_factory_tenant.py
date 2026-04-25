@@ -2,6 +2,7 @@
 # flake8: noqa: E402
 # pylint: disable=wrong-import-position
 """Tests for model_factory tenant integration."""
+
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -163,6 +164,80 @@ class TestCreateModelAndFormatterTenantIntegration:
                 str(call) for call in mock_pm_class.get_instance.call_args_list
             ]
             assert any("tenant-a" in call for call in calls)
+
+    def test_passes_effective_tenant_and_agent_scope_to_retry_model(self):
+        """Factory propagates limiter scope and config to RetryChatModel."""
+        from swe.agents.model_factory import create_model_and_formatter
+        from swe.providers.models import ModelSlotConfig
+
+        with (
+            patch(
+                "swe.config.context.get_current_effective_tenant_id",
+                return_value="tenant-a",
+            ),
+            patch(
+                "swe.app.agent_context.get_current_agent_id",
+                return_value="agent-x",
+            ),
+            patch(
+                "swe.config.config.load_agent_config",
+            ) as mock_load_agent_config,
+            patch(
+                "swe.agents.model_factory.ProviderManager",
+            ) as mock_pm_class,
+            patch(
+                "swe.agents.model_factory._create_formatter_instance",
+            ),
+            patch(
+                "swe.agents.model_factory.TokenRecordingModelWrapper",
+                side_effect=lambda _provider_id, model: model,
+            ),
+            patch(
+                "swe.agents.model_factory.RetryChatModel",
+                side_effect=lambda model, **_kwargs: model,
+            ) as mock_retry_model,
+        ):
+            mock_agent_config = MagicMock()
+            mock_agent_config.running.llm_retry_enabled = True
+            mock_agent_config.running.llm_max_retries = 3
+            mock_agent_config.running.llm_backoff_base = 1.0
+            mock_agent_config.running.llm_backoff_cap = 10.0
+            mock_agent_config.running.llm_max_concurrent = 7
+            mock_agent_config.running.llm_max_qpm = 70
+            mock_agent_config.running.llm_rate_limit_pause = 4.0
+            mock_agent_config.running.llm_rate_limit_jitter = 0.5
+            mock_agent_config.running.llm_acquire_timeout = 30.0
+            mock_load_agent_config.return_value = mock_agent_config
+
+            mock_manager = MagicMock()
+            mock_manager.get_active_model.return_value = ModelSlotConfig(
+                provider_id="openai",
+                model="gpt-4",
+            )
+            mock_pm_class.get_instance.return_value = mock_manager
+            mock_pm_class.ensure_tenant_provider_storage = MagicMock()
+
+            mock_provider = MagicMock()
+            mock_model = MagicMock()
+            mock_model.model_name = "gpt-4"
+            mock_model.stream = False
+            mock_provider.get_chat_model_instance.return_value = mock_model
+            mock_manager.get_provider.return_value = mock_provider
+
+            create_model_and_formatter()
+
+        mock_pm_class.get_instance.assert_called_once_with("tenant-a")
+        assert mock_retry_model.call_args.kwargs["tenant_id"] == "tenant-a"
+        assert mock_retry_model.call_args.kwargs["agent_id"] == "agent-x"
+        rate_limit_config = mock_retry_model.call_args.kwargs[
+            "rate_limit_config"
+        ]
+        assert rate_limit_config.max_concurrent == 7
+        assert rate_limit_config.max_qpm == 70
+        mock_load_agent_config.assert_any_call(
+            "agent-x",
+            tenant_id="tenant-a",
+        )
 
 
 class TestBackwardCompatibility:

@@ -455,8 +455,8 @@ class AgentsRunningConfig(BaseModel):
         default=LLM_MAX_CONCURRENT,
         ge=1,
         description=(
-            "Maximum number of concurrent in-flight LLM calls. "
-            "Shared across all agents; only the first initialization wins."
+            "Maximum number of concurrent in-flight LLM calls for this "
+            "tenant-local agent scope."
         ),
     )
 
@@ -464,9 +464,9 @@ class AgentsRunningConfig(BaseModel):
         default=LLM_MAX_QPM,
         ge=0,
         description=(
-            "Maximum queries per minute (60-second sliding window). "
-            "New requests that would exceed this limit wait before being "
-            "dispatched — proactively preventing 429s. 0 = disabled."
+            "Maximum queries per minute for this tenant-local agent scope "
+            "(60-second sliding window). New requests that would exceed this "
+            "limit wait before being dispatched; 0 = disabled."
         ),
     )
 
@@ -474,8 +474,8 @@ class AgentsRunningConfig(BaseModel):
         default=LLM_RATE_LIMIT_PAUSE,
         ge=1.0,
         description=(
-            "Default pause duration (seconds) applied globally when a 429 "
-            "rate-limit response is received."
+            "Default pause duration (seconds) applied to this tenant-local "
+            "agent scope when a 429 rate-limit response is received."
         ),
     )
 
@@ -484,7 +484,7 @@ class AgentsRunningConfig(BaseModel):
         ge=0.0,
         description=(
             "Random jitter range (seconds) added on top of the pause so "
-            "concurrent waiters stagger their wake-up."
+            "concurrent waiters in this agent scope stagger their wake-up."
         ),
     )
 
@@ -492,8 +492,8 @@ class AgentsRunningConfig(BaseModel):
         default=LLM_ACQUIRE_TIMEOUT,
         ge=10.0,
         description=(
-            "Maximum time (seconds) a caller waits to acquire a rate-limiter "
-            "slot before giving up with an error."
+            "Maximum time (seconds) a caller waits to acquire this "
+            "agent-scoped rate-limiter slot before giving up with an error."
         ),
     )
 

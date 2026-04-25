@@ -267,18 +267,18 @@ LLM_BACKOFF_CAP = EnvVarLoader.get_float(
 )
 
 # LLM concurrency control
-# Maximum number of concurrent in-flight LLM calls; excess requests wait on
-# the semaphore.  Tune to your API quota: start conservatively at 3-5 and
-# increase (e.g. OpenAI Tier 1 ~500 QPM allows ~25 at 3 s/call average).
+# Maximum number of concurrent in-flight LLM calls per tenant-local agent
+# scope; excess requests for the same scope wait on the semaphore. Tune to
+# your API quota: start conservatively at 3-5 and increase carefully.
 LLM_MAX_CONCURRENT = EnvVarLoader.get_int(
     "SWE_LLM_MAX_CONCURRENT",
     10,
     min_value=1,
 )
 
-# Maximum queries per minute (QPM), enforced via a 60-second sliding window.
-# New requests that would exceed this limit will wait before being dispatched
-# to the API — proactively preventing 429s rather than reacting to them.
+# Maximum queries per minute (QPM) per tenant-local agent scope, enforced via
+# a 60-second sliding window. New requests that would exceed this limit wait
+# before being dispatched to the API, proactively preventing 429s.
 # 0 = unlimited (disabled).
 # Examples: Anthropic Tier-1 ≈ 50 QPM; OpenAI Tier-1 ≈ 500 QPM.
 LLM_MAX_QPM = EnvVarLoader.get_int(
@@ -287,24 +287,24 @@ LLM_MAX_QPM = EnvVarLoader.get_int(
     min_value=0,
 )
 
-# Default global pause duration (seconds) applied to all waiters when a 429
-# is received.  Overridden by the API's Retry-After header when present.
+# Default pause duration (seconds) applied to the tenant-local agent scope
+# that receives a 429. Overridden by the API's Retry-After header when present.
 LLM_RATE_LIMIT_PAUSE = EnvVarLoader.get_float(
     "SWE_LLM_RATE_LIMIT_PAUSE",
     5.0,
     min_value=1.0,
 )
 
-# Random jitter range (seconds) added on top of the pause remaining time so
-# concurrent waiters stagger their wake-up and avoid a new burst.
+# Random jitter range (seconds) added on top of the scoped pause remaining
+# time so concurrent waiters in that scope stagger their wake-up.
 LLM_RATE_LIMIT_JITTER = EnvVarLoader.get_float(
     "SWE_LLM_RATE_LIMIT_JITTER",
     1.0,
     min_value=0.0,
 )
 
-# Maximum time (seconds) a caller will wait for a semaphore slot before
-# giving up with a RuntimeError rather than blocking indefinitely.
+# Maximum time (seconds) a caller waits for its agent-scoped semaphore slot
+# before giving up with a RuntimeError rather than blocking indefinitely.
 LLM_ACQUIRE_TIMEOUT = EnvVarLoader.get_float(
     "SWE_LLM_ACQUIRE_TIMEOUT",
     300.0,

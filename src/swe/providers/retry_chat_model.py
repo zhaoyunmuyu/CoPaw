@@ -5,11 +5,10 @@ Transparently retries LLM API calls on transient errors (rate-limit,
 timeout, connection) with configurable exponential back-off.
 
 Concurrency and rate-limit control (LLMRateLimiter):
-- A global semaphore caps the number of concurrent in-flight LLM calls,
-  preventing a burst of requests from hammering the upstream API.
-- When a 429 is received every concurrent caller is paused for the same
-  duration (plus per-caller jitter) before re-trying, eliminating the
-  thundering-herd problem where multiple callers retry at the same instant.
+- A tenant-local agent scoped semaphore caps the number of concurrent
+  in-flight LLM calls for that agent scope.
+- When a 429 is received, callers in the same agent scope are paused for the
+  same duration before retrying. Unrelated agents keep their own cooldown.
 
 Semaphore ownership rules:
 - Non-streaming: __call__'s finally block always releases the slot
@@ -45,7 +44,7 @@ from ..constant import (
     LLM_RATE_LIMIT_PAUSE,
     LLM_STREAM_STALL_TIMEOUT,
 )
-from .rate_limiter import LLMRateLimiter, get_rate_limiter
+from .rate_limiter import LLMRateLimiter, RateLimiterScopeKey, get_rate_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -69,14 +68,13 @@ class RetryConfig:
 class RateLimitConfig:
     """Rate-limiting policy for LLM calls.
 
-    Controls the global LLMRateLimiter singleton that caps concurrency and
-    coordinates pauses when a 429 is received.  The singleton is initialised
-    on the *first* call; subsequent callers share the same instance.
+    Controls the scoped LLMRateLimiter that caps concurrency and coordinates
+    pauses when a 429 is received inside the tenant-local agent scope.
 
     Attributes:
         max_concurrent: Maximum concurrent in-flight LLM calls.
         max_qpm: Maximum queries per minute (sliding window). 0 = disabled.
-        pause_seconds: Global pause duration (s) on a 429 response.
+        pause_seconds: Scope-local pause duration (s) on a 429 response.
         jitter_range: Random jitter (s) added on top of the pause.
         acquire_timeout: Max seconds to wait for a slot before raising.
     """
@@ -212,8 +210,8 @@ class RetryChatModel(ChatModelBase):
     responses are also covered: if the stream fails mid-consumption the
     entire request is retried from scratch.
 
-    A global LLMRateLimiter is consulted on every call to cap concurrency and
-    to coordinate a shared pause across all callers when a 429 is received.
+    A scoped LLMRateLimiter is consulted on every call to cap concurrency and
+    coordinate 429 pauses within the tenant-local agent scope.
     """
 
     def __init__(
@@ -221,6 +219,8 @@ class RetryChatModel(ChatModelBase):
         inner: ChatModelBase,
         retry_config: RetryConfig | None = None,
         rate_limit_config: RateLimitConfig | None = None,
+        tenant_id: str | None = None,
+        agent_id: str | None = None,
         call_timeout: float = LLM_CALL_TIMEOUT,
         stream_stall_timeout: float = LLM_STREAM_STALL_TIMEOUT,
     ) -> None:
@@ -229,6 +229,10 @@ class RetryChatModel(ChatModelBase):
         self._retry_config = _normalize_retry_config(retry_config)
         self._rate_limit_config = _normalize_rate_limit_config(
             rate_limit_config,
+        )
+        self._limiter_scope = RateLimiterScopeKey(
+            tenant_id=tenant_id or "default",
+            agent_id=agent_id or "default",
         )
         self._call_timeout = max(30.0, call_timeout)
         self._stream_stall_timeout = max(10.0, stream_stall_timeout)
@@ -300,6 +304,7 @@ class RetryChatModel(ChatModelBase):
         **kwargs: Any,
     ) -> ChatResponse | AsyncGenerator[ChatResponse, None]:
         limiter = await get_rate_limiter(
+            scope_key=self._limiter_scope,
             max_concurrent=self._rate_limit_config.max_concurrent,
             max_qpm=self._rate_limit_config.max_qpm,
             default_pause_seconds=self._rate_limit_config.pause_seconds,
@@ -327,10 +332,19 @@ class RetryChatModel(ChatModelBase):
                     )
                     acquired = True
                 except asyncio.TimeoutError as exc:
+                    logger.warning(
+                        "LLM rate limiter timed out: scope=%s/%s, "
+                        "timeout=%.0fs",
+                        self._limiter_scope.tenant_id,
+                        self._limiter_scope.agent_id,
+                        self._rate_limit_config.acquire_timeout,
+                    )
                     raise RuntimeError(
                         f"LLM rate limiter: timed out waiting"
                         f" {self._rate_limit_config.acquire_timeout:.0f}s "
-                        "for an execution slot",
+                        "for an execution slot "
+                        f"(scope={self._limiter_scope.tenant_id}/"
+                        f"{self._limiter_scope.agent_id})",
                     ) from exc
 
                 result = await asyncio.wait_for(
@@ -430,10 +444,19 @@ class RetryChatModel(ChatModelBase):
                     )
                     acquired = True
                 except asyncio.TimeoutError as exc:
+                    logger.warning(
+                        "LLM rate limiter timed out: scope=%s/%s, "
+                        "timeout=%.0fs, stream_retry=true",
+                        self._limiter_scope.tenant_id,
+                        self._limiter_scope.agent_id,
+                        self._rate_limit_config.acquire_timeout,
+                    )
                     raise RuntimeError(
                         f"LLM rate limiter: timed out waiting"
                         f" {self._rate_limit_config.acquire_timeout:.0f}s"
-                        f" for an execution slot (stream retry)",
+                        f" for an execution slot (stream retry, "
+                        f"scope={self._limiter_scope.tenant_id}/"
+                        f"{self._limiter_scope.agent_id})",
                     ) from exc
 
                 result = await asyncio.wait_for(
