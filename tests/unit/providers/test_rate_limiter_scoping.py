@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
 """Tests for tenant-local agent scoped LLM rate limiter state."""
 
+import asyncio
+
 import pytest
+from agentscope.model import ChatModelBase
+from agentscope.model._model_response import ChatResponse
 
 from swe.providers.rate_limiter import (
     RateLimiterScopeKey,
@@ -9,6 +13,29 @@ from swe.providers.rate_limiter import (
     get_rate_limiter,
     reset_rate_limiter,
 )
+from swe.providers.retry_chat_model import RateLimitConfig, RetryChatModel
+
+
+class _StaticChatModel(ChatModelBase):
+    def __init__(self):
+        super().__init__(model_name="test-model", stream=False)
+
+    async def __call__(self, *args, **kwargs):
+        return ChatResponse(content=[])
+
+
+class _BlockingStreamChatModel(ChatModelBase):
+    def __init__(self, release_second_chunk: asyncio.Event):
+        super().__init__(model_name="test-model", stream=True)
+        self._release_second_chunk = release_second_chunk
+
+    async def __call__(self, *args, **kwargs):
+        async def _stream():
+            yield ChatResponse(content=[])
+            await self._release_second_chunk.wait()
+            yield ChatResponse(content=[])
+
+        return _stream()
 
 
 @pytest.fixture(autouse=True)
@@ -158,3 +185,83 @@ async def test_cleanup_removes_only_idle_entries():
     assert new_idle_limiter is not busy_limiter
 
     busy_limiter.release()
+
+
+@pytest.mark.asyncio
+async def test_retry_chat_model_without_explicit_scope_uses_current_agent(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "swe.config.context.get_current_effective_tenant_id",
+        lambda: "tenant-a",
+    )
+    monkeypatch.setattr(
+        "swe.app.agent_context.get_current_agent_id",
+        lambda tenant_id=None: "agent-x",
+    )
+    model = RetryChatModel(
+        _StaticChatModel(),
+        rate_limit_config=RateLimitConfig(
+            max_concurrent=1,
+            max_qpm=0,
+            pause_seconds=10.0,
+            jitter_range=0.0,
+        ),
+    )
+
+    await model()
+
+    limiter = await get_rate_limiter(
+        tenant_id="tenant-a",
+        agent_id="agent-x",
+        max_concurrent=1,
+        max_qpm=0,
+        default_pause_seconds=10.0,
+        jitter_range=0.0,
+    )
+
+    assert limiter.stats()["total_acquired"] == 1
+
+
+@pytest.mark.asyncio
+async def test_cleanup_keeps_limiter_with_active_stream_after_slot_release():
+    release_second_chunk = asyncio.Event()
+    scope = RateLimiterScopeKey("tenant-a", "stream-agent")
+    model = RetryChatModel(
+        _BlockingStreamChatModel(release_second_chunk),
+        tenant_id=scope.tenant_id,
+        agent_id=scope.agent_id,
+        rate_limit_config=RateLimitConfig(
+            max_concurrent=1,
+            max_qpm=0,
+            pause_seconds=10.0,
+            jitter_range=0.0,
+        ),
+    )
+    stream = await model()
+
+    try:
+        await stream.__anext__()
+        limiter = await get_rate_limiter(
+            scope_key=scope,
+            max_concurrent=1,
+            max_qpm=0,
+            default_pause_seconds=10.0,
+            jitter_range=0.0,
+        )
+
+        removed = cleanup_idle_rate_limiters(max_idle_seconds=0)
+        same_limiter = await get_rate_limiter(
+            scope_key=scope,
+            max_concurrent=1,
+            max_qpm=0,
+            default_pause_seconds=10.0,
+            jitter_range=0.0,
+        )
+
+        assert limiter.stats()["current_in_flight"] == 0
+        assert removed == 0
+        assert same_limiter is limiter
+    finally:
+        release_second_chunk.set()
+        await stream.aclose()

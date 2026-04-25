@@ -85,6 +85,7 @@ class LLMRateLimiter:
 
         # Own counter instead of reading semaphore._value (private API).
         self._in_flight: int = 0
+        self._active_streams: int = 0
 
         self._total_acquired: int = 0
         self._total_paused: int = 0
@@ -173,6 +174,14 @@ class LLMRateLimiter:
         self._in_flight -= 1
         self._semaphore.release()
 
+    def begin_stream(self) -> None:
+        """Mark a streaming response as active for cleanup safety."""
+        self._active_streams += 1
+
+    def end_stream(self) -> None:
+        """Mark a streaming response as no longer active."""
+        self._active_streams = max(0, self._active_streams - 1)
+
     async def report_rate_limit(
         self,
         retry_after: float | None = None,
@@ -205,6 +214,7 @@ class LLMRateLimiter:
         return {
             "max_concurrent": self._max_concurrent,
             "current_in_flight": self._in_flight,
+            "current_active_streams": self._active_streams,
             "current_available": max(
                 0,
                 self._max_concurrent - self._in_flight,
@@ -267,6 +277,19 @@ def _normalize_scope_key(
     return RateLimiterScopeKey(
         tenant_id=resolved_tenant_id or "default",
         agent_id=resolved_agent_id or "default",
+    )
+
+
+def resolve_rate_limiter_scope(
+    scope_key: RateLimiterScopeKey | None = None,
+    tenant_id: str | None = None,
+    agent_id: str | None = None,
+) -> RateLimiterScopeKey:
+    """Resolve a limiter scope using the current tenant/agent fallbacks."""
+    return _normalize_scope_key(
+        scope_key,
+        tenant_id=tenant_id,
+        agent_id=agent_id,
     )
 
 
@@ -337,7 +360,7 @@ async def get_rate_limiter(
         default_pause_seconds: Pause duration (s) applied on a 429 response.
         jitter_range: Random jitter (s) added on top of the pause.
     """
-    resolved_scope = _normalize_scope_key(
+    resolved_scope = resolve_rate_limiter_scope(
         scope_key,
         tenant_id=tenant_id,
         agent_id=agent_id,
@@ -408,7 +431,11 @@ def cleanup_idle_rate_limiters(max_idle_seconds: float) -> int:
     now = time.monotonic()
     removed = 0
     for scope, entry in list(_limiter_registry.items()):
-        if entry.limiter.stats()["current_in_flight"] > 0:
+        stats = entry.limiter.stats()
+        if (
+            stats["current_in_flight"] > 0
+            or stats["current_active_streams"] > 0
+        ):
             continue
         if now - entry.last_used_at < max_idle_seconds:
             continue
