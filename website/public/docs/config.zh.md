@@ -320,9 +320,9 @@ MCP（模型上下文协议）允许智能体连接外部服务（如 Filesystem
 | `llm_max_qpm`              | int           | `600`   | 每分钟最大请求数限制（QPM）。0 = 不限制；Chat 与 Cron 共享                                       |
 | `llm_rate_limit_pause`     | float         | `5.0`   | 当前 Agent 范围内收到 429 限流响应时的默认暂停时间（秒）                                         |
 | `llm_rate_limit_jitter`    | float         | `1.0`   | 限流暂停的随机抖动范围（秒），避免并发请求同时恢复                                               |
-| `llm_acquire_timeout`      | float         | `300.0` | 等待获取 workload 限流槽的默认最大超时时间（秒）                                                 |
-| `llm_chat_acquire_timeout` | float \| null | `null`  | Chat workload 等待获取 LLM 并发槽的最大超时时间；未设置时使用 `llm_acquire_timeout`              |
-| `llm_cron_acquire_timeout` | float \| null | `null`  | Cron 与 heartbeat workload 等待获取 LLM 并发槽的最大超时时间；未设置时使用 `llm_acquire_timeout` |
+| `llm_acquire_timeout`      | float         | `300.0` | 等待获取 workload 限流槽的默认最大超时时间（秒）；必须大于 `llm_rate_limit_pause` + `llm_rate_limit_jitter` |
+| `llm_chat_acquire_timeout` | float \| null | `null`  | Chat workload 等待获取 LLM 并发槽的最大超时时间；未设置时使用 `llm_acquire_timeout`；设置时必须大于 `llm_rate_limit_pause` + `llm_rate_limit_jitter` |
+| `llm_cron_acquire_timeout` | float \| null | `null`  | Cron 与 heartbeat workload 等待获取 LLM 并发槽的最大超时时间；未设置时使用 `llm_acquire_timeout`；设置时必须大于 `llm_rate_limit_pause` + `llm_rate_limit_jitter` |
 
 **上下文管理：**
 

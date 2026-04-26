@@ -367,9 +367,9 @@ Controls agent runtime behavior, retry strategies, context management, and memor
 | `llm_max_qpm`              | int           | `600`   | Maximum queries per minute (QPM). 0 = no limit; shared by chat and cron workloads                                                 |
 | `llm_rate_limit_pause`     | float         | `5.0`   | Default pause duration in seconds in this agent scope after receiving a 429 rate limit response                                   |
 | `llm_rate_limit_jitter`    | float         | `1.0`   | Random jitter range in seconds added to rate limit pause to avoid thundering herd                                                 |
-| `llm_acquire_timeout`      | float         | `300.0` | Default maximum timeout in seconds to wait for acquiring a workload rate-limit slot                                               |
-| `llm_chat_acquire_timeout` | float \| null | `null`  | Maximum timeout for chat workload callers to acquire an LLM concurrency slot; uses `llm_acquire_timeout` when unset               |
-| `llm_cron_acquire_timeout` | float \| null | `null`  | Maximum timeout for cron and heartbeat workload callers to acquire an LLM concurrency slot; uses `llm_acquire_timeout` when unset |
+| `llm_acquire_timeout`      | float         | `300.0` | Default maximum timeout in seconds to wait for acquiring a workload rate-limit slot; must be greater than `llm_rate_limit_pause` + `llm_rate_limit_jitter` |
+| `llm_chat_acquire_timeout` | float \| null | `null`  | Maximum timeout for chat workload callers to acquire an LLM concurrency slot; uses `llm_acquire_timeout` when unset; when set, must be greater than `llm_rate_limit_pause` + `llm_rate_limit_jitter` |
+| `llm_cron_acquire_timeout` | float \| null | `null`  | Maximum timeout for cron and heartbeat workload callers to acquire an LLM concurrency slot; uses `llm_acquire_timeout` when unset; when set, must be greater than `llm_rate_limit_pause` + `llm_rate_limit_jitter` |
 
 **Context Management:**
 
