@@ -13,6 +13,8 @@ import logging
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
+from qwenpaw.config.utils import load_config
+
 from .service_manager import ServiceDescriptor, ServiceManager
 from .service_factories import (
     create_chat_service,
@@ -291,7 +293,7 @@ class Workspace:
                     "channel_manager": ws._service_manager.services.get(
                         "channel_manager",
                     ),
-                    "timezone": "UTC",
+                    "timezone": load_config().user_timezone or "UTC",
                     "agent_id": ws.agent_id,
                     "tenant_id": ws.tenant_id,
                     "coordination_config": ws._get_cron_coordination_config(),

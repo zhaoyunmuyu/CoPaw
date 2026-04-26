@@ -324,6 +324,21 @@ class MemorySummaryConfig(BaseModel):
         description="Whether to enable memory summarization during compaction",
     )
 
+    memory_prompt_enabled: bool = Field(
+        default=True,
+        description=(
+            "Whether to include the memory guidance section in the system"
+            " prompt (the <!-- memory:start/end --> block in AGENTS.md)."
+            " Set to False to omit it and save tokens."
+        ),
+    )
+
+    dream_cron: str = Field(
+        default="0 23 * * *",
+        description="Cron expression for dream-based memory optimization job "
+        "(empty to disable)",
+    )
+
     force_memory_search: bool = Field(
         default=False,
         description="Whether to force memory search on every turn",
