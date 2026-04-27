@@ -262,6 +262,7 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
         # Prefix match for certain routes
         exempt_prefixes = (
             "/assets/",
+            "/static/",
             "/console/",
         )
         if any(path.startswith(prefix) for prefix in exempt_prefixes):
