@@ -37,11 +37,13 @@ from ..constant import (
     LLM_ACQUIRE_TIMEOUT,
     LLM_BACKOFF_BASE,
     LLM_BACKOFF_CAP,
+    LLM_CALL_TIMEOUT,
     LLM_MAX_CONCURRENT,
     LLM_MAX_RETRIES,
     LLM_MAX_QPM,
     LLM_RATE_LIMIT_JITTER,
     LLM_RATE_LIMIT_PAUSE,
+    LLM_STREAM_STALL_TIMEOUT,
 )
 from .rate_limiter import LLMRateLimiter, get_rate_limiter
 
@@ -120,6 +122,10 @@ def _get_anthropic_retryable() -> tuple[type[Exception], ...]:
 
 def _is_retryable(exc: Exception) -> bool:
     """Return *True* if *exc* should trigger a retry."""
+    # TimeoutError from our own wait_for / stall detection is retryable
+    if isinstance(exc, TimeoutError):
+        return True
+
     retryable = _get_openai_retryable() + _get_anthropic_retryable()
     if retryable and isinstance(exc, retryable):
         return True
@@ -215,6 +221,8 @@ class RetryChatModel(ChatModelBase):
         inner: ChatModelBase,
         retry_config: RetryConfig | None = None,
         rate_limit_config: RateLimitConfig | None = None,
+        call_timeout: float = LLM_CALL_TIMEOUT,
+        stream_stall_timeout: float = LLM_STREAM_STALL_TIMEOUT,
     ) -> None:
         super().__init__(model_name=inner.model_name, stream=inner.stream)
         self._inner = inner
@@ -222,6 +230,8 @@ class RetryChatModel(ChatModelBase):
         self._rate_limit_config = _normalize_rate_limit_config(
             rate_limit_config,
         )
+        self._call_timeout = max(30.0, call_timeout)
+        self._stream_stall_timeout = max(10.0, stream_stall_timeout)
 
     # Expose the real model's class so that formatter mapping keeps working
     # when code inspects ``model.__class__`` after wrapping.
@@ -235,12 +245,16 @@ class RetryChatModel(ChatModelBase):
         limiter: LLMRateLimiter,
     ) -> AsyncGenerator[ChatResponse, None]:
         """Yield all chunks from *stream*, managing the semaphore slot
-        lifecycle.
+        lifecycle and detecting stalls.
 
         Releases the semaphore slot after the first chunk arrives — once the
         API starts streaming the request has been accepted and will not be
         rate-limited mid-flight, so holding the slot for the full streaming
         duration would unnecessarily starve other callers.
+
+        If no chunk arrives within ``self._stream_stall_timeout`` seconds,
+        the stream is considered stalled and a ``TimeoutError`` is raised
+        so the caller can retry.
 
         Always closes *stream* on completion or error.  Any exception raised
         during iteration propagates to the caller's ``async for`` loop
@@ -248,9 +262,26 @@ class RetryChatModel(ChatModelBase):
         does not propagate to the final consumer unless all retries are
         exhausted.
         """
+        import time as _time
+
         first_chunk = True
+        last_chunk_time = _time.monotonic()
         try:
             async for chunk in stream:
+                now = _time.monotonic()
+                gap = now - last_chunk_time
+                if not first_chunk and gap > self._stream_stall_timeout:
+                    logger.warning(
+                        "LLM stream stalled: %.1fs since last chunk "
+                        "(threshold=%.0fs), aborting",
+                        gap,
+                        self._stream_stall_timeout,
+                    )
+                    raise TimeoutError(
+                        f"LLM stream stalled: no chunk for {gap:.1f}s "
+                        f"(threshold={self._stream_stall_timeout:.0f}s)"
+                    )
+                last_chunk_time = now
                 if first_chunk:
                     first_chunk = False
                     # return the slot once the API starts delivering
@@ -302,7 +333,10 @@ class RetryChatModel(ChatModelBase):
                         "for an execution slot",
                     ) from exc
 
-                result = await self._inner(*args, **kwargs)
+                result = await asyncio.wait_for(
+                    self._inner(*args, **kwargs),
+                    timeout=self._call_timeout,
+                )
 
                 if isinstance(result, AsyncGenerator):
                     # Transfer semaphore ownership to _wrap_stream, which uses
@@ -402,7 +436,10 @@ class RetryChatModel(ChatModelBase):
                         f" for an execution slot (stream retry)",
                     ) from exc
 
-                result = await self._inner(*call_args, **call_kwargs)
+                result = await asyncio.wait_for(
+                    self._inner(*call_args, **call_kwargs),
+                    timeout=self._call_timeout,
+                )
 
                 if isinstance(result, AsyncGenerator):
                     owns_semaphore = False

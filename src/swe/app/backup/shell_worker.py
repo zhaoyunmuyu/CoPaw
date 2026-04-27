@@ -71,7 +71,7 @@ class ShellScriptExecutor:
             backup_hour,
             instance_id,
         )
-        stdout, stderr, returncode = await self._execute_script(cmd)
+        stdout, _, _ = await self._execute_script(cmd)
         return self._parse_compress_output(stdout)
 
     async def run_decompress(
@@ -98,7 +98,7 @@ class ShellScriptExecutor:
             rollback_dir,
             task_id,
         )
-        stdout, stderr, returncode = await self._execute_script(cmd)
+        stdout, _, _ = await self._execute_script(cmd)
         return self._parse_decompress_output(stdout)
 
     def _build_compress_command(
@@ -169,13 +169,13 @@ class ShellScriptExecutor:
                 process.communicate(),
                 timeout=self.config.timeout_seconds,
             )
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as exc:
             logger.warning("Script execution timed out, killing process")
             process.kill()
             await process.wait()
             raise RuntimeError(
-                f"Script timed out after {self.config.timeout_seconds}s"
-            )
+                f"Script timed out after {self.config.timeout_seconds}s",
+            ) from exc
 
         stdout_str = stdout.decode("utf-8", errors="replace")
         stderr_str = stderr.decode("utf-8", errors="replace")
@@ -187,13 +187,16 @@ class ShellScriptExecutor:
                 stderr_str,
             )
             raise RuntimeError(
-                f"Script failed with code {process.returncode}: {stderr_str}"
+                f"Script failed with code {process.returncode}: {stderr_str}",
             )
 
         logger.info("Script executed successfully")
         return stdout_str, stderr_str, process.returncode or 0
 
-    def _parse_compress_output(self, stdout: str) -> tuple[list[str], list[str]]:
+    def _parse_compress_output(
+        self,
+        stdout: str,
+    ) -> tuple[list[str], list[str]]:
         """解析压缩脚本输出。"""
         tenant_ids = []
         zip_paths = []
@@ -208,7 +211,8 @@ class ShellScriptExecutor:
         return tenant_ids, zip_paths
 
     def _parse_decompress_output(
-        self, stdout: str
+        self,
+        stdout: str,
     ) -> tuple[list[str], list[str]]:
         """解析解压脚本输出。"""
         restored_tenants = []
@@ -282,7 +286,10 @@ class ShellBackupWorker:
             )
             instance_id = task.instance_id or "default"
 
-            output_dir = Path(tempfile.gettempdir()) / f"shell_backup_{task.task_id[:8]}"
+            output_dir = (
+                Path(tempfile.gettempdir())
+                / f"shell_backup_{task.task_id[:8]}"
+            )
             output_dir.mkdir(parents=True, exist_ok=True)
 
             # 3. 执行压缩脚本
@@ -290,7 +297,10 @@ class ShellBackupWorker:
                 "Running shell compress script for %d tenants",
                 len(tenant_ids),
             )
-            compressed_tenants, zip_paths = await self.shell_executor.run_compress(
+            (
+                _compressed_tenants,
+                zip_paths,
+            ) = await self.shell_executor.run_compress(
                 tenant_ids=tenant_ids,
                 output_dir=output_dir,
                 backup_date=date_str,
@@ -380,9 +390,137 @@ class ShellBackupWorker:
                 try:
                     shutil.rmtree(output_dir)
                 except Exception as e:
-                    logger.warning("Failed to cleanup output dir %s: %s", output_dir, e)
+                    logger.warning(
+                        "Failed to cleanup output dir %s: %s",
+                        output_dir,
+                        e,
+                    )
 
-    # pylint: disable=too-many-statements,too-many-branches
+    def _get_restore_tenant_ids(
+        self,
+        task: BackupTask,
+        instance_id: str,
+        backup_date: str,
+    ) -> list[str]:
+        """获取恢复任务的租户列表。"""
+        if task.target_tenant_ids:
+            return task.target_tenant_ids
+
+        backups = self.s3_client.list_backups(
+            instance_id=instance_id,
+            date=backup_date,
+            hour=task.backup_hour,
+        )
+        backup_hour = task.backup_hour if task.backup_hour is not None else 0
+        return list(
+            backups["backups"]
+            .get(instance_id, {})
+            .get(backup_date, {})
+            .get(backup_hour, {})
+            .keys(),
+        )
+
+    async def _download_backup_zips(
+        self,
+        task: BackupTask,
+        instance_id: str,
+        backup_date: str,
+        zip_dir: Path,
+    ) -> list[str]:
+        """下载备份 zip 文件。"""
+        downloaded_zips = []
+        tenant_ids = task.target_tenant_ids or []
+        backup_hour = task.backup_hour
+
+        for i, tenant_id in enumerate(tenant_ids):
+            task.processed_tenants = i + 1
+            task.progress_percent = int(((i + 1) / len(tenant_ids)) * 40)
+            self.task_store.save(task)
+
+            hour_to_restore = self._get_backup_hour(
+                instance_id,
+                backup_date,
+                backup_hour,
+            )
+            if hour_to_restore is None:
+                logger.warning(
+                    "No backup found for %s/%s/%s",
+                    instance_id,
+                    backup_date,
+                    tenant_id,
+                )
+                continue
+
+            s3_key = self.s3_client.get_backup_key(
+                instance_id,
+                backup_date,
+                hour_to_restore,
+                tenant_id,
+            )
+            zip_path = zip_dir / f"{tenant_id}.zip"
+
+            await asyncio.to_thread(
+                self.s3_client.download,
+                s3_key,
+                zip_path,
+            )
+            downloaded_zips.append(str(zip_path))
+
+        return downloaded_zips
+
+    def _get_backup_hour(
+        self,
+        instance_id: str,
+        backup_date: str,
+        backup_hour: int | None,
+    ) -> int | None:
+        """获取备份小时。"""
+        if backup_hour is not None:
+            return backup_hour
+
+        backups = self.s3_client.list_backups(
+            instance_id=instance_id,
+            date=backup_date,
+        )
+        hours = list(
+            backups["backups"]
+            .get(instance_id, {})
+            .get(backup_date, {})
+            .keys(),
+        )
+        return max(hours) if hours else None
+
+    async def _do_rollback(
+        self,
+        rollback_paths: list[str],
+    ) -> None:
+        """执行回滚操作。"""
+        for rollback_path in rollback_paths:
+            try:
+                path = Path(rollback_path)
+                if not path.exists():
+                    continue
+                tenant_id = path.stem
+                tenant_dir = get_tenant_working_dir(tenant_id)
+
+                if tenant_dir.exists():
+                    shutil.rmtree(tenant_dir)
+
+                await self._extract_zip(path, tenant_dir, tenant_id)
+            except Exception as e:
+                logger.error("Failed to rollback %s: %s", rollback_path, e)
+
+    def _cleanup_rollback_dir(self, rollback_dir: Path, task_id: str) -> None:
+        """清理回滚目录。"""
+        if not rollback_dir.exists():
+            return
+        task_rollback_dir = rollback_dir / task_id
+        if task_rollback_dir.exists():
+            try:
+                shutil.rmtree(task_rollback_dir)
+            except Exception as e:
+                logger.warning("Failed to cleanup rollback dir: %s", e)
+
     async def run_restore_task(self, task: BackupTask) -> None:
         """执行 Shell 恢复任务。"""
         zip_dir = None
@@ -395,27 +533,15 @@ class ShellBackupWorker:
         try:
             instance_id = task.instance_id or "default"
             backup_date = task.backup_date
-            backup_hour = task.backup_hour
 
             if not backup_date:
                 raise ValueError("backup_date is required for restore task")
 
-            # 获取目标租户列表
-            if task.target_tenant_ids:
-                tenant_ids = task.target_tenant_ids
-            else:
-                backups = self.s3_client.list_backups(
-                    instance_id=instance_id,
-                    date=backup_date,
-                    hour=backup_hour,
-                )
-                tenant_ids = list(
-                    backups["backups"]
-                    .get(instance_id, {})
-                    .get(backup_date, {})
-                    .get(backup_hour if backup_hour is not None else 0, {})
-                    .keys(),
-                )
+            tenant_ids = self._get_restore_tenant_ids(
+                task,
+                instance_id,
+                backup_date,
+            )
 
             if not tenant_ids:
                 task.status = BackupTaskStatus.COMPLETED
@@ -426,72 +552,37 @@ class ShellBackupWorker:
                 return
 
             task.total_tenants = len(tenant_ids)
+            task.target_tenant_ids = tenant_ids
             task.current_step = "downloading"
             self.task_store.save(task)
 
-            # 创建下载目录
-            zip_dir = Path(tempfile.gettempdir()) / f"shell_restore_{task.task_id[:8]}"
+            zip_dir = (
+                Path(tempfile.gettempdir())
+                / f"shell_restore_{task.task_id[:8]}"
+            )
             zip_dir.mkdir(parents=True, exist_ok=True)
 
-            # 回滚目录
             rollback_dir = WORKING_DIR / ".rollback"
 
-            # 下载 zip 文件
-            downloaded_zips = []
-            for i, tenant_id in enumerate(tenant_ids):
-                task.processed_tenants = i + 1
-                task.progress_percent = int(((i + 1) / len(tenant_ids)) * 40)
-                self.task_store.save(task)
-
-                # 获取备份小时
-                hour_to_restore = backup_hour
-                if hour_to_restore is None:
-                    backups = self.s3_client.list_backups(
-                        instance_id=instance_id,
-                        date=backup_date,
-                    )
-                    hours = list(
-                        backups["backups"]
-                        .get(instance_id, {})
-                        .get(backup_date, {})
-                        .keys(),
-                    )
-                    if hours:
-                        hour_to_restore = max(hours)
-                    else:
-                        logger.warning(
-                            "No backup found for %s/%s/%s",
-                            instance_id,
-                            backup_date,
-                            tenant_id,
-                        )
-                        continue
-
-                s3_key = self.s3_client.get_backup_key(
-                    instance_id,
-                    backup_date,
-                    hour_to_restore,
-                    tenant_id,
-                )
-                zip_path = zip_dir / f"{tenant_id}.zip"
-
-                await asyncio.to_thread(
-                    self.s3_client.download,
-                    s3_key,
-                    zip_path,
-                )
-                downloaded_zips.append(str(zip_path))
+            downloaded_zips = await self._download_backup_zips(
+                task,
+                instance_id,
+                backup_date,
+                zip_dir,
+            )
 
             task.current_step = "restoring"
             task.progress_percent = 50
             self.task_store.save(task)
 
-            # 执行解压脚本
             logger.info(
                 "Running shell decompress script for %d tenants",
                 len(downloaded_zips),
             )
-            restored_tenants, rollback_paths = await self.shell_executor.run_decompress(
+            (
+                restored_tenants,
+                rollback_paths,
+            ) = await self.shell_executor.run_decompress(
                 zip_dir=zip_dir,
                 tenant_ids=tenant_ids,
                 rollback_dir=rollback_dir,
@@ -503,14 +594,7 @@ class ShellBackupWorker:
             task.progress_percent = 90
             self.task_store.save(task)
 
-            # 清理回滚数据
-            if rollback_dir.exists():
-                task_rollback_dir = rollback_dir / task.task_id
-                if task_rollback_dir.exists():
-                    try:
-                        shutil.rmtree(task_rollback_dir)
-                    except Exception as e:
-                        logger.warning("Failed to cleanup rollback dir: %s", e)
+            self._cleanup_rollback_dir(rollback_dir, task.task_id)
 
             task.current_step = "completed"
             task.status = BackupTaskStatus.COMPLETED
@@ -522,34 +606,22 @@ class ShellBackupWorker:
             task.status = BackupTaskStatus.ROLLING_BACK
             self.task_store.save(task)
 
-            # 回滚
-            for rollback_path in rollback_paths:
-                try:
-                    path = Path(rollback_path)
-                    if not path.exists():
-                        continue
-                    tenant_id = path.stem
-                    tenant_dir = get_tenant_working_dir(tenant_id)
-
-                    if tenant_dir.exists():
-                        shutil.rmtree(tenant_dir)
-
-                    # 使用 Python zipfile 回滚（因为 Shell 脚本可能失败）
-                    await self._extract_zip(path, tenant_dir, tenant_id)
-                except Exception as e:
-                    logger.error("Failed to rollback %s: %s", rollback_path, e)
+            await self._do_rollback(rollback_paths)
 
             task.status = BackupTaskStatus.ROLLED_BACK
         finally:
             task.completed_at = datetime.now(BJ_TZ)
             self.task_store.save(task)
 
-            # 清理下载目录
             if zip_dir and zip_dir.exists():
                 try:
                     shutil.rmtree(zip_dir)
                 except Exception as e:
-                    logger.warning("Failed to cleanup zip dir %s: %s", zip_dir, e)
+                    logger.warning(
+                        "Failed to cleanup zip dir %s: %s",
+                        zip_dir,
+                        e,
+                    )
 
     def _get_all_tenant_ids(self) -> list[str]:
         """获取所有租户 ID。"""
@@ -634,7 +706,10 @@ class ShellBackupWorker:
                         dest_path.mkdir(parents=True, exist_ok=True)
                     else:
                         dest_path.parent.mkdir(parents=True, exist_ok=True)
-                        with zf.open(member) as source, open(dest_path, "wb") as target:
+                        with zf.open(member) as source, open(
+                            dest_path,
+                            "wb",
+                        ) as target:
                             target.write(source.read())
 
         await asyncio.to_thread(_do_extract)

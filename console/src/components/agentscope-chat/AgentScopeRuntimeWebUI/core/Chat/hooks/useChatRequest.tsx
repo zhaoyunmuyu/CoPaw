@@ -105,6 +105,8 @@ export default function useChatRequest(options: UseChatRequestOptions) {
           await Promise.resolve(
             currentApiOptions.cancel({
               session_id: owner.sessionId,
+              logical_session_id: owner.logicalSessionId,
+              chat_id: owner.chatId,
             }),
           ).catch((error) => {
             console.error(error);
@@ -288,6 +290,9 @@ export default function useChatRequest(options: UseChatRequestOptions) {
               input: historyMessages,
               biz_params,
               signal: abortSignal,
+              session_id: requestOwner.sessionId,
+              logical_session_id: requestOwner.logicalSessionId,
+              chat_id: requestOwner.chatId,
             })
           : await fetch(currentApiOptions.baseURL, {
               method: "POST",
@@ -330,6 +335,8 @@ export default function useChatRequest(options: UseChatRequestOptions) {
         response = await currentApiOptions.reconnect({
           session_id: sessionId,
           signal: abortSignal,
+          logical_session_id: requestOwner.logicalSessionId,
+          chat_id: requestOwner.chatId,
         });
       } catch (error) {}
 

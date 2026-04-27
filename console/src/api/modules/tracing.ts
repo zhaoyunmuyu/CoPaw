@@ -154,6 +154,7 @@ export interface Trace {
   status: string;
   error: string | null;
   user_message: string | null;
+  model_output: string | null;
 }
 
 export interface Span {

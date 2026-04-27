@@ -25,6 +25,18 @@ from swe.config.context import (
 logger = logging.getLogger(__name__)
 
 
+def _get_effective_request_tenant_id(request: Request) -> str | None:
+    """Return the effective tenant ID stored on request.state."""
+    effective_tenant_id = getattr(request.state, "effective_tenant_id", None)
+    if isinstance(effective_tenant_id, str) and effective_tenant_id:
+        return effective_tenant_id
+
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if isinstance(tenant_id, str) and tenant_id:
+        return tenant_id
+    return None
+
+
 class TenantWorkspaceContext:
     """Lightweight context for tenant workspace.
 
@@ -92,8 +104,8 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
         Raises:
             HTTPException: If workspace is required but cannot be loaded.
         """
-        # Get tenant_id from request state (set by TenantIdentityMiddleware)
-        tenant_id = getattr(request.state, "tenant_id", None)
+        # Use effective tenant_id for source-scoped default tenants.
+        tenant_id = _get_effective_request_tenant_id(request)
         workspace = None
         workspace_token = None
 
@@ -250,6 +262,7 @@ class TenantWorkspaceMiddleware(BaseHTTPMiddleware):
         # Prefix match for certain routes
         exempt_prefixes = (
             "/assets/",
+            "/static/",
             "/console/",
         )
         if any(path.startswith(prefix) for prefix in exempt_prefixes):

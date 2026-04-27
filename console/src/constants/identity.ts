@@ -24,5 +24,8 @@ export const DEFAULT_TENANT_ID = "default";
 /** 默认渠道名称 */
 export const DEFAULT_CHANNEL = "console";
 
-/** 默认 Source ID （非iframe模式时，X-Source-Id header使用） */
-export const DEFAULT_SOURCE_ID = "RMASSIST";
+/** 默认 Source ID （非iframe模式时，X-Source-Id header使用，空表示不传） */
+export const DEFAULT_SOURCE_ID = "";
+
+/** 默认 BBK ID （非iframe模式时，X-Bbk-Id header使用，空表示不传） */
+export const DEFAULT_BBK_ID = "";

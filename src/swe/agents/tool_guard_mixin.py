@@ -284,6 +284,29 @@ class ToolGuardMixin:
     # _acting override
     # ------------------------------------------------------------------
 
+    def _resolve_mcp_server(self, tool_name: str) -> str | None:
+        """Resolve MCP server name from toolkit registration.
+
+        The tool_call dict from agentscope does not include mcp_server,
+        so we look it up from the registered tool function.
+
+        Args:
+            tool_name: Name of the tool
+
+        Returns:
+            MCP server name if the tool is an MCP tool, None otherwise
+        """
+        try:
+            toolkit = getattr(self, "toolkit", None)
+            if toolkit is None:
+                return None
+            tool_func = toolkit.tools.get(tool_name)
+            if tool_func is not None:
+                return getattr(tool_func, "mcp_name", None)
+        except Exception:
+            pass
+        return None
+
     async def _emit_tool_trace_start(
         self,
         tool_name: str,
@@ -365,7 +388,10 @@ class ToolGuardMixin:
 
         tool_name = str(tool_call.get("name", ""))
         tool_input = tool_call.get("input", {})
-        mcp_server = tool_call.get("mcp_server")
+
+        # Resolve mcp_server from toolkit registration since tool_call dict
+        # (agentscope ToolUseBlock) does not carry mcp_server.
+        mcp_server = self._resolve_mcp_server(tool_name)
 
         span_id = await self._emit_tool_trace_start(
             tool_name,

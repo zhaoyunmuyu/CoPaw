@@ -1,6 +1,7 @@
 -- ============================================================
 -- 租户初始化来源映射表
--- 记录每个租户(用户)的 source 和实际使用的初始化模板目录
+-- 记录每个租户(用户)通过不同 source 访问的初始化模板目录
+-- 一个用户可能通过多个 source 访问，每个 (tenant_id, source_id) 组合只记录首次
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS swe_tenant_init_source (
@@ -11,7 +12,7 @@ CREATE TABLE IF NOT EXISTS swe_tenant_init_source (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-    UNIQUE KEY uk_tenant_id (tenant_id),
+    UNIQUE KEY uk_tenant_source (tenant_id, source_id),
     INDEX idx_source_id (source_id),
     INDEX idx_init_source (init_source)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='租户初始化来源映射表';

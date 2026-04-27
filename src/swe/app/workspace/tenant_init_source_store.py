@@ -39,30 +39,6 @@ class TenantInitSourceStore:
             self._use_db = False
             logger.info("TenantInitSourceStore initialized without database")
 
-    async def get_init_source(self, tenant_id: str) -> Optional[str]:
-        """Query the init_source (template directory name) for a tenant.
-
-        Args:
-            tenant_id: The tenant identifier.
-
-        Returns:
-            The init_source value (e.g. "default_ruice"), or None if not found.
-        """
-        if not self._use_db:
-            return None
-        query = (
-            "SELECT init_source FROM swe_tenant_init_source "
-            "WHERE tenant_id = %s"
-        )
-        try:
-            row = await self.db.fetch_one(query, (tenant_id,))
-            return row["init_source"] if row else None
-        except Exception as e:
-            logger.warning(
-                f"Failed to query init_source for tenant " f"{tenant_id}: {e}",
-            )
-            return None
-
     async def get_or_create(
         self,
         tenant_id: str,
@@ -71,9 +47,10 @@ class TenantInitSourceStore:
     ) -> str:
         """Get existing or create a new mapping record.
 
-        If the tenant already has a mapping record, returns the stored
-        init_source. Otherwise, creates a new record and returns the
-        provided init_source.
+        Each (tenant_id, source_id) combination is unique. If the
+        combination already exists, returns the stored init_source.
+        Otherwise, creates a new record and returns the provided
+        init_source.
 
         Args:
             tenant_id: The tenant identifier.
@@ -81,21 +58,32 @@ class TenantInitSourceStore:
             init_source: The template directory name used for initialization.
 
         Returns:
-            The init_source value for this tenant.
+            The init_source value for this tenant-source combination.
         """
-        existing = await self.get_init_source(tenant_id)
-        if existing:
-            return existing
-
         if self._use_db:
             query = (
+                "SELECT init_source FROM swe_tenant_init_source "
+                "WHERE tenant_id = %s AND source_id = %s"
+            )
+            try:
+                row = await self.db.fetch_one(query, (tenant_id, source_id))
+                if row:
+                    return row["init_source"]
+            except Exception as e:
+                logger.warning(
+                    f"Failed to query init_source for tenant "
+                    f"{tenant_id}: {e}",
+                )
+                return init_source
+
+            insert_query = (
                 "INSERT INTO swe_tenant_init_source "
                 "(tenant_id, source_id, init_source) "
                 "VALUES (%s, %s, %s)"
             )
             try:
                 await self.db.execute(
-                    query,
+                    insert_query,
                     (tenant_id, source_id, init_source),
                 )
                 logger.info(
@@ -109,6 +97,31 @@ class TenantInitSourceStore:
                 )
 
         return init_source
+
+    async def get_sources_for_tenant(self, tenant_id: str) -> list[dict]:
+        """Query all source records for a tenant.
+
+        Args:
+            tenant_id: The tenant identifier.
+
+        Returns:
+            List of dicts with source_id, init_source, created_at.
+        """
+        if not self._use_db:
+            return []
+        query = (
+            "SELECT source_id, init_source, created_at "
+            "FROM swe_tenant_init_source WHERE tenant_id = %s "
+            "ORDER BY created_at"
+        )
+        try:
+            rows = await self.db.fetch_all(query, (tenant_id,))
+            return list(rows)
+        except Exception as e:
+            logger.warning(
+                f"Failed to query sources for tenant={tenant_id}: {e}",
+            )
+            return []
 
     async def get_by_source(self, source_id: str) -> list[dict]:
         """Query all tenants initialized from a given source.

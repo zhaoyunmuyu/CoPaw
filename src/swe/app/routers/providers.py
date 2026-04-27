@@ -18,7 +18,9 @@ from fastapi import (
 )
 from pydantic import BaseModel, Field
 
-from ...config.context import get_current_tenant_id
+from ...config.context import (
+    get_current_effective_tenant_id,
+)
 from ...config.utils import (
     get_tenant_working_dir_strict,
     list_logical_tenant_ids,
@@ -766,7 +768,7 @@ async def get_tenant_providers():
         HTTPException: 400 if tenant ID not set in context
     """
     # Get tenant ID from context
-    tenant_id = get_current_tenant_id()
+    tenant_id = get_current_effective_tenant_id()
     if tenant_id is None:
         raise HTTPException(
             status_code=400,

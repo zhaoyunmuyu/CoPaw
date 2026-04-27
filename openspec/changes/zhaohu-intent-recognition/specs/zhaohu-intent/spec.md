@@ -13,6 +13,8 @@
 | `SWE_ZHAOHU_INTENT_OPEN_ID` | 是 | - | 意图识别接口 openId |
 | `SWE_ZHAOHU_INTENT_API_KEY` | 是 | - | 意图识别接口 API-Key |
 
+**Note:** OAuth 配置项 `SWE_ZHAOHU_CLIENT_SECRET` 已更名为 `SWE_ZHAOHU_CLIENT_SECRET_POSEIDON`。
+
 **Routing Logic:**
 
 ```

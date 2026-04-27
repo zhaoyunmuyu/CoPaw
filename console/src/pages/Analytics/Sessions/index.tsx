@@ -22,6 +22,7 @@ import {
   Zap,
   Plug,
   User,
+  Bot,
 } from "lucide-react";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
@@ -494,6 +495,19 @@ export default function SessionsPage() {
                     </h4>
                     <div className={styles.userMessageContent}>
                       {traceDetail.trace.user_message}
+                    </div>
+                  </div>
+                )}
+
+                {/* 模型输出 */}
+                {traceDetail.trace.model_output && (
+                  <div className={styles.modelOutputSection}>
+                    <h4>
+                      <Bot size={14} />
+                      {t("analytics.modelOutput", "Model Output")}
+                    </h4>
+                    <div className={styles.modelOutputContent}>
+                      {traceDetail.trace.model_output}
                     </div>
                   </div>
                 )}

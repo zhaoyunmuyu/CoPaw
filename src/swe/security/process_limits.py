@@ -12,7 +12,7 @@ try:
 except ImportError:  # pragma: no cover - non-Unix import guard
     resource = None  # type: ignore[assignment]
 
-from swe.config.context import get_current_tenant_id
+from swe.config.context import get_current_effective_tenant_id
 from swe.config.utils import get_tenant_config_path, load_config
 
 logger = logging.getLogger(__name__)
@@ -101,7 +101,7 @@ def resolve_current_process_limit_policy(
     scope: ProcessLimitScope,
 ) -> CurrentProcessLimitPolicy:
     """Resolve the current tenant's process-limit policy for one scope."""
-    tenant_id = get_current_tenant_id()
+    tenant_id = get_current_effective_tenant_id()
     config = load_config(get_tenant_config_path(tenant_id))
     process_limits = config.security.process_limits
     scope_enabled = (

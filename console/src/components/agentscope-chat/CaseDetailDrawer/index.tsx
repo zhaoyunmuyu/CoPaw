@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Drawer, Spin } from "antd";
 import Style from "./style";
-import type { Case } from "@/api/types/cases";
+import type { FeaturedCase, CaseDetail, CaseStep } from "@/api/types/featuredCases";
 
 export interface CaseDetailDrawerProps {
   visible: boolean;
   onClose: () => void;
-  caseData: Case | null;
+  caseData: FeaturedCase | null;
   loading?: boolean;
   onMakeSimilar?: (value: string) => void;
 }
@@ -105,14 +105,14 @@ export default function CaseDetailDrawer({
     const iframe = document.querySelector(
       ".case-detail-drawer-iframe",
     ) as HTMLIFrameElement;
-    if (iframe && caseData?.detail?.iframe_url) {
-      iframe.src = caseData.detail.iframe_url;
+    if (iframe && caseData?.iframe_url) {
+      iframe.src = caseData.iframe_url;
     }
   };
 
-  const steps = caseData?.detail?.steps || [];
-  const iframeUrl = caseData?.detail?.iframe_url || "";
-  const iframeTitle = caseData?.detail?.iframe_title || "详情";
+  const steps: CaseStep[] = caseData?.steps || [];
+  const iframeUrl = caseData?.iframe_url || "";
+  const iframeTitle = caseData?.iframe_title || "详情";
 
   return (
     <>

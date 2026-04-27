@@ -125,7 +125,7 @@ class ZhaohuConfig(BaseChannelConfig):
     )
     client_secret: str = Field(
         default_factory=lambda: EnvVarLoader.get_str(
-            "SWE_ZHAOHU_CLIENT_SECRET",
+            "SWE_ZHAOHU_CLIENT_SECRET_POSEIDON",
             "",
         ),
     )

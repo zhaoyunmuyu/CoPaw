@@ -157,6 +157,10 @@ class Trace(BaseModel):
         default=None,
         description="User's input message (truncated)",
     )
+    model_output: Optional[str] = Field(
+        default=None,
+        description="Model's output message (from ES)",
+    )
 
 
 # API Response Models

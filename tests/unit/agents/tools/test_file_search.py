@@ -7,13 +7,16 @@ import re
 import tempfile
 import threading
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
+from swe.config.context import tenant_context
 from swe.agents.tools.file_search import (
     _is_text_file,
     _MAX_MATCHES,
     _MAX_OUTPUT_CHARS,
+    _resolve_search_root,
     _walk_and_grep,
 )
 
@@ -47,6 +50,14 @@ class FakeCancelAfter(FakeCancel):
     def is_set(self) -> bool:
         self._checks += 1
         return self._checks > self.after
+
+
+@pytest.fixture
+def mock_working_dir(tmp_path):
+    """Patch tenant boundary WORKING_DIR for source-scoped tenant tests."""
+    with patch("swe.constant.WORKING_DIR", tmp_path):
+        with patch("swe.security.tenant_path_boundary.WORKING_DIR", tmp_path):
+            yield tmp_path
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +158,26 @@ def test_walk_and_grep_context_lines_at_start(temp_dir):
         "---",
     ]
     assert matches == expected
+
+
+def test_resolve_search_root_allows_source_scoped_absolute_path(
+    mock_working_dir,
+):
+    """default + source should allow absolute paths under default_SOURCE."""
+    source_root = mock_working_dir / "default_RMASSIST"
+    workspace_dir = source_root / "workspaces" / "default"
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    (source_root / "note.txt").write_text("rmassist visible content")
+
+    with tenant_context(
+        tenant_id="default",
+        source_id="RMASSIST",
+        workspace_dir=workspace_dir,
+    ):
+        result = _resolve_search_root(str(source_root), require_dir=True)
+
+    assert isinstance(result, Path)
+    assert result == source_root.resolve()
 
 
 def test_walk_and_grep_context_lines_at_end(temp_dir):

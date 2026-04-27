@@ -52,12 +52,12 @@ class TestTenantInitializerSourceId:
         assert initializer.source_id is None
         assert initializer.effective_tenant_id == "tenant-1"
 
-    def test_default_without_source_raises_error(self, tmp_path):
-        """Default tenant without source_id raises TenantContextError."""
-        from swe.config.context import TenantContextError
-
-        with pytest.raises(TenantContextError):
-            TenantInitializer(tmp_path, "default", source_id=None)
+    def test_default_without_source_uses_default_directory(self, tmp_path):
+        """Default tenant without source_id uses 'default' directory directly."""
+        initializer = TenantInitializer(tmp_path, "default")
+        assert initializer.template_name == "default"
+        assert initializer.effective_tenant_id == "default"
+        assert initializer.tenant_dir == tmp_path / "default"
 
     def test_source_id_selects_matching_template(self, tmp_path):
         """With source_id, template_name is 'default_{source_id}' if exists."""
@@ -367,13 +367,6 @@ class TestTenantInitSourceStore:
         assert store._use_db is True
 
     @pytest.mark.asyncio
-    async def test_get_init_source_returns_none_without_db(self):
-        """get_init_source returns None when no database."""
-        store = TenantInitSourceStore(db=None)
-        result = await store.get_init_source("tenant-1")
-        assert result is None
-
-    @pytest.mark.asyncio
     async def test_get_or_create_returns_init_source_without_db(self):
         """get_or_create returns init_source without persisting when no db."""
         store = TenantInitSourceStore(db=None)
@@ -502,6 +495,12 @@ class TestSourceIdContext:
 class TestResolveEffectiveTenantId:
     """Tests for resolve_effective_tenant_id utility."""
 
+    def test_default_without_source_returns_default(self):
+        """default + no source_id → 'default'."""
+        from swe.config.context import resolve_effective_tenant_id
+
+        assert resolve_effective_tenant_id("default", None) == "default"
+
     def test_default_with_source_returns_source_tenant(self):
         """default + source_id → default_{source_id}."""
         from swe.config.context import resolve_effective_tenant_id
@@ -509,16 +508,6 @@ class TestResolveEffectiveTenantId:
         assert (
             resolve_effective_tenant_id("default", "ruice") == "default_ruice"
         )
-
-    def test_default_without_source_raises_error(self):
-        """default + no source_id → TenantContextError."""
-        from swe.config.context import (
-            TenantContextError,
-            resolve_effective_tenant_id,
-        )
-
-        with pytest.raises(TenantContextError):
-            resolve_effective_tenant_id("default", None)
 
     def test_non_default_with_source_returns_original(self):
         """Non-default tenant with source_id → original tenant_id."""

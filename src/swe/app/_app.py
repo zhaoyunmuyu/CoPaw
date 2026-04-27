@@ -30,6 +30,7 @@ from .routers import router as api_router, create_agent_scoped_router
 from .routers.agent_scoped import AgentContextMiddleware
 from .routers.voice import voice_router
 from ..envs import load_envs_into_environ
+from ..config.envs import load_env_defaults
 from .multi_agent_manager import MultiAgentManager
 from .workspace.tenant_pool import TenantWorkspacePool
 from .migration import (
@@ -52,8 +53,9 @@ mimetypes.add_type("application/javascript", ".mjs")
 mimetypes.add_type("text/css", ".css")
 mimetypes.add_type("application/wasm", ".wasm")
 
-# Load persisted env vars into os.environ at module import time
-# so they are available before the lifespan starts.
+# Load environment defaults (dev.json/prd.json based on SWE_ENV)
+# then load persisted env vars (envs.json) which can override defaults.
+load_env_defaults()
 load_envs_into_environ()
 
 
@@ -75,11 +77,12 @@ class DynamicMultiAgentRunner:
 
     async def _get_workspace_runner(self, request):
         """Get the correct workspace runner based on request."""
-        from .agent_context import get_current_agent_id, get_current_tenant_id
+        from .agent_context import get_current_agent_id
+        from ..config.context import get_current_effective_tenant_id
 
         # Get agent_id from context (set by middleware or header)
         agent_id = get_current_agent_id()
-        tenant_id = get_current_tenant_id()
+        tenant_id = get_current_effective_tenant_id()
 
         logger.debug(f"_get_workspace_runner: agent_id={agent_id}")
 
@@ -303,6 +306,31 @@ async def lifespan(
             traceback.format_exc(),
         )
 
+    # --- Initialize Elasticsearch client for model output storage ---
+    es_client = None
+    try:
+        from ..elasticsearch import get_elasticsearch_config, init_es_client
+
+        es_config = get_elasticsearch_config()
+        if es_config.host:
+            es_client = init_es_client(es_config)
+            if es_client:
+                await es_client.connect()
+                if es_client.is_connected:
+                    logger.info("Elasticsearch client connected")
+                else:
+                    logger.warning("Elasticsearch client failed to connect")
+        else:
+            logger.info("Elasticsearch is disabled (no host configured)")
+    except Exception as e:
+        import traceback
+
+        logger.warning(
+            "Failed to initialize Elasticsearch client: %s\n%s",
+            e,
+            traceback.format_exc(),
+        )
+
     # --- Initialize instance module config---
     # from .instance.router import init_instance_module
 
@@ -357,6 +385,14 @@ async def lifespan(
                 logger.info("Database connection closed")
             except Exception as e:
                 logger.warning("Error closing database connection: %s", e)
+
+        # Close Elasticsearch client
+        if es_client:
+            try:
+                await es_client.close()
+                logger.info("Elasticsearch client closed")
+            except Exception as e:
+                logger.warning("Error closing Elasticsearch client: %s", e)
 
         # 停止服务心跳并发送关闭信号
         await stop_service_heartbeat()
@@ -510,6 +546,49 @@ app.include_router(voice_router, tags=["voice"])
 # Custom channel routes (before SPA catch-all to ensure route priority)
 register_custom_channel_routes(app)
 
+
+# User-specific static files: /static/{user_id}/{path}
+# This route dynamically resolves the user directory per-request.
+# The directory is created on-demand if it doesn't exist.
+@app.get("/static/{user_id}/{file_name:path}")
+async def serve_user_static(
+    user_id: str,
+    file_name: str,
+):
+    """Serve static files from user's static directory.
+    Args:
+        user_id: User identifier (used to determine static directory)
+        file_name: Relative path within user's static directory
+    Returns:
+        FileResponse if file exists, 404 otherwise
+    """
+    from ..constant import WORKING_DIR
+
+    # Set tenant ID in context
+    logger.info(f"Serving static files from user {user_id}")
+
+    static_dir = (
+        WORKING_DIR / user_id / "workspaces" / "default" / "static"
+    ).resolve()
+
+    # Security: ensure resolved path is still within user's static dir
+    try:
+        target = (static_dir / file_name).resolve()
+    except ValueError as exc:
+        # Path traversal attempt detected
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file path",
+        ) from exc
+    if not target.exists() or not target.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Guess MIME type
+    _, _ = mimetypes.guess_type(str(target))
+    media_type = "application/octet-stream"
+    return FileResponse(Path(target), media_type=media_type)
+
+
 # Console static files and SPA fallback
 # Register these AFTER API routes to ensure proper routing priority
 if os.path.isdir(_CONSOLE_STATIC_DIR):
@@ -563,6 +642,27 @@ if os.path.isdir(_CONSOLE_STATIC_DIR):
     def _console_spa_alias(full_path: str = ""):
         _ = full_path
         return _serve_console_index()
+
+    @app.get("/static/{file_path:path}")
+    def _console_assets(file_path: str):
+        """Serve static assets from console assets directory.
+        Uses dynamic file lookup so assets can be added after startup.
+        """
+        if not _assets_dir.is_dir():
+            raise HTTPException(
+                status_code=404,
+                detail="Assets directory not found",
+            )
+        full_path = _assets_dir / file_path
+        try:
+            full_path.resolve().relative_to(_assets_dir.resolve())
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="Not Found") from exc
+        if not full_path.is_file():
+            raise HTTPException(status_code=404, detail="Not Found")
+        # Guess content type
+        content_type, _ = mimetypes.guess_type(str(full_path))
+        return FileResponse(full_path, media_type=content_type)
 
     # SPA fallback: catch-all route for frontend routing
     # Must be registered AFTER all API routes to avoid conflicts

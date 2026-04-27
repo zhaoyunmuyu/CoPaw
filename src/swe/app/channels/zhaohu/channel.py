@@ -1041,7 +1041,6 @@ class ZhaohuChannel(BaseChannel):
                     today,
                 )
                 # Convert to format expected by _build_task_progress_card
-                # Use task_chat_id from task meta for navigation
                 for raw_task in raw_tasks:
                     task_meta = raw_task.get("meta") or {}
                     tasks.append(
@@ -1051,6 +1050,7 @@ class ZhaohuChannel(BaseChannel):
                             "status_text": raw_task.get("status_text", "待开始"),
                             "time_info": raw_task.get("time_info", ""),
                             "task_chat_id": task_meta.get("task_chat_id", ""),
+                            "job_id": raw_task.get("job_id", ""),
                         },
                     )
                 logger.info(
@@ -1827,7 +1827,11 @@ class ZhaohuChannel(BaseChannel):
         text: str,
         meta: dict,
     ) -> dict:
-        send_addr = str(meta.get("yst_id") or to_handle).strip()
+        # send_addr: prefer meta["send_addr"] (yst_id), then meta["yst_id"],
+        # then to_handle as fallback
+        send_addr = str(
+            meta.get("send_addr") or meta.get("yst_id") or to_handle,
+        ).strip()
         # 如果send_addr是8位，则可能是sapId，需要查询ystId
         send_addr = await self.deal_eight_sap(send_addr)
         session_id = str(meta.get("session_id") or "").strip()

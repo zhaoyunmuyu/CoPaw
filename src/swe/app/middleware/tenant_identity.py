@@ -14,6 +14,7 @@ from starlette.responses import Response, JSONResponse
 from starlette.types import ASGIApp
 
 from swe.config.context import (
+    resolve_runtime_tenant_id,
     set_current_tenant_id,
     set_current_user_id,
     set_current_source_id,
@@ -76,6 +77,7 @@ def is_tenant_exempt(path: str) -> bool:
     # Prefix match for certain routes
     exempt_prefixes = (
         "/assets/",
+        "/static/",
         "/console/",
     )
     if any(path.startswith(prefix) for prefix in exempt_prefixes):
@@ -163,8 +165,11 @@ class TenantIdentityMiddleware(BaseHTTPMiddleware):
         source_id: str | None,
     ) -> None:
         """Store identity in request state for downstream use."""
+        effective_tenant_id = resolve_runtime_tenant_id(tenant_id, source_id)
         if tenant_id:
             request.state.tenant_id = tenant_id
+        if effective_tenant_id:
+            request.state.effective_tenant_id = effective_tenant_id
         if user_id:
             request.state.user_id = user_id
         if source_id:
