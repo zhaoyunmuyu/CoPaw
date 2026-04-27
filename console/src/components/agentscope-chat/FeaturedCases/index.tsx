@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Style from "./style";
 import { featuredCasesApi } from "@/api/modules/featuredCases";
+import caseIcon from '../../../assets/icons/default_case.svg'
 
 export interface FeaturedCase {
   id: string;
@@ -13,16 +14,6 @@ export interface FeaturedCasesProps {
   cases?: FeaturedCase[];
   onFillInput?: (text: string) => void;
   onViewCase?: (caseId: string) => void;
-}
-
-function DocumentIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <rect x="7" y="3" width="5" height="18" rx="1" fill="currentColor" />
-      <rect x="14" y="3" width="5" height="18" rx="1" fill="currentColor" />
-      <rect x="7" y="3" width="12" height="1.5" fill="currentColor" />
-    </svg>
-  );
 }
 
 function MoreIcon() {
@@ -109,7 +100,7 @@ export default function FeaturedCases(props: FeaturedCasesProps) {
           <div className="featured-cases-header">
             <div className="featured-cases-title">
               <span className="featured-cases-title-icon">
-                <DocumentIcon />
+                <img src={caseIcon} alt="" />
               </span>
               精选案例
             </div>
@@ -133,7 +124,7 @@ export default function FeaturedCases(props: FeaturedCasesProps) {
         <div className="featured-cases-header">
           <div className="featured-cases-title">
             <span className="featured-cases-title-icon">
-              <DocumentIcon />
+              <img src={caseIcon} alt="" />
             </span>
             精选案例
           </div>
