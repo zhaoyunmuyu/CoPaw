@@ -77,6 +77,8 @@ async def copy_file_to_static(file_path: str) -> ToolResponse:
 
     # Get working directory and create static folder if needed
     working_dir = get_current_workspace_dir()
+    if working_dir is None:
+        return _tool_error("workspace directory is not configured")
     static_dir = working_dir / "static"
 
     try:

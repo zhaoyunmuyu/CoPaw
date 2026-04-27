@@ -113,16 +113,26 @@ class DynamicMultiAgentRunner:
 
     async def stream_query(self, request, *args, **kwargs):
         """Dynamically route to the correct workspace runner."""
+        from ..config.llm_workload import (
+            LLM_WORKLOAD_CHAT,
+            bind_llm_workload,
+        )
+
         logger.debug("DynamicMultiAgentRunner.stream_query called")
         try:
             runner = await self._get_workspace_runner(request)
             logger.debug(f"Got runner: {runner}, type: {type(runner)}")
             # Delegate to the actual runner's stream_query generator
             count = 0
-            async for item in runner.stream_query(request, *args, **kwargs):
-                count += 1
-                logger.debug(f"Yielding item #{count}: {type(item)}")
-                yield item
+            with bind_llm_workload(LLM_WORKLOAD_CHAT):
+                async for item in runner.stream_query(
+                    request,
+                    *args,
+                    **kwargs,
+                ):
+                    count += 1
+                    logger.debug(f"Yielding item #{count}: {type(item)}")
+                    yield item
             logger.debug(f"stream_query completed, yielded {count} items")
         except Exception as e:
             logger.error(

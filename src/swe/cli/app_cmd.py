@@ -12,46 +12,46 @@ from ..config.utils import write_last_api
 from ..utils.my_logging import setup_logger, SuppressPathAccessLogFilter
 
 
-@click.command("app")
-@click.option(
-    "--host",
-    default="127.0.0.1",
-    show_default=True,
-    help="Bind host",
-)
-@click.option(
-    "--port",
-    default=8088,
-    type=int,
-    show_default=True,
-    help="Bind port",
-)
-@click.option("--reload", is_flag=True, help="Enable auto-reload (dev only)")
-@click.option(
-    "--log-level",
-    default="info",
-    type=click.Choice(
-        ["critical", "error", "warning", "info", "debug", "trace"],
-        case_sensitive=False,
-    ),
-    show_default=True,
-    help="Log level",
-)
-@click.option(
-    "--hide-access-paths",
-    multiple=True,
-    default=("/console/push-messages",),
-    show_default=True,
-    help="Path substrings to hide from uvicorn access log (repeatable).",
-)
-@click.option(
-    "--workers",
-    type=int,
-    default=None,
-    help="[DEPRECATED] Number of worker processes. "
-    "This option is deprecated and will be removed in a future version. "
-    "SWE always uses 1 worker.",
-)
+# @click.command("app")
+# @click.option(
+#     "--host",
+#     default="127.0.0.1",
+#     show_default=True,
+#     help="Bind host",
+# )
+# @click.option(
+#     "--port",
+#     default=8088,
+#     type=int,
+#     show_default=True,
+#     help="Bind port",
+# )
+# @click.option("--reload", is_flag=True, help="Enable auto-reload (dev only)")
+# @click.option(
+#     "--log-level",
+#     default="info",
+#     type=click.Choice(
+#         ["critical", "error", "warning", "info", "debug", "trace"],
+#         case_sensitive=False,
+#     ),
+#     show_default=True,
+#     help="Log level",
+# )
+# @click.option(
+#     "--hide-access-paths",
+#     multiple=True,
+#     default=("/console/push-messages",),
+#     show_default=True,
+#     help="Path substrings to hide from uvicorn access log (repeatable).",
+# )
+# @click.option(
+#     "--workers",
+#     type=int,
+#     default=None,
+#     help="[DEPRECATED] Number of worker processes. "
+#     "This option is deprecated and will be removed in a future version. "
+#     "SWE always uses 1 worker.",
+# )
 def app_cmd(
     host: str,
     port: int,
