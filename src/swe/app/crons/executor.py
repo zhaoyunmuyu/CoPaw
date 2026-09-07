@@ -1906,6 +1906,15 @@ class CronExecutor:
             event,
         )
         stream_state.terminal_error_code = error_code
+        if (
+            not error_code
+            and not error_message
+            and stream_state.terminal_response_status
+        ):
+            stream_state.error_message = str(
+                stream_state.terminal_response_status,
+            )
+            return
         stream_state.error_message = (
             f"{error_code}: {error_message}"
             if error_code and error_message

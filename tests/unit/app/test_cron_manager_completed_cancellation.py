@@ -132,16 +132,21 @@ class _ResponseCancelledRunner:
 class _ResponseTerminalFailureRunner:
     """模拟 Runtime 的非 Failed 失败终态。"""
 
-    def __init__(self, status: RunStatus) -> None:
+    def __init__(self, status: RunStatus, include_error: bool = True) -> None:
         self._status = status
+        self._include_error = include_error
 
     async def stream_query(self, _req):
         yield SimpleNamespace(
             object="response",
             status=self._status,
-            error=SimpleNamespace(
-                code="terminal_error",
-                message="Runtime ended without a completed response",
+            error=(
+                SimpleNamespace(
+                    code="terminal_error",
+                    message="Runtime ended without a completed response",
+                )
+                if self._include_error
+                else None
             ),
         )
 
@@ -988,6 +993,48 @@ def test_response_terminal_failure_marks_execution_with_terminal_error(
     assert monitor.records[-1]["error_message"] == (
         "Agent execution failed: terminal_error: "
         "Runtime ended without a completed response"
+    )
+
+
+@pytest.mark.parametrize(
+    "status",
+    [RunStatus.Rejected, RunStatus.Incomplete],
+)
+def test_response_terminal_failure_without_error_uses_status(
+    monkeypatch,
+    status: RunStatus,
+):
+    """无 error payload 时，终态状态仍应出现在失败诊断中。"""
+    monkeypatch.setattr(
+        "swe.app.crons.executor.CronExecutor._resolve_execution_model",
+        lambda *_args: None,
+    )
+
+    async def _run():
+        job = _build_agent_job()
+        monitor = _MonitorSyncClient()
+        manager = CronManager(
+            repo=_Repo(job),
+            runner=_ResponseTerminalFailureRunner(status, include_error=False),
+            channel_manager=_ChannelManager(),
+        )
+        manager._monitor_sync_client = (
+            monitor  # pylint: disable=protected-access
+        )
+        with pytest.raises(
+            RuntimeError,
+            match=rf"Agent execution failed: {status}",
+        ):
+            await manager._execute_once(  # pylint: disable=protected-access
+                job,
+                is_manual=False,
+            )
+        return monitor
+
+    monitor = asyncio.run(_run())
+
+    assert monitor.records[-1]["error_message"] == (
+        f"Agent execution failed: {status}"
     )
 
 
