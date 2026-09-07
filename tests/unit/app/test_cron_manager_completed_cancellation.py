@@ -768,6 +768,45 @@ def test_failed_event_marks_execution_as_error(monkeypatch):
     assert any("failed" in message.lower() for message in warning_messages)
 
 
+def test_failed_response_after_completed_message_marks_execution_as_error():
+    """A final response failure must override earlier completed messages."""
+
+    class FailedResponseRunner:
+        async def stream_query(self, _req):
+            yield SimpleNamespace(
+                object="message",
+                status=RunStatus.Completed,
+                content=[SimpleNamespace(type="text", text="retrying")],
+            )
+            yield SimpleNamespace(
+                object="response",
+                status=RunStatus.Failed,
+                error=SimpleNamespace(
+                    code="model_call_failed",
+                    message="Output token rate limit exceeded",
+                ),
+            )
+
+    async def run():
+        job = _build_agent_job()
+        monitor = _MonitorSyncClient()
+        manager = CronManager(
+            repo=_Repo(job),
+            runner=FailedResponseRunner(),
+            channel_manager=_ChannelManager(),
+        )
+        manager._monitor_sync_client = monitor
+        with pytest.raises(RuntimeError, match="model_call_failed"):
+            await manager._execute_once(job, is_manual=False)
+        state = manager.get_state(job.id)
+        assert state.last_status == "error"
+        assert "Output token rate limit exceeded" in state.last_error
+        assert monitor.records[-1]["status"] == "error"
+        assert "model_call_failed" in monitor.records[-1]["error_message"]
+
+    asyncio.run(run())
+
+
 def test_empty_stream_marks_execution_as_error():
     """当 runner 返回空流（没有任何 Completed 或 Failed 事件）时，
     应正确标记为错误而不是成功。

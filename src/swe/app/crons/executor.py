@@ -1806,21 +1806,21 @@ class CronExecutor:
 
     @staticmethod
     def _is_failed_message_event(event: Any) -> bool:
-        """检测是否为 Failed 状态事件。
+        """检测消息或整轮响应的 Failed 状态事件。
 
-        当模型调用失败时，runner 会 yield Failed 事件而不是抛出异常。
+        当模型调用失败时，Runtime 会 yield response/Failed 而不是抛出异常。
         我们需要检测这个事件以正确处理失败情况。
 
         Args:
             event: Runner event
 
         Returns:
-            True if event is a failed message event
+            True if event is a failed message or response event
         """
         from agentscope_runtime.engine.schemas.agent_schemas import RunStatus
 
         return (
-            getattr(event, "object", None) == "message"
+            getattr(event, "object", None) in ("message", "response")
             and getattr(event, "status", None) == RunStatus.Failed
         )
 
