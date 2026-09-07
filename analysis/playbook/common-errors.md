@@ -660,3 +660,10 @@
 - 多个内容卡片通过 `swe-request-grouped` 共用气泡背景；空文字不生成文字卡片，多张图片归入同一个 `Images` 卡片。不要为了修复视觉分离而重复发送或合并相邻的独立用户消息。
 - 回归检查：文字加文件、文字加多图、纯附件、纯文字以及历史加载后展示。
 - 附件限宽和换行由 `swe-request-card` 独立控制，不依赖 `swe-request-grouped`：纯多图合并后只有一个卡片，也必须在窄容器中换行。回归包含 320px 容器内仅发送 6 张图片。
+
+## Cron 模型失败但执行记录显示成功
+
+- 症状：Runtime 报 `model_call_failed`，随后 Cron 日志却出现 `completed_seen=True failed_seen=False` 和 `exec_status=success`。
+- 原因：Runtime 将模型异常转换为 `response/Failed`；仅检测 `message/Failed` 会漏判，并将此前的消息完成误作执行成功。
+- 排查入口：`src/swe/app/crons/executor.py` 的 `_is_failed_message_event()` 必须同时识别消息与整轮响应失败；失败优先于此前的 Completed。
+- 回归：`tests/unit/app/test_cron_manager_completed_cancellation.py` 覆盖先收到 `message/Completed`、再收到 `response/Failed`，验证任务与执行记录均为 `error` 且保留错误详情。
