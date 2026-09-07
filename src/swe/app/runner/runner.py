@@ -3916,9 +3916,19 @@ class AgentRunner(Runner):
                 provider_id=provider_id,
                 model=model_name,
             )
-            model_provider_override = ProviderManager.get_instance(
-                self.tenant_id,
-            ).get_provider(provider_id)
+            snapshot_provider = getattr(
+                runtime.agent,
+                "_resolved_model_provider",
+                None,
+            )
+            if getattr(snapshot_provider, "id", None) != provider_id:
+                snapshot_provider = None
+            model_provider_override = (
+                snapshot_provider
+                or ProviderManager.get_instance(
+                    self.tenant_id,
+                ).get_provider(provider_id)
+            )
             if model_provider_override is None:
                 raise RuntimeError("Goal finalization provider is unavailable")
         return SWEAgent(
@@ -3993,9 +4003,19 @@ class AgentRunner(Runner):
             provider_id=provider_id,
             model=model_name,
         )
-        model_provider_override = ProviderManager.get_instance(
-            self.tenant_id,
-        ).get_provider(provider_id)
+        snapshot_provider = getattr(
+            runtime.agent,
+            "_resolved_model_provider",
+            None,
+        )
+        if getattr(snapshot_provider, "id", None) != provider_id:
+            snapshot_provider = None
+        model_provider_override = (
+            snapshot_provider
+            or ProviderManager.get_instance(
+                self.tenant_id,
+            ).get_provider(provider_id)
+        )
         if model_provider_override is None:
             raise RuntimeError("Goal completion judge provider is unavailable")
         return SWEAgent(
