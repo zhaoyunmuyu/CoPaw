@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
 class GeminiProvider(Provider):
     """Provider implementation for Google Gemini API."""
 
+    _output_length_key = "max_output_tokens"
+
     def _client(self, timeout: float = 10) -> Any:
         return genai.Client(
             api_key=self.api_key,

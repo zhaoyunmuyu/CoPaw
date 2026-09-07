@@ -556,7 +556,14 @@ def _resolve_distribution_source(
             ),
         )
 
-    return active_model, provider.model_dump()
+    provider_payload = provider.model_dump()
+    model_configs = provider_payload.get("model_configs") or {}
+    provider_payload["model_configs"] = (
+        {active_model.model: model_configs[active_model.model]}
+        if active_model.model in model_configs
+        else {}
+    )
+    return active_model, provider_payload
 
 
 async def _distribute_active_model_to_tenant(

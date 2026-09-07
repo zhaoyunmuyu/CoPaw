@@ -51,6 +51,29 @@ class ModelRuntimeConfig(BaseModel):
             )
         return self
 
+    def generation_kwargs(self, output_length_key: str) -> dict[str, Any]:
+        """Build provider-ready arguments without exposing input capacity."""
+        result = {
+            name: value
+            for name, value in (
+                ("temperature", self.temperature),
+                ("top_p", self.top_p),
+                ("top_k", self.top_k),
+            )
+            if value is not None
+        }
+        if self.max_output_length is not None:
+            result[output_length_key] = self.max_output_length
+        if self.supports_enable_thinking:
+            result["enable_thinking"] = self.enable_thinking
+        if (
+            (self.enable_thinking or not self.supports_enable_thinking)
+            and self.reasoning_effort is not None
+            and self.reasoning_effort in self.supported_reasoning_efforts
+        ):
+            result["reasoning_effort"] = self.reasoning_effort
+        return result
+
 
 class ModelInfo(BaseModel):
     id: str = Field(..., description="Model identifier used in API calls")
@@ -139,6 +162,15 @@ class ProviderInfo(BaseModel):
 class Provider(ProviderInfo, ABC):
     """Represents a provider instance with its configuration."""
 
+    _output_length_key = "max_tokens"
+
+    def build_generation_kwargs(
+        self,
+        model_config: ModelRuntimeConfig,
+    ) -> dict[str, Any]:
+        """Map model runtime configuration to this provider's API shape."""
+        return model_config.generation_kwargs(self._output_length_key)
+
     @abstractmethod
     async def check_connection(self, timeout: float = 5) -> tuple[bool, str]:
         """Check if the provider is reachable with the current config."""
@@ -183,6 +215,7 @@ class Provider(ProviderInfo, ABC):
         self.extra_models = [
             model for model in self.extra_models if model.id != model_id
         ]
+        self.delete_model_config(model_id)
         return True, ""
 
     def update_config(self, config: Dict) -> None:
@@ -226,6 +259,20 @@ class Provider(ProviderInfo, ABC):
     ) -> ModelRuntimeConfig:
         """Merge validated updates into one model's configuration."""
         current = self.get_model_config(model_id)
+        if "supported_reasoning_efforts" in updates:
+            supported = updates.get("supported_reasoning_efforts") or []
+            selected = updates.get(
+                "reasoning_effort",
+                current.reasoning_effort,
+            )
+            if selected not in supported:
+                updates = {**updates, "reasoning_effort": None}
+        supports_thinking = updates.get(
+            "supports_enable_thinking",
+            current.supports_enable_thinking,
+        )
+        if updates.get("enable_thinking") is False and supports_thinking:
+            updates = {**updates, "reasoning_effort": None}
         updated = ModelRuntimeConfig.model_validate(
             {**current.model_dump(), **updates},
         )

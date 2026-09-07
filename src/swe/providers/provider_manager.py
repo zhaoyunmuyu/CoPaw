@@ -799,7 +799,11 @@ class ProviderManager:
             raise ValueError(
                 f"Active provider '{model.provider_id}' not found.",
             )
-        return provider.get_chat_model_instance(model.model)
+        model_config = provider.get_model_config(model.model)
+        return provider.get_chat_model_instance(
+            model.model,
+            generation_kwargs=provider.build_generation_kwargs(model_config),
+        )
 
     def _prepare_disk_storage(self):
         """Prepare directory structure"""
