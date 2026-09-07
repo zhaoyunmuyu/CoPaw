@@ -1301,30 +1301,6 @@ class CronExecutor:
         setattr(exc, "cron_trace_id", trace_id)
         raise exc
 
-    async def _handle_agent_response_cancelled_after_stream(
-        self,
-        job: CronJobSpec,
-        stream_state: AgentStreamState,
-        trace_id: Optional[str],
-    ) -> None:
-        """Convert a Runtime response/canceled terminal event to cancellation."""
-        logger.info(
-            "cron agent response cancelled: job_id=%s event_count=%s "
-            "error_code=%s error=%s",
-            job.id,
-            stream_state.event_count,
-            stream_state.terminal_error_code,
-            stream_state.error_message,
-        )
-        await self._end_trace_on_exception(
-            trace_id,
-            TraceStatus.CANCELLED,
-            stream_state.error_message or None,
-        )
-        exc = asyncio.CancelledError()
-        setattr(exc, "cron_trace_id", trace_id)
-        raise exc
-
     async def _handle_agent_timeout_error(
         self,
         job: CronJobSpec,
@@ -1374,6 +1350,24 @@ class CronExecutor:
         Raises:
             asyncio.CancelledError: 如果取消前未完成
         """
+        if stream_state.response_cancelled_seen:
+            logger.info(
+                "cron agent response cancelled: job_id=%s event_count=%s "
+                "error_code=%s error=%s",
+                job.id,
+                stream_state.event_count,
+                stream_state.terminal_error_code,
+                stream_state.error_message,
+            )
+            await self._end_trace_on_exception(
+                trace_id,
+                TraceStatus.CANCELLED,
+                stream_state.error_message or None,
+            )
+            exc = asyncio.CancelledError()
+            setattr(exc, "cron_trace_id", trace_id)
+            raise exc
+
         if stream_state.failed_seen:
             self._log_agent_cancelled_after_failed(job, stream_state)
             await self._end_trace_on_exception(
@@ -1478,12 +1472,7 @@ class CronExecutor:
                 )
 
             if stream_state.response_cancelled_seen:
-                trace_ended = True
-                await self._handle_agent_response_cancelled_after_stream(
-                    job,
-                    stream_state,
-                    trace_id,
-                )
+                raise asyncio.CancelledError()
 
             # Runtime 协议以 response/completed 为执行终态；message/completed
             # 仅用于提取实际输出，兼容旧 runner 才保留其成功判定。
@@ -1676,7 +1665,11 @@ class CronExecutor:
                 stream_state.terminal_response_status = RunStatus.Completed
             if is_failed_response:
                 stream_state.response_failed_seen = True
-                stream_state.terminal_response_status = RunStatus.Failed
+                stream_state.terminal_response_status = getattr(
+                    event,
+                    "status",
+                    RunStatus.Failed,
+                )
                 self._set_stream_error_from_event(stream_state, event)
             if is_cancelled_response:
                 stream_state.response_cancelled_seen = True
@@ -1840,10 +1833,15 @@ class CronExecutor:
 
     @staticmethod
     def _is_failed_response_event(event: Any) -> bool:
-        return (
-            getattr(event, "object", None) == "response"
-            and getattr(event, "status", None) == RunStatus.Failed
-        )
+        return getattr(event, "object", None) == "response" and getattr(
+            event,
+            "status",
+            None,
+        ) in {
+            RunStatus.Failed,
+            RunStatus.Rejected,
+            RunStatus.Incomplete,
+        }
 
     @staticmethod
     def _is_cancelled_response_event(event: Any) -> bool:

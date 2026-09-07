@@ -7,6 +7,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import pytest
 from agentscope_runtime.engine.schemas.agent_schemas import RunStatus
 
 from swe.app.crons.manager import CronManager
@@ -112,6 +113,37 @@ class _ResponseCompletedEmptyRunner:
             RunStatus.Completed,
         ):
             yield SimpleNamespace(object="response", status=status)
+
+
+class _ResponseCancelledRunner:
+    """模拟 Runtime 的标准 response 取消终态。"""
+
+    async def stream_query(self, _req):
+        yield SimpleNamespace(
+            object="response",
+            status=RunStatus.Canceled,
+            error=SimpleNamespace(
+                code="upstream_cancelled",
+                message="Upstream request was cancelled",
+            ),
+        )
+
+
+class _ResponseTerminalFailureRunner:
+    """模拟 Runtime 的非 Failed 失败终态。"""
+
+    def __init__(self, status: RunStatus) -> None:
+        self._status = status
+
+    async def stream_query(self, _req):
+        yield SimpleNamespace(
+            object="response",
+            status=self._status,
+            error=SimpleNamespace(
+                code="terminal_error",
+                message="Runtime ended without a completed response",
+            ),
+        )
 
 
 class _ChannelManager:
@@ -859,6 +891,104 @@ def test_response_completed_without_message_marks_execution_as_success(
         manager.get_state("job-cancel-after-output").last_status == "success"
     )
     assert monitor.records[-1]["status"] == "success"
+
+
+def test_response_cancelled_closes_trace_once_with_terminal_reason(
+    monkeypatch,
+):
+    """response/canceled 只应结束一次 Trace，且保留 Runtime 原因。"""
+    trace_ends: list[tuple[object, ...]] = []
+
+    async def fake_start_trace(**_kwargs):
+        return "response-cancelled-trace"
+
+    async def fake_end_trace(*args):
+        trace_ends.append(args)
+
+    monkeypatch.setattr(
+        "swe.app.crons.executor.has_trace_manager",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "swe.app.crons.executor.get_trace_manager",
+        lambda: SimpleNamespace(
+            enabled=True,
+            start_trace=fake_start_trace,
+            end_trace=fake_end_trace,
+        ),
+    )
+    monkeypatch.setattr(
+        "swe.app.crons.executor.CronExecutor._resolve_execution_model",
+        lambda *_args: None,
+    )
+
+    async def _run():
+        job = _build_agent_job()
+        manager = CronManager(
+            repo=_Repo(job),
+            runner=_ResponseCancelledRunner(),
+            channel_manager=_ChannelManager(),
+        )
+        with pytest.raises(asyncio.CancelledError):
+            await manager._execute_once(  # pylint: disable=protected-access
+                job,
+                is_manual=False,
+            )
+        return manager
+
+    manager = asyncio.run(_run())
+
+    assert (
+        manager.get_state("job-cancel-after-output").last_status == "cancelled"
+    )
+    assert trace_ends == [
+        (
+            "response-cancelled-trace",
+            TraceStatus.CANCELLED,
+            "upstream_cancelled: Upstream request was cancelled",
+        ),
+    ]
+
+
+@pytest.mark.parametrize(
+    "status",
+    [RunStatus.Rejected, RunStatus.Incomplete],
+)
+def test_response_terminal_failure_marks_execution_with_terminal_error(
+    monkeypatch,
+    status: RunStatus,
+):
+    """Runtime 的 rejected/incomplete 必须保留终态错误信息。"""
+    monkeypatch.setattr(
+        "swe.app.crons.executor.CronExecutor._resolve_execution_model",
+        lambda *_args: None,
+    )
+
+    async def _run():
+        job = _build_agent_job()
+        monitor = _MonitorSyncClient()
+        manager = CronManager(
+            repo=_Repo(job),
+            runner=_ResponseTerminalFailureRunner(status),
+            channel_manager=_ChannelManager(),
+        )
+        manager._monitor_sync_client = (
+            monitor  # pylint: disable=protected-access
+        )
+        with pytest.raises(RuntimeError, match="Agent execution failed"):
+            await manager._execute_once(  # pylint: disable=protected-access
+                job,
+                is_manual=False,
+            )
+        return manager, monitor
+
+    manager, monitor = asyncio.run(_run())
+
+    assert manager.get_state("job-cancel-after-output").last_status == "error"
+    assert monitor.records[-1]["error_message"] == (
+        "Agent execution failed: terminal_error: "
+        "Runtime ended without a completed response"
+    )
 
 
 def test_failed_execution_preserves_trace_id(monkeypatch):
