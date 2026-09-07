@@ -104,6 +104,18 @@
 :global(html.copaw-file-manager-drawer-open) {
   --copaw-file-manager-drawer-width: clamp(760px, 58vw, 920px);
 
+  // Drawer 挂在 body 并贴齐视口；聊天外层也需贴齐，避免额外预留右侧页面边距。
+  :global(.page-container:has([data-chat-shell])) {
+    padding-right: 0;
+  }
+
+  :global(.page-content:has([data-chat-shell])) {
+    border-right: 0;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    overflow: hidden;
+  }
+
   :global(.swe-chat-anywhere-layout) {
     margin-right: var(--copaw-file-manager-drawer-width);
   }
@@ -112,6 +124,12 @@
 :global(html.copaw-file-manager-drawer-open.copaw-file-preview-drawer-open) {
   :global(.swe-chat-anywhere-layout) {
     margin-right: var(--copaw-file-manager-drawer-width);
+  }
+}
+
+:global(html.copaw-file-manager-drawer-open.copaw-file-manager-preview-fullscreen) {
+  :global(.swe-chat-anywhere-layout) {
+    margin-right: 0;
   }
 }
 

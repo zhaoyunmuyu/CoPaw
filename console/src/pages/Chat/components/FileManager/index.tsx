@@ -201,6 +201,8 @@ export default function FileManager({
   const [sessionPreview, setSessionPreview] =
     useState<ChatWorkspaceFile | null>(null);
   const [sessionListCollapsed, setSessionListCollapsed] = useState(false);
+  const [sessionPreviewFullscreen, setSessionPreviewFullscreen] =
+    useState(false);
 
   const currentDirectory = columns[1] || columns[0];
   const uploadReason = uploadDisabledReason(root);
@@ -239,6 +241,7 @@ export default function FileManager({
       if (detail.action === "open") {
         setSessionPreview(file);
         setSessionListCollapsed(true);
+        setSessionPreviewFullscreen(false);
         setActiveTab("session");
         setOpen(true);
       }
@@ -331,6 +334,18 @@ export default function FileManager({
     };
   }, [open]);
 
+  useEffect(() => {
+    if (!open || !sessionPreviewFullscreen) return;
+    document.documentElement.classList.add(
+      "copaw-file-manager-preview-fullscreen",
+    );
+    return () => {
+      document.documentElement.classList.remove(
+        "copaw-file-manager-preview-fullscreen",
+      );
+    };
+  }, [open, sessionPreviewFullscreen]);
+
   const executeOrGuard = useCallback(
     (action: () => void) => {
       if (!dirty) {
@@ -342,6 +357,13 @@ export default function FileManager({
     },
     [dirty],
   );
+
+  const closeFileManager = useCallback(() => {
+    executeOrGuard(() => {
+      setSessionPreviewFullscreen(false);
+      setOpen(false);
+    });
+  }, [executeOrGuard]);
 
   const readEntry = useCallback(
     async (entry: FileManagerItem) => {
@@ -840,13 +862,17 @@ export default function FileManager({
       </Tooltip>
       <Drawer
         open={open}
-        width="var(--copaw-file-manager-drawer-width, clamp(760px, 58vw, 920px))"
+        width={
+          sessionPreviewFullscreen
+            ? "100vw"
+            : "var(--copaw-file-manager-drawer-width, clamp(760px, 58vw, 920px))"
+        }
         placement="right"
         mask={false}
         push={false}
         closable={false}
         rootClassName={styles.drawerRoot}
-        onClose={() => executeOrGuard(() => setOpen(false))}
+        onClose={closeFileManager}
         styles={{
           body: {
             display: "flex",
@@ -863,7 +889,11 @@ export default function FileManager({
             onChange={(key) => {
               const nextTab = key as WorkspaceTab;
               setActiveTab(nextTab);
-              if (nextTab === "session") setSessionListCollapsed(false);
+              if (nextTab === "session") {
+                setSessionListCollapsed(false);
+              } else {
+                setSessionPreviewFullscreen(false);
+              }
             }}
             tabBarExtraContent={
               <div className={styles.drawerActions}>
@@ -901,7 +931,7 @@ export default function FileManager({
                   className={styles.closeButton}
                   aria-label="关闭文件管理器"
                   icon={<CloseOutlined />}
-                  onClick={() => executeOrGuard(() => setOpen(false))}
+                  onClick={closeFileManager}
                 />
               </div>
             }
@@ -1076,7 +1106,10 @@ export default function FileManager({
                         type="button"
                         className={styles.sessionFile}
                         aria-pressed={sessionPreview?.fileUrl === file.fileUrl}
-                        onClick={() => setSessionPreview(file)}
+                        onClick={() => {
+                          setSessionPreview(file);
+                          setSessionPreviewFullscreen(false);
+                        }}
                       >
                         <span className={styles.sessionFileName}>
                           {file.fileName}
@@ -1094,11 +1127,15 @@ export default function FileManager({
                 {sessionPreview ? (
                   <FilePreviewModal
                     open
-                    onClose={() => setSessionPreview(null)}
+                    onClose={() => {
+                      setSessionPreview(null);
+                      setSessionPreviewFullscreen(false);
+                    }}
                     fileUrl={sessionPreview.fileUrl}
                     fileName={sessionPreview.fileName}
                     enableClickTracking={sessionPreview.enableClickTracking}
                     presentation="workspace"
+                    onFullscreenChange={setSessionPreviewFullscreen}
                   />
                 ) : (
                   <Empty description="选择一个会话文件以预览" />

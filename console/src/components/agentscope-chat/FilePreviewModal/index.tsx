@@ -63,6 +63,7 @@ export interface FilePreviewModalProps {
   custUid?: string | null;
   urlParams?: Record<string, string>;
   presentation?: FilePreviewPresentation;
+  onFullscreenChange?: (fullscreen: boolean) => void;
 }
 
 function FilePreviewModal(props: FilePreviewModalProps) {
@@ -81,6 +82,7 @@ function FilePreviewModal(props: FilePreviewModalProps) {
     custUid,
     urlParams,
     presentation = "modal",
+    onFullscreenChange,
   } = props;
   const iframeState = useIframeStore((state) => state);
   const { userId, bbk } = iframeState;
@@ -553,8 +555,12 @@ function FilePreviewModal(props: FilePreviewModalProps) {
   ]);
 
   const handleFullscreen = useCallback(() => {
-    setFullscreen((prev) => !prev);
-  }, []);
+    setFullscreen((previous) => {
+      const next = !previous;
+      onFullscreenChange?.(next);
+      return next;
+    });
+  }, [onFullscreenChange]);
 
   const handleIframeLoad = useCallback(() => {
     setIframeLoadKey((k) => k + 1);
@@ -780,6 +786,7 @@ function FilePreviewModal(props: FilePreviewModalProps) {
           icon={<SparkDownloadLine />}
           onClick={handleDownload}
           bordered={false}
+          aria-label="下载文件"
         />
       </Tooltip>,
     ];
@@ -864,10 +871,16 @@ function FilePreviewModal(props: FilePreviewModalProps) {
   return (
     <>
       {presentation === "workspace" ? (
-        <>
+        <div className={styles.workspacePreview}>
+          <header className={styles.workspacePreviewHeader}>
+            <div className={styles.previewTitle} title={fileName}>
+              {fileName}
+            </div>
+            <div className={styles.headerActions}>{headerActions}</div>
+          </header>
           {templateTabs}
           <div className={styles.previewContent}>{previewBody}</div>
-        </>
+        </div>
       ) : presentation === "drawer" ? (
         <Drawer
           open={open}
