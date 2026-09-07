@@ -15,6 +15,7 @@ import {
   ApiOutlined,
   SyncOutlined,
   EyeOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
 import type { ProviderInfo } from "../../../../../api/types";
 import api from "../../../../../api";
@@ -372,6 +373,7 @@ export function RemoteModelManageModal({
                       <Button
                         type="text"
                         size="small"
+                        icon={<SettingOutlined />}
                         onClick={() => openModelConfig(m.id)}
                       >
                         {t("models.configure", "配置")}
@@ -420,6 +422,7 @@ export function RemoteModelManageModal({
                       <Button
                         type="text"
                         size="small"
+                        icon={<SettingOutlined />}
                         onClick={() => openModelConfig(m.id)}
                       >
                         {t("models.configure", "配置")}
@@ -454,7 +457,7 @@ export function RemoteModelManageModal({
         confirmLoading={configSaving}
         okText={t("common.confirm", "确定")}
         cancelText={t("models.cancel")}
-        width={760}
+        width={720}
         destroyOnHidden
       >
         <Form
@@ -468,7 +471,6 @@ export function RemoteModelManageModal({
                 <InputNumber
                   min={0}
                   step={0.1}
-                  placeholder="0.7"
                   className={styles.runtimeConfigInput}
                 />
               </Form.Item>
@@ -477,7 +479,6 @@ export function RemoteModelManageModal({
                   min={0}
                   max={1}
                   step={0.01}
-                  placeholder="1"
                   className={styles.runtimeConfigInput}
                 />
               </Form.Item>
@@ -485,10 +486,15 @@ export function RemoteModelManageModal({
                 <InputNumber
                   min={0}
                   precision={0}
-                  placeholder="40"
                   className={styles.runtimeConfigInput}
                 />
               </Form.Item>
+              <div className={styles.runtimeConfigGenerationHint}>
+                {t(
+                  "models.generationParameterDefaultHint",
+                  "以上参数未设置时使用模型服务端默认设置",
+                )}
+              </div>
             </div>
             <div className={styles.runtimeConfigColumn}>
               <Form.Item
@@ -498,7 +504,10 @@ export function RemoteModelManageModal({
                 <InputNumber
                   min={1}
                   precision={0}
-                  placeholder="32768"
+                  placeholder={t(
+                    "models.maxInputLengthDefaultPlaceholder",
+                    "128K（系统默认）",
+                  )}
                   className={styles.runtimeConfigInput}
                 />
               </Form.Item>
@@ -526,7 +535,10 @@ export function RemoteModelManageModal({
                 <InputNumber
                   min={1}
                   precision={0}
-                  placeholder="8192"
+                  placeholder={t(
+                    "models.maxOutputLengthDefaultPlaceholder",
+                    "模型服务端默认",
+                  )}
                   className={styles.runtimeConfigInput}
                 />
               </Form.Item>
@@ -555,10 +567,10 @@ export function RemoteModelManageModal({
               <div className={styles.runtimeConfigThinkingRow}>
                 <div>
                   <div className={styles.runtimeConfigSectionLabel}>
-                    {t("models.supportsThinking", "支持思考模式")}
+                    {t("models.supportsThinkingSwitch", "支持思考模式开关")}
                   </div>
                   <div className={styles.runtimeConfigHint}>
-                    开启后，模型可在回答前进行更深入的推理
+                    开启后，聊天界面会显示思考模式选择按钮，用户可按需选择是否启用
                   </div>
                 </div>
                 <Form.Item

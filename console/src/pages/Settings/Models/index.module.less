@@ -1742,12 +1742,12 @@
 
   :global(.ant-modal-header),
   :global(.swe-modal-header) {
-    padding: 28px 32px 22px;
+    padding: 20px 24px 16px;
   }
 
   :global(.ant-modal-body),
   :global(.swe-modal-body) {
-    padding: 28px 32px 32px;
+    padding: 20px 24px 24px;
   }
 
   :global(.ant-modal-footer),
@@ -1756,7 +1756,7 @@
     justify-content: flex-end;
     gap: 12px;
     margin: 0;
-    padding: 20px 32px 28px;
+    padding: 14px 24px 18px;
     border-top: 1px solid var(--console-management-border);
   }
 }
@@ -1766,8 +1766,8 @@
   align-items: baseline;
   gap: 12px;
   min-width: 0;
-  font-size: 22px;
-  line-height: 30px;
+  font-size: 20px;
+  line-height: 28px;
 }
 
 .runtimeConfigModelId {
@@ -1802,7 +1802,7 @@
 
 .runtimeConfigForm :global(.ant-form-item),
 .runtimeConfigForm :global(.swe-form-item) {
-  margin-bottom: 20px;
+  margin-bottom: 14px;
 }
 
 .runtimeConfigForm :global(.ant-form-item-label > label),
@@ -1814,16 +1814,16 @@
 
 .runtimeConfigForm :global(.ant-input-number),
 .runtimeConfigForm :global(.swe-input-number) {
-  min-height: 48px;
+  min-height: 38px;
   border-color: var(--console-management-border-strong);
-  border-radius: 9px;
+  border-radius: 7px;
   box-shadow: none;
 }
 
 .runtimeConfigForm :global(.ant-input-number-input),
 .runtimeConfigForm :global(.swe-input-number-input) {
-  height: 46px;
-  font-size: 16px;
+  height: 36px;
+  font-size: 14px;
 }
 
 .runtimeConfigForm :global(.ant-input-number:hover),
@@ -1839,21 +1839,21 @@
 
 .runtimeConfigPresets {
   display: flex;
-  gap: 12px;
-  margin: -8px 0 20px;
+  gap: 8px;
+  margin: -4px 0 14px;
 }
 
 .runtimeConfigPreset {
-  flex: 0 1 92px;
-  min-height: 42px;
-  padding: 0 14px;
+  flex: 0 1 78px;
+  min-height: 32px;
+  padding: 0 10px;
   color: var(--console-management-text);
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   background: var(--console-management-surface);
   border: 1px solid var(--console-management-border-strong);
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   transition:
     border-color 160ms ease,
@@ -1873,15 +1873,15 @@
 }
 
 .runtimeConfigAdvanced {
-  margin-top: 4px;
-  padding-top: 24px;
+  margin-top: 2px;
+  padding-top: 18px;
   border-top: 1px solid var(--console-management-border);
 }
 
 .runtimeConfigAdvancedGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
-  gap: 40px;
+  gap: 28px;
   align-items: start;
 }
 
@@ -1906,6 +1906,13 @@
   line-height: 18px;
 }
 
+.runtimeConfigGenerationHint {
+  margin-top: -4px;
+  color: var(--console-management-text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .runtimeConfigReasoning {
   margin-bottom: 0 !important;
 }
@@ -1913,20 +1920,20 @@
 .runtimeConfigReasoningGroup {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 8px;
 }
 
 .runtimeConfigReasoningOption {
   display: flex !important;
   align-items: center;
-  min-height: 50px;
+  min-height: 38px;
   margin-inline-end: 0 !important;
-  padding: 0 16px;
+  padding: 0 12px;
   color: var(--console-management-text);
   font-size: 14px;
   background: var(--console-management-surface);
   border: 1px solid var(--console-management-border-strong);
-  border-radius: 9px;
+  border-radius: 7px;
   transition:
     border-color 160ms ease,
     background 160ms ease;
@@ -1953,14 +1960,14 @@
     :global(.swe-modal-header),
     :global(.ant-modal-body),
     :global(.swe-modal-body) {
-      padding-right: 20px;
-      padding-left: 20px;
+      padding-right: 16px;
+      padding-left: 16px;
     }
 
     :global(.ant-modal-footer),
     :global(.swe-modal-footer) {
-      padding-right: 20px;
-      padding-left: 20px;
+      padding-right: 16px;
+      padding-left: 16px;
     }
   }
 
