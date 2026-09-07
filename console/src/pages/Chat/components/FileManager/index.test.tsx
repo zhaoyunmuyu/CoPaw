@@ -171,6 +171,17 @@ describe("FileManager", () => {
     expect(screen.getByLabelText("文件列表第 2 栏")).toBeInTheDocument();
     expect(screen.getByLabelText("文件列表第 3 栏")).toBeInTheDocument();
 
+    fireEvent.click(
+      screen.getByRole("button", { name: "全屏查看文件管理器" }),
+    );
+    expect(document.documentElement).toHaveClass(
+      "copaw-file-manager-preview-fullscreen",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "退出全屏" }));
+    expect(document.documentElement).not.toHaveClass(
+      "copaw-file-manager-preview-fullscreen",
+    );
+
     fireEvent.click(screen.getByRole("button", { name: "关闭文件管理器" }));
 
     await waitFor(() =>

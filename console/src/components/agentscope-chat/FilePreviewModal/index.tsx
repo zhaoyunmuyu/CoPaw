@@ -63,7 +63,6 @@ export interface FilePreviewModalProps {
   custUid?: string | null;
   urlParams?: Record<string, string>;
   presentation?: FilePreviewPresentation;
-  onFullscreenChange?: (fullscreen: boolean) => void;
 }
 
 function FilePreviewModal(props: FilePreviewModalProps) {
@@ -82,7 +81,6 @@ function FilePreviewModal(props: FilePreviewModalProps) {
     custUid,
     urlParams,
     presentation = "modal",
-    onFullscreenChange,
   } = props;
   const iframeState = useIframeStore((state) => state);
   const { userId, bbk } = iframeState;
@@ -555,12 +553,8 @@ function FilePreviewModal(props: FilePreviewModalProps) {
   ]);
 
   const handleFullscreen = useCallback(() => {
-    setFullscreen((previous) => {
-      const next = !previous;
-      onFullscreenChange?.(next);
-      return next;
-    });
-  }, [onFullscreenChange]);
+    setFullscreen((prev) => !prev);
+  }, []);
 
   const handleIframeLoad = useCallback(() => {
     setIframeLoadKey((k) => k + 1);
@@ -876,7 +870,9 @@ function FilePreviewModal(props: FilePreviewModalProps) {
             <div className={styles.previewTitle} title={fileName}>
               {fileName}
             </div>
-            <div className={styles.headerActions}>{headerActions}</div>
+            <div className={styles.headerActions}>
+              {headerActions[headerActions.length - 1]}
+            </div>
           </header>
           {templateTabs}
           <div className={styles.previewContent}>{previewBody}</div>
