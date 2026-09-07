@@ -636,3 +636,10 @@
   - 首次初始化
   - 从 default 模板复制 agent 配置
   - cached tenant 删除 `agent.json` 后再次 `ensure_bootstrap()` 自愈
+
+## Cron 模型失败但执行记录显示成功
+
+- 症状：Runtime 报 `model_call_failed`，随后 Cron 日志却出现 `completed_seen=True failed_seen=False` 和 `exec_status=success`。
+- 原因：Runtime 将模型异常转换为 `response/Failed`；仅检测 `message/Failed` 会漏判，并将此前的消息完成误作执行成功。
+- 排查入口：`src/swe/app/crons/executor.py` 的 `_is_failed_message_event()` 必须同时识别消息与整轮响应失败；失败优先于此前的 Completed。
+- 回归：`tests/unit/app/test_cron_manager_completed_cancellation.py` 覆盖先收到 `message/Completed`、再收到 `response/Failed`，验证任务与执行记录均为 `error` 且保留错误详情。
