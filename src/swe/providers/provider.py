@@ -4,12 +4,52 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Dict, List, Type, Any
-from pydantic import BaseModel, Field
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Type
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 if TYPE_CHECKING:
     from agentscope.model import ChatModelBase
     from .multimodal_prober import ProbeResult
+
+
+ReasoningEffort = Literal["low", "high", "max"]
+
+
+class ModelRuntimeConfig(BaseModel):
+    """Tenant-local generation and capability configuration for one model."""
+
+    temperature: float | None = Field(default=None, ge=0)
+    top_p: float | None = Field(default=None, ge=0, le=1)
+    top_k: int | None = Field(default=None, ge=0)
+    max_input_length: int | None = Field(default=None, gt=0)
+    max_output_length: int | None = Field(default=None, gt=0)
+    supports_enable_thinking: bool = False
+    supported_reasoning_efforts: list[ReasoningEffort] = Field(
+        default_factory=list,
+    )
+    enable_thinking: bool = False
+    reasoning_effort: ReasoningEffort | None = None
+
+    @field_validator("supported_reasoning_efforts")
+    @classmethod
+    def deduplicate_reasoning_efforts(
+        cls,
+        values: list[ReasoningEffort],
+    ) -> list[ReasoningEffort]:
+        return list(dict.fromkeys(values))
+
+    @model_validator(mode="after")
+    def validate_selected_reasoning_effort(self) -> "ModelRuntimeConfig":
+        if (
+            self.reasoning_effort is not None
+            and self.reasoning_effort not in self.supported_reasoning_efforts
+        ):
+            raise ValueError(
+                "reasoning_effort must be declared in "
+                "supported_reasoning_efforts",
+            )
+        return self
 
 
 class ModelInfo(BaseModel):
@@ -90,9 +130,9 @@ class ProviderInfo(BaseModel):
             "without model configuration"
         ),
     )
-    generate_kwargs: Dict[str, Any] = Field(
+    model_configs: Dict[str, ModelRuntimeConfig] = Field(
         default_factory=dict,
-        description="Generation parameters for agentscope chat models.",
+        description="Tenant-local runtime configuration keyed by model ID.",
     )
 
 
@@ -165,12 +205,6 @@ class Provider(ProviderInfo, ABC):
             self.chat_model = str(config["chat_model"])
         if "api_key_prefix" in config and config["api_key_prefix"] is not None:
             self.api_key_prefix = str(config["api_key_prefix"])
-        if (
-            "generate_kwargs" in config
-            and config["generate_kwargs"] is not None
-            and isinstance(config["generate_kwargs"], dict)
-        ):
-            self.generate_kwargs = config["generate_kwargs"]
         if "extra_models" in config and config["extra_models"] is not None:
             self.extra_models = [
                 (
@@ -180,6 +214,27 @@ class Provider(ProviderInfo, ABC):
                 )
                 for model in config["extra_models"]
             ]
+
+    def get_model_config(self, model_id: str) -> ModelRuntimeConfig:
+        """Return the stored config or the empty configuration for a model."""
+        return self.model_configs.get(model_id, ModelRuntimeConfig())
+
+    def update_model_config(
+        self,
+        model_id: str,
+        updates: Dict[str, Any],
+    ) -> ModelRuntimeConfig:
+        """Merge validated updates into one model's configuration."""
+        current = self.get_model_config(model_id)
+        updated = ModelRuntimeConfig.model_validate(
+            {**current.model_dump(), **updates},
+        )
+        self.model_configs[model_id] = updated
+        return updated
+
+    def delete_model_config(self, model_id: str) -> None:
+        """Remove the configuration associated with a deleted custom model."""
+        self.model_configs.pop(model_id, None)
 
     def get_chat_model_cls(self) -> Type[ChatModelBase]:
         """Return the chat model class associated with this provider."""
@@ -211,9 +266,13 @@ class Provider(ProviderInfo, ABC):
         )
 
     @abstractmethod
-    def get_chat_model_instance(self, model_id: str) -> ChatModelBase:
+    def get_chat_model_instance(
+        self,
+        model_id: str,
+        generation_kwargs: Dict[str, Any] | None = None,
+    ) -> ChatModelBase:
         """Return an instance of the chat model associated with this
-        provider and model_id."""
+        provider and model_id using explicit generation arguments."""
 
     async def probe_model_multimodal(
         self,
@@ -253,5 +312,5 @@ class Provider(ProviderInfo, ABC):
             and not self.is_custom,
             freeze_url=self.freeze_url,
             require_api_key=self.require_api_key,
-            generate_kwargs=self.generate_kwargs,
+            model_configs=self.model_configs,
         )
