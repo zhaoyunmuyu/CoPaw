@@ -79,6 +79,41 @@ class _FailedRunner:
         )
 
 
+class _ResponseFailedRunner:
+    """模拟 Runtime 的标准 response 失败终态。"""
+
+    async def stream_query(self, _req):
+        for status in (
+            RunStatus.Created,
+            RunStatus.InProgress,
+            RunStatus.Failed,
+        ):
+            yield SimpleNamespace(
+                object="response",
+                status=status,
+                error=(
+                    SimpleNamespace(
+                        code="model_call_failed",
+                        message="Authorization: Bearer secret-token",
+                    )
+                    if status == RunStatus.Failed
+                    else None
+                ),
+            )
+
+
+class _ResponseCompletedEmptyRunner:
+    """模拟 Runtime 完成但没有 assistant message 的合法终态。"""
+
+    async def stream_query(self, _req):
+        for status in (
+            RunStatus.Created,
+            RunStatus.InProgress,
+            RunStatus.Completed,
+        ):
+            yield SimpleNamespace(object="response", status=status)
+
+
 class _ChannelManager:
     def __init__(self) -> None:
         self.events: list[object] = []
@@ -738,6 +773,92 @@ def test_empty_stream_marks_execution_as_error():
     assert monitor.records[-1]["status"] == "error"
     # 验证：没有发送任何事件
     assert len(channel_manager.events) == 0
+
+
+def test_response_failed_marks_execution_with_terminal_error(
+    monkeypatch,
+):
+    """Cron 应识别 Runtime 标准 response/failed，而不是误报未完成。"""
+    info_messages: list[str] = []
+
+    def fake_executor_info(message, *args, **_kwargs) -> None:
+        info_messages.append(str(message) % args if args else str(message))
+
+    monkeypatch.setattr(
+        "swe.app.crons.executor.CronExecutor._resolve_execution_model",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        "swe.app.crons.executor.logger.info",
+        fake_executor_info,
+    )
+
+    async def _run():
+        job = _build_agent_job()
+        monitor = _MonitorSyncClient()
+        manager = CronManager(
+            repo=_Repo(job),
+            runner=_ResponseFailedRunner(),
+            channel_manager=_ChannelManager(),
+        )
+        manager._monitor_sync_client = (
+            monitor  # pylint: disable=protected-access
+        )
+
+        with __import__("pytest").raises(RuntimeError):
+            await manager._execute_once(  # pylint: disable=protected-access
+                job,
+                is_manual=False,
+            )
+        return manager, monitor
+
+    manager, monitor = asyncio.run(_run())
+
+    assert manager.get_state("job-cancel-after-output").last_status == "error"
+    assert monitor.records[-1]["error_message"].startswith(
+        "Agent execution failed: model_call_failed: Authorization: ",
+    )
+    assert all("secret-token" not in message for message in info_messages)
+    assert any(
+        "event_index=3 event_class=SimpleNamespace object=response "
+        "status=failed" in message
+        and "error_code=model_call_failed" in message
+        for message in info_messages
+    )
+
+
+def test_response_completed_without_message_marks_execution_as_success(
+    monkeypatch,
+):
+    """Runtime 的 response/completed 是 Cron 成功终态，即使 output 为空。"""
+    monkeypatch.setattr(
+        "swe.app.crons.executor.CronExecutor._resolve_execution_model",
+        lambda *_args: None,
+    )
+
+    async def _run():
+        job = _build_agent_job()
+        monitor = _MonitorSyncClient()
+        manager = CronManager(
+            repo=_Repo(job),
+            runner=_ResponseCompletedEmptyRunner(),
+            channel_manager=_ChannelManager(),
+        )
+        manager._monitor_sync_client = (
+            monitor  # pylint: disable=protected-access
+        )
+        await manager._execute_once(  # pylint: disable=protected-access
+            job,
+            is_manual=False,
+        )
+        return manager, monitor
+
+    manager, monitor = asyncio.run(_run())
+
+    assert (
+        manager.get_state("job-cancel-after-output").last_status == "success"
+    )
+    assert monitor.records[-1]["status"] == "success"
 
 
 def test_failed_execution_preserves_trace_id(monkeypatch):
