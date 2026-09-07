@@ -667,3 +667,12 @@
 - 原因：Runtime 将模型异常转换为 `response/Failed`；仅检测 `message/Failed` 会漏判，并将此前的消息完成误作执行成功。
 - 排查入口：`src/swe/app/crons/executor.py` 的 `_is_failed_message_event()` 必须同时识别消息与整轮响应失败；失败优先于此前的 Completed。
 - 回归：`tests/unit/app/test_cron_manager_completed_cancellation.py` 覆盖先收到 `message/Completed`、再收到 `response/Failed`，验证任务与执行记录均为 `error` 且保留错误详情。
+
+
+## 聊天语音输入不可用或识别失败
+
+- 入口：`console/src/components/agentscope-chat/DictationControl/` 与 `Sender/useSpeech.ts`。新会话和会话内输入框共用短听写能力；加号菜单的白名单「语音录制」仍走原独立链路。
+- 浏览器需同时支持 `SpeechRecognition`（或 `webkitSpeechRecognition`）、麦克风采集和安全上下文（HTTPS / localhost）。嵌入页面还需要宿主允许麦克风权限。浏览器提供 API 不代表其语音服务在当前网络可达。
+- `not-allowed`：检查浏览器站点麦克风权限及宿主 Permissions Policy；`audio-capture`：检查麦克风连接/占用；`network`：检查浏览器识别服务网络，不要修改录音白名单或录音服务配置来修复短听写。
+- 语音识别跟随界面语言，不能使用当前仍为 `en` 的 HTML 根语言推断中文识别参数。实时结果只作预览，停止后追加草稿且不发送；取消或识别失败保留原草稿。
+- 本地回归：`cd console && npm run test:run -- src/components/agentscope-chat/Sender/useSpeech.test.tsx`。浏览器 QA 的合成音频/模拟识别验证 UI 与生命周期，不能替代目标浏览器和部署网络上的真实语音服务联调。

@@ -2416,7 +2416,7 @@ export default function ChatPage() {
         quickMenuItems: planModeQuickMenuItems,
         prefix:
           senderPrefixNodes.length > 0 ? <>{senderPrefixNodes}</> : undefined,
-        allowSpeech: false,
+        allowSpeech: true,
         attachments: {
           accept: CHAT_ATTACHMENT_ACCEPT_HINT,
           customRequest: handleFileUpload,

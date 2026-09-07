@@ -247,6 +247,7 @@ export default function Input({ onCancel, onSubmit }: InputProps) {
 
   const defaultComposer = (
     <ChatInput
+      key={`${currentSessionId}:${Boolean(hasMessages || fileList.length)}`}
       loading={inputContext.loading}
       disabled={inputContext.disabled}
       placeholder={placeholder}
@@ -267,7 +268,7 @@ export default function Input({ onCancel, onSubmit }: InputProps) {
       maxLength={maxLength}
       onSubmit={handleSubmit}
       onCancel={handleCancel}
-      allowSpeech={allowSpeech}
+      allowSpeech={allowSpeech && !voiceRecorder?.recording}
       onPasteFile={canHandlePasteFile}
       suggestions={suggestions}
       skillMentions={skillMentions}
