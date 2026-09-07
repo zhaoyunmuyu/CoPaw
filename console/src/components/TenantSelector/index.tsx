@@ -47,6 +47,27 @@ function haveSameTenantIds(left: string[], right: string[]): boolean {
   return leftTenantIds.every((tenantId) => rightSet.has(tenantId));
 }
 
+function buildTenantOptions(
+  directoryTenants: TenantSourceInfo[],
+  excludeTenantId?: string,
+  allowedTenantIds?: string[],
+  additionalTenantOptions?: TenantSourceInfo[],
+): TenantSourceInfo[] {
+  const merged = new Map<string, TenantSourceInfo>();
+  [...directoryTenants, ...(additionalTenantOptions ?? [])].forEach((item) => {
+    if (item.tenant_id !== excludeTenantId && !merged.has(item.tenant_id)) {
+      merged.set(item.tenant_id, item);
+    }
+  });
+
+  if (!allowedTenantIds) return Array.from(merged.values());
+
+  const allowed = new Set(allowedTenantIds);
+  return Array.from(merged.values()).filter((item) =>
+    allowed.has(item.tenant_id),
+  );
+}
+
 /**
  * 统一租户选择组件
  *
@@ -74,6 +95,7 @@ export function TenantSelector({
   distributedTriggerKey,
   allowedTenantIds,
   allowManualIds = true,
+  additionalTenantOptions,
 }: TenantSelectorProps) {
   const { t } = useTranslation();
   const sourceId = useIframeStore((state) => state.source) || DEFAULT_SOURCE_ID;
@@ -112,6 +134,7 @@ export function TenantSelector({
 
   // 模式切换标记（防止切换过程中的状态同步导致闪烁）
   const isModeSwitchingRef = useRef(false);
+  const [modeSwitchVersion, setModeSwitchVersion] = useState(0);
 
   // 打开时自动加载租户信息
   useEffect(() => {
@@ -119,23 +142,38 @@ export function TenantSelector({
     setError(null);
     fetchTenantsBySource(sourceId)
       .then((items) => {
-        const filtered = excludeTenantId
-          ? items.filter((item) => item.tenant_id !== excludeTenantId)
-          : items;
-        const allowed = allowedTenantIds ? new Set(allowedTenantIds) : null;
         setTenantOptions(
-          allowed
-            ? filtered.filter((item) => allowed.has(item.tenant_id))
-            : filtered,
+          buildTenantOptions(
+            items,
+            excludeTenantId,
+            allowedTenantIds,
+            additionalTenantOptions,
+          ),
         );
       })
       .catch((err) => {
+        const fallbackOptions = buildTenantOptions(
+          [],
+          excludeTenantId,
+          allowedTenantIds,
+          additionalTenantOptions,
+        );
+        if (fallbackOptions.length > 0) {
+          setTenantOptions(fallbackOptions);
+          return;
+        }
         const error = err instanceof Error ? err : new Error(String(err));
         setError(error);
         onLoadError?.(error);
       })
       .finally(() => setLoading(false));
-  }, [sourceId, excludeTenantId, onLoadError, allowedTenantIds]);
+  }, [
+    sourceId,
+    excludeTenantId,
+    onLoadError,
+    allowedTenantIds,
+    additionalTenantOptions,
+  ]);
 
   // 可用租户 ID 列表
   const availableTenantIds = useMemo(() => {
@@ -284,7 +322,13 @@ export function TenantSelector({
         return current === nextText ? current : nextText;
       });
     }
-  }, [availableTenantIds, selectedTenantIds, targetMode, isEditingExtra]);
+  }, [
+    availableTenantIds,
+    selectedTenantIds,
+    targetMode,
+    isEditingExtra,
+    modeSwitchVersion,
+  ]);
 
   // 内部状态变更通知外部
   // 注意：分成两个独立的 useEffect，避免依赖互相影响导致闪烁
@@ -389,22 +433,28 @@ export function TenantSelector({
   }, [distributedUserIds, distributedTriggerKey, targetMode, tenantLookup]);
 
   // 切换模式时清空选择（先清空状态，再切换模式，避免同步 useEffect 触发）
-  const handleModeChange = useCallback((mode: "bbk_id" | "user_id") => {
-    // 先清空所有状态
-    setSelectedBbkIds([]);
-    setFilterText("");
-    setSelectedInListTenantIds([]);
-    setExtraTenantIdsText("");
-    setIsEditingExtra(false);
-    // 设置模式切换标记，防止同步 useEffect 在切换过程中触发
-    isModeSwitchingRef.current = true;
-    // 最后切换模式
-    setTargetMode(mode);
-    // 在下一个渲染周期清除标记
-    requestAnimationFrame(() => {
-      isModeSwitchingRef.current = false;
-    });
-  }, []);
+  const handleModeChange = useCallback(
+    (mode: "bbk_id" | "user_id") => {
+      // 先清空所有状态
+      setSelectedBbkIds([]);
+      setFilterText("");
+      setSelectedInListTenantIds([]);
+      setExtraTenantIdsText("");
+      setIsEditingExtra(false);
+      // 设置模式切换标记，防止同步 useEffect 在切换过程中触发
+      isModeSwitchingRef.current = true;
+      // 最后切换模式
+      setTargetMode(mode);
+      // 在下一个渲染周期清除标记
+      requestAnimationFrame(() => {
+        isModeSwitchingRef.current = false;
+        if (selectedTenantIds.length > 0) {
+          setModeSwitchVersion((version) => version + 1);
+        }
+      });
+    },
+    [selectedTenantIds.length],
+  );
 
   // 全选/清空按钮（使用函数式更新避免依赖）
   const handleSelectAll = useCallback(() => {

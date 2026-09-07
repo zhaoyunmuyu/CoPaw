@@ -43,4 +43,7 @@ export interface TenantSelectorProps {
 
   /** 是否允许输入列表外的租户 ID */
   allowManualIds?: boolean;
+
+  /** 追加可选租户（用于租户目录中不存在但仍有本地资源的租户） */
+  additionalTenantOptions?: TenantSourceInfo[];
 }

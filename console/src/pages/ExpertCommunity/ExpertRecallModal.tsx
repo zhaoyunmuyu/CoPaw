@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Alert, Modal, Spin, message } from "antd";
 import { marketApi, type ExpertRecallResponse } from "../../api/modules/market";
 import type { DistributionRecord } from "../../api/types";
+import type { TenantSourceInfo } from "../../api/modules/userInfo";
 import { TenantSelector } from "../../components/TenantSelector";
 
 interface ExpertRecallModalProps {
@@ -28,22 +29,41 @@ export function ExpertRecallModal({
 
   useEffect(() => {
     if (!open) return;
+    let active = true;
     setLoading(true);
     setSelectedTenantIds([]);
     marketApi
       .getExpertDistributions(sourceId, itemId)
-      .then(setHolders)
+      .then((result) => {
+        if (active) setHolders(result);
+      })
       .catch((error) => {
+        if (!active) return;
         message.error(
           error instanceof Error ? error.message : "获取持有用户失败",
         );
         setHolders([]);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [itemId, open, sourceId]);
 
   const holderIds = useMemo(
     () => Array.from(new Set(holders.map((holder) => holder.target_user_id))),
+    [holders],
+  );
+
+  const holderOptions = useMemo<TenantSourceInfo[]>(
+    () =>
+      holders.map((holder) => ({
+        tenant_id: holder.target_user_id,
+        tenant_name: holder.target_user_name || null,
+        bbk_id: holder.target_bbk_id || null,
+      })),
     [holders],
   );
 
@@ -118,6 +138,7 @@ export function ExpertRecallModal({
             selectedTenantIds={selectedTenantIds}
             onChange={setSelectedTenantIds}
             allowedTenantIds={holderIds}
+            additionalTenantOptions={holderOptions}
             allowManualIds={false}
             hint={`当前持有用户：${holderIds.length} 个`}
           />
