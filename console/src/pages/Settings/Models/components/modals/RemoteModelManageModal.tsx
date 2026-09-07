@@ -1,5 +1,14 @@
 import { useState, useEffect } from "react";
-import { Button, Form, Input, Modal, Tag } from "@agentscope-ai/design";
+import {
+  Button,
+  Checkbox,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Switch,
+  Tag,
+} from "@agentscope-ai/design";
 import {
   DeleteOutlined,
   PlusOutlined,
@@ -35,7 +44,10 @@ export function RemoteModelManageModal({
   const [discovering, setDiscovering] = useState(false);
   const [testingModelId, setTestingModelId] = useState<string | null>(null);
   const [probingModelId, setProbingModelId] = useState<string | null>(null);
+  const [configModelId, setConfigModelId] = useState<string | null>(null);
+  const [configSaving, setConfigSaving] = useState(false);
   const [form] = Form.useForm();
+  const [configForm] = Form.useForm();
   const canDiscover = provider.support_model_discovery;
 
   // For custom providers ALL models are deletable.
@@ -177,6 +189,40 @@ export function RemoteModelManageModal({
         }
       },
     });
+  };
+
+  const openModelConfig = async (modelId: string) => {
+    try {
+      const config = await api.getModelRuntimeConfig(provider.id, modelId);
+      configForm.setFieldsValue({
+        ...config,
+        supported_reasoning_efforts: config.supported_reasoning_efforts ?? [],
+      });
+      setConfigModelId(modelId);
+    } catch (error) {
+      message.error(
+        error instanceof Error ? error.message : t("models.failedToSaveConfig"),
+      );
+    }
+  };
+
+  const saveModelConfig = async () => {
+    if (!configModelId) return;
+    try {
+      const values = await configForm.validateFields();
+      setConfigSaving(true);
+      await api.updateModelRuntimeConfig(provider.id, configModelId, values);
+      message.success(t("models.configurationSaved", { name: configModelId }));
+      setConfigModelId(null);
+      await onSaved();
+    } catch (error) {
+      if (error && typeof error === "object" && "errorFields" in error) return;
+      message.error(
+        error instanceof Error ? error.message : t("models.failedToSaveConfig"),
+      );
+    } finally {
+      setConfigSaving(false);
+    }
   };
 
   const handleClose = () => {
@@ -326,6 +372,13 @@ export function RemoteModelManageModal({
                       <Button
                         type="text"
                         size="small"
+                        onClick={() => openModelConfig(m.id)}
+                      >
+                        {t("models.configure", "配置")}
+                      </Button>
+                      <Button
+                        type="text"
+                        size="small"
                         danger
                         icon={<DeleteOutlined />}
                         onClick={() => handleRemoveModel(m.id, m.name)}
@@ -364,6 +417,13 @@ export function RemoteModelManageModal({
                       >
                         {t("models.testConnection")}
                       </Button>
+                      <Button
+                        type="text"
+                        size="small"
+                        onClick={() => openModelConfig(m.id)}
+                      >
+                        {t("models.configure", "配置")}
+                      </Button>
                     </>
                   )}
                 </div>
@@ -372,6 +432,57 @@ export function RemoteModelManageModal({
           })
         )}
       </div>
+
+      <Modal
+        title={t("models.modelRuntimeConfig", "模型运行配置")}
+        open={configModelId !== null}
+        onCancel={() => setConfigModelId(null)}
+        onOk={saveModelConfig}
+        confirmLoading={configSaving}
+        destroyOnHidden
+      >
+        <Form form={configForm} layout="vertical">
+          <Form.Item name="temperature" label="Temperature">
+            <InputNumber min={0} step={0.1} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item name="top_p" label="Top P">
+            <InputNumber
+              min={0}
+              max={1}
+              step={0.01}
+              style={{ width: "100%" }}
+            />
+          </Form.Item>
+          <Form.Item name="top_k" label="Top K">
+            <InputNumber min={0} precision={0} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item
+            name="max_input_length"
+            label={t("models.maxInputLength", "最大输入长度")}
+          >
+            <InputNumber min={1} precision={0} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item
+            name="max_output_length"
+            label={t("models.maxOutputLength", "最大输出长度")}
+          >
+            <InputNumber min={1} precision={0} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item
+            name="supports_enable_thinking"
+            label={t("models.supportsThinking", "支持思考模式")}
+            valuePropName="checked"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            name="supported_reasoning_efforts"
+            label={t("models.reasoningEfforts", "支持的思考强度")}
+          >
+            <Checkbox.Group options={["low", "high", "max"]} />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       {/* Add model section */}
       {adding ? (
