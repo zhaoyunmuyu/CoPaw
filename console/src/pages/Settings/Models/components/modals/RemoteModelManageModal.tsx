@@ -434,53 +434,160 @@ export function RemoteModelManageModal({
       </div>
 
       <Modal
-        title={t("models.modelRuntimeConfig", "模型运行配置")}
+        rootClassName={`console-management-modal ${styles.runtimeConfigModal}`}
+        title={
+          <div className={styles.runtimeConfigTitle}>
+            <span>{t("models.modelRuntimeConfig", "模型运行配置")}</span>
+            {configModelId && (
+              <span
+                className={styles.runtimeConfigModelId}
+                title={configModelId}
+              >
+                {configModelId}
+              </span>
+            )}
+          </div>
+        }
         open={configModelId !== null}
         onCancel={() => setConfigModelId(null)}
         onOk={saveModelConfig}
         confirmLoading={configSaving}
+        okText={t("common.confirm", "确定")}
+        cancelText={t("models.cancel")}
+        width={760}
         destroyOnHidden
       >
-        <Form form={configForm} layout="vertical">
-          <Form.Item name="temperature" label="Temperature">
-            <InputNumber min={0} step={0.1} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="top_p" label="Top P">
-            <InputNumber
-              min={0}
-              max={1}
-              step={0.01}
-              style={{ width: "100%" }}
-            />
-          </Form.Item>
-          <Form.Item name="top_k" label="Top K">
-            <InputNumber min={0} precision={0} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item
-            name="max_input_length"
-            label={t("models.maxInputLength", "最大输入长度")}
-          >
-            <InputNumber min={1} precision={0} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item
-            name="max_output_length"
-            label={t("models.maxOutputLength", "最大输出长度")}
-          >
-            <InputNumber min={1} precision={0} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item
-            name="supports_enable_thinking"
-            label={t("models.supportsThinking", "支持思考模式")}
-            valuePropName="checked"
-          >
-            <Switch />
-          </Form.Item>
-          <Form.Item
-            name="supported_reasoning_efforts"
-            label={t("models.reasoningEfforts", "支持的思考强度")}
-          >
-            <Checkbox.Group options={["low", "high", "max"]} />
-          </Form.Item>
+        <Form
+          form={configForm}
+          layout="vertical"
+          className={styles.runtimeConfigForm}
+        >
+          <div className={styles.runtimeConfigGrid}>
+            <div className={styles.runtimeConfigColumn}>
+              <Form.Item name="temperature" label="Temperature">
+                <InputNumber
+                  min={0}
+                  step={0.1}
+                  placeholder="0.7"
+                  className={styles.runtimeConfigInput}
+                />
+              </Form.Item>
+              <Form.Item name="top_p" label="Top P">
+                <InputNumber
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  placeholder="1"
+                  className={styles.runtimeConfigInput}
+                />
+              </Form.Item>
+              <Form.Item name="top_k" label="Top K">
+                <InputNumber
+                  min={0}
+                  precision={0}
+                  placeholder="40"
+                  className={styles.runtimeConfigInput}
+                />
+              </Form.Item>
+            </div>
+            <div className={styles.runtimeConfigColumn}>
+              <Form.Item
+                name="max_input_length"
+                label={t("models.maxInputLength", "最大输入长度")}
+              >
+                <InputNumber
+                  min={1}
+                  precision={0}
+                  placeholder="32768"
+                  className={styles.runtimeConfigInput}
+                />
+              </Form.Item>
+              <div
+                className={styles.runtimeConfigPresets}
+                aria-label="最大输入长度快捷选项"
+              >
+                {[32768, 65536, 131072].map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={styles.runtimeConfigPreset}
+                    onClick={() =>
+                      configForm.setFieldValue("max_input_length", value)
+                    }
+                  >
+                    {value / 1024}K
+                  </button>
+                ))}
+              </div>
+              <Form.Item
+                name="max_output_length"
+                label={t("models.maxOutputLength", "最大输出长度")}
+              >
+                <InputNumber
+                  min={1}
+                  precision={0}
+                  placeholder="8192"
+                  className={styles.runtimeConfigInput}
+                />
+              </Form.Item>
+              <div
+                className={styles.runtimeConfigPresets}
+                aria-label="最大输出长度快捷选项"
+              >
+                {[32768, 65536, 131072].map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={styles.runtimeConfigPreset}
+                    onClick={() =>
+                      configForm.setFieldValue("max_output_length", value)
+                    }
+                  >
+                    {value / 1024}K
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.runtimeConfigAdvanced}>
+            <div className={styles.runtimeConfigAdvancedGrid}>
+              <div className={styles.runtimeConfigThinkingRow}>
+                <div>
+                  <div className={styles.runtimeConfigSectionLabel}>
+                    {t("models.supportsThinking", "支持思考模式")}
+                  </div>
+                  <div className={styles.runtimeConfigHint}>
+                    开启后，模型可在回答前进行更深入的推理
+                  </div>
+                </div>
+                <Form.Item
+                  name="supports_enable_thinking"
+                  valuePropName="checked"
+                  noStyle
+                >
+                  <Switch />
+                </Form.Item>
+              </div>
+              <Form.Item
+                name="supported_reasoning_efforts"
+                label={t("models.reasoningEfforts", "支持的思考强度")}
+                className={styles.runtimeConfigReasoning}
+              >
+                <Checkbox.Group className={styles.runtimeConfigReasoningGroup}>
+                  {(["low", "high", "max"] as const).map((effort) => (
+                    <Checkbox
+                      key={effort}
+                      value={effort}
+                      className={styles.runtimeConfigReasoningOption}
+                    >
+                      {effort}
+                    </Checkbox>
+                  ))}
+                </Checkbox.Group>
+              </Form.Item>
+            </div>
+          </div>
         </Form>
       </Modal>
 
