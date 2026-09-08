@@ -1139,6 +1139,7 @@ export default function FileManager({
               >
                 {sessionPreview ? (
                   <FilePreviewModal
+                    key={sessionPreview.fileUrl}
                     open
                     onClose={() => {
                       setSessionPreview(null);
@@ -1147,6 +1148,7 @@ export default function FileManager({
                     fileName={sessionPreview.fileName}
                     enableClickTracking={sessionPreview.enableClickTracking}
                     presentation="workspace"
+                    nestedPreviewMode="replace"
                   />
                 ) : (
                   <Empty description="选择一个会话文件以预览" />

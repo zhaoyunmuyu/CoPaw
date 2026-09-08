@@ -5,8 +5,8 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Drawer, message, Modal, Tooltip, Spin, Tabs } from "antd";
-import { FullscreenOutlined } from "@ant-design/icons";
+import { Button, Drawer, message, Modal, Tooltip, Spin, Tabs } from "antd";
+import { ArrowLeftOutlined, FullscreenOutlined } from "@ant-design/icons";
 import { SparkFalseLine, SparkDownloadLine } from "@agentscope-ai/icons";
 import { IconButton } from "@agentscope-ai/design";
 import {
@@ -63,6 +63,8 @@ export interface FilePreviewModalProps {
   custUid?: string | null;
   urlParams?: Record<string, string>;
   presentation?: FilePreviewPresentation;
+  nestedPreviewMode?: "stack" | "replace";
+  onBack?: () => void;
 }
 
 function FilePreviewModal(props: FilePreviewModalProps) {
@@ -81,6 +83,8 @@ function FilePreviewModal(props: FilePreviewModalProps) {
     custUid,
     urlParams,
     presentation = "modal",
+    nestedPreviewMode = "stack",
+    onBack,
   } = props;
   const iframeState = useIframeStore((state) => state);
   const { userId, bbk } = iframeState;
@@ -862,11 +866,53 @@ function FilePreviewModal(props: FilePreviewModalProps) {
       </div>
     ) : null;
 
+  const replaceWithNestedPreview =
+    nestedPreviewMode === "replace" && nestedPreview !== null;
+
+  const nestedPreviewContent = nestedPreview ? (
+    <FilePreviewModal
+      open
+      onClose={() => setNestedPreview(null)}
+      fileUrl={nestedPreview.fileUrl}
+      fileName={nestedPreview.fileName}
+      enableClickTracking
+      enableListSnapshotTracking={false}
+      trackingListKey={nestedPreview.listKey}
+      trackingListName={nestedPreview.listName}
+      defaultCustomerInfo={nestedPreview.customerInfo}
+      custUid={nestedPreview.custUid}
+      rootTemplateId={
+        templateInfo?.templateId ? String(templateInfo.templateId) : undefined
+      }
+      rootResultId={effectiveResultId}
+      presentation={presentation}
+      nestedPreviewMode={nestedPreviewMode}
+      onBack={
+        nestedPreviewMode === "replace"
+          ? () => setNestedPreview(null)
+          : undefined
+      }
+    />
+  ) : null;
+
+  if (replaceWithNestedPreview) return nestedPreviewContent;
+
   return (
     <>
       {presentation === "workspace" ? (
         <div className={styles.workspacePreview}>
           <header className={styles.workspacePreviewHeader}>
+            {onBack && (
+              <Button
+                type="text"
+                size="small"
+                icon={<ArrowLeftOutlined />}
+                onClick={onBack}
+                aria-label="返回上一级预览"
+              >
+                返回
+              </Button>
+            )}
             <div className={styles.previewTitle} title={fileName}>
               {fileName}
             </div>
@@ -969,27 +1015,7 @@ function FilePreviewModal(props: FilePreviewModalProps) {
           </div>
         </Modal>
       )}
-      {nestedPreview && (
-        <FilePreviewModal
-          open
-          onClose={() => setNestedPreview(null)}
-          fileUrl={nestedPreview.fileUrl}
-          fileName={nestedPreview.fileName}
-          enableClickTracking
-          enableListSnapshotTracking={false}
-          trackingListKey={nestedPreview.listKey}
-          trackingListName={nestedPreview.listName}
-          defaultCustomerInfo={nestedPreview.customerInfo}
-          custUid={nestedPreview.custUid}
-          rootTemplateId={
-            templateInfo?.templateId
-              ? String(templateInfo.templateId)
-              : undefined
-          }
-          rootResultId={effectiveResultId}
-          presentation={presentation}
-        />
-      )}
+      {nestedPreviewContent}
     </>
   );
 }
