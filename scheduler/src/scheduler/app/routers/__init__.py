@@ -10,6 +10,7 @@ from .managed_cron import router as managed_cron_router
 from .managed_callbacks import router as managed_callbacks_router
 from .managed_batch_operations import router as managed_batch_operations_router
 from .external_cron import router as external_cron_router
+from .calendar import router as calendar_router
 from .managed_cron_management import router as managed_cron_management_router
 from .managed_cron_controls import router as managed_cron_controls_router
 from .managed_cron_broadcast import router as managed_cron_broadcast_router
@@ -29,5 +30,6 @@ api_router.include_router(managed_cron_dispatch_state_router)
 api_router.include_router(managed_callbacks_router)
 api_router.include_router(managed_batch_operations_router)
 api_router.include_router(external_cron_router)
+api_router.include_router(calendar_router)
 
 __all__ = ["api_router"]

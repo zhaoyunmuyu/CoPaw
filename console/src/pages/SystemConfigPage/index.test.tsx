@@ -73,7 +73,7 @@ describe("SystemConfigPage", () => {
   }
 
   function getCronSkipWeekendZhaohuSwitch() {
-    return getSwitchByTitle("周末不发招呼完成通知");
+    return getSwitchByTitle("非工作日不发招呼完成通知");
   }
 
   function getArchiveMaintenanceSwitch() {
@@ -327,7 +327,7 @@ describe("SystemConfigPage", () => {
 
     const scheduledTaskCardTitle = await screen.findByText("定时任务设置");
     const scheduledTaskCard = scheduledTaskCardTitle.closest(".ant-card");
-    const switchTitle = await screen.findByText("周末不发招呼完成通知");
+    const switchTitle = await screen.findByText("非工作日不发招呼完成通知");
     expect(switchTitle.closest(".ant-card")).toBe(scheduledTaskCard);
 
     fireEvent.click(getCronSkipWeekendZhaohuSwitch());

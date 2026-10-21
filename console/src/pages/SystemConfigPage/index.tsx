@@ -826,7 +826,7 @@ export default function SystemConfigPage() {
         </section>
         <section className={styles.toolOutputSection}>
           <div className={styles.switchRow}>
-            <span className={styles.switchTitle}>周末不发招呼完成通知</span>
+            <span className={styles.switchTitle}>非工作日不发招呼完成通知</span>
             <Switch
               checked={cronNotificationConfig.skip_weekend_zhaohu_enabled}
               disabled={formDisabled}
@@ -1445,7 +1445,7 @@ export default function SystemConfigPage() {
                         {t(
                           "sourceSystemConfigPage.cronSkipWeekendZhaohuTitle",
                           {
-                            defaultValue: "周末不发招呼完成通知",
+                            defaultValue: "非工作日不发招呼完成通知",
                           },
                         )}
                       </span>
@@ -1454,7 +1454,7 @@ export default function SystemConfigPage() {
                           "sourceSystemConfigPage.cronSkipWeekendZhaohuDescription",
                           {
                             defaultValue:
-                              "开启后，按任务时区判断原始通知时间，落在周六或周日的定时任务运行结果不发送招呼完成通知。",
+                              "新版任务按北京时间的原定通知日期（含延迟）判断非工作日；仅抑制招呼提醒，不影响执行结果和未读。旧任务保留原周末规则。",
                           },
                         )}
                       </span>
