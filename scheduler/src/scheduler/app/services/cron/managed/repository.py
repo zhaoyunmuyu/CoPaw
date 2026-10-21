@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 from .contracts import (
@@ -13,7 +14,9 @@ from .contracts import (
     QueryOptions,
 )
 from .identity import CallerIdentity, identity_value
-from .views import STATE_COLUMNS, child_item, job_view, list_item
+from .views import STATE_COLUMNS, child_item, list_item
+from .calendar_views import render_rows
+from ..workday_calendar import CalendarService, CalendarStore
 
 IDENTITY_FIELDS = ("tenant_id", "source_id", "agent_id", "job_id")
 _JOIN = " AND ".join(
@@ -109,8 +112,10 @@ def _encode_cursor(row: dict, context: dict) -> str:
 
 
 class ManagedCronRepository:
-    def __init__(self, db: Any):
+    def __init__(self, db: Any, *, calendar=None, clock=None):
         self.db = db
+        self.calendar = calendar or CalendarService(store=CalendarStore(db))
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
 
     async def _rows(
         self,
@@ -165,7 +170,14 @@ class ManagedCronRepository:
         include_deleted: bool = False,
     ) -> dict:
         row = await self._authorized_row(caller, job_id, include_deleted)
-        return job_view(row, caller.actor_id)
+        return (
+            await render_rows(
+                [row],
+                caller.actor_id,
+                self.calendar,
+                self.clock(),
+            )
+        )[0]
 
     async def page(
         self,
@@ -213,7 +225,13 @@ class ManagedCronRepository:
         rows = rows[:limit]
         mapper = child_item if parent else list_item
         result = {
-            "items": [mapper(row, caller.actor_id) for row in rows],
+            "items": await render_rows(
+                rows,
+                caller.actor_id,
+                self.calendar,
+                self.clock(),
+                mapper,
+            ),
             "next_cursor": _encode_cursor(rows[-1], context) if more else None,
         }
         if parent:

@@ -117,6 +117,33 @@ it("低于列表定义版本的详情不允许回填旧时间并提交", async (
   expect(save).not.toHaveBeenCalled();
 });
 
+it("新表单可选月末工作日与非工作日开关，并按新协议保存", async () => {
+  vi.mocked(request).mockResolvedValue({ ...job, spec: job });
+  const save = vi.fn().mockResolvedValue({ operation_id: "save" });
+  render(
+    <ManagedJobEditor
+      context={context}
+      job={job}
+      saving={false}
+      onSave={save}
+      onClose={() => {}}
+    />,
+  );
+  await screen.findByDisplayValue("十点任务");
+  const holiday = await screen.findByRole("switch", { name: "非工作日执行" });
+  expect(holiday).not.toBeChecked();
+  fireEvent.click(holiday);
+  fireEvent.mouseDown(screen.getAllByRole("combobox")[0]);
+  fireEvent.click(await screen.findByText("每月最后一个工作日（北京时间）"));
+  fireEvent.click(screen.getByRole("button", { name: /保\s*存/ }));
+  await waitFor(() => expect(save).toHaveBeenCalled());
+  expect(save.mock.calls[0][1].schedule).toMatchObject({
+    cron: "0 10 LW * *",
+    timezone: "Asia/Shanghai",
+    run_on_non_workday: true,
+  });
+});
+
 it.each(["0 9,10,11 * * *", "*/5 * * * *", "0 10 15 * *"])(
   "真实编辑框以自定义模式展示%s并保留原表达式",
   async (cron) => {

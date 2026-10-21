@@ -94,3 +94,63 @@ it("新建任务不依赖原始快照", () => {
     "0 10 * * *",
   );
 });
+
+it.each([false, true])("新版排程保留非工作日开关%s", (allowed) => {
+  const job = jobWithCron("0 10 * * *");
+  Object.assign(job.schedule, { run_on_non_workday: allowed });
+  const values = buildManagedCronFormValues(job);
+  expect(buildManagedCronSubmitPayload(values, job).schedule).toMatchObject({
+    run_on_non_workday: allowed,
+  });
+});
+
+it("缺少非工作日开关时，新页面按false显示并提交", () => {
+  const values = buildManagedCronFormValues(jobWithCron("0 10 * * *"));
+  expect(values.schedule.run_on_non_workday).toBe(false);
+  expect(
+    buildManagedCronSubmitPayload(values).schedule.run_on_non_workday,
+  ).toBe(false);
+});
+
+it("北京时间单时间LW回显为月末工作日预设", () => {
+  const job = jobWithCron("15 10 LW * *");
+  const values = buildManagedCronFormValues(job);
+  expect(values.cronType).toBe("lastWorkday");
+  expect(values.cronTime?.format("HH:mm")).toBe("10:15");
+  expect(buildManagedCronSubmitPayload(values, job).schedule).toMatchObject({
+    cron: "15 10 LW * *",
+    timezone: "Asia/Shanghai",
+  });
+});
+
+it("明确选择LW预设时使用北京时间并读取时间控件", () => {
+  const values = buildManagedCronFormValues(jobWithCron("0 10 * * *"));
+  values.cronType = "lastWorkday";
+  values.cronTime = dayjs().hour(11).minute(30);
+  expect(buildManagedCronSubmitPayload(values).schedule).toMatchObject({
+    cron: "30 11 LW * *",
+    timezone: "Asia/Shanghai",
+    run_on_non_workday: false,
+  });
+});
+
+it.each(["0 10 15W * *", "0 9,18 LW * *", "0 10 LW 1,2 *"])(
+  "复杂工作日规则%s保持自定义原样保存",
+  (cron) => {
+    const job = jobWithCron(cron);
+    const values = buildManagedCronFormValues(job);
+    expect(values.cronType).toBe("custom");
+    expect(buildManagedCronSubmitPayload(values, job).schedule.cron).toBe(cron);
+  },
+);
+
+it("已有非北京时区的LW不被打开编辑器时偷偷转换", () => {
+  const job = jobWithCron("0 10 LW * *");
+  job.schedule.timezone = "America/New_York";
+  const values = buildManagedCronFormValues(job);
+  expect(values.cronType).toBe("custom");
+  expect(buildManagedCronSubmitPayload(values, job).schedule).toMatchObject({
+    cron: "0 10 LW * *",
+    timezone: "America/New_York",
+  });
+});

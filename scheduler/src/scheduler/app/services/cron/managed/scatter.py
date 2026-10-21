@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import floor
 from typing import Optional
+from ..calendar_schedule import CALENDAR_DAY, candidate_cron, validate_cron
 
 DAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 DAY_TO_INDEX = {name: index for index, name in enumerate(DAY_NAMES)}
@@ -72,6 +73,8 @@ def shift_cron_expression(
         )
 
     minute, hour, dom, month, dow = parts
+    if CALENDAR_DAY.fullmatch(dom):
+        return _calendar_shift(cron_expression, timezone_value, offset_minutes)
     parsed_minute = _parse_int(minute, 0, 59)
     parsed_hour = _parse_int(hour, 0, 23)
 
@@ -107,7 +110,7 @@ def shift_cron_expression(
             offset_minutes=offset_minutes,
         )
 
-    if dom == "*" and month == "*" and dow != "*":
+    if _is_weekly(dom, month, dow):
         shifted_dow = _shift_dow(dow, day_delta)
         if shifted_dow is None:
             return _error(
@@ -141,6 +144,22 @@ def shift_cron_expression(
     )
 
 
+def _calendar_shift(expression, zone, offset):
+    """日历定义不平移日期，仅校验平台每日候选可以安全提前。"""
+    try:
+        expression = validate_cron(expression)
+    except ValueError:
+        return _error(zone, offset, "unsupported calendar cron")
+    shifted = shift_cron_expression(
+        candidate_cron(expression),
+        zone,
+        offset_minutes=offset,
+    )
+    if shifted.error:
+        return shifted
+    return ShiftedCron(expression, zone, offset)
+
+
 def _error(
     timezone_name: str,
     offset_minutes: int,
@@ -165,6 +184,11 @@ def _parse_int(value: str, minimum: int, maximum: int) -> Optional[int]:
 
 def _is_every_day(dom: str, month: str, dow: str) -> bool:
     return dom == "*" and month == "*" and dow == "*"
+
+
+def _is_weekly(dom: str, month: str, dow: str) -> bool:
+    """周排程仅调整星期，避免与月内日期规则混合平移。"""
+    return dom == "*" and month == "*" and dow != "*"
 
 
 def _shift_clock(

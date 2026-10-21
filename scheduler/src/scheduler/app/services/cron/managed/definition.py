@@ -7,7 +7,7 @@ import json
 from uuid import NAMESPACE_URL, uuid5
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from croniter import croniter
+from ..calendar_schedule import validate_cron
 
 from .identity import encode_scope, identity_value
 from .views import public_value
@@ -93,7 +93,12 @@ def _schedule(raw):
     expression = raw.get("cron", "")
     if not isinstance(expression, str) or len(expression.split()) != 5:
         raise ValueError("invalid_cron_schedule")
-    if not croniter.is_valid(expression):
+    try:
+        expression = validate_cron(expression)
+    except ValueError as exc:
+        raise ValueError("invalid_cron_schedule") from exc
+    run_on_non_workday = raw.get("run_on_non_workday", False)
+    if type(run_on_non_workday) is not bool:
         raise ValueError("invalid_cron_schedule")
     zone = raw.get("timezone", "UTC")
     if not isinstance(zone, str):
@@ -102,7 +107,12 @@ def _schedule(raw):
         ZoneInfo(zone)
     except ZoneInfoNotFoundError as exc:
         raise ValueError("invalid_cron_timezone") from exc
-    return {"type": "cron", "cron": expression, "timezone": zone}
+    return {
+        "type": "cron",
+        "cron": expression,
+        "timezone": zone,
+        "run_on_non_workday": run_on_non_workday,
+    }
 
 
 def _runtime(raw):

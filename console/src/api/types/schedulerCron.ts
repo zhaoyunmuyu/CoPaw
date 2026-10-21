@@ -14,7 +14,11 @@ export interface ManagedCronContext {
 }
 
 export type ManagedDispatchMode = "ordinary" | "batch_enabled" | "batch_paused";
-export type ManagedCronSpec = Omit<CronJobSpecInput, "id"> & {
+export type ManagedCronSchedule = CronJobSpecInput["schedule"] & {
+  run_on_non_workday?: boolean;
+};
+export type ManagedCronSpec = Omit<CronJobSpecInput, "id" | "schedule"> & {
+  schedule: ManagedCronSchedule;
   id?: string;
   tenant_id?: string;
   source_id?: string;
@@ -25,6 +29,7 @@ export type ManagedCronSpec = Omit<CronJobSpecInput, "id"> & {
 };
 
 export interface ManagedJob extends CronJobSpecOutput {
+  schedule: ManagedCronSchedule;
   tenant_id: string;
   source_id: string;
   agent_id: string;

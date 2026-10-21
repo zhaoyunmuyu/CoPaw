@@ -8,14 +8,17 @@ import os
 
 import httpx
 from croniter import croniter
+from ..calendar_schedule import candidate_cron, validate_cron
 
 from .operations import RegistrationRejected, RegistrationUnknown
 from .swe_client import checked_base
+from .calendar_policy import timer_expression
 
 logger = logging.getLogger(__name__)
 
 
 def platform_cron(expression):
+    expression = candidate_cron(validate_cron(expression))
     parts = expression.split()
     if len(parts) != 5 or not croniter.is_valid(expression):
         raise ValueError("invalid_cron_schedule")
@@ -146,7 +149,7 @@ class ManagedPlatformClient:
             "jobDesc": f"{prefix} {operation['tenant_id']}/{operation['source_id']} - {spec['name']}"[
                 :200
             ],
-            "jobCron": platform_cron(spec["schedule"]["cron"]),
+            "jobCron": platform_cron(timer_expression(spec)),
             "jobAddress": f"{self.callback_base}/api/scheduler/cron/{callback}/callback",
             "jobParam": encoded,
         }

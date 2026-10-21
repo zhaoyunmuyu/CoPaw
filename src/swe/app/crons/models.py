@@ -111,6 +111,7 @@ class ScheduleSpec(BaseModel):
     type: Literal["cron"] = "cron"
     cron: str = Field(...)
     timezone: str = "UTC"
+    run_on_non_workday: bool = False
 
     @field_validator("cron")
     @classmethod
@@ -253,7 +254,9 @@ class CronJobSpec(BaseModel):
             )
         elif self.task_type == "workflow":
             if not self.skill_ids and not self.workflow_binding_id:
-                raise ValueError("workflow requires a skill or workflow_binding_id")
+                raise ValueError(
+                    "workflow requires a skill or workflow_binding_id",
+                )
             self.model_slot = None
             self.request = None
             self.text = None

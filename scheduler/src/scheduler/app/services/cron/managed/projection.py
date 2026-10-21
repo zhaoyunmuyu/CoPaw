@@ -32,6 +32,7 @@ def _meta_preview(meta):
             "creator_user_id",
             "pause_reason",
             "model_slot",
+            "calendar_schedule",
         }
     }
     core["compat_meta_truncated"] = True
@@ -92,6 +93,7 @@ def _values(spec, state, agent_id, now, deleted):
         model_slot=spec.get("model_slot"),
         scope_id=spec["scope_id"],
         job_origin=spec.get("meta", {}).get("job_origin", "manual"),
+        calendar_schedule=spec["schedule"],
     )
     for key, column in {
         "task_chat_id": "task_chat_id",

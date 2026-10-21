@@ -17,12 +17,12 @@ import { CronJobFormBody } from "../CronJobs/components/CronJobFormBody";
 import { DEFAULT_FORM_VALUES } from "../CronJobs/components/constants";
 import {
   buildSkillSelectOptions,
-  type CronJobFormValues,
   type SkillSelectOption,
 } from "../CronJobs/helpers";
 import {
   buildManagedCronFormValues,
   buildManagedCronSubmitPayload,
+  type ManagedFormValues,
 } from "./scheduleForm";
 import { detailToJob, failureMessage, RequestIdentity } from "./helpers";
 import styles from "../CronJobs/index.module.less";
@@ -49,7 +49,7 @@ export function ManagedJobEditor({
   onClose,
   onLoaded,
 }: Props) {
-  const [form] = Form.useForm<CronJobFormValues>();
+  const [form] = Form.useForm<ManagedFormValues>();
   const models = useExecutionModelOptions(true);
   const [skills, setSkills] = useState<SkillSelectOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,6 +95,7 @@ export function ManagedJobEditor({
                 id: "由系统自动分配",
                 schedule: {
                   ...DEFAULT_FORM_VALUES.schedule,
+                  run_on_non_workday: false,
                   timezone: timezone.timezone || "UTC",
                 },
                 dispatch: {
@@ -116,7 +117,7 @@ export function ManagedJobEditor({
       mounted.current = false;
     };
   }, [context, job, form, onLoaded]);
-  const submit = async (values: CronJobFormValues) => {
+  const submit = async (values: ManagedFormValues) => {
     if (!ready || loading || saving) return;
     try {
       const spec = buildManagedCronSubmitPayload(values, snapshot);
@@ -174,6 +175,7 @@ export function ManagedJobEditor({
           skillOptionsLoading={loading}
           idDisabled
           enabledDisabled={Boolean(job)}
+          managedCalendar
         />
       </Form>
     </Drawer>
