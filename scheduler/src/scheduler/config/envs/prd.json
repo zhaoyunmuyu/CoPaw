@@ -1,5 +1,6 @@
 {
   "SCHEDULER_ENV": "prd",
+  "SCHEDULER_WORKDAY_API_URL": "http://tss-normal-api.paasst.cmbchina.cn/calendar/{date}",
   "SCHEDULER_LOG_LEVEL": "info",
   "SCHEDULER_OPENAPI_DOCS": "false",
   "SCHEDULER_HOST": "127.0.0.1",
