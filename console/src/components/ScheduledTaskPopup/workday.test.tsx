@@ -98,6 +98,44 @@ it("新版保留用户时区，缺省不允许非工作日，并从服务器取�
   );
 });
 
+it("快捷入口隐藏假期配置，仍按用户时区提交非工作日不执行", async () => {
+  const confirm = vi.fn().mockResolvedValue(undefined);
+  render(
+    <ScheduledTaskPopup
+      {...props}
+      onConfirm={confirm}
+      managedContext={context}
+      showCalendarOptions={false}
+    />,
+  );
+  await screen.findByText(/Asia\/Tokyo/);
+  expect(
+    screen.queryByRole("checkbox", { name: "允许非工作日执行" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "月末工作日" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "每月" })).toBeInTheDocument();
+  fireEvent.change(screen.getByRole("spinbutton", { name: "通知延迟数值" }), {
+    target: { value: "30" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "确认" }));
+  await waitFor(() =>
+    expect(confirm).toHaveBeenCalledWith(
+      "00 09 * * *",
+      expect.any(Object),
+      undefined,
+      30,
+      {
+        type: "cron",
+        cron: "00 09 * * *",
+        timezone: "Asia/Tokyo",
+        run_on_non_workday: false,
+      },
+    ),
+  );
+});
+
 it("只有明确选择 LW 才使用北京时间，切回普通频次恢复用户时区", async () => {
   render(<ScheduledTaskPopup {...props} managedContext={context} />);
   await screen.findByText(/Asia\/Tokyo/);

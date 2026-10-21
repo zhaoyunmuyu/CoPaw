@@ -41,6 +41,8 @@ export interface ScheduledTaskPopupProps {
   caseValue?: string;
   managedContext?: ManagedCronContext;
   settingsLocked?: boolean;
+  /** 快捷入口可隐藏日历选项，并固定非工作日不执行。 */
+  showCalendarOptions?: boolean;
 }
 
 interface TimeState {
@@ -59,6 +61,7 @@ export default function ScheduledTaskPopup({
   onSuccess,
   managedContext,
   settingsLocked = false,
+  showCalendarOptions = true,
 }: ScheduledTaskPopupProps) {
   const { message } = useAppMessage();
   const isManaged = Boolean(managedContext);
@@ -199,7 +202,7 @@ export default function ScheduledTaskPopup({
     open,
     cronExpression,
     frequency === "lastWorkday",
-    runOnNonWorkday,
+    showCalendarOptions && runOnNonWorkday,
     settingsLocked,
   );
 
@@ -346,7 +349,7 @@ export default function ScheduledTaskPopup({
               >
                 每月
               </button>
-              {managedContext && (
+              {managedContext && showCalendarOptions && (
                 <button
                   className={`${styles.tab} ${
                     frequency === "lastWorkday" ? styles.tabActive : ""
@@ -501,12 +504,14 @@ export default function ScheduledTaskPopup({
 
           {managedContext && (
             <div className={styles.section}>
-              <Checkbox
-                checked={runOnNonWorkday}
-                onChange={(event) => setRunOnNonWorkday(event.target.checked)}
-              >
-                允许非工作日执行
-              </Checkbox>
+              {showCalendarOptions && (
+                <Checkbox
+                  checked={runOnNonWorkday}
+                  onChange={(event) => setRunOnNonWorkday(event.target.checked)}
+                >
+                  允许非工作日执行
+                </Checkbox>
+              )}
               <div className={styles.label} style={{ marginTop: 8 }}>
                 排程时区：
                 {calendar.timezone || calendar.zoneError || "正在读取…"}
