@@ -108,6 +108,9 @@ export default function SystemConfigPage() {
     source: string;
     value: SystemSyncSubmission;
   } | null>(null);
+  const pendingLoad = useRef<{ sourceId: string; requestId: number } | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
@@ -176,6 +179,7 @@ export default function SystemConfigPage() {
 
   useEffect(() => {
     if (!canManage) {
+      pendingLoad.current = null;
       requestSeqRef.current += 1;
       setLoading(false);
       setSaving(false);
@@ -203,7 +207,11 @@ export default function SystemConfigPage() {
     if (record?.source_id === activeSourceId) {
       return;
     }
+    // 清空旧草稿会再次渲染，同一来源的在途读取不能被二次请求作废并吞掉错误。
+    if (pendingLoad.current?.sourceId === activeSourceId) return;
+
     const request = beginRequest(activeSourceId);
+    pendingLoad.current = request;
     setLoading(true);
     setSaving(false);
     setRequestError(null);
@@ -237,6 +245,8 @@ export default function SystemConfigPage() {
         );
       })
       .finally(() => {
+        if (pendingLoad.current?.requestId === request.requestId)
+          pendingLoad.current = null;
         if (isCurrentRequest(request)) {
           setLoading(false);
         }

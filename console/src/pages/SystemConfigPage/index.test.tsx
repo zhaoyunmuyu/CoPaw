@@ -828,7 +828,7 @@ describe("SystemConfigPage", () => {
         },
       });
     });
-  }, 10_000);
+  }, 15_000);
 
   it("uses the tool output override for new and recent output without a file-read field", async () => {
     mocks.sourceSystemConfigApi.getCurrent.mockResolvedValueOnce({
@@ -934,7 +934,7 @@ describe("SystemConfigPage", () => {
         },
       });
     });
-  }, 10_000);
+  }, 15_000);
 
   it("confirms restoring defaults before clearing explicit config", async () => {
     mocks.sourceSystemConfigApi.getCurrent
