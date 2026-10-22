@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Source 级系统任务调度器。
 
-负责把 source 系统配置中的任务会话清理配置同步到外部调度平台，
-并把外部 job id 与 source 级系统任务绑定关系持久化到绑定存储。
+配置保存仅提交Scheduler刷新意图，业务清理/归档仍在SWE执行。
+旧构造参数保留兼容，但新链路不读写旧绑定或调用外部调度适配器。
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from swe.app.crons.manager import TASK_SESSION_CLEANUP_TASK_TYPE
 from swe.app.crons.scheduler_adapter import SchedulerAdapter
 from swe.app.file_governance.archive_maintenance import (
     archive_old_orphans_for_workspace,
@@ -27,7 +26,6 @@ from .task_binding_store import (
 
 from .runtime import (
     resolve_archive_maintenance_config,
-    resolve_cron_task_session_cleanup_config,
 )
 
 SOURCE_TASK_SESSION_CLEANUP_JOB_ID = "_source_task_session_cleanup"
@@ -44,6 +42,7 @@ class SourceSchedulerIdentity:
     tenant_id: str
     from_id: str
     updated_by: str | None = None
+    role: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +51,7 @@ class SourceTaskSessionCleanupRefreshResult:
 
     action: str
     binding: SourceSystemTaskBinding | None = None
+    scheduler_sync: dict[str, Any] | None = None
 
 
 SourceArchiveMaintenanceRefreshResult = SourceTaskSessionCleanupRefreshResult
@@ -110,7 +110,9 @@ class SourceSystemTaskScheduler:
 
     def __init__(
         self,
-        binding_store: SourceSystemTaskBindingStore | SourceTaskBindingStoreLike,
+        binding_store: (
+            SourceSystemTaskBindingStore | SourceTaskBindingStoreLike
+        ),
         scheduler_adapter: SchedulerAdapter,
         callback_url: str,
         tenant_scope_store: SourceTenantScopeStoreLike | None = None,
@@ -147,79 +149,21 @@ class SourceSystemTaskScheduler:
         config: object,
         identity: SourceSchedulerIdentity,
     ) -> SourceTaskSessionCleanupRefreshResult:
-        """按 source 配置注册、更新或暂停任务会话清理外部任务。"""
-        cleanup_config = resolve_cron_task_session_cleanup_config(config)
-        binding = await self._binding_store.get_binding(
+        """保留配置保存挂点，只提交新版意图，不读取旧来源绑定。"""
+        from ..crons.system_bridge import submit_source_refresh
+
+        result = await submit_source_refresh(
             source_id,
-            SOURCE_TASK_SESSION_CLEANUP_NAME,
-        )
-        external_job_id = binding.external_job_id if binding else ""
-
-        if not cleanup_config.enabled:
-            if not external_job_id:
-                return SourceTaskSessionCleanupRefreshResult(
-                    action="disabled",
-                )
-            await self._scheduler_adapter.pause_job(external_job_id)
-            persisted_binding = await self._binding_store.upsert_binding(
-                source_id=source_id,
-                task_type=SOURCE_TASK_SESSION_CLEANUP_NAME,
-                external_job_id=external_job_id,
-                cron=cleanup_config.cron,
-                enabled=False,
-                scheduler_tenant_id=identity.tenant_id,
-                scheduler_from_id=identity.from_id,
-                updated_by=identity.updated_by,
-            )
-            return SourceTaskSessionCleanupRefreshResult(
-                action="paused",
-                binding=persisted_binding,
-            )
-
-        scheduler_kwargs = {
-            "tenant_id": identity.tenant_id,
-            "source_id": source_id,
-            "agent_id": "",
-            "task_type": TASK_SESSION_CLEANUP_TASK_TYPE,
-            "job_id": SOURCE_TASK_SESSION_CLEANUP_JOB_ID,
-            "job_name": SOURCE_TASK_SESSION_CLEANUP_NAME,
-            "cron": cleanup_config.cron,
-            "callback_url": self._callback_url,
-            "source_level": True,
-            "from_id": identity.from_id,
-        }
-
-        action = "registered"
-        if external_job_id:
-            await self._scheduler_adapter.update_job(
-                external_id=external_job_id,
-                **scheduler_kwargs,
-            )
-            await self._scheduler_adapter.resume_job(external_job_id)
-            action = "updated"
-        else:
-            external_job_id = await self._scheduler_adapter.register_job(
-                **scheduler_kwargs,
-            )
-            self._require_external_job_id(
-                source_id,
-                external_job_id,
-                task_name="source cleanup task",
-            )
-
-        persisted_binding = await self._binding_store.upsert_binding(
-            source_id=source_id,
-            task_type=SOURCE_TASK_SESSION_CLEANUP_NAME,
-            external_job_id=external_job_id,
-            cron=cleanup_config.cron,
-            enabled=True,
-            scheduler_tenant_id=identity.tenant_id,
-            scheduler_from_id=identity.from_id,
-            updated_by=identity.updated_by,
+            identity,
+            "task_session_cleanup",
         )
         return SourceTaskSessionCleanupRefreshResult(
-            action=action,
-            binding=persisted_binding,
+            action=(
+                "pending"
+                if result["submission_status"] == "accepted"
+                else "submission_failed"
+            ),
+            scheduler_sync=result,
         )
 
     async def refresh_archive_maintenance(
@@ -228,99 +172,28 @@ class SourceSystemTaskScheduler:
         config: object,
         identity: SourceSchedulerIdentity,
     ) -> SourceArchiveMaintenanceRefreshResult:
-        archive_config = resolve_archive_maintenance_config(config)
-        binding = await self._binding_store.get_binding(
+        """归档配置只提交刷新，由Scheduler读当前设置并管理新平台绑定。"""
+        from ..crons.system_bridge import submit_source_refresh
+
+        result = await submit_source_refresh(
             source_id,
-            SOURCE_ARCHIVE_MAINTENANCE_NAME,
-        )
-        external_job_id = binding.external_job_id if binding else ""
-
-        if not archive_config.enabled:
-            if not external_job_id:
-                return SourceArchiveMaintenanceRefreshResult(
-                    action="disabled",
-                )
-            await self._scheduler_adapter.pause_job(external_job_id)
-            persisted_binding = await self._binding_store.upsert_binding(
-                source_id=source_id,
-                task_type=SOURCE_ARCHIVE_MAINTENANCE_NAME,
-                external_job_id=external_job_id,
-                cron=archive_config.cron,
-                enabled=False,
-                scheduler_tenant_id=identity.tenant_id,
-                scheduler_from_id=identity.from_id,
-                updated_by=identity.updated_by,
-            )
-            return SourceArchiveMaintenanceRefreshResult(
-                action="paused",
-                binding=persisted_binding,
-            )
-
-        scheduler_kwargs = {
-            "tenant_id": identity.tenant_id,
-            "source_id": source_id,
-            "agent_id": "",
-            "task_type": SOURCE_ARCHIVE_MAINTENANCE_TASK_TYPE,
-            "job_id": SOURCE_ARCHIVE_MAINTENANCE_JOB_ID,
-            "job_name": SOURCE_ARCHIVE_MAINTENANCE_NAME,
-            "cron": archive_config.cron,
-            "callback_url": self._callback_url,
-            "source_level": True,
-            "from_id": identity.from_id,
-        }
-
-        action = "registered"
-        if external_job_id:
-            await self._scheduler_adapter.update_job(
-                external_id=external_job_id,
-                **scheduler_kwargs,
-            )
-            await self._scheduler_adapter.resume_job(external_job_id)
-            action = "updated"
-        else:
-            external_job_id = await self._scheduler_adapter.register_job(
-                **scheduler_kwargs,
-            )
-            self._require_external_job_id(
-                source_id,
-                external_job_id,
-                task_name="source archive maintenance task",
-            )
-
-        persisted_binding = await self._binding_store.upsert_binding(
-            source_id=source_id,
-            task_type=SOURCE_ARCHIVE_MAINTENANCE_NAME,
-            external_job_id=external_job_id,
-            cron=archive_config.cron,
-            enabled=True,
-            scheduler_tenant_id=identity.tenant_id,
-            scheduler_from_id=identity.from_id,
-            updated_by=identity.updated_by,
+            identity,
+            "archive_maintenance",
         )
         return SourceArchiveMaintenanceRefreshResult(
-            action=action,
-            binding=persisted_binding,
-        )
-
-    def _require_external_job_id(
-        self,
-        source_id: str,
-        external_job_id: str,
-        *,
-        task_name: str,
-    ) -> None:
-        """校验外部调度返回了可持久化的 job id。"""
-        if external_job_id:
-            return
-        raise RuntimeError(
-            "external scheduler did not return job id "
-            f"for {task_name}: {source_id}",
+            action=(
+                "pending"
+                if result["submission_status"] == "accepted"
+                else "submission_failed"
+            ),
+            scheduler_sync=result,
         )
 
     async def run_task_session_cleanup(
         self,
         *,
         source_id: str,
+        managed_cleanup=None,
     ) -> dict[str, Any]:
         """清理指定 source 下所有 runtime scope 的任务会话历史。"""
         result: dict[str, Any] = {
@@ -346,7 +219,12 @@ class SourceSystemTaskScheduler:
         )
         result["scopes_seen"] = len(rows)
         for row in rows:
-            await self._run_scope_cleanup(source_id, row, result)
+            await self._run_scope_cleanup(
+                source_id,
+                row,
+                result,
+                managed_cleanup,
+            )
         return result
 
     def _get_tenant_scope_store(self) -> SourceTenantScopeStoreLike | None:
@@ -362,6 +240,7 @@ class SourceSystemTaskScheduler:
         source_id: str,
         row: dict[str, Any],
         summary: dict[str, Any],
+        managed_cleanup=None,
     ) -> None:
         """执行单个 runtime scope 的清理并把结果累加到 source 汇总。"""
         tenant_id = str(row.get("tenant_id") or "")
@@ -380,6 +259,25 @@ class SourceSystemTaskScheduler:
             if cron_manager is None:
                 raise RuntimeError("CronManager not found")
             scope_result = await cron_manager.run_task_session_cleanup()
+            if managed_cleanup is not None:
+                try:
+                    managed = await managed_cleanup(
+                        workspace,
+                        tenant_id,
+                        row_source_id,
+                    )
+                except Exception:
+                    self._merge_scope_cleanup_result(
+                        summary,
+                        tenant_id,
+                        runtime_tenant_id,
+                        scope_result,
+                    )
+                    raise
+                scope_result = self._combined_cleanup_result(
+                    scope_result,
+                    managed,
+                )
             self._merge_scope_cleanup_result(
                 summary,
                 tenant_id,
@@ -395,6 +293,22 @@ class SourceSystemTaskScheduler:
                     "error": str(exc),
                 },
             )
+
+    @staticmethod
+    def _combined_cleanup_result(legacy, managed):
+        """只合并维护计数，不把新版绑定写回旧任务仓库。"""
+        result = dict(legacy or {})
+        for key in (
+            "sessions_seen",
+            "sessions_cleaned",
+            "sessions_skipped_locked",
+            "runs_removed",
+            "messages_removed",
+        ):
+            result[key] = int(result.get(key, 0) or 0) + int(
+                managed.get(key, 0) or 0,
+            )
+        return result
 
     @staticmethod
     def _merge_scope_cleanup_result(
@@ -498,9 +412,7 @@ class SourceSystemTaskScheduler:
         archive_config: object,
     ) -> bool:
         timeout_seconds = int(getattr(archive_config, "timeout_seconds", 0))
-        return timeout_seconds > 0 and (
-            time.monotonic() - started_at
-        ) >= timeout_seconds
+        return 0 < timeout_seconds <= time.monotonic() - started_at
 
     async def _run_scope_archive_maintenance(
         self,
@@ -525,14 +437,14 @@ class SourceSystemTaskScheduler:
                 if self._archive_run_timed_out(started_at, archive_config):
                     summary["timed_out"] = True
                     return
-                if (
-                    summary["workspaces_processed"]
-                    >= getattr(archive_config, "max_workspaces_per_run")
+                if summary["workspaces_processed"] >= getattr(
+                    archive_config,
+                    "max_workspaces_per_run",
                 ):
                     return
-                if (
-                    summary["files_archived"]
-                    >= getattr(archive_config, "max_files_per_run")
+                if summary["files_archived"] >= getattr(
+                    archive_config,
+                    "max_files_per_run",
                 ):
                     return
                 await self._run_workspace_archive_maintenance(
@@ -582,9 +494,9 @@ class SourceSystemTaskScheduler:
             )
             summary["workspaces_processed"] += 1
             summary["files_archived"] += len(workspace_result.archived_items)
-            summary["archived_size_bytes"] += (
-                workspace_result.archived_size_bytes
-            )
+            summary[
+                "archived_size_bytes"
+            ] += workspace_result.archived_size_bytes
             summary["candidates_seen"] += workspace_result.candidates_count
             summary["files_skipped_limit"] += workspace_result.skipped_files
             summary["results"].append(
@@ -652,7 +564,9 @@ class SourceSystemTaskScheduler:
             workspaces_dir.iterdir(),
             key=lambda item: item.name,
         ):
-            if not workspace_dir.is_dir() or workspace_dir.name.startswith("."):
+            if not workspace_dir.is_dir() or workspace_dir.name.startswith(
+                ".",
+            ):
                 continue
             if not is_valid_identity_value(workspace_dir.name):
                 continue

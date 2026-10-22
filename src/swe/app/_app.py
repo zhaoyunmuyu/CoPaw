@@ -217,15 +217,6 @@ agent_app = AgentApp(
 runtime_diagnostic_manager = RuntimeDiagnosticManager()
 
 
-def _build_internal_cron_callback_url() -> str:
-    """构造外部调度平台回调到 SWE 的内部 cron callback 地址。"""
-    base = (
-        os.environ.get("SWE_SERVER_DOMAIN", "").strip()
-        or "http://localhost:8000"
-    )
-    return f"{base}/api/internal/cron/callback"
-
-
 def _get_positive_int_env(name: str, default: int) -> int:
     raw_value = os.environ.get(name)
     if raw_value is None:
@@ -426,13 +417,9 @@ def _initialize_source_system_config(
     try:
         from .source_system_config.service import SourceSystemConfigService
         from .source_system_config.store import SourceSystemConfigStore
-        from .source_system_config.task_binding_store import (
-            SourceSystemTaskBindingStore,
-        )
         from .source_system_config.task_scheduler import (
             SourceSystemTaskScheduler,
         )
-        from .workspace.workspace import _build_scheduler_adapter
 
         source_config_service = SourceSystemConfigService(
             SourceSystemConfigStore(db_connection),
@@ -445,9 +432,9 @@ def _initialize_source_system_config(
         )
         if has_task_binding_db:
             app.state.source_system_task_scheduler = SourceSystemTaskScheduler(
-                binding_store=SourceSystemTaskBindingStore(db_connection),
-                scheduler_adapter=_build_scheduler_adapter(),
-                callback_url=_build_internal_cron_callback_url(),
+                binding_store=None,
+                scheduler_adapter=None,
+                callback_url="",
                 tenant_scope_store_factory=(
                     lambda: tenant_workspace_pool.init_source_store
                 ),
@@ -794,6 +781,7 @@ async def _shutdown_lifespan_resources(
     db_connection: Any | None,
 ) -> None:
     """按依赖顺序关闭生命周期资源。"""
+    await _stop_system_cron_tasks(app)
     tool_guard_watcher = getattr(app.state, "tool_guard_config_watcher", None)
     if tool_guard_watcher is not None:
         await tool_guard_watcher.stop()
@@ -898,6 +886,21 @@ async def _shutdown_lifespan_resources(
     logger.info("Application shutdown complete")
 
     shutdown_logger()
+
+
+async def _stop_system_cron_tasks(app: FastAPI) -> None:
+    """先停止系统业务并留存待核实事实，再关闭工作区与共库连接。"""
+    tasks = list(getattr(app.state, "system_cron_tasks", {}).values())
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=10,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("系统执行关闭未完全确认，请按持久租约核实在途动作")
 
 
 async def _stop_multi_agent_manager(app: FastAPI) -> None:

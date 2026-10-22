@@ -668,7 +668,6 @@ class CronManager:  # pylint: disable=too-many-public-methods
             if self._started:
                 return
             self._started = True
-        self._load_system_job_ids()
         # 调度平台不可用时不应阻塞工作空间初始化
         try:
             await self._restore_external_job_ids()
@@ -1277,7 +1276,9 @@ class CronManager:  # pylint: disable=too-many-public-methods
         from .batch_run_state_client import initialize_run_state
 
         await initialize_run_state(
-            saved, self._monitor_sync_client, self._agent_id or "default"
+            saved,
+            self._monitor_sync_client,
+            self._agent_id or "default",
         )
         return saved
 
@@ -1849,7 +1850,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
             ext_id = self._states.get(job_id, CronJobState()).external_job_id
             if ext_id and self._scheduler_adapter:
                 if is_batch_dispatch_parent(
-                    job
+                    job,
                 ) or is_batch_dispatch_managed_broadcast_child(job):
                     await self._scheduler_adapter.pause_job(ext_id)
                 else:
@@ -1930,6 +1931,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
                 name=f"cron-run-{job_id}",
             )
         task.add_done_callback(lambda t: self._task_done_cb(t, job))
+        return None
 
     @staticmethod
     def _prepare_run_dispatch_meta(
@@ -2950,7 +2952,10 @@ class CronManager:  # pylint: disable=too-many-public-methods
         """Push success notification when an agent task completes."""
         # 只对 agent 类型的任务发送通知
         if job.task_type not in {"agent", "workflow"}:
-            logger.debug("Skip notification: job %s has no completion push", job.id)
+            logger.debug(
+                "Skip notification: job %s has no completion push",
+                job.id,
+            )
             return
 
         task_session_id = job.meta.get("task_session_id")
@@ -3731,7 +3736,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
         if trace_id and not outcome.trace_id:
             outcome.trace_id = trace_id
 
-    async def run_heartbeat(self) -> None:
+    async def run_heartbeat(self, *, managed_execution: bool = False) -> None:
         """执行一次心跳任务（供外部调度平台调用）。"""
         from .heartbeat import run_heartbeat_once
 
@@ -3763,9 +3768,14 @@ class CronManager:  # pylint: disable=too-many-public-methods
                 agent_id=self._agent_id,
                 tenant_id=runtime_tenant_id,
                 workspace_dir=workspace_dir,
+                **({"managed_execution": True} if managed_execution else {}),
             )
 
-    async def run_dream(self) -> None:
+    async def run_dream(
+        self,
+        *,
+        include_archive_maintenance: bool = True,
+    ) -> None:
         """执行一次梦境任务（供外部调度平台调用）。"""
         workspace_dir, tenant_id, source_id, scope_id, runtime_tenant_id = (
             self._resolve_runtime_context()
@@ -3804,7 +3814,7 @@ class CronManager:  # pylint: disable=too-many-public-methods
                 agent_id=governance_agent_id,
                 before_record_ids=before_record_ids,
             )
-            if workspace_dir is not None:
+            if include_archive_maintenance and workspace_dir is not None:
                 from ..routers.dream_logs import (
                     dual_write_dream_archive_maintenance_result,
                     run_dream_archive_maintenance,
@@ -4251,130 +4261,40 @@ class CronManager:  # pylint: disable=too-many-public-methods
         )
         return "0/30 * * * *"
 
-    async def _register_system_jobs(self) -> None:
-        """注册 tenant 级 heartbeat 和 dream 到外部调度平台。"""
-        await self.register_heartbeat()
-        await self.register_dream()
+    async def _register_system_jobs(self) -> dict[str, Any]:
+        """工作区启动只提交固定新版刷新，不读取或接管旧系统绑定。"""
+        from .system_bridge import submit_agent_refresh
 
-    async def register_heartbeat(self) -> None:
-        """将心跳任务注册到外部调度平台（或禁用时取消注册）。"""
-        if isinstance(self._scheduler_adapter, NoopSchedulerAdapter):
-            return
-
-        from ...config.utils import get_heartbeat_config
-
-        hb = get_heartbeat_config(self._agent_id, tenant_id=self._tenant_id)
-        job_id = HEARTBEAT_JOB_ID
-        ext_id = self._system_job_ids.get(job_id, "")
-
-        if not hb.enabled:
-            if ext_id:
-                try:
-                    await self._scheduler_adapter.pause_job(ext_id)
-                except Exception:
-                    logger.warning(
-                        "Failed to pause heartbeat on external scheduler",
-                        exc_info=True,
-                    )
-            return
-
-        cron = self._every_to_cron(hb.every)
-        if not cron:
-            return
-
-        callback_url = self._build_callback_url("heartbeat")
         tenant_id, source_id = self._get_external_scheduler_business_identity()
-        try:
-            if ext_id:
-                await self._scheduler_adapter.update_job(
-                    external_id=ext_id,
-                    tenant_id=tenant_id,
-                    source_id=source_id,
-                    agent_id=self._agent_id or "",
-                    task_type="heartbeat",
-                    job_id=job_id,
-                    job_name="Heartbeat",
-                    cron=cron,
-                    callback_url=callback_url,
-                )
-                await self._scheduler_adapter.resume_job(ext_id)
-            else:
-                ext_id = await self._scheduler_adapter.register_job(
-                    tenant_id=tenant_id,
-                    source_id=source_id,
-                    agent_id=self._agent_id or "",
-                    task_type="heartbeat",
-                    job_id=job_id,
-                    job_name="Heartbeat",
-                    cron=cron,
-                    callback_url=callback_url,
-                )
-                if ext_id:
-                    self._system_job_ids[job_id] = ext_id
-                    self._save_system_job_ids()
-        except Exception:
-            logger.warning(
-                "Failed to register heartbeat to external scheduler",
-                exc_info=True,
-            )
+        return await submit_agent_refresh(
+            tenant_id,
+            source_id,
+            self._agent_id or "default",
+        )
 
-    async def register_dream(self) -> None:
-        """将梦境任务注册到外部调度平台（或 cron 为空时取消注册）。"""
-        if isinstance(self._scheduler_adapter, NoopSchedulerAdapter):
-            return
+    async def register_heartbeat(self) -> dict[str, Any]:
+        """保留原保存挂点名称，但只提交Scheduler新版刷新意图。"""
+        from .system_bridge import submit_agent_refresh
 
-        from ...config.utils import get_dream_cron
-
-        job_id = DREAM_JOB_ID
-        ext_id = self._system_job_ids.get(job_id, "")
-        dream_cron = get_dream_cron(self._agent_id, tenant_id=self._tenant_id)
-
-        if not dream_cron:
-            if ext_id:
-                try:
-                    await self._scheduler_adapter.pause_job(ext_id)
-                except Exception:
-                    logger.warning(
-                        "Failed to pause dream on external scheduler",
-                        exc_info=True,
-                    )
-            return
-
-        callback_url = self._build_callback_url("dream")
         tenant_id, source_id = self._get_external_scheduler_business_identity()
-        try:
-            if ext_id:
-                await self._scheduler_adapter.update_job(
-                    external_id=ext_id,
-                    tenant_id=tenant_id,
-                    source_id=source_id,
-                    agent_id=self._agent_id or "",
-                    task_type="dream",
-                    job_id=job_id,
-                    job_name="Dream",
-                    cron=dream_cron,
-                    callback_url=callback_url,
-                )
-                await self._scheduler_adapter.resume_job(ext_id)
-            else:
-                ext_id = await self._scheduler_adapter.register_job(
-                    tenant_id=tenant_id,
-                    source_id=source_id,
-                    agent_id=self._agent_id or "",
-                    task_type="dream",
-                    job_id=job_id,
-                    job_name="Dream",
-                    cron=dream_cron,
-                    callback_url=callback_url,
-                )
-                if ext_id:
-                    self._system_job_ids[job_id] = ext_id
-                    self._save_system_job_ids()
-        except Exception:
-            logger.warning(
-                "Failed to register dream to external scheduler",
-                exc_info=True,
-            )
+        return await submit_agent_refresh(
+            tenant_id,
+            source_id,
+            self._agent_id or "default",
+            "heartbeat",
+        )
+
+    async def register_dream(self) -> dict[str, Any]:
+        """梦境配置刷新交给新版控制面，不再接管system_jobs.json。"""
+        from .system_bridge import submit_agent_refresh
+
+        tenant_id, source_id = self._get_external_scheduler_business_identity()
+        return await submit_agent_refresh(
+            tenant_id,
+            source_id,
+            self._agent_id or "default",
+            "dream",
+        )
 
     def _build_callback_url(self, task_type: str, job_id: str = "") -> str:
         """拼接外部调度平台回调 URL。

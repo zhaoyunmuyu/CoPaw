@@ -934,12 +934,19 @@ async def put_heartbeat(
         tenant_id=agent.tenant_id,
     )
 
-    # 配置变更后重新注册到外部调度平台
+    # 先保存，再提交刷新；同步失败不能假装配置已回滚。
     cm = agent.cron_manager
+    sync = {
+        "submission_status": "failed",
+        "error_code": "system_sync_not_submitted",
+    }
     if cm is not None:
-        await cm.register_heartbeat()
+        sync = await cm.register_heartbeat()
 
-    return hb.model_dump(mode="json", by_alias=True)
+    return {
+        **hb.model_dump(mode="json", by_alias=True),
+        "scheduler_sync": sync,
+    }
 
 
 @router.get(

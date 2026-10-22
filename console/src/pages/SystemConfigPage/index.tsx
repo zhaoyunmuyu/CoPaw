@@ -25,6 +25,9 @@ import type {
 import { useIframeStore } from "@/stores/iframeStore";
 import { useSourceSystemConfigStore } from "@/stores/sourceSystemConfigStore";
 import { DEFAULT_SOURCE_ID } from "@/constants/identity";
+import { useCronContext } from "@/hooks/useCronContext";
+import { SystemCronSyncStatus } from "@/components/SystemCronSyncStatus";
+import type { SystemSyncSubmission } from "@/api/types/systemCron";
 
 import {
   ARCHIVE_MAINTENANCE_RUN_TIME_OPTIONS,
@@ -100,6 +103,11 @@ export default function SystemConfigPage() {
     (state) => state.sourceId,
   );
   const canManage = isSuperManager || manager;
+  const syncContext = useCronContext();
+  const [syncReceipt, setSyncReceipt] = useState<{
+    source: string;
+    value: SystemSyncSubmission;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
@@ -195,7 +203,6 @@ export default function SystemConfigPage() {
     if (record?.source_id === activeSourceId) {
       return;
     }
-
     const request = beginRequest(activeSourceId);
     setLoading(true);
     setSaving(false);
@@ -519,6 +526,13 @@ export default function SystemConfigPage() {
       setRecord(nextRecord);
       setDraftConfig(nextRecord.config);
       setPromptSegments(readSystemPromptInjections(nextRecord.config));
+      setSyncReceipt({
+        source: request.sourceId,
+        value: nextRecord.scheduler_sync ?? {
+          submission_status: "failed",
+          error_code: "system_sync_receipt_unavailable",
+        },
+      });
       await loadEffectiveConfig(request.sourceId);
       if (!isCurrentRequest(request)) {
         return;
@@ -956,10 +970,17 @@ export default function SystemConfigPage() {
     setRequestError(null);
     setValidationError(null);
     try {
-      await sourceSystemConfigApi.deleteCurrent();
+      const deleted = await sourceSystemConfigApi.deleteCurrent();
       if (!isCurrentRequest(request)) {
         return;
       }
+      setSyncReceipt({
+        source: request.sourceId,
+        value: deleted?.scheduler_sync ?? {
+          submission_status: "failed",
+          error_code: "system_sync_receipt_unavailable",
+        },
+      });
       const nextRecord = await sourceSystemConfigApi.getCurrent();
       if (
         !isCurrentRequest(request) ||
@@ -1600,6 +1621,18 @@ export default function SystemConfigPage() {
                   </div>
                 </section>
               </div>
+              {canManage && (
+                <SystemCronSyncStatus
+                  context={syncContext}
+                  scope="source"
+                  taskTypes={["task_session_cleanup", "archive_maintenance"]}
+                  submission={
+                    syncReceipt?.source === activeSourceId
+                      ? syncReceipt.value
+                      : undefined
+                  }
+                />
+              )}
             </Card>
 
             <Card

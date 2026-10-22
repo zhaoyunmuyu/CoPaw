@@ -530,9 +530,15 @@ async def get_agents_running_config(
     return agent_config.running or AgentsRunningConfig()
 
 
+class RunningConfigSaveResponse(AgentsRunningConfig):
+    """配置正文保持原字段；附加本次系统同步受理结果，不写回agent配置。"""
+
+    scheduler_sync: dict[str, Any]
+
+
 @router.put(
     "/running-config",
-    response_model=AgentsRunningConfig,
+    response_model=RunningConfigSaveResponse,
     summary="Update agent running config",
     description="Update running configuration for active agent",
 )
@@ -542,7 +548,7 @@ async def put_agents_running_config(
         description="Updated agent running configuration",
     ),
     request: Request = None,
-) -> AgentsRunningConfig:
+) -> RunningConfigSaveResponse:
     """Update agent running configuration."""
     workspace, agent_config = await get_agent_and_config_for_request(request)
     agent_config.running = running_config
@@ -552,6 +558,14 @@ async def put_agents_running_config(
         tenant_id=workspace.tenant_id,
     )
 
+    sync = {
+        "submission_status": "failed",
+        "error_code": "system_sync_not_submitted",
+    }
+    cron = getattr(workspace, "cron_manager", None)
+    if cron is not None:
+        sync = await cron.register_dream()
+
     # Hot reload config (async, non-blocking)
     schedule_agent_reload(
         request,
@@ -559,7 +573,10 @@ async def put_agents_running_config(
         tenant_id=workspace.tenant_id,
     )
 
-    return running_config
+    return RunningConfigSaveResponse(
+        **running_config.model_dump(),
+        scheduler_sync=sync,
+    )
 
 
 @router.get(
