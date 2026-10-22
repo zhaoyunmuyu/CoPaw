@@ -18,6 +18,7 @@ from .auto_pause import AutoPauseController
 from .settlement import ExecutionSettlement
 from .run_accounting import occupied_run_sql
 from .async_batch_delete import AsyncBatchDelete
+from .auto_retry import AutoBatchRetry
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ class ManagedRecoveryWorker:
         self.work = ManagedWorkQuery(db, limit)
         self.auto_pause = AutoPauseController(db, platform, limit=limit)
         self.settlement = ExecutionSettlement(db, limit=limit)
+        self.auto_retry = AutoBatchRetry(db, limit=limit)
 
     async def tick(self):
         """执行一次恢复巡检，分开报告各类已有工作的处理数量。"""
@@ -56,6 +58,7 @@ class ManagedRecoveryWorker:
             await asyncio.gather(
                 self._isolated("auto_pause", self.auto_pause.tick),
                 self._isolated("settled", self.settlement.tick),
+                self._isolated("retried", self.auto_retry.tick),
                 self._isolated("broadcasts", self._broadcasts),
                 self._isolated("deletions", self._deletions),
                 self._isolated("modes", self._modes),
@@ -181,6 +184,7 @@ class ManagedRecoveryWorker:
         lanes = (
             self.auto_pause.tick,
             self.settlement.tick,
+            self.auto_retry.tick,
             self._broadcasts,
             self._deletions,
             self._modes,

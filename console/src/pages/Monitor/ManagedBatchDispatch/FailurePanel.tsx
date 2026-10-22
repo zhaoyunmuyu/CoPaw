@@ -188,7 +188,10 @@ export default function FailurePanel({
               },
               { title: "执行 ID", dataIndex: "execution_id", ellipsis: true },
               { title: "用户", dataIndex: "tenant_id" },
-              { title: "业务尝试", dataIndex: "business_attempt" },
+              {
+                title: "重试次数",
+                render: (_, item) => Math.max(0, item.business_attempt - 1),
+              },
               {
                 title: "原始失败原因",
                 width: 200,
