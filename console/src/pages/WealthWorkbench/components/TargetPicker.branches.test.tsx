@@ -18,9 +18,16 @@ const branches = [
   { mOrgCode: "102", mOrgName: "深圳深湾中心", mOrgLvl: 50, leaf: false },
   { mOrgCode: "103", mOrgName: "另一支行", mOrgLvl: 70, leaf: true },
 ];
+const branchResponse = (data: unknown[]) => ({
+  code: "200",
+  message: "ok",
+  success: true,
+  data,
+});
 const people = (sapID: string, userName: string) => ({
-  code: "success",
-  errMsg: null,
+  code: "200",
+  message: "ok",
+  success: true,
   data: [{ sapID, userName, branchName: "某分行", subBranchName: null }],
 });
 
@@ -63,10 +70,10 @@ describe("中台按支行累计分发", () => {
     };
     if (nested)
       mockRequest
-        .mockResolvedValueOnce(branches)
+        .mockResolvedValueOnce(branchResponse(branches))
         .mockResolvedValueOnce(people("parent", "上级人员"));
     mockRequest
-      .mockResolvedValueOnce([special])
+      .mockResolvedValueOnce(branchResponse([special]))
       .mockResolvedValueOnce(people("0001", "张三"));
     render(<TargetPicker />);
     const select = screen.getByRole("combobox", { name: "选择支行" });
@@ -82,27 +89,25 @@ describe("中台按支行累计分发", () => {
     await screen.findByRole("button", { name: /张三/ });
     expect(mockRequest).toHaveBeenCalledTimes(nested ? 4 : 2);
     expect(mockRequest).toHaveBeenLastCalledWith(
-      "/xcapi-auth/wmadm/services/v1/wmutadm/getUserPostionByBrn",
+      "/zt/wealth/wmadm/getUserPostionByBrn",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: expect.any(AbortSignal),
         body: JSON.stringify({
           bbkOrgId: "755",
-          mOrgCode: "121516",
-          mOrgLvl: 70,
+          mmOrgCode: "121516",
+          mmOrgLvl: 70,
         }),
       },
     );
     const branchQueries = mockRequest.mock.calls.filter(
-      ([url]) =>
-        url ===
-        "/xcapi-auth/wmadm/services/v1/wmadm/combox/BranchTreeInfoService",
+      ([url]) => url === "/zt/wealth/wmadm/branchTreeInfo",
     );
     expect(
       branchQueries.every(
         ([, options]) =>
-          JSON.parse(String(options?.body)).mOrgCode !== "121516",
+          JSON.parse(String(options?.body)).mmOrgCode !== "121516",
       ),
     ).toBe(true);
   });
@@ -135,13 +140,13 @@ describe("中台按支行累计分发", () => {
       leaf: false,
     };
     mockRequest
-      .mockResolvedValueOnce(branches)
+      .mockResolvedValueOnce(branchResponse(branches))
       .mockResolvedValueOnce(people("parent", "父级经理"))
-      .mockResolvedValueOnce([child])
+      .mockResolvedValueOnce(branchResponse([child]))
       .mockResolvedValueOnce(people("child", "子级经理"))
-      .mockResolvedValueOnce([last])
+      .mockResolvedValueOnce(branchResponse([last]))
       .mockResolvedValueOnce(people("0001", "张三"))
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce(branchResponse([]));
     render(<TargetPicker />);
     const select = screen.getByRole("combobox", { name: "选择支行" });
     await waitFor(() => expect(select).toBeEnabled());
@@ -168,43 +173,43 @@ describe("中台按支行累计分发", () => {
     await screen.findByRole("button", { name: /张三/ });
     expect(mockRequest).toHaveBeenNthCalledWith(
       3,
-      "/xcapi-auth/wmadm/services/v1/wmadm/combox/BranchTreeInfoService",
+      "/zt/wealth/wmadm/branchTreeInfo",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: expect.any(AbortSignal),
         body: JSON.stringify({
-          mOrgCode: "102",
-          mOrgLvl: 50,
+          mmOrgCode: "102",
+          mmOrgLvl: 50,
           sysId: "cookie-system",
         }),
       },
     );
     expect(mockRequest).toHaveBeenNthCalledWith(
       5,
-      "/xcapi-auth/wmadm/services/v1/wmadm/combox/BranchTreeInfoService",
+      "/zt/wealth/wmadm/branchTreeInfo",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: expect.any(AbortSignal),
         body: JSON.stringify({
-          mOrgCode: "1021",
-          mOrgLvl: 60,
+          mmOrgCode: "1021",
+          mmOrgLvl: 60,
           sysId: "cookie-system",
         }),
       },
     );
     expect(mockRequest).toHaveBeenNthCalledWith(
       6,
-      "/xcapi-auth/wmadm/services/v1/wmutadm/getUserPostionByBrn",
+      "/zt/wealth/wmadm/getUserPostionByBrn",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: expect.any(AbortSignal),
         body: JSON.stringify({
           bbkOrgId: "755",
-          mOrgCode: "10211",
-          mOrgLvl: 70,
+          mmOrgCode: "10211",
+          mmOrgLvl: 70,
         }),
       },
     );
@@ -213,7 +218,7 @@ describe("中台按支行累计分发", () => {
   it("下级查询未完成也可选当前级人员，回到缓存上级重新查人员", async () => {
     let finishChildren!: (value: unknown) => void;
     mockRequest
-      .mockResolvedValueOnce(branches)
+      .mockResolvedValueOnce(branchResponse(branches))
       .mockResolvedValueOnce(people("0001", "张三"))
       .mockReturnValueOnce(
         new Promise((resolve) => {
@@ -221,7 +226,7 @@ describe("中台按支行累计分发", () => {
         }),
       )
       .mockResolvedValueOnce(people("0002", "李四"))
-      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(branchResponse([]))
       .mockResolvedValueOnce(people("0001", "张三"));
     render(<TargetPicker />);
     const select = screen.getByRole("combobox", { name: "选择支行" });
@@ -231,9 +236,11 @@ describe("中台按支行累计分发", () => {
       await screen.findByRole("menuitemcheckbox", { name: /深圳深湾中心/ }),
     );
     fireEvent.click(await screen.findByRole("button", { name: /张三/ }));
-    finishChildren([
-      { mOrgCode: "1021", mOrgName: "子支行", mOrgLvl: 60, leaf: false },
-    ]);
+    finishChildren(
+      branchResponse([
+        { mOrgCode: "1021", mOrgName: "子支行", mOrgLvl: 60, leaf: false },
+      ]),
+    );
     fireEvent.click(
       await screen.findByRole("menuitemcheckbox", { name: /子支行/ }),
     );
@@ -248,12 +255,16 @@ describe("中台按支行累计分发", () => {
     expect(useWealthStore.getState().targetSapIds).toEqual(["0001"]);
     expect(mockRequest).toHaveBeenCalledTimes(6);
     expect(mockRequest).toHaveBeenLastCalledWith(
-      "/xcapi-auth/wmadm/services/v1/wmutadm/getUserPostionByBrn",
+      "/zt/wealth/wmadm/getUserPostionByBrn",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: expect.any(AbortSignal),
-        body: JSON.stringify({ bbkOrgId: "755", mOrgCode: "102", mOrgLvl: 50 }),
+        body: JSON.stringify({
+          bbkOrgId: "755",
+          mmOrgCode: "102",
+          mmOrgLvl: 50,
+        }),
       },
     );
   });
@@ -261,11 +272,11 @@ describe("中台按支行累计分发", () => {
   it("子支行请求失败仍显示当前级人员，可重试下级查询", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     mockRequest
-      .mockResolvedValueOnce(branches)
+      .mockResolvedValueOnce(branchResponse(branches))
       .mockResolvedValueOnce(people("0001", "张三"))
       .mockRejectedValueOnce(new Error("offline"))
       .mockResolvedValueOnce(people("0001", "张三"))
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce(branchResponse([]));
     render(<TargetPicker />);
     const select = screen.getByRole("combobox", { name: "选择支行" });
     await waitFor(() => expect(select).toBeEnabled());
@@ -284,7 +295,7 @@ describe("中台按支行累计分发", () => {
   it("切换父支行后忽略旧的子支行响应", async () => {
     let finishOld!: (value: unknown) => void;
     mockRequest
-      .mockResolvedValueOnce(branches)
+      .mockResolvedValueOnce(branchResponse(branches))
       .mockResolvedValueOnce(people("0001", "张三"))
       .mockReturnValueOnce(
         new Promise((resolve) => {
@@ -292,7 +303,7 @@ describe("中台按支行累计分发", () => {
         }),
       )
       .mockResolvedValueOnce(people("0002", "李四"))
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce(branchResponse([]));
     render(<TargetPicker />);
     const select = screen.getByRole("combobox", { name: "选择支行" });
     await waitFor(() => expect(select).toBeEnabled());
@@ -305,9 +316,11 @@ describe("中台按支行累计分发", () => {
       await screen.findByRole("menuitemcheckbox", { name: /另一支行/ }),
     );
     await screen.findByRole("button", { name: /李四/ });
-    finishOld([
-      { mOrgCode: "old", mOrgName: "过期子支行", mOrgLvl: 70, leaf: true },
-    ]);
+    finishOld(
+      branchResponse([
+        { mOrgCode: "old", mOrgName: "过期子支行", mOrgLvl: 70, leaf: true },
+      ]),
+    );
     await waitFor(() =>
       expect(useWealthStore.getState().targetBranch?.mOrgCode).toBe("103"),
     );
@@ -315,7 +328,7 @@ describe("中台按支行累计分发", () => {
   });
 
   it("按支行名称或编码模糊搜索，不额外调用接口", async () => {
-    mockRequest.mockResolvedValueOnce(branches);
+    mockRequest.mockResolvedValueOnce(branchResponse(branches));
     render(<TargetPicker />);
     const select = screen.getByRole("combobox", { name: "选择支行" });
     await waitFor(() => expect(select).toBeEnabled());
@@ -359,11 +372,11 @@ describe("中台按支行累计分发", () => {
   });
   it("先查支行，按返回层级查人员，跨支行保留选择和姓名", async () => {
     mockRequest
-      .mockResolvedValueOnce(branches)
+      .mockResolvedValueOnce(branchResponse(branches))
       .mockResolvedValueOnce(people("0001", "张三"))
-      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(branchResponse([]))
       .mockResolvedValueOnce(people("0002", "李四"))
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce(branchResponse([]));
     render(<TargetPicker />);
     expect(
       screen.getByText("请先选择支行，再选择分发人员"),
@@ -373,14 +386,14 @@ describe("中台按支行累计分发", () => {
     expect(mockRequest).toHaveBeenCalledTimes(1);
     expect(mockRequest).toHaveBeenNthCalledWith(
       1,
-      "/xcapi-auth/wmadm/services/v1/wmadm/combox/BranchTreeInfoService",
+      "/zt/wealth/wmadm/branchTreeInfo",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: expect.any(AbortSignal),
         body: JSON.stringify({
-          mOrgCode: "755",
-          mOrgLvl: 70,
+          mmOrgCode: "755",
+          mmOrgLvl: 70,
           sysId: "cookie-system",
         }),
       },
@@ -390,12 +403,16 @@ describe("中台按支行累计分发", () => {
     fireEvent.click(await screen.findByRole("button", { name: /张三/ }));
     expect(mockRequest).toHaveBeenNthCalledWith(
       2,
-      "/xcapi-auth/wmadm/services/v1/wmutadm/getUserPostionByBrn",
+      "/zt/wealth/wmadm/getUserPostionByBrn",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: expect.any(AbortSignal),
-        body: JSON.stringify({ bbkOrgId: "755", mOrgCode: "102", mOrgLvl: 50 }),
+        body: JSON.stringify({
+          bbkOrgId: "755",
+          mmOrgCode: "102",
+          mmOrgLvl: 50,
+        }),
       },
     );
     fireEvent.mouseDown(select);
@@ -443,15 +460,15 @@ describe("中台按支行累计分发", () => {
     ).not.toBeInTheDocument();
     await screen.findByRole("button", { name: /张三/ });
     expect(mockRequest).toHaveBeenCalledWith(
-      "/xcapi-auth/wmadm/services/v1/wmutadm/getUserPostionByBrn",
+      "/zt/wealth/wmadm/getUserPostionByBrn",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: expect.any(AbortSignal),
         body: JSON.stringify({
           bbkOrgId: "755",
-          mOrgCode: "755480",
-          mOrgLvl: 70,
+          mmOrgCode: "755480",
+          mmOrgLvl: 70,
         }),
       },
     );

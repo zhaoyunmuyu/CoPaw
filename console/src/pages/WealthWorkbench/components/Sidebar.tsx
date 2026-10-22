@@ -19,6 +19,7 @@ export function Sidebar({
 }) {
   const todayCustomerCount = useWealthStore((s) => s.todayCustomerCount);
   const plansLoaded = useWealthStore((s) => s.plansLoaded);
+  const resetPlanForm = useWealthStore((s) => s.resetPlanForm);
   const pendingCustomers = useWealthStore((s) => s.pendingCustomers);
   const doneCustomers = useWealthStore((s) => s.doneCustomers);
   const loadPendingCustomers = useWealthStore((s) => s.loadPendingCustomers);
@@ -67,7 +68,10 @@ export function Sidebar({
           className={navClass("/wealth/create")}
           title="创建计划"
           aria-current={current === "/wealth/create" ? "page" : "false"}
-          onClick={() => navigate("/wealth/create")}
+          onClick={() => {
+            resetPlanForm();
+            navigate("/wealth/create");
+          }}
         >
           <Icon name="plus" />
           <span className={styles.navLabel}>创建计划</span>

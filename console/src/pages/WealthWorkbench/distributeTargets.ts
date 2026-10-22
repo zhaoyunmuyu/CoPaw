@@ -17,14 +17,20 @@ export interface DistributeBranch {
   leaf: boolean;
 }
 
-const USER_POSITION_PATH = "/zt/wealth/wmadm/branchTreeInfo"
-const BRANCH_TREE_PATH = "/zt/wealth/wmadm/getUserPostionByBrn"
+const USER_POSITION_PATH = "/zt/wealth/wmadm/getUserPostionByBrn";
+const BRANCH_TREE_PATH = "/zt/wealth/wmadm/branchTreeInfo";
+
+interface DistributionResponse<T> {
+  code: string;
+  message: string;
+  data: T[];
+}
 
 /** 网关凭证由 Nginx 附加，浏览器沿用默认同源 Cookie。 */
 async function fetchDistributionData<T>(
   path: string,
   body: Record<string, string | number>,
-): Promise<T> {
+): Promise<T[]> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60000);
   try {
@@ -37,7 +43,14 @@ async function fetchDistributionData<T>(
     if (!response.ok) {
       throw new Error(`分发查询失败：HTTP ${response.status}`);
     }
-    return (await response.json()) as T;
+    const result = (await response.json()) as DistributionResponse<T>;
+    if (result.code !== "200") {
+      throw new Error(result.message || "分发查询失败");
+    }
+    if (!Array.isArray(result.data) || result.data.length === 0) {
+      return [];
+    }
+    return result.data;
   } finally {
     clearTimeout(timeout);
   }
@@ -54,7 +67,7 @@ export async function fetchDistributeBranches(
   const mOrgLvl = Number(level);
   if (!Number.isInteger(mOrgLvl) || mOrgLvl < 0) return branch ? null : [];
   try {
-    return await fetchDistributionData<DistributeBranch[]>(BRANCH_TREE_PATH, {
+    return await fetchDistributionData<DistributeBranch>(BRANCH_TREE_PATH, {
       mmOrgCode: mOrgCode,
       mmOrgLvl: mOrgLvl,
       sysId,
@@ -65,15 +78,11 @@ export async function fetchDistributeBranches(
   }
 }
 
-interface UserPositionResponse {
-  code: string;
-  errMsg: string | null;
-  data: Array<{
-    sapID: string;
-    userName: string;
-    branchName: string | null;
-    subBranchName: string | null;
-  }> | null;
+interface UserPosition {
+  sapID: string;
+  userName: string;
+  branchName: string | null;
+  subBranchName: string | null;
 }
 
 /**
@@ -92,7 +101,7 @@ export async function fetchDistributeTargets(
   const mOrgLvl = Number(level);
   if (!Number.isInteger(mOrgLvl) || mOrgLvl < 0) return [];
   try {
-    const response = await fetchDistributionData<UserPositionResponse>(
+    const users = await fetchDistributionData<UserPosition>(
       USER_POSITION_PATH,
       {
         bbkOrgId: bbk,
@@ -100,8 +109,7 @@ export async function fetchDistributeTargets(
         mmOrgLvl: mOrgLvl,
       },
     );
-    if (response.code !== "success") return [];
-    return (response.data ?? [])
+    return users
       .filter((user) => user.sapID)
       .map((user) => ({
         sapId: user.sapID,

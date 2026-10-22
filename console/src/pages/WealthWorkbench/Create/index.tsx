@@ -560,6 +560,7 @@ export function TaskSchedule({
 export default function Create() {
   const account = useWealthStore(selectCurrentAccount);
   const draft = useWealthStore((s) => s.draft);
+  const planFormVersion = useWealthStore((s) => s.planFormVersion);
   const scenesByCategory = useWealthStore((s) => s.scenesByCategory);
   const scenesLoading = useWealthStore((s) => s.scenesLoading);
   const loadScenes = useWealthStore((s) => s.loadScenes);
@@ -572,7 +573,7 @@ export default function Create() {
   const setItemDirection = useWealthStore((s) => s.setItemDirection);
   const setDraftName = useWealthStore((s) => s.setDraftName);
   const normalizeDraft = useWealthStore((s) => s.normalizeDraft);
-  const clearEditingId = useWealthStore((s) => s.clearEditingId);
+  const resetPlanForm = useWealthStore((s) => s.resetPlanForm);
   // const saveDraft = useWealthStore((s) => s.saveDraft);
   const publishPlan = useWealthStore((s) => s.publishPlan);
   const openDialog = useWealthStore((s) => s.openDialog);
@@ -593,10 +594,10 @@ export default function Create() {
   const needsTargets = needsDistributeTargets(account?.id ?? "rm");
   const stepDefs = needsTargets ? [...STEP_DEFS, TARGET_STEP] : STEP_DEFS;
 
-  // 与原型一致：进入创建页时归一化草稿周期/排程；离开时清除编辑态（草稿保留）
+  // 进入时保留修改入口回填的规划；离开后清空，避免下次新建沿用旧内容。
   useEffect(() => {
     normalizeDraft();
-    return () => clearEditingId();
+    return () => resetPlanForm();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1001,7 +1002,7 @@ export default function Create() {
                   （已选 {targetSapIds.length} 人）
                 </span>
               </h3>
-              <TargetPicker />
+              <TargetPicker key={planFormVersion} />
             </section>
           )}
         </div>

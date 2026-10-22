@@ -73,7 +73,12 @@ async function openEditPlan() {
 describe("修改规划分发人员回显", () => {
   it("无人员缓存时从规划接口恢复姓名，支行列表初始化不清空已选人员", async () => {
     await openEditPlan();
-    mockRequest.mockResolvedValueOnce([]);
+    mockRequest.mockResolvedValueOnce({
+      code: "200",
+      message: "ok",
+      success: true,
+      data: [],
+    });
     render(<TargetPicker />);
     expect(
       screen.getByRole("button", { name: "移除张三" }),
@@ -93,7 +98,9 @@ describe("修改规划分发人员回显", () => {
     await openEditPlan();
     useWealthStore.setState({ accountId: "president" });
     mockRequest.mockResolvedValueOnce({
-      code: "success",
+      code: "200",
+      message: "ok",
+      success: true,
       data: [
         {
           sapID: "0001",
@@ -124,7 +131,12 @@ describe("修改规划分发人员回显", () => {
       ],
     });
     useWealthStore.getState().editPlan("old-plan");
-    mockRequest.mockResolvedValueOnce([]);
+    mockRequest.mockResolvedValueOnce({
+      code: "200",
+      message: "ok",
+      success: true,
+      data: [],
+    });
     render(<TargetPicker />);
     expect(
       screen.getByRole("button", { name: "移除0003" }),

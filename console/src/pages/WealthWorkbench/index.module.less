@@ -975,17 +975,18 @@
   .direction input {
     min-width: 0;
     width: 100%;
-    border: 1px solid transparent;
+    border: 1px solid var(--console-management-border-strong, #d0d7e2);
     padding: 6px;
     color: var(--text);
     border-radius: 4px;
     font-size: 12px;
-    background: #fbfdff;
-  }
-  .direction input:hover,
-  .direction input:focus {
-    border-color: #bcd5ff;
     background: #fff;
+  }
+  .direction input:hover {
+    border-color: var(--console-management-primary-hover, #2957dc);
+  }
+  .direction input:focus {
+    border-color: var(--console-management-primary, #3769fc);
   }
   .cycle {
     display: flex;

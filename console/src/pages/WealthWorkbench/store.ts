@@ -98,6 +98,8 @@ interface WealthState {
   doneCounts: api.CustomerCounts | null;
   doneLoading: boolean;
   draft: Draft;
+  /** 新建/修改表单的代次，用于重置局部状态并隔离旧异步请求。 */
+  planFormVersion: number;
   savedAt: string;
   editingId: string | null;
   /** 分发目标用户池（仅行长/中台加载） */
@@ -157,8 +159,8 @@ interface WealthState {
   saveDraft: () => Promise<void>;
 
   // —— 规划生命周期 ——
+  resetPlanForm: () => void;
   editPlan: (id: string) => void;
-  clearEditingId: () => void;
   publishPlan: () => Promise<boolean>;
   removePlan: (id: string) => Promise<void>;
 
@@ -296,6 +298,7 @@ export const useWealthStore = create<WealthState>()((set, get) => ({
   doneCounts: null,
   doneLoading: false,
   draft: { name: "", items: [] },
+  planFormVersion: 0,
   savedAt: "",
   editingId: null,
   targets: [],
@@ -632,6 +635,22 @@ export const useWealthStore = create<WealthState>()((set, get) => ({
     get().toast("草稿已保存，可在当前会话继续编辑");
   },
 
+  resetPlanForm: () => {
+    targetRequestSeq += 1;
+    set({
+      draft: api.newAccountDraft(),
+      planFormVersion: get().planFormVersion + 1,
+      editingId: null,
+      savedAt: "",
+      targetSapIds: [],
+      targets: [],
+      targetsLoaded: false,
+      targetBranch: null,
+      branchTargetSapIds: [],
+      dialog: null,
+    });
+  },
+
   editPlan: (id) => {
     const p = get().plans.find((x) => x.id === id);
     if (!p) return;
@@ -650,17 +669,13 @@ export const useWealthStore = create<WealthState>()((set, get) => ({
     set({
       draft,
       editingId: id,
+      planFormVersion: get().planFormVersion + 1,
       targetSapIds,
       targets,
       targetsLoaded: false,
       targetBranch: null,
       branchTargetSapIds: [],
     });
-  },
-
-  /** 离开创建页时清除编辑态（与原型 navigate() 行为一致：草稿本身保留） */
-  clearEditingId: () => {
-    if (get().editingId != null) set({ editingId: null });
   },
 
   publishPlan: async () => {
@@ -687,20 +702,20 @@ export const useWealthStore = create<WealthState>()((set, get) => ({
         state.editingId,
         targets,
       );
+      // 请求仍会完成并更新列表；已切换表单时不回写旧草稿，也不触发旧页面跳转。
+      const isCurrentForm = get().planFormVersion === state.planFormVersion;
       set({
         plans,
-        draft,
-        editingId: null,
-        dialog: null,
-        savedAt: "",
-        targetSapIds: [],
+        ...(isCurrentForm
+          ? { draft, editingId: null, dialog: null, savedAt: "", targetSapIds: [] }
+          : {}),
       });
       get().toast(
         created
           ? "规划已发布，正在后台创建定时任务并分发"
           : "规划已修改，正在重新发布",
       );
-      return true;
+      return isCurrentForm;
     } catch (error) {
       // HTTP 业务错误（409 发布中 / 403 非创建人 / 认证失效等）原样提示
       get().toast(

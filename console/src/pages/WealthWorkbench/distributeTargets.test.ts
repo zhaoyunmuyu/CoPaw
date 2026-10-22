@@ -34,22 +34,24 @@ afterEach(() => {
 });
 
 describe("机构岗位人员分发目标", () => {
-  it("支行直连网关路径，原样读取数组并使用默认同源 Cookie", async () => {
+  it("支行直连网关路径，读取 data 数组并使用默认同源 Cookie", async () => {
     useIframeStore.getState().setContext({ sysId: "retail" });
     const branches = [
       { mOrgCode: "102", mOrgName: "某支行", mOrgLvl: 50, leaf: false },
     ];
-    mockRequest.mockResolvedValueOnce(branches);
+    mockRequest.mockResolvedValueOnce({
+      code: "200",
+      message: "ok",
+      data: branches,
+      success: true,
+    });
     expect(await fetchDistributeBranches()).toEqual(branches);
-    expect(fetch).toHaveBeenCalledWith(
-      "/zt/wealth/wmadm/getUserPostionByBrn",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mmOrgCode: "755", mmOrgLvl: 70, sysId: "retail" }),
-        signal: expect.any(AbortSignal),
-      },
-    );
+    expect(fetch).toHaveBeenCalledWith("/zt/wealth/wmadm/branchTreeInfo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mmOrgCode: "755", mmOrgLvl: 70, sysId: "retail" }),
+      signal: expect.any(AbortSignal),
+    });
     expect(request).not.toHaveBeenCalled();
   });
 
@@ -97,8 +99,9 @@ describe("机构岗位人员分发目标", () => {
 
   it("按登录机构查询，使用 sapID 并保留返回的不同岗位", async () => {
     mockRequest.mockResolvedValue({
-      code: "success",
-      errMsg: null,
+      code: "200",
+      message: "ok",
+      success: true,
       data: [
         {
           userID: "00080008",
@@ -124,7 +127,7 @@ describe("机构岗位人员分发目标", () => {
     ]);
     expect(request).not.toHaveBeenCalled();
     expect(mockRequest).toHaveBeenCalledWith(
-      "/zt/wealth/wmadm/branchTreeInfo",
+      "/zt/wealth/wmadm/getUserPostionByBrn",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -156,7 +159,72 @@ describe("机构岗位人员分发目标", () => {
   it("业务失败和空列表返回空目标", async () => {
     mockRequest.mockResolvedValueOnce({ code: "failed", data: [] });
     expect(await fetchDistributeTargets()).toEqual([]);
-    mockRequest.mockResolvedValueOnce({ code: "success", data: null });
+    mockRequest.mockResolvedValueOnce({
+      code: "200",
+      message: "ok",
+      success: true,
+      data: [],
+    });
+    expect(await fetchDistributeTargets()).toEqual([]);
+  });
+
+  it.each([[[]], [null], [{}]])(
+    "data 为 %j 时两个接口均按无数据处理",
+    async (data) => {
+      useIframeStore.getState().setContext({ sysId: "retail" });
+      mockRequest.mockResolvedValue({
+        code: "200",
+        message: "ok",
+        data,
+        success: true,
+      });
+      expect(await fetchDistributeBranches()).toEqual([]);
+      expect(await fetchDistributeTargets()).toEqual([]);
+    },
+  );
+
+  it.each([false, undefined])(
+    "success 为 %s 不影响 code=200 的有效列表",
+    async (success) => {
+      useIframeStore.getState().setContext({ sysId: "retail" });
+      const branches = [
+        { mOrgCode: "102", mOrgName: "某支行", mOrgLvl: 50, leaf: false },
+      ];
+      mockRequest.mockResolvedValueOnce({
+        code: "200",
+        success,
+        data: branches,
+      });
+      expect(await fetchDistributeBranches()).toEqual(branches);
+      mockRequest.mockResolvedValueOnce({
+        code: "200",
+        success,
+        data: [
+          {
+            sapID: "0001",
+            userName: "张三",
+            branchName: "某分行",
+            subBranchName: null,
+          },
+        ],
+      });
+      expect(await fetchDistributeTargets()).toEqual([
+        { sapId: "0001", name: "张三", orgName: "某分行" },
+      ]);
+    },
+  );
+
+  it.each(
+    [
+      { code: "500", message: "failed", success: false, data: [] },
+      { code: "500", message: "failed", success: true, data: [] },
+      { code: "success", data: [] },
+      [],
+    ].map((payload) => [payload]),
+  )("无效响应 %j 时支行保留重试，人员显示空列表", async (payload) => {
+    useIframeStore.getState().setContext({ sysId: "retail" });
+    mockRequest.mockResolvedValue(payload);
+    expect(await fetchDistributeBranches()).toBeNull();
     expect(await fetchDistributeTargets()).toEqual([]);
   });
 
