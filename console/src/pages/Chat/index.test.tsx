@@ -643,6 +643,26 @@ vi.mock("@/api/modules/scenarioPreset", () => ({
   },
 }));
 
+function mockManagedTasks(jobs: Record<string, unknown>[]) {
+  vi.mocked(schedulerCronApi.listAll).mockImplementation(async (context) =>
+    jobs.map(
+      (job) =>
+        ({
+          ...job,
+          tenant_id: context.tenant_id,
+          source_id: context.source_id,
+          agent_id: context.agent_id,
+          management_owner: "scheduler",
+          definition_version: 1,
+          management_version: 1,
+          management_status: "ready",
+          dispatch_state: "ordinary",
+          deleted: false,
+        }) as ManagedJob,
+    ),
+  );
+}
+
 describe("ChatPage plan mode wiring", () => {
   beforeEach(() => {
     mocks.taskInfo.mockClear();
@@ -763,8 +783,10 @@ describe("ChatPage plan mode wiring", () => {
           "当前任务暂未启动，等下次收到提醒再来看看哟~",
         );
       else
-        expect(mocks.taskInfo).toHaveBeenCalledWith(
-          "当前任务暂未启动，等下次收到提醒再来看看哟~",
+        await waitFor(() =>
+          expect(mocks.taskInfo).toHaveBeenCalledWith(
+            "当前任务暂未启动，等下次收到提醒再来看看哟~",
+          ),
         );
     },
   );
@@ -1689,7 +1711,7 @@ describe("ChatPage plan mode wiring", () => {
 
   it("triggers HTML auto preview when taskId navigation resolves to a chat", async () => {
     mocks.navigationTaskId = "task-from-url";
-    mocks.listCronJobs.mockResolvedValue([
+    mockManagedTasks([
       {
         id: "task-from-url",
         name: "URL Task",
@@ -1713,6 +1735,7 @@ describe("ChatPage plan mode wiring", () => {
     render(<ChatPage />);
 
     await screen.findByRole("button", { name: "Open URL Task" });
+    expect(mocks.listCronJobs).not.toHaveBeenCalled();
 
     expect(mocks.clearNavigationParams).toHaveBeenCalled();
     await waitFor(() => {
@@ -1727,7 +1750,7 @@ describe("ChatPage plan mode wiring", () => {
   });
 
   it("wires task tracking context and triggers auto preview from sidebar task open", async () => {
-    mocks.listCronJobs.mockResolvedValue([
+    mockManagedTasks([
       {
         id: "task-current",
         name: "Current Task",
@@ -1773,6 +1796,7 @@ describe("ChatPage plan mode wiring", () => {
         screen.getByTestId("html-preview-tracking-provider"),
       ).toHaveAttribute("data-cron-task-id", "task-current");
     });
+    expect(mocks.listCronJobs).not.toHaveBeenCalled();
     expect(
       screen.getByTestId("html-preview-tracking-provider"),
     ).toHaveAttribute("data-cron-task-name", "Current Task");

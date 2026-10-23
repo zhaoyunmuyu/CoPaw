@@ -32,19 +32,30 @@ const managed = {
 beforeEach(() => vi.clearAllMocks());
 
 describe("Chat 任务来源", () => {
-  it("并行读取两份列表，旧在前新在后，同 ID 不合并", async () => {
+  it("只查询新任务并清理旧缓存", async () => {
+    vi.mocked(cronJobApi.listCronJobs).mockResolvedValue([legacy]);
+    vi.mocked(schedulerCronApi.listAll).mockResolvedValue([managed]);
+    const snapshot = await listTaskSources(context);
+    const previous = [tagTask(legacy, "legacy", context)];
+    expect(mergeTaskSources(previous, snapshot).map((job) => job.name)).toEqual(
+      ["新任务"],
+    );
+    expect(cronJobApi.listCronJobs).not.toHaveBeenCalled();
+    expect(snapshot.legacy).toEqual([]);
+  });
+  it("列表只显示Scheduler任务", async () => {
     vi.mocked(cronJobApi.listCronJobs).mockResolvedValue([legacy]);
     vi.mocked(schedulerCronApi.listAll).mockResolvedValue([managed]);
     const sources = await listTaskSources(context);
     const jobs = mergeTaskSources([], sources);
-    expect(jobs.map((job) => job.name)).toEqual(["旧任务", "新任务"]);
-    expect(taskIdentityKey(jobs[0])).not.toBe(taskIdentityKey(jobs[1]));
+    expect(jobs.map((job) => job.name)).toEqual(["新任务"]);
+    expect(taskIdentityKey(jobs[0])).toContain("scheduler");
     expect(schedulerCronApi.listAll).toHaveBeenCalledWith(
       context,
       expect.anything(),
     );
   });
-  it("一个来源失败时保留其已知任务，不影响另一来源更新", async () => {
+  it("Scheduler失败只保留已知新任务，不保留旧缓存", async () => {
     const previous = [
       tagTask(legacy, "legacy", context),
       tagTask(managed, "scheduler", context),
@@ -52,15 +63,14 @@ describe("Chat 任务来源", () => {
     vi.mocked(cronJobApi.listCronJobs).mockRejectedValue(
       new Error("old unavailable"),
     );
-    vi.mocked(schedulerCronApi.listAll).mockResolvedValue([
-      { ...managed, name: "新结果" },
-    ]);
+    vi.mocked(schedulerCronApi.listAll).mockRejectedValue(
+      new Error("new unavailable"),
+    );
     const sources = await listTaskSources(context);
-    expect(sources.legacy).toBeNull();
-    expect(sources.errors).toContain("旧任务列表暂不可用，保留已知任务");
+    expect(sources.legacy).toEqual([]);
+    expect(sources.errors).toContain("新版任务列表暂不可用，保留已知任务");
     expect(mergeTaskSources(previous, sources).map((job) => job.name)).toEqual([
-      "旧任务",
-      "新结果",
+      "新任务",
     ]);
   });
   it("新版返回 legacy 快照或不完整的管理身份时不能打成新版来源", async () => {
@@ -75,6 +85,19 @@ describe("Chat 任务来源", () => {
 });
 
 describe("报告只有任务 ID 时只读确认归属", () => {
+  it("迁移后原任务ID只查Scheduler，不探测旧接口", async () => {
+    vi.mocked(request).mockResolvedValue({
+      management_owner: "scheduler",
+      agent_id: "a",
+      spec: { id: "same", tenant_id: "u", source_id: "s" },
+    });
+    await expect(resolveTaskOrigin(context, "same")).resolves.toMatchObject({
+      owner: "scheduler",
+    });
+    expect(vi.mocked(request).mock.calls.map(([path]) => path)).toEqual([
+      "/scheduler/cron/jobs/same",
+    ]);
+  });
   it("旧详情 404、新详情为 scheduler 才确认新归属", async () => {
     vi.mocked(request).mockImplementation(async (path) => {
       if (path.startsWith("/cron/"))
@@ -97,15 +120,15 @@ describe("报告只有任务 ID 时只读确认归属", () => {
         ),
     ).toBe(true);
   });
-  it("双方都存在或一方查询失败均不能用写接口探测归属", async () => {
+  it("不读取旧归属，Scheduler查询失败不使用写接口探测", async () => {
     vi.mocked(request).mockResolvedValue({
       management_owner: "scheduler",
       agent_id: "a",
       spec: { id: "same", tenant_id: "u", source_id: "s" },
     });
-    await expect(resolveTaskOrigin(context, "same")).rejects.toThrow(
-      "归属不唯一",
-    );
+    await expect(resolveTaskOrigin(context, "same")).resolves.toMatchObject({
+      owner: "scheduler",
+    });
     vi.mocked(request).mockImplementation(async (path) => {
       if (path.startsWith("/scheduler/"))
         throw Object.assign(new Error("unavailable"), { status: 503 });

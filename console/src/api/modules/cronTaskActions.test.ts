@@ -65,16 +65,18 @@ it("新任务启停使用管理版本，执行使用定义版本，已读不恢�
   expect(schedulerCronApi.setEnabled).toHaveBeenCalledTimes(1);
   expect(cronJobApi.markTaskRead).not.toHaveBeenCalled();
 });
-it("旧任务已读保留原协议，新接口失败不回退旧写接口", async () => {
-  await markSourcedTaskRead(task("legacy"), true, "legacy-read");
-  expect(cronJobApi.markTaskRead).toHaveBeenCalledWith("same", true);
+it("旧任务引用拒绝写入，新接口失败不回退旧接口", async () => {
+  await expect(
+    markSourcedTaskRead(task("legacy"), true, "legacy-read"),
+  ).rejects.toThrow("尚未由 Scheduler 接管");
+  expect(cronJobApi.markTaskRead).not.toHaveBeenCalled();
   vi.mocked(schedulerCronApi.markRead).mockRejectedValue(
     new Error("new unavailable"),
   );
   await expect(
     markSourcedTaskRead(task("scheduler"), true, "new-read"),
   ).rejects.toThrow("new unavailable");
-  expect(cronJobApi.markTaskRead).toHaveBeenCalledTimes(1);
+  expect(cronJobApi.markTaskRead).not.toHaveBeenCalled();
 });
 it("Agent 或角色切换后旧任务对象不能继续写入", async () => {
   const job = task("scheduler");

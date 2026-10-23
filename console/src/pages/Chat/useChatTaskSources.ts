@@ -10,7 +10,7 @@ import { useIframeStore } from "@/stores/iframeStore";
 import { DEFAULT_SOURCE_ID } from "@/constants/identity";
 import { getUserId } from "@/utils/identity";
 
-/** 旧列表在前、新列表在后；失败来源保留，身份变化立即隔离旧展示与写回。 */
+/** 仅展示 Scheduler 任务；查询失败保留新缓存，身份变化立即隔离展示与写回。 */
 export function useChatTaskSources() {
   const user = useIframeStore((state) => state.userId);
   const source = useIframeStore((state) => state.source);

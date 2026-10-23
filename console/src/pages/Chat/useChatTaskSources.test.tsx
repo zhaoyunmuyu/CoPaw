@@ -4,7 +4,10 @@ import { useChatTaskSources } from "./useChatTaskSources";
 import { listTaskSources, tagTask } from "@/api/modules/cronTaskSources";
 import { useAgentStore } from "@/stores/agentStore";
 import { useIframeStore } from "@/stores/iframeStore";
-import type { TaskSourceSnapshot } from "@/api/types/cronTaskSource";
+import type {
+  SourcedManagedTask,
+  TaskSourceSnapshot,
+} from "@/api/types/cronTaskSource";
 
 vi.mock("@/api/modules/cronTaskSources", async (original) => ({
   ...(await original<object>()),
@@ -18,8 +21,14 @@ const context = {
 };
 afterEach(cleanup);
 const snapshot = (name: string): TaskSourceSnapshot => ({
-  legacy: [tagTask({ id: name, name } as never, "legacy", context)],
-  scheduler: [],
+  legacy: [],
+  scheduler: [
+    tagTask(
+      { id: name, name } as never,
+      "scheduler",
+      context,
+    ) as SourcedManagedTask,
+  ],
   errors: [],
 });
 beforeEach(() => {
@@ -55,9 +64,9 @@ it("来源查询失败保留已知任务，并提供明确错误供页面展示"
   vi.mocked(listTaskSources)
     .mockResolvedValueOnce(snapshot("known"))
     .mockResolvedValueOnce({
-      legacy: null,
-      scheduler: [],
-      errors: ["旧任务列表暂不可用，保留已知任务"],
+      legacy: [],
+      scheduler: null,
+      errors: ["新版任务列表暂不可用，保留已知任务"],
     });
   const { result } = renderHook(() => useChatTaskSources());
   await waitFor(() => expect(result.current.jobs).toHaveLength(1));

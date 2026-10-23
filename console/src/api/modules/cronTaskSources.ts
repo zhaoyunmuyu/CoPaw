@@ -1,6 +1,6 @@
 import { request } from "../request";
 import { cronAccessKey, cronContextHeaders } from "../cronTaskContext";
-import type { CronJobSpecOutput, CronJobView } from "../types/cronjob";
+import type { CronJobSpecOutput } from "../types/cronjob";
 import type {
   ManagedCronContext,
   ManagedJob,
@@ -13,7 +13,6 @@ import type {
   TaskPresence,
   TaskSourceSnapshot,
 } from "../types/cronTaskSource";
-import { cronJobApi } from "./cronjob";
 import { schedulerCronApi } from "./schedulerCron";
 
 export function taskOrigin(task: CronJobSpecOutput): CronTaskOrigin | null {
@@ -74,28 +73,22 @@ function managedTask(
   return tagTask(job, "scheduler", context, accessKey) as SourcedManagedTask;
 }
 
-/** 两个来源各自成功或失败；新列表必须完整遍历，失败不能解释为任务已删除。 */
+/** 仅查询新任务；失败保留已知的新任务，不回退旧文件任务。 */
 export async function listTaskSources(
   context: ManagedCronContext,
   signal?: AbortSignal,
 ): Promise<TaskSourceSnapshot> {
   const accessKey = cronAccessKey(context);
-  const [oldResult, newResult] = await Promise.allSettled([
-    cronJobApi.listCronJobs().then((jobs) => {
-      if (!Array.isArray(jobs)) throw new Error("invalid_legacy_task_list");
-      return jobs.map((job) => tagTask(job, "legacy", context, accessKey));
-    }),
+  const [newResult] = await Promise.allSettled([
     schedulerCronApi
       .listAll(context, { signal })
       .then((jobs) => jobs.map((job) => managedTask(job, context, accessKey))),
   ]);
   const errors: string[] = [];
-  if (oldResult.status === "rejected")
-    errors.push("旧任务列表暂不可用，保留已知任务");
   if (newResult.status === "rejected")
     errors.push("新版任务列表暂不可用，保留已知任务");
   return {
-    legacy: oldResult.status === "fulfilled" ? oldResult.value : null,
+    legacy: [],
     scheduler: newResult.status === "fulfilled" ? newResult.value : null,
     errors,
   };
@@ -105,11 +98,8 @@ export function mergeTaskSources(
   previous: CronJobSpecOutput[],
   snapshot: TaskSourceSnapshot,
 ): CronJobSpecOutput[] {
-  const oldJobs =
-    snapshot.legacy ??
-    previous.filter((job) => taskOrigin(job)?.owner !== "scheduler");
   const newJobs = snapshot.scheduler ?? previous.filter(isSchedulerTask);
-  return [...oldJobs, ...newJobs];
+  return newJobs;
 }
 
 export function taskPresence(snapshot: TaskSourceSnapshot): TaskPresence {
@@ -136,26 +126,22 @@ async function optionalDetail<T>(
   }
 }
 
-/** 裸 ID 只通过两条只读详情确认归属，不试写接口，不把 legacy 新表快照当新任务。 */
+/** 裸 ID 仅从 Scheduler 确认归属，不探测旧接口或用写入试探。 */
 export async function resolveTaskOrigin(
   context: ManagedCronContext,
   id: string,
 ): Promise<CronTaskOrigin> {
   const accessKey = cronAccessKey(context);
   const encoded = encodeURIComponent(id);
-  const [oldResult, newResult] = await Promise.allSettled([
-    optionalDetail<CronJobView>(context, `/cron/jobs/${encoded}`),
+  const [newResult] = await Promise.allSettled([
     optionalDetail<ManagedJobDetail>(
       context,
       `/scheduler/cron/jobs/${encoded}`,
     ),
   ]);
-  if (oldResult.status === "rejected" || newResult.status === "rejected")
+  if (newResult.status === "rejected")
     throw new Error("无法确认报告任务归属，未标记已读");
-  const oldJob = oldResult.value;
   const newJob = newResult.value;
-  if (oldJob && newJob)
-    throw new Error("报告任务归属不唯一，请从对应任务会话打开");
   if (newJob) {
     if (
       newJob.management_owner !== "scheduler" ||
@@ -167,7 +153,5 @@ export async function resolveTaskOrigin(
       throw new Error("无法确认报告任务完整身份，未标记已读");
     return { owner: "scheduler", context: { ...context }, accessKey };
   }
-  if (oldJob?.spec.id === id)
-    return { owner: "legacy", context: { ...context }, accessKey };
   throw new Error("报告任务不存在，未标记已读");
 }

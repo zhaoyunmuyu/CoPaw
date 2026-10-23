@@ -8,7 +8,6 @@ import type {
 import { cronAccessKey } from "../cronTaskContext";
 import { taskOrigin } from "./cronTaskSources";
 import { schedulerCronApi } from "./schedulerCron";
-import { cronJobApi } from "./cronjob";
 
 export type ManagedTaskAction = "pause" | "resume" | "run" | "delete";
 export interface ManagedTaskActionResult {
@@ -70,12 +69,13 @@ export async function markSourcedTaskRead(
 export async function markTaskReferenceRead(
   id: string,
   origin: CronTaskOrigin,
-  markedRead: boolean,
+  _markedRead: boolean,
   requestId: string,
 ): Promise<unknown> {
   if (origin.accessKey !== cronAccessKey())
     throw new Error("报告工作区或权限已变化，未标记已读");
-  if (origin.owner === "legacy") return cronJobApi.markTaskRead(id, markedRead);
+  if (origin.owner !== "scheduler")
+    throw new Error("该任务尚未由 Scheduler 接管，请刷新任务列表");
   const result = await schedulerCronApi.markRead(origin.context, id, requestId);
   if (result.operation.status !== "completed")
     throw new Error(`已读处理尚未完成：${result.operation.operation_id}`);
