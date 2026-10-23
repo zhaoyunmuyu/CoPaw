@@ -8,6 +8,8 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Plan, PlanItem } from "../types";
 import { Calendar } from "./Calendar";
+import { addCalendarDays, todayKey } from "../utils";
+import styles from "../index.module.less";
 
 function makeItem(id: string, sceneName: string, start: string): PlanItem {
   return {
@@ -44,6 +46,79 @@ const PLAN: Plan = {
 
 describe("Calendar", () => {
   afterEach(cleanup);
+
+  it.each(["week", "month"] as const)(
+    "%s 仅今天的已发布有效规划展示名单入口，选择首个当天场景且不触发详情",
+    (dimension) => {
+      const day = todayKey();
+      const yesterday = addCalendarDays(day, -1);
+      const tomorrow = addCalendarDays(day, 1);
+      const plan: Plan = {
+        ...PLAN,
+        publishStatus: "published",
+        start: yesterday,
+        end: tomorrow,
+        items: [
+          makeItem("past", "昨日场景", yesterday),
+          makeItem("first", "同名场景", day),
+          makeItem("second", "同名场景", day),
+          makeItem("future", "明日场景", tomorrow),
+        ],
+      };
+      const onShowDetails = vi.fn();
+      const onViewCustomers = vi.fn();
+      const props = {
+        sources: ["我的关注"],
+        visible: [plan],
+        planStat: () => null,
+        dimension,
+        anchor: day,
+        onShift: vi.fn(),
+        onToday: vi.fn(),
+        onDimension: vi.fn(),
+        onShowDetails,
+        onViewCustomers,
+      };
+      const { rerender } = render(<Calendar {...props} />);
+      const jump = screen.getByRole("button", {
+        name: `查看「${plan.name}」客户名单`,
+      });
+      expect(jump.closest("[data-date]")).toHaveAttribute("data-date", day);
+      expect(jump.parentElement?.closest("button")).toBeNull();
+      if (dimension === "month") {
+        const event = jump.parentElement!.querySelector(
+          `.${styles.calendarEvent}`,
+        )!;
+        expect(event.querySelector(`.${styles.calendarFrequency}`)).toBeNull();
+      }
+      fireEvent.click(jump);
+      expect(onViewCustomers).toHaveBeenCalledExactlyOnceWith("first");
+      expect(onShowDetails).not.toHaveBeenCalled();
+      for (const publishStatus of ["publishing", "publish_failed"]) {
+        rerender(
+          <Calendar {...props} visible={[{ ...plan, publishStatus }]} />,
+        );
+        expect(
+          screen.queryByRole("button", { name: /客户名单/ }),
+        ).not.toBeInTheDocument();
+      }
+      rerender(<Calendar {...props} onViewCustomers={undefined} />);
+      expect(
+        screen.queryByRole("button", { name: /客户名单/ }),
+      ).not.toBeInTheDocument();
+      if (dimension === "month") {
+        for (const event of screen.getAllByRole("button", {
+          name: /点击查看详情/,
+        })) {
+          expect(
+            event.querySelector(
+              `.${styles.calendarEventTitle} .${styles.calendarFrequency}`,
+            ),
+          ).not.toBeNull();
+        }
+      }
+    },
+  );
 
   it.each(["week", "month"] as const)(
     "%s 日历按维度展示标题与经营场景，保留当天详情入口",

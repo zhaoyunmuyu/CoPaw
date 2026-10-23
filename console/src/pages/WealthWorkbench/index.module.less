@@ -2643,6 +2643,57 @@
     margin-top: 5px;
     line-height: 1.6;
   }
+  .calendarEventWrapper {
+    position: relative;
+    min-width: 0;
+  }
+  .calendarPublishStatus {
+    display: block;
+    min-height: 24px;
+    line-height: 24px;
+  }
+  .calendarGrid.week .calendarEventWithAction .calendarPublishStatus {
+    padding-right: 72px;
+  }
+  .calendarGrid.month .calendarEventWithAction .calendarEventTitle {
+    padding-right: 72px;
+  }
+  .calendarViewCustomers {
+    position: absolute;
+    right: 8px;
+    bottom: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    min-height: 24px;
+    padding: 2px 0 2px 4px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: #265c9f;
+    font-size: 12px;
+    line-height: 20px;
+    white-space: nowrap;
+    &:hover {
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+  }
+  .calendarEvent.purple ~ .calendarViewCustomers {
+    color: #7952a5;
+  }
+  .calendarViewCustomersArrow {
+    font-size: 10px;
+    line-height: 1;
+  }
+  .calendarGrid.week .calendarViewCustomers {
+    bottom: 10px;
+  }
+  .calendarGrid.month .calendarViewCustomers {
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+  }
   .calendarNote {
     display: flex;
     align-items: center;
@@ -3745,7 +3796,25 @@
 }
 
 /* 表头筛选：轻量触发器与独立浮层 */
+.sceneFilterName {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .root {
+  .sceneFilterApplied {
+    min-width: 0;
+    span {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    button {
+      flex-shrink: 0;
+    }
+  }
   .tagFilterTrigger {
     display: inline-flex;
     align-items: center;

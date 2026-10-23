@@ -7,7 +7,7 @@ import {
   within,
   waitFor,
 } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useWealthStore } from "../store";
 import { fetchSkillStats } from "../api";
@@ -15,6 +15,8 @@ import type { SkillStat } from "../types";
 import type { WealthRole } from "../permissions";
 import { todayKey } from "../utils";
 import Board from "./index";
+import Tasks from "../Tasks";
+import styles from "../index.module.less";
 
 vi.mock("../api", async (importOriginal) => {
   const original = await importOriginal<typeof import("../api")>();
@@ -31,6 +33,84 @@ describe("Board", () => {
     vi.mocked(fetchSkillStats).mockResolvedValue({});
     useWealthStore.setState({ accountId: "rm", plans: [], plansLoaded: false });
   });
+
+  it.each(["rm", "president", "middle"] as const)(
+    "%s 日历名单入口遵循任务权限，客户经理进入经营视角并选中对应规划首个场景",
+    async (accountId) => {
+      const day = todayKey();
+      const refresh = vi.fn().mockResolvedValue(undefined);
+      const originalRefresh = useWealthStore.getState().refreshTodayCustomers;
+      const originalLoad = useWealthStore.getState().loadTodayCustomers;
+      useWealthStore.setState({
+        accountId,
+        plansLoaded: true,
+        refreshTodayCustomers: refresh,
+        loadTodayCustomers: vi.fn().mockResolvedValue(undefined),
+        plans: ["unrelated", "target"].map((id) => ({
+          id,
+          name: `规划${id}`,
+          source: "分行关注",
+          desc: "测试",
+          customers: 0,
+          tasks: 0,
+          rate: 0,
+          status: "已自动下发",
+          publishStatus: "published",
+          period: "今日",
+          start: day,
+          end: day,
+          items: ["first", "second"].map((scene) => ({
+            id: `${id}-${scene}`,
+            sceneName: `场景${id}-${scene}`,
+            categoryLabel: "理财",
+            categoryCode: "finance",
+            mcpRelations: [],
+            direction: "",
+            cycle: "今日",
+            start: day,
+            end: day,
+            schedule: { type: "daily", hour: 9, minute: 0 },
+          })),
+        })),
+      });
+      try {
+        render(
+          <MemoryRouter initialEntries={["/wealth/board"]}>
+            <Routes>
+              <Route path="/wealth/board" element={<Board />} />
+              <Route path="/wealth/today" element={<Tasks page="today" />} />
+            </Routes>
+          </MemoryRouter>,
+        );
+        if (accountId !== "rm") {
+          expect(
+            screen.queryByRole("button", { name: /客户名单/ }),
+          ).not.toBeInTheDocument();
+        } else {
+          fireEvent.click(
+            screen.getByRole("button", { name: "查看「规划target」客户名单" }),
+          );
+          expect(
+            screen.getByText("当前任务：场景target-first"),
+          ).toBeInTheDocument();
+          expect(refresh).toHaveBeenCalledExactlyOnceWith(
+            "business",
+            "target-first",
+          );
+          expect(screen.getByRole("button", { name: "经营视角" })).toHaveClass(
+            styles.active,
+          );
+        }
+        await act(async () => {});
+      } finally {
+        cleanup();
+        useWealthStore.setState({
+          refreshTodayCustomers: originalRefresh,
+          loadTodayCustomers: originalLoad,
+        });
+      }
+    },
+  );
 
   it.each([
     ["publishing", "发布中", "发布中"],

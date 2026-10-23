@@ -7,6 +7,7 @@ import {
   resetIframeContextForStandalone,
 } from "./iframeMessage";
 import { useIframeStore } from "../stores/iframeStore";
+import { authApi } from "../api/modules/auth";
 import { fetchUserInfo } from "../api/modules/userInfo";
 import {
   ensureValidToken,
@@ -273,6 +274,64 @@ describe("fetchAndSetUserName", () => {
     ).not.toHaveProperty("isOriginY");
     expect(useIframeStore.getState().userId).toBe("80000002");
     expect(useIframeStore.getState().userName).toBeNull();
+  });
+
+  it.each(["true", "false", "1", "invalid", null])(
+    "hideLogo=%s 时客户信息与授权同步遵守入口设置",
+    async (hideLogo) => {
+      vi.useFakeTimers();
+      const query = hideLogo === null ? "" : `&hideLogo=${hideLogo}`;
+      window.history.pushState({}, "", `/wealth/board?origin=Y${query}`);
+      document.cookie = "userid=80000002; path=/";
+
+      await handleUrlOriginParam();
+
+      const expectedCalls = hideLogo === "true" ? 0 : 1;
+      expect(authApi.sendCronAuth).toHaveBeenCalledTimes(expectedCalls);
+      expect(mockedFetchCustomerInfo).toHaveBeenCalledTimes(expectedCalls);
+      expect(useIframeStore.getState().initialized).toBe(true);
+
+      // 内部导航丢失查询参数后，跳过初始化的入口也不会出现定时请求。
+      window.history.pushState({}, "", "/wealth/create");
+      await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+
+      expect(authApi.sendCronAuth).toHaveBeenCalledTimes(expectedCalls * 2);
+      expect(mockedFetchCustomerInfo).toHaveBeenCalledTimes(expectedCalls * 2);
+    },
+  );
+
+  it("hideLogo=true 时沿用初始上下文和导航并跳过异步初始化", async () => {
+    vi.useFakeTimers();
+    window.history.pushState(
+      {},
+      "",
+      "/chat?origin=Y&hideLogo=true&sessionId=session-1&taskId=task-1",
+    );
+    document.cookie = "userid=80000002; path=/";
+    document.cookie = "token=cookie-token; path=/";
+    document.cookie = "username=%E5%BC%A0%E4%B8%89; path=/";
+    document.cookie = "vbbk=100; path=/";
+    document.cookie = "vorgcode=ORG001; path=/";
+    document.cookie = "positionID=RB0101; path=/";
+
+    await handleUrlOriginParam();
+    await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+
+    expect(useIframeStore.getState()).toMatchObject({
+      userId: "80000002",
+      userName: null,
+      token: null,
+      bbk: "100",
+      orgCode: "ORG001",
+      positionId: "RB0101",
+      initialized: true,
+      sessionId: "session-1",
+      taskId: "task-1",
+    });
+    expect(mockedFetchUserInit).not.toHaveBeenCalled();
+    expect(mockedFetchCustomerInfo).not.toHaveBeenCalled();
+    expect(authApi.sendCronAuth).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("/wealth + origin=Y 时从 cookie 读取用户名且不请求用户信息接口", async () => {

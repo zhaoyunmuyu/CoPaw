@@ -525,6 +525,11 @@ export async function handleUrlOriginParam(): Promise<void> {
     store.setNavigationParams(sessionIdParam, taskIdParam);
   }
 
+  if (urlParams.get("hideLogo") === "true") {
+    store.markInitialized();
+    return;
+  }
+
   // 异步调用客户信息接口和用户初始化
   await initFromUrlParams(userId);
 }

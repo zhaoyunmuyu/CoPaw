@@ -70,6 +70,56 @@ beforeEach(() => {
 });
 
 describe("今日任务加载", () => {
+  it.each(["target", "missing"])(
+    "规划跳转参数 %s 在规划异步加载后选中对应 ID，无效 ID 回退首项",
+    (skillId) => {
+      state.plansLoaded = false;
+      const renderTasks = () => (
+        <MemoryRouter initialEntries={[`/wealth/today?skillId=${skillId}`]}>
+          <Tasks page="today" />
+        </MemoryRouter>
+      );
+      const { rerender } = render(renderTasks());
+      expect(state.refreshTodayCustomers).not.toHaveBeenCalled();
+      state.plans = [
+        {
+          id: "plan",
+          name: "规划",
+          source: "我的关注",
+          desc: "",
+          customers: 0,
+          tasks: 0,
+          rate: 0,
+          status: "已自动下发",
+          publishStatus: "published",
+          period: "自定义",
+          start: "2020-01-01",
+          end: "2030-12-31",
+          items: ["first", "target"].map((id) => ({
+            id,
+            sceneName: "同名场景",
+            categoryLabel: "理财",
+            categoryCode: "finance",
+            mcpRelations: [],
+            direction: "",
+            cycle: "自定义",
+            start: "2020-01-01",
+            end: "2030-12-31",
+            schedule: { type: "daily", hour: 9, minute: 0 },
+          })),
+        },
+      ];
+      state.plansLoaded = true;
+      rerender(renderTasks());
+      const expected = skillId === "target" ? "target" : "first";
+      expect(state.refreshTodayCustomers).toHaveBeenCalledExactlyOnceWith(
+        "business",
+        expected,
+      );
+      expect(screen.getByText("当前任务：同名场景")).toBeInTheDocument();
+    },
+  );
+
   it.each(["today", "pending", "done"] as const)(
     "%s 显示自身后端四项汇总，零值保留，缺失字段显示占位",
     (page) => {

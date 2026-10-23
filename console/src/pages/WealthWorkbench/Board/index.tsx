@@ -25,7 +25,7 @@ import {
 import { selectCurrentAccount, useWealthStore } from "../store";
 import { fetchAvailableSceneCount } from "../api";
 import type { Plan } from "../types";
-import { BOARD_SOURCES_BY_ROLE } from "../permissions";
+import { BOARD_SOURCES_BY_ROLE, canAccessPage } from "../permissions";
 import { Calendar } from "./Calendar";
 import { usePlanStats } from "./usePlanStats";
 import { useBoardRefresh } from "./useBoardRefresh";
@@ -544,6 +544,12 @@ export default function Board() {
             onToday={() => setAnchor(todayKey())}
             onDimension={setDimension}
             onShowDetails={showCalendarDetails}
+            onViewCustomers={
+              canAccessPage(account.id, "tasks")
+                ? (skillId) =>
+                    navigate(`/wealth/today?${new URLSearchParams({ skillId })}`)
+                : undefined
+            }
           />
         ) : (
           <div className={styles.scrollX}>
