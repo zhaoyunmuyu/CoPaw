@@ -13,6 +13,8 @@ from tests.unit.app.test_cron_migration_source import write_jobs
 
 
 def client(tmp_path, monkeypatch):
+    # 旧 SQL 字典替身仅验证快照契约；真实接管见 test_migration_takeover。
+    monkeypatch.setattr(migration_api, "MigrationTakeover", lambda db: None)
     app = FastAPI()
     app.include_router(migration_api.router, prefix="/api")
     db = SimpleNamespace(is_connected=True)
@@ -22,7 +24,8 @@ def client(tmp_path, monkeypatch):
 
 
 def test_missing_tables_returns_503_without_exposing_exception(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ):
     c, app, db = client(tmp_path, monkeypatch)
 
@@ -31,7 +34,9 @@ def test_missing_tables_returns_503_without_exposing_exception(
 
     db.execute = execute
     monkeypatch.setattr(
-        migration_api, "verify_internal_access", lambda request: None
+        migration_api,
+        "verify_internal_access",
+        lambda request: None,
     )
     response = c.post("/api/internal/cron/migration/preview", json={})
     assert response.status_code == 503
@@ -41,20 +46,24 @@ def test_missing_tables_returns_503_without_exposing_exception(
 
 @pytest.mark.parametrize("suffix", ["preview", "import", "verify"])
 def test_rejects_arbitrary_root_and_invalid_limits_before_work(
-    tmp_path, monkeypatch, suffix
+    tmp_path,
+    monkeypatch,
+    suffix,
 ):
     c, _, _ = client(tmp_path, monkeypatch)
     for body in ({"root": "C:/"}, {"limit": 0}, {"source_ids": []}):
         assert (
             c.post(
-                f"/api/internal/cron/migration/{suffix}", json=body
+                f"/api/internal/cron/migration/{suffix}",
+                json=body,
             ).status_code
             == 422
         )
 
 
 def test_existing_internal_token_check_happens_before_database_access(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ):
     c, _, db = client(tmp_path, monkeypatch)
     from fastapi import HTTPException
@@ -68,7 +77,8 @@ def test_existing_internal_token_check_happens_before_database_access(
 
 
 def test_real_http_source_service_and_repository_roundtrip(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ):
     c, app, _ = client(tmp_path, monkeypatch)
     db = FakeDatabase()
@@ -108,7 +118,8 @@ def test_real_http_source_service_and_repository_roundtrip(
 
 
 def test_real_login_and_internal_credentials_remain_separate(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ):
     from swe.app import auth
     from swe.app.routers import internal
@@ -128,7 +139,9 @@ def test_real_login_and_internal_credentials_remain_separate(
     assert c.post(url, json={}).status_code == 401
     assert (
         c.post(
-            url, json={}, headers={"Authorization": "Bearer login-token"}
+            url,
+            json={},
+            headers={"Authorization": "Bearer login-token"},
         ).status_code
         == 401
     )
@@ -157,7 +170,8 @@ def test_real_login_and_internal_credentials_remain_separate(
 
 
 def test_service_requires_existing_shared_connection_without_loading_credentials(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ):
     c, app, _ = client(tmp_path, monkeypatch)
     del app.state.db_connection
@@ -172,7 +186,9 @@ def test_service_requires_existing_shared_connection_without_loading_credentials
         unexpected_configuration_lookup,
     )
     monkeypatch.setattr(
-        migration_api, "verify_internal_access", lambda request: None
+        migration_api,
+        "verify_internal_access",
+        lambda request: None,
     )
     assert (
         c.post("/api/internal/cron/migration/preview", json={}).status_code
@@ -188,7 +204,8 @@ def test_router_is_registered_without_bootstrapping_runtime():
 
 
 def test_verify_missing_source_is_paginated_and_never_deletes_target(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ):
     import copy
 

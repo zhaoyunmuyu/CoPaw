@@ -21,6 +21,7 @@ from .migration_repository import (
     MigrationRepository,
     MigrationTargetUnavailable,
 )
+from .migration_takeover import MigrationTakeoverConflict
 from .migration_source import (
     audit_snapshot_sources,
     capture_loaded_states,
@@ -55,7 +56,11 @@ class MigrationService:
         observed_at = datetime.now(timezone.utc).replace(tzinfo=None)
         loaded = capture_loaded_states(manager)
         page = await run_runtime_state_work(
-            read_source_page, self.root, payload, loaded, observed_at
+            read_source_page,
+            self.root,
+            payload,
+            loaded,
+            observed_at,
         )
         counts = Counter(memory_missing=0)
         results = []
@@ -73,7 +78,7 @@ class MigrationService:
                         job_id=item.job_id,
                         status=status,
                         reason=item.reason,
-                    )
+                    ),
                 )
                 continue
             candidate = item.candidate
@@ -85,10 +90,13 @@ class MigrationService:
                     if operation == "import"
                     else await self.repository.inspect(candidate, operation)
                 )
+            except MigrationTakeoverConflict as exc:
+                outcome = MigrationOutcome("failed", str(exc))
             except Exception as exc:
                 code = exc.args[0] if exc.args else None
                 if isinstance(
-                    exc, (ConnectionError, TimeoutError)
+                    exc,
+                    (ConnectionError, TimeoutError),
                 ) or code in {
                     1040,
                     1045,
@@ -101,12 +109,13 @@ class MigrationService:
                     2013,
                 }:
                     raise MigrationTargetUnavailable(
-                        "migration_database_unavailable"
+                        "migration_database_unavailable",
                     ) from exc
                 # The per-item transaction has rolled back. Never return SQL, credentials,
                 # payloads, or the raw DB exception through the operator endpoint.
                 outcome = MigrationOutcome(
-                    "failed", "snapshot_database_operation_failed"
+                    "failed",
+                    "snapshot_database_operation_failed",
                 )
             counts[outcome.status] += 1
             results.append(
@@ -119,12 +128,15 @@ class MigrationService:
                     differences=outcome.differences,
                     warnings=candidate.warnings,
                     memory_available=candidate.memory_available,
-                )
+                    operation_id=outcome.operation_id,
+                    takeover_status=outcome.takeover_status,
+                ),
             )
         next_cursor = page.next_cursor
         if operation == "verify" and next_cursor is None:
             manifest = await run_runtime_state_work(
-                inventory_fingerprint, self.root
+                inventory_fingerprint,
+                self.root,
             )
             next_cursor = database_cursor(manifest, payload, None)
         return MigrationResponse(
@@ -134,20 +146,30 @@ class MigrationService:
             scanned_files=page.scanned_files,
             scanned_jobs=page.scanned_jobs,
             memory_incomplete=bool(counts["memory_missing"]),
-            partial_failure=bool(counts["failed"] or counts["conflict"]),
+            partial_failure=bool(
+                counts["failed"]
+                or counts["conflict"]
+                or counts["takeover_pending"],
+            ),
             next_cursor=next_cursor,
             items=results,
         )
 
     async def _audit_database(
-        self, payload: MigrationRequest
+        self,
+        payload: MigrationRequest,
     ) -> MigrationResponse:
         after, manifest = await run_runtime_state_work(
-            database_position, self.root, payload
+            database_position,
+            self.root,
+            payload,
         )
         rows, more = await self.repository.snapshot_rows(payload, after)
         reports = await run_runtime_state_work(
-            audit_snapshot_sources, self.root, rows, manifest
+            audit_snapshot_sources,
+            self.root,
+            rows,
+            manifest,
         )
         results = [
             MigrationItemResult(
@@ -162,7 +184,9 @@ class MigrationService:
         counts = Counter(item.status for item in results)
         next_cursor = (
             database_cursor(
-                manifest, payload, tuple(rows[-1][k] for k in IDENTITY_FIELDS)
+                manifest,
+                payload,
+                tuple(rows[-1][k] for k in IDENTITY_FIELDS),
             )
             if more
             else None
@@ -176,7 +200,7 @@ class MigrationService:
             scanned_database_rows=len(rows),
             memory_incomplete=False,
             partial_failure=bool(
-                counts["source_unreadable"] or counts["unowned_snapshot"]
+                counts["source_unreadable"] or counts["unowned_snapshot"],
             ),
             next_cursor=next_cursor,
             items=results,

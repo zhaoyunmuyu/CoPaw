@@ -127,6 +127,10 @@ class ManagementService:
         return result
 
     async def _prepare(self, caller, operation, progress):
+        if json.loads(operation["payload_json"]).get(
+            "migration_takeover",
+        ) and not progress.get("prepared"):
+            raise ManagementConflict("migration_original_binding_required")
         if not progress.get("prepared"):
             await self._request_preparation(caller, operation, progress)
         await self.store.save_preparation(operation, progress["prepared"])

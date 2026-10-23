@@ -71,6 +71,8 @@ class MigrationOutcome:
     status: str
     reason: str | None = None
     differences: list[str] = field(default_factory=list)
+    operation_id: str | None = None
+    takeover_status: str | None = None
 
 
 class MigrationTargetUnavailable(RuntimeError):
@@ -138,8 +140,9 @@ def _error_code(error: Exception) -> int | None:
 class MigrationRepository:
     """Only this importer may replace its own legacy-owned snapshot rows."""
 
-    def __init__(self, db: Any):
+    def __init__(self, db: Any, *, takeover=None):
         self.db = db
+        self.takeover = takeover
         self._controls_available = True
 
     async def check_schema(self) -> None:
@@ -178,6 +181,8 @@ class MigrationRepository:
                 await self.db.execute(
                     f"SELECT {selected} FROM `{table}` WHERE 1 = 0",
                 )
+            if self.takeover is not None:
+                await self.takeover.check_schema()
         except Exception as exc:
             raise MigrationTargetUnavailable(
                 "migration_target_schema_unavailable",
@@ -339,6 +344,25 @@ class MigrationRepository:
         mode: Literal["preview", "verify"],
     ) -> MigrationOutcome:
         definition, state = await self._read(candidate)
+        if self.takeover is not None:
+            existing = await self.takeover.existing(
+                candidate,
+                definition,
+                state,
+            )
+            if existing is not None:
+                if mode == "verify":
+                    existing.status = (
+                        "matched"
+                        if existing.takeover_status == "completed"
+                        else (
+                            "failed"
+                            if existing.takeover_status
+                            in {"failed", "superseded"}
+                            else "takeover_pending"
+                        )
+                    )
+                return existing
         reason = self._conflict(candidate, definition, state)
         if reason:
             return MigrationOutcome("conflict", reason)
@@ -450,6 +474,14 @@ class MigrationRepository:
 
     async def _write(self, candidate: SnapshotCandidate) -> MigrationOutcome:
         definition, state = await self._read(candidate, lock=True)
+        if self.takeover is not None:
+            existing = await self.takeover.existing(
+                candidate,
+                definition,
+                state,
+            )
+            if existing is not None:
+                return existing
         reason = self._conflict(candidate, definition, state)
         if reason:
             return MigrationOutcome("conflict", reason)
@@ -497,7 +529,7 @@ class MigrationRepository:
             await self._insert(STATE_TABLE, state_values)
         else:
             await self._update(STATE_TABLE, state_values, candidate, state)
-        return MigrationOutcome(
+        outcome = MigrationOutcome(
             (
                 "inserted"
                 if definition is None
@@ -505,3 +537,6 @@ class MigrationRepository:
             ),
             differences=changes,
         )
+        if self.takeover is not None:
+            return await self.takeover.enqueue(candidate, outcome)
+        return outcome

@@ -87,6 +87,8 @@ class MigrationItemResult(BaseModel):
     differences: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     memory_available: bool | None = None
+    operation_id: str | None = None
+    takeover_status: str | None = None
 
 
 class MigrationResponse(BaseModel):

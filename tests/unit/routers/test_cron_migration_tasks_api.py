@@ -15,6 +15,8 @@ BASE = "/api/internal/cron/migration/tasks"
 
 
 def app_with_db(tmp_path, monkeypatch, db):
+    # 旧 SQL 字典替身仅验证分页进度；共库接管另用真实事务测试。
+    monkeypatch.setattr(migration_api, "MigrationTakeover", lambda db: None)
     app = FastAPI()
     app.include_router(migration_api.router, prefix="/api")
     app.state.db_connection = db
@@ -27,14 +29,16 @@ def app_with_db(tmp_path, monkeypatch, db):
 
 @pytest.mark.asyncio
 async def test_one_post_imports_all_pages_and_other_instance_can_query(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ):
     db = TaskDatabase()
     path = write_jobs(tmp_path, [job(id=f"job-{i}") for i in range(5)])
     before = path.read_bytes(), path.stat().st_mtime_ns
     app = app_with_db(tmp_path, monkeypatch, db)
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app),
+        base_url="http://test",
     ) as c:
         response = await c.post(BASE, json={"operation": "import", "limit": 2})
         assert response.status_code == 202
@@ -48,10 +52,12 @@ async def test_one_post_imports_all_pages_and_other_instance_can_query(
         assert result["next_after_page"] == 1
         second_app = app_with_db(tmp_path, monkeypatch, db)
         async with AsyncClient(
-            transport=ASGITransport(app=second_app), base_url="http://other"
+            transport=ASGITransport(app=second_app),
+            base_url="http://other",
         ) as other:
             queried = await other.get(
-                f"{BASE}/{task_id}", params={"after_page": 1}
+                f"{BASE}/{task_id}",
+                params={"after_page": 1},
             )
             assert queried.status_code == 200
             assert len(queried.json()["pages"]) == 2
@@ -71,11 +77,13 @@ async def test_one_post_imports_all_pages_and_other_instance_can_query(
 
 @pytest.mark.asyncio
 async def test_invalid_inputs_missing_tasks_and_authentication(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ):
     app = app_with_db(tmp_path, monkeypatch, TaskDatabase())
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app),
+        base_url="http://test",
     ) as c:
         for body in (
             {"root": "/"},
@@ -97,7 +105,8 @@ async def test_invalid_inputs_missing_tasks_and_authentication(
 
 @pytest.mark.asyncio
 async def test_missing_progress_tables_does_not_import_or_leak(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ):
     db = TaskDatabase()
     original = db.execute
@@ -111,7 +120,8 @@ async def test_missing_progress_tables_does_not_import_or_leak(
     app = app_with_db(tmp_path, monkeypatch, db)
     write_jobs(tmp_path)
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app),
+        base_url="http://test",
     ) as c:
         response = await c.post(BASE, json={})
         assert response.status_code == 503
@@ -121,13 +131,15 @@ async def test_missing_progress_tables_does_not_import_or_leak(
 
 @pytest.mark.asyncio
 async def test_preview_only_writes_operational_progress_not_business_tables(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ):
     db = TaskDatabase()
     app = app_with_db(tmp_path, monkeypatch, db)
     write_jobs(tmp_path)
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app),
+        base_url="http://test",
     ) as c:
         response = await c.post(BASE, json={"operation": "preview"})
         assert response.status_code == 202
@@ -155,10 +167,11 @@ async def test_stop_and_local_concurrency_cap(tmp_path, monkeypatch):
     monkeypatch.setattr(MigrationService, "run", run)
     write_jobs(tmp_path, [job(id="a"), job(id="b")])
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app),
+        base_url="http://test",
     ) as c:
         submitted = await asyncio.gather(
-            *[c.post(BASE, json={"limit": 1}) for _ in range(3)]
+            *[c.post(BASE, json={"limit": 1}) for _ in range(3)],
         )
         assert sorted(r.status_code for r in submitted) == [202, 202, 429]
         await entered.wait()
@@ -172,7 +185,8 @@ async def test_stop_and_local_concurrency_cap(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_full_scan_routes_keep_global_login_and_internal_token_separate(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ):
     from swe.app import auth
     from swe.app.routers import internal
@@ -188,7 +202,8 @@ async def test_full_scan_routes_keep_global_login_and_internal_token_separate(
     )
     monkeypatch.setattr(internal, "_INTERNAL_TOKEN", "internal")
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app),
+        base_url="http://test",
     ) as c:
         assert (await c.post(BASE, json={})).status_code == 401
         headers = {"Authorization": "Bearer login"}

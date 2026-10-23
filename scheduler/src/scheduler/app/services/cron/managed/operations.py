@@ -584,6 +584,11 @@ class ManagementStore:
                     "definition_version": version,
                     "updated_at": utc_now(),
                 }
+                if json.loads(operation["payload_json"]).get(
+                    "migration_takeover",
+                ):
+                    # 旧散列任务的物理 cron 与业务 cron 不同，接管不重算定义。
+                    values.pop("original_cron_expr")
                 count = await update(
                     tx,
                     "swe_cron_jobs_v2",
@@ -671,3 +676,38 @@ class ManagementStore:
             or row["version"] != operation["version"]
         ):
             raise LeaseLost("cron_operation_lease_lost")
+        await self._migration_binding_fence(tx, operation)
+
+    @staticmethod
+    async def _migration_binding_fence(tx, operation):
+        payload = json.loads(operation["payload_json"])
+        if not payload.get("migration_takeover"):
+            return
+        expected = payload["original_binding"]
+        prepared = json.loads(operation["progress_json"])["prepared"]
+        key = tuple(operation[name] for name in IDENTITY_FIELDS)
+        # 和导入事务一致，先锁定义再锁状态，避免重复导入与接管互等。
+        definition = await tx.fetch_one(
+            f"SELECT job_id FROM swe_cron_jobs_v2 WHERE {WHERE_JOB} FOR UPDATE",
+            key,
+        )
+        state = await tx.fetch_one(
+            f"SELECT task_chat_id,task_session_id FROM swe_cron_job_states WHERE {WHERE_JOB} FOR UPDATE",
+            key,
+        )
+        if (
+            expected["job_id"] != operation["job_id"]
+            or prepared["spec"]["id"] != expected["job_id"]
+            or definition is None
+            or state is None
+        ):
+            raise ManagementConflict("migration_original_binding_changed")
+        pairs = (
+            ("task_chat_id", "chat_id"),
+            ("task_session_id", "session_id"),
+        )
+        if any(
+            state[key] != expected[key] or prepared[field] != expected[key]
+            for key, field in pairs
+        ):
+            raise ManagementConflict("migration_original_binding_changed")

@@ -30,6 +30,7 @@ STALE_SECONDS = 120
 PAGE_TIMEOUT_SECONDS = 300
 MAX_LOCAL_TASKS = 2
 VERIFY_ISSUES = {
+    "takeover_pending",
     "different",
     "missing",
     "source_missing",
@@ -72,19 +73,21 @@ class MigrationTaskStore:
                 "SELECT task_id, service, task_type, status, title, "
                 "target_count, done_count, failed_count, result_json, "
                 "error_message, created_at, updated_at, finished_at "
-                "FROM swe_async_tasks WHERE 1 = 0"
+                "FROM swe_async_tasks WHERE 1 = 0",
             )
             await self.db.execute(
                 "SELECT task_id, target_id, status, result_json, updated_at "
-                "FROM swe_async_task_items WHERE 1 = 0"
+                "FROM swe_async_task_items WHERE 1 = 0",
             )
         except Exception as exc:
             raise MigrationTargetUnavailable(
-                "migration_progress_tables_unavailable"
+                "migration_progress_tables_unavailable",
             ) from exc
 
     async def create(
-        self, payload: MigrationTaskRequest, instance_id: str
+        self,
+        payload: MigrationTaskRequest,
+        instance_id: str,
     ) -> str:
         task_id = uuid4().hex
         progress = {
@@ -126,7 +129,11 @@ class MigrationTaskStore:
         return row
 
     async def view(
-        self, task_id: str, *, after_page: int = 0, limit: int = 10
+        self,
+        task_id: str,
+        *,
+        after_page: int = 0,
+        limit: int = 10,
     ) -> MigrationTaskStatus:
         row = await self.row(task_id)
         progress = dict(_decode(row["result_json"]))
@@ -181,8 +188,17 @@ class MigrationTaskStore:
             (utc_now(), task_id, TASK_TYPE),
         )
 
+    async def save_takeover_progress(self, task_id, progress):
+        await self.db.execute(
+            "UPDATE swe_async_tasks SET result_json=%s,updated_at=%s WHERE task_id=%s AND task_type=%s",
+            (json.dumps(progress), utc_now(), task_id, TASK_TYPE),
+        )
+
     async def save_page(
-        self, task_id: str, page: MigrationResponse, progress: dict[str, Any]
+        self,
+        task_id: str,
+        page: MigrationResponse,
+        progress: dict[str, Any],
     ) -> None:
         number = progress["pages_completed"]
         now = utc_now()
@@ -218,7 +234,10 @@ class MigrationTaskStore:
             )
 
     async def finish(
-        self, task_id: str, status: str, error: str | None = None
+        self,
+        task_id: str,
+        status: str,
+        error: str | None = None,
     ) -> None:
         now = utc_now()
         await self.db.execute(
@@ -248,7 +267,7 @@ class MigrationTaskRunner:
         # cannot all pass the local concurrency limit.
         gate = asyncio.get_running_loop().create_future()
         task = asyncio.create_task(
-            self._start(gate, payload, service, manager)
+            self._start(gate, payload, service, manager),
         )
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
@@ -273,6 +292,13 @@ class MigrationTaskRunner:
 
     async def _start(self, gate, payload, service, manager) -> None:
         task_id = await gate
+        takeover = getattr(
+            getattr(service, "repository", None),
+            "takeover",
+            None,
+        )
+        if payload.operation == "import" and takeover is not None:
+            takeover.run_id = task_id
         pulse = asyncio.create_task(self._pulse(task_id))
         try:
             await self.store.running(task_id)
@@ -280,13 +306,16 @@ class MigrationTaskRunner:
             await self.store.finish(task_id, status)
         except asyncio.CancelledError:
             await self._fail(
-                task_id, "interrupted", "migration_worker_interrupted"
+                task_id,
+                "interrupted",
+                "migration_worker_interrupted",
             )
             raise
         except Exception as exc:
             error = "migration_background_operation_failed"
             if isinstance(
-                exc, (MigrationSourceError, MigrationTargetUnavailable)
+                exc,
+                (MigrationSourceError, MigrationTargetUnavailable),
             ):
                 error = str(exc)
             elif isinstance(exc, TimeoutError):
@@ -308,7 +337,7 @@ class MigrationTaskRunner:
     async def _scan(self, task_id, payload, service, manager) -> str:
         progress = _decode((await self.store.row(task_id))["result_json"])
         request = MigrationRequest.model_validate(
-            payload.model_dump(exclude={"operation"})
+            payload.model_dump(exclude={"operation"}),
         )
         while True:
             if (await self.store.row(task_id))["status"] == "stopping":
@@ -323,8 +352,8 @@ class MigrationTaskRunner:
                         "partial_failure": page.partial_failure
                         or any(
                             page.counts.get(name, 0) for name in VERIFY_ISSUES
-                        )
-                    }
+                        ),
+                    },
                 )
             counts = Counter(progress["counts"])
             counts.update(page.counts)
@@ -341,6 +370,17 @@ class MigrationTaskRunner:
             progress["scan_complete"] = page.next_cursor is None
             await self.store.save_page(task_id, page, progress)
             if page.next_cursor is None:
+                takeover = getattr(
+                    getattr(service, "repository", None),
+                    "takeover",
+                    None,
+                )
+                if payload.operation == "import" and takeover is not None:
+                    return await self._wait_takeover(
+                        task_id,
+                        takeover,
+                        progress,
+                    )
                 return (
                     "partial_failed"
                     if progress["partial_failure"]
@@ -348,3 +388,22 @@ class MigrationTaskRunner:
                 )
             request = request.model_copy(update={"cursor": page.next_cursor})
             await asyncio.sleep(0)
+
+    async def _wait_takeover(self, task_id, takeover, progress):
+        progress["phase"] = "scheduler_takeover"
+        while True:
+            if (await self.store.row(task_id))["status"] == "stopping":
+                return "stopped"
+            progress["takeover"] = await takeover.summary()
+            progress["partial_failure"] = progress["partial_failure"] or bool(
+                progress["takeover"]["failed"],
+            )
+            await self.store.save_takeover_progress(task_id, progress)
+            if not progress["takeover"]["pending"]:
+                return (
+                    "partial_failed"
+                    if progress["partial_failure"]
+                    or progress["takeover"]["failed"]
+                    else "succeeded"
+                )
+            await asyncio.sleep(2)

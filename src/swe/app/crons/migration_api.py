@@ -20,6 +20,7 @@ from .migration_repository import (
 )
 from .migration_service import MigrationService
 from .migration_source import MigrationSourceError
+from .migration_takeover import MigrationTakeover
 from .migration_tasks import (
     MigrationTaskCapacity,
     MigrationTaskNotFound,
@@ -28,7 +29,8 @@ from .migration_tasks import (
 )
 
 router = APIRouter(
-    prefix="/internal/cron/migration", tags=["internal-cron-migration"]
+    prefix="/internal/cron/migration",
+    tags=["internal-cron-migration"],
 )
 
 
@@ -46,7 +48,7 @@ def verify_internal_access(request: Request) -> None:
     # are separate credentials. Never let Authorization mask X-Internal-Token.
     _verify_internal_token(
         request.headers.get("X-Internal-Token")
-        or request.headers.get("Authorization")
+        or request.headers.get("Authorization"),
     )
 
 
@@ -60,7 +62,10 @@ async def _perform(
         # Reuse the initialized shared connection. An operator request must
         # not load/log fresh credentials or create another connection pool.
         db = getattr(request.app.state, "db_connection", None)
-        service = MigrationService(working_root(), MigrationRepository(db))
+        service = MigrationService(
+            working_root(),
+            MigrationRepository(db, takeover=MigrationTakeover(db)),
+        )
         return await service.run(
             operation,
             payload,
@@ -73,27 +78,31 @@ async def _perform(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(
-            status_code=503, detail="migration_service_unavailable"
+            status_code=503,
+            detail="migration_service_unavailable",
         ) from exc
 
 
 @router.post("/preview", response_model=MigrationResponse)
 async def preview_snapshot(
-    payload: MigrationRequest, request: Request
+    payload: MigrationRequest,
+    request: Request,
 ) -> MigrationResponse:
     return await _perform("preview", payload, request)
 
 
 @router.post("/import", response_model=MigrationResponse)
 async def import_snapshot(
-    payload: MigrationRequest, request: Request
+    payload: MigrationRequest,
+    request: Request,
 ) -> MigrationResponse:
     return await _perform("import", payload, request)
 
 
 @router.post("/verify", response_model=MigrationResponse)
 async def verify_snapshot(
-    payload: MigrationRequest, request: Request
+    payload: MigrationRequest,
+    request: Request,
 ) -> MigrationResponse:
     return await _perform("verify", payload, request)
 
@@ -104,7 +113,7 @@ TaskId = Annotated[str, ApiPath(pattern=r"^[0-9a-f]{32}$")]
 async def _task_store(request: Request) -> MigrationTaskStore:
     verify_internal_access(request)
     store = MigrationTaskStore(
-        getattr(request.app.state, "db_connection", None)
+        getattr(request.app.state, "db_connection", None),
     )
     try:
         await store.check_schema()
@@ -115,11 +124,15 @@ async def _task_store(request: Request) -> MigrationTaskStore:
 
 @router.post("/tasks", response_model=MigrationTaskStatus, status_code=202)
 async def start_full_snapshot(
-    payload: MigrationTaskRequest, request: Request
+    payload: MigrationTaskRequest,
+    request: Request,
 ) -> MigrationTaskStatus:
     store = await _task_store(request)
     try:
-        repository = MigrationRepository(store.db)
+        repository = MigrationRepository(
+            store.db,
+            takeover=MigrationTakeover(store.db),
+        )
         await repository.check_schema()
         service = MigrationService(working_root(), repository)
         runner = getattr(request.app.state, "cron_migration_tasks", None)
@@ -145,7 +158,8 @@ async def start_full_snapshot(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(
-            status_code=503, detail="migration_service_unavailable"
+            status_code=503,
+            detail="migration_service_unavailable",
         ) from exc
 
 
@@ -163,13 +177,15 @@ async def get_full_snapshot(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(
-            status_code=503, detail="migration_progress_unavailable"
+            status_code=503,
+            detail="migration_progress_unavailable",
         ) from exc
 
 
 @router.post("/tasks/{task_id}/stop", response_model=MigrationTaskStatus)
 async def stop_full_snapshot(
-    task_id: TaskId, request: Request
+    task_id: TaskId,
+    request: Request,
 ) -> MigrationTaskStatus:
     store = await _task_store(request)
     try:
@@ -179,5 +195,6 @@ async def stop_full_snapshot(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(
-            status_code=503, detail="migration_progress_unavailable"
+            status_code=503,
+            detail="migration_progress_unavailable",
         ) from exc
