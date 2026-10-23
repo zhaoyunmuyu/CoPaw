@@ -55,17 +55,17 @@ def _notification_worker(send, count: int):
         mark_notification_sent=AsyncMock(),
         mark_notification_failed=AsyncMock(),
     )
-    workspace = SimpleNamespace(
-        cron_manager=SimpleNamespace(send_task_success_notification=send),
-    )
     worker = CronNotificationWorker(
-        multi_agent_manager=SimpleNamespace(
-            get_agent=AsyncMock(return_value=workspace),
-        ),
+        multi_agent_manager=object(),
         monitor_client=monitor_client,
         batch_size=count,
         app_timezone="UTC",
     )
+
+    async def send_notification(row):
+        await send(str(row["job_id"]))
+
+    worker._send_notification = send_notification
     return worker, monitor_client
 
 

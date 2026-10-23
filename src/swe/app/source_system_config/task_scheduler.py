@@ -14,6 +14,9 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from swe.app.crons.scheduler_adapter import SchedulerAdapter
+from swe.app.crons.legacy_session_cleanup import (
+    cleanup_legacy_workspace_sessions,
+)
 from swe.app.file_governance.archive_maintenance import (
     archive_old_orphans_for_workspace,
 )
@@ -255,10 +258,7 @@ class SourceSystemTaskScheduler:
                 self._agent_id,
                 tenant_id=runtime_tenant_id,
             )
-            cron_manager = getattr(workspace, "cron_manager", None)
-            if cron_manager is None:
-                raise RuntimeError("CronManager not found")
-            scope_result = await cron_manager.run_task_session_cleanup()
+            scope_result = await cleanup_legacy_workspace_sessions(workspace)
             if managed_cleanup is not None:
                 try:
                     managed = await managed_cleanup(

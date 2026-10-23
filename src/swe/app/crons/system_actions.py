@@ -2,6 +2,7 @@
 """固定四种系统业务适配；归档不初始化Agent，也不接受任意命令或路径。"""
 
 from ...config.context import encode_scope_id
+from .system_runtime import SystemTaskRuntime
 
 TASK_SCOPES = {
     "heartbeat": "agent",
@@ -48,9 +49,7 @@ class SystemBusinessActions:
             job["agent_id"],
             tenant_id=encode_scope_id(job["tenant_id"], job["source_id"]),
         )
-        cron = workspace.cron_manager
-        if cron is None:
-            raise RuntimeError("system_cron_manager_unavailable")
+        cron = SystemTaskRuntime.from_workspace(workspace)
 
         async def agent_action():
             if kind == "heartbeat":

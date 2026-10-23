@@ -326,7 +326,7 @@ async def test_source_refresh_reports_submission_failure_without_old_fallback(
 
 
 @pytest.mark.asyncio
-async def test_source_cleanup_runs_all_scope_managers_for_source() -> None:
+async def test_source_cleanup_runs_all_scopes_for_source(monkeypatch) -> None:
     """source 清理会覆盖该 source 下所有 runtime scope。"""
     cleaned: list[str] = []
 
@@ -344,25 +344,26 @@ async def test_source_cleanup_runs_all_scope_managers_for_source() -> None:
                 {"tenant_id": "tenant-b", "source_id": "source-a"},
             ]
 
-    class FakeCronManager:
-        def __init__(self, name: str) -> None:
-            self.name = name
+    async def cleanup(workspace):
+        cleaned.append(workspace.scope_label)
+        return {
+            "enabled": True,
+            "sessions_seen": 1,
+            "sessions_cleaned": 1,
+            "sessions_skipped_locked": 0,
+            "runs_removed": 2,
+            "messages_removed": 3,
+        }
 
-        async def run_task_session_cleanup(self) -> dict[str, int | bool]:
-            cleaned.append(self.name)
-            return {
-                "enabled": True,
-                "sessions_seen": 1,
-                "sessions_cleaned": 1,
-                "sessions_skipped_locked": 0,
-                "runs_removed": 2,
-                "messages_removed": 3,
-            }
+    monkeypatch.setattr(
+        "swe.app.source_system_config.task_scheduler.cleanup_legacy_workspace_sessions",
+        cleanup,
+    )
 
     class FakeManager:
         async def get_agent(self, agent_id: str, tenant_id: str | None = None):
             return SimpleNamespace(
-                cron_manager=FakeCronManager(f"{tenant_id}:{agent_id}"),
+                scope_label=f"{tenant_id}:{agent_id}",
             )
 
     scheduler = SourceSystemTaskScheduler(

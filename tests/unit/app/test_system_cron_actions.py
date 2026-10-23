@@ -35,12 +35,24 @@ async def test_archive_runs_source_maintenance_without_initializing_agent():
 
 
 @pytest.mark.asyncio
-async def test_managed_dream_excludes_archive_and_keeps_correct_scope():
+async def test_managed_dream_excludes_archive_and_keeps_correct_scope(
+    monkeypatch,
+):
     from swe.config.context import encode_scope_id
+    from swe.app.crons.system_runtime import SystemTaskRuntime
 
     cron = SimpleNamespace(run_dream=AsyncMock(), run_heartbeat=AsyncMock())
+    monkeypatch.setattr(SystemTaskRuntime, "run_dream", cron.run_dream)
+    monkeypatch.setattr(SystemTaskRuntime, "run_heartbeat", cron.run_heartbeat)
     manager = SimpleNamespace(
-        get_agent=AsyncMock(return_value=SimpleNamespace(cron_manager=cron)),
+        get_agent=AsyncMock(
+            return_value=SimpleNamespace(
+                runner=object(),
+                channel_manager=None,
+                agent_id="default",
+                tenant_id=encode_scope_id("alice", "bank"),
+            ),
+        ),
     )
     app = SimpleNamespace(state=SimpleNamespace(multi_agent_manager=manager))
     action = await SystemBusinessActions(app).prepare(
@@ -62,17 +74,21 @@ async def test_managed_dream_excludes_archive_and_keeps_correct_scope():
 
 
 @pytest.mark.asyncio
-async def test_new_source_cleanup_includes_database_sessions_in_original_scope():
+async def test_new_source_cleanup_includes_database_sessions_in_original_scope(
+    monkeypatch,
+):
     from swe.app.source_system_config.task_scheduler import (
         SourceSystemTaskScheduler,
     )
 
-    legacy = SimpleNamespace(
-        run_task_session_cleanup=AsyncMock(
-            return_value={"sessions_seen": 1, "sessions_cleaned": 1},
-        ),
+    legacy = AsyncMock(
+        return_value={"sessions_seen": 1, "sessions_cleaned": 1},
     )
-    workspace = SimpleNamespace(cron_manager=legacy)
+    monkeypatch.setattr(
+        "swe.app.source_system_config.task_scheduler.cleanup_legacy_workspace_sessions",
+        legacy,
+    )
+    workspace = SimpleNamespace()
     manager = SimpleNamespace(get_agent=AsyncMock(return_value=workspace))
     source = SourceSystemTaskScheduler(
         None,
@@ -93,7 +109,7 @@ async def test_new_source_cleanup_includes_database_sessions_in_original_scope()
         managed_cleanup=managed,
     )
     managed.assert_awaited_once_with(workspace, "alice", "bank")
-    legacy.run_task_session_cleanup.assert_awaited_once()
+    legacy.assert_awaited_once_with(workspace)
     assert (
         result["scopes_seen"] == 1
         and result["sessions_seen"] == result["sessions_cleaned"] == 3
@@ -101,18 +117,18 @@ async def test_new_source_cleanup_includes_database_sessions_in_original_scope()
 
 
 @pytest.mark.asyncio
-async def test_managed_cleanup_failure_keeps_completed_legacy_counts_as_partial():
+async def test_managed_cleanup_failure_keeps_completed_legacy_counts_as_partial(
+    monkeypatch,
+):
     from swe.app.crons.system_execution import business_outcome
     from swe.app.source_system_config.task_scheduler import (
         SourceSystemTaskScheduler,
     )
 
-    workspace = SimpleNamespace(
-        cron_manager=SimpleNamespace(
-            run_task_session_cleanup=AsyncMock(
-                return_value={"sessions_seen": 1, "sessions_cleaned": 1},
-            ),
-        ),
+    workspace = SimpleNamespace()
+    monkeypatch.setattr(
+        "swe.app.source_system_config.task_scheduler.cleanup_legacy_workspace_sessions",
+        AsyncMock(return_value={"sessions_seen": 1, "sessions_cleaned": 1}),
     )
     scheduler = SourceSystemTaskScheduler(
         None,

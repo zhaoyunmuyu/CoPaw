@@ -935,13 +935,9 @@ async def put_heartbeat(
     )
 
     # 先保存，再提交刷新；同步失败不能假装配置已回滚。
-    cm = agent.cron_manager
-    sync = {
-        "submission_status": "failed",
-        "error_code": "system_sync_not_submitted",
-    }
-    if cm is not None:
-        sync = await cm.register_heartbeat()
+    from ..crons.system_bridge import submit_workspace_refresh
+
+    sync = await submit_workspace_refresh(agent, "heartbeat")
 
     return {
         **hb.model_dump(mode="json", by_alias=True),

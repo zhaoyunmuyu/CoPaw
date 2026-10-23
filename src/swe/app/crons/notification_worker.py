@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 from ...config.context import resolve_runtime_tenant_id
 from ...config.utils import load_config
 from .monitor_sync_client import MonitorSyncClient, get_monitor_sync_client
+from .notification_sender import CronNotificationSender
 from .managed_notifications import (
     load_notification_spec,
     notification_metadata,
@@ -142,7 +143,7 @@ class CronNotificationWorker:
                 continue
 
     async def _send_one(self, row: dict[str, Any]) -> bool:
-        execution_id = int(row.get("id"))
+        execution_id = int(row["id"])
         try:
             await self._send_notification(row)
             await self._monitor_client.mark_notification_sent(
@@ -178,15 +179,17 @@ class CronNotificationWorker:
             agent_id,
             tenant_id=runtime_tenant_id,
         )
-        if workspace.cron_manager is None:
-            raise RuntimeError(f"cron manager unavailable: {tenant_id}")
         if job is None:
-            await workspace.cron_manager.send_task_success_notification(job_id)
-        else:
-            await workspace.cron_manager.send_task_success_notification(
-                job_id,
-                job=job,
-            )
+            from .repo.json_repo import JsonJobRepository
+
+            job = await JsonJobRepository(
+                workspace.workspace_dir / "jobs.json",
+            ).get_job(job_id)
+            if job is None:
+                raise ValueError(f"cron job not found: {job_id}")
+        await CronNotificationSender.from_workspace(
+            workspace,
+        ).send_task_success_notification(job_id, job=job)
 
     def _now_utc(self) -> datetime:
         try:

@@ -558,13 +558,9 @@ async def put_agents_running_config(
         tenant_id=workspace.tenant_id,
     )
 
-    sync = {
-        "submission_status": "failed",
-        "error_code": "system_sync_not_submitted",
-    }
-    cron = getattr(workspace, "cron_manager", None)
-    if cron is not None:
-        sync = await cron.register_dream()
+    from ..crons.system_bridge import submit_workspace_refresh
+
+    sync = await submit_workspace_refresh(workspace, "dream")
 
     # Hot reload config (async, non-blocking)
     schedule_agent_reload(

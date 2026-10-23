@@ -78,7 +78,7 @@ class ManagedTaskSessionCleaner:
 
     async def _clean(self, session, row, cutoff, result):
         # 仅复用纯裁剪算法，导入不会创建CronManager或读取旧任务仓库。
-        from .manager import _prune_task_session_state
+        from .session_cleanup import _prune_task_session_state
 
         if not row["task_session_id"] or not row["creator_user_id"]:
             return

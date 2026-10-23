@@ -100,7 +100,7 @@ async def test_dream_config_save_precedes_submission_and_exposes_failure(
 
     order = []
 
-    async def refresh():
+    async def refresh(*args):
         order.append("submit")
         return {
             "submission_status": "failed",
@@ -110,8 +110,8 @@ async def test_dream_config_save_precedes_submission_and_exposes_failure(
     workspace = SimpleNamespace(
         agent_id="default",
         tenant_id="alice",
-        cron_manager=SimpleNamespace(register_dream=refresh),
     )
+    monkeypatch.setattr(system_bridge, "submit_agent_refresh", refresh)
     monkeypatch.setattr(
         agent,
         "get_agent_and_config_for_request",

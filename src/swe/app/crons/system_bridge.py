@@ -108,6 +108,19 @@ class SystemRefreshClient:
         )
 
 
+async def submit_workspace_refresh(workspace, task_type):
+    """配置保存直接提交刷新，不依赖旧任务管理器的存在。"""
+    from ...config.context import resolve_runtime_identity
+
+    tenant, source, _ = resolve_runtime_identity(workspace.tenant_id)
+    return await submit_agent_refresh(
+        tenant or workspace.tenant_id or "",
+        source or "",
+        workspace.agent_id or "default",
+        task_type,
+    )
+
+
 async def submit_agent_refresh(tenant_id, source_id, agent_id, task_type=None):
     """原初始化/保存挂点只转交刷新意图，不能恢复旧自动注册。"""
     client = SystemRefreshClient()

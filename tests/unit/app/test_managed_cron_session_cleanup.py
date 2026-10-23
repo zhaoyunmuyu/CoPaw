@@ -229,6 +229,7 @@ async def test_missing_managed_state_is_not_silently_treated_as_no_tasks(
 @pytest.mark.asyncio
 async def test_system_source_action_reaches_database_cleanup_after_scope_enumeration(
     cleanup_setup,
+    monkeypatch,
 ):
     from unittest.mock import AsyncMock
     from swe.app.crons.system_actions import SystemBusinessActions
@@ -238,8 +239,9 @@ async def test_system_source_action_reaches_database_cleanup_after_scope_enumera
 
     db, session, workspace = cleanup_setup
     await binding(cleanup_setup)
-    workspace.cron_manager = SimpleNamespace(
-        run_task_session_cleanup=AsyncMock(return_value={}),
+    monkeypatch.setattr(
+        "swe.app.source_system_config.task_scheduler.cleanup_legacy_workspace_sessions",
+        AsyncMock(return_value={}),
     )
     source = SourceSystemTaskScheduler(
         None,

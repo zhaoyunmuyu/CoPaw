@@ -33,10 +33,10 @@ def _agent_config(job):
             return _disabled()
         raise
     if job["task_type"] == "heartbeat":
-        from .manager import CronManager
+        from .system_runtime import every_to_cron
 
         heartbeat = profile.heartbeat or HeartbeatConfig()
-        cron = CronManager._every_to_cron(heartbeat.every)
+        cron = every_to_cron(heartbeat.every)
         active = enabled and heartbeat.enabled
     else:
         cron = profile.running.memory_summary.dream_cron.strip()

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from swe.app.crons.manager import CronManager
+from swe.app.crons.notification_sender import CronNotificationSender
 from swe.app.crons.models import CronJobSpec
 from swe.app.crons.notification_worker import CronNotificationWorker
 from swe.app.crons.repo.json_repo import JsonJobRepository
@@ -45,15 +45,20 @@ def _spec(task_type="agent"):
 
 
 @pytest.fixture
-def notification_setup(tmp_path):
+def notification_setup(tmp_path, monkeypatch):
     """保留真实 JSON 仓库与通知入口，只替换外部发送和数据库连接。"""
-    manager = object.__new__(CronManager)
+    manager = object.__new__(CronNotificationSender)
     manager._repo = JsonJobRepository(tmp_path / "jobs.json")
     manager._push_task_success_notification = AsyncMock()
     agents = SimpleNamespace(
         get_agent=AsyncMock(
-            return_value=SimpleNamespace(cron_manager=manager)
+            return_value=SimpleNamespace(workspace_dir=tmp_path),
         ),
+    )
+    monkeypatch.setattr(
+        CronNotificationSender,
+        "from_workspace",
+        classmethod(lambda cls, workspace: manager),
     )
     client = SimpleNamespace(
         mark_notification_sent=AsyncMock(),
@@ -128,7 +133,8 @@ async def test_managed_notification_uses_frozen_snapshot_without_jobs_json(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("owner", [None, "legacy"])
 async def test_legacy_notification_still_uses_jobs_json(
-    notification_setup, owner
+    notification_setup,
+    owner,
 ):
     manager, agents, client, db, row = notification_setup
     row["meta"] = json.dumps({"management_owner": owner})
@@ -220,7 +226,10 @@ async def test_managed_notification_snapshot_reader_with_real_sql(
     await writer.accept(run["execution_id"], key)
     await writer.start(run["execution_id"], key, "worker")
     await writer.complete(
-        run["execution_id"], key, "worker", ExecutionOutcome("success")
+        run["execution_id"],
+        key,
+        "worker",
+        ExecutionOutcome("success"),
     )
     row = await db.fetch_one("SELECT * FROM swe_cron_executions")
     meta = notification_metadata(row)
@@ -231,30 +240,35 @@ async def test_managed_notification_snapshot_reader_with_real_sql(
     assert original.name != "修改后的任务"
 
     with pytest.raises(
-        ValueError, match="managed_cron_notification_not_found"
+        ValueError,
+        match="managed_cron_notification_not_found",
     ):
         await load_notification_spec(db, {**row, "id": row["id"] + 1}, meta)
     with pytest.raises(
-        ValueError, match="managed_cron_notification_not_found"
+        ValueError,
+        match="managed_cron_notification_not_found",
     ):
         await load_notification_spec(db, row, {**meta, "agent_id": "foreign"})
     db.conn.execute("UPDATE swe_cron_jobs_v2 SET management_owner='legacy'")
     with pytest.raises(
-        ValueError, match="managed_cron_notification_not_found"
+        ValueError,
+        match="managed_cron_notification_not_found",
     ):
         await load_notification_spec(db, row, meta)
     db.conn.execute(
-        "UPDATE swe_cron_jobs_v2 SET management_owner='scheduler', deleted_at='2026-10-20'"
+        "UPDATE swe_cron_jobs_v2 SET management_owner='scheduler', deleted_at='2026-10-20'",
     )
     with pytest.raises(
-        ValueError, match="managed_cron_notification_not_found"
+        ValueError,
+        match="managed_cron_notification_not_found",
     ):
         await load_notification_spec(db, row, meta)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "missing_field", ["managed_execution_id", "source_id", "agent_id"]
+    "missing_field",
+    ["managed_execution_id", "source_id", "agent_id"],
 )
 async def test_managed_notification_requires_complete_metadata(
     notification_setup,
@@ -325,10 +339,12 @@ async def test_notification_sender_rejects_conflicting_snapshot(
     manager = notification_setup[0]
 
     with pytest.raises(
-        ValueError, match="cron_notification_snapshot_conflict"
+        ValueError,
+        match="cron_notification_snapshot_conflict",
     ):
         await manager.send_task_success_notification(
-            "another-job", job=_spec()
+            "another-job",
+            job=_spec(),
         )
 
     manager._push_task_success_notification.assert_not_awaited()
