@@ -133,6 +133,7 @@ def create_agent_scoped_router() -> APIRouter:
     from .mcp import router as mcp_router
     from .workspace import router as workspace_router
     from ..crons.api import router as cron_router
+    from ..crons.workflow.api import router as workflow_config_router
     from ..runner.api import router as chats_router
     from .console import router as console_router
     from ..wplus_sop.router import router as wplus_sop_router
@@ -164,6 +165,7 @@ def create_agent_scoped_router() -> APIRouter:
     router.include_router(chats_router)
     router.include_router(config_router)
     router.include_router(cron_router)
+    router.include_router(workflow_config_router)
     router.include_router(mcp_router)
     router.include_router(skills_router)
     router.include_router(tools_router)

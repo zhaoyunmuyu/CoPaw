@@ -50,95 +50,18 @@ from .broadcast_task_store import (
 )
 from .manager import CronManager
 from .models import CronJobListItem, CronJobSpec, CronJobView
-from .workflow.config_store import WorkflowConfigStore
-from .workflow.models import WorkflowConfig
+
+# 保留旧模块的公开导出，财富规划调用尚未退出。
+from .workflow.api import (  # pylint: disable=useless-import-alias
+    _bind_workflow_config as _bind_workflow_config,
+    _workflow_store as _workflow_store,
+    get_workflow_binding as get_workflow_binding,
+    publish_workflow_binding as publish_workflow_binding,
+)
 
 router = APIRouter(prefix="/cron", tags=["cron"])
 logger = logging.getLogger(__name__)
 
-
-def _workflow_store(request: Request) -> WorkflowConfigStore:
-    store = getattr(request.app.state, "workflow_config_store", None)
-    if store is None:
-        raise HTTPException(
-            status_code=503,
-            detail="workflow configuration storage unavailable",
-        )
-    return store
-
-
-async def _bind_workflow_config(
-    spec: CronJobSpec,
-    store: WorkflowConfigStore,
-) -> CronJobSpec:
-    if spec.task_type != "workflow":
-        return spec
-    config = await store.resolve_first_skill(
-        spec.source_id or "",
-        spec.skill_ids,
-    )
-    if (
-        spec.workflow_binding_id
-        and spec.workflow_binding_id != config.binding_id
-    ):
-        raise ValueError("workflow_binding_id does not match first skill")
-    return spec.model_copy(
-        update={"workflow_binding_id": config.binding_id},
-    )
-
-
-@router.get(
-    "/workflow-bindings/{skill_id}",
-    response_model=WorkflowConfig,
-)
-async def get_workflow_binding(
-    skill_id: str,
-    request: Request,
-) -> WorkflowConfig:
-    from ..source_system_config.router import _require_manager
-
-    _require_manager(request)
-    source_id = getattr(request.state, "source_id", None)
-    if not source_id:
-        raise HTTPException(status_code=400, detail="source_id is required")
-    try:
-        return await _workflow_store(request).resolve_first_skill(
-            source_id,
-            skill_id,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-
-@router.put(
-    "/workflow-bindings/{skill_id}",
-    response_model=WorkflowConfig,
-)
-async def publish_workflow_binding(
-    skill_id: str,
-    definition: dict[str, Any],
-    request: Request,
-) -> WorkflowConfig:
-    from pydantic import ValidationError
-
-    from ..source_system_config.router import _require_manager
-
-    _require_manager(request)
-    source_id = getattr(request.state, "source_id", None)
-    if not source_id:
-        raise HTTPException(status_code=400, detail="source_id is required")
-    try:
-        return await _workflow_store(request).publish(
-            source_id=source_id,
-            skill_id=skill_id,
-            definition=definition,
-        )
-    except (ValueError, ValidationError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 BROADCAST_MODEL_SLOT_WARNING = (
     "model_slot not copied: provider/model unavailable in target tenant"
