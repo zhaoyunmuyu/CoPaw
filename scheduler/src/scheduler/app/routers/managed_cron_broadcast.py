@@ -21,7 +21,10 @@ from ..services.cron.managed.distribution import (
 )
 from ..services.cron.managed.identity import CallerIdentity
 
+from ..api_logging import LoggedAPIRoute
+
 router = APIRouter(
+    route_class=LoggedAPIRoute,
     prefix="/scheduler/cron/jobs",
     tags=["managed-cron-broadcast"],
 )

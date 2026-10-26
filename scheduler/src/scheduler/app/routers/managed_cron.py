@@ -14,7 +14,13 @@ from ..services.cron.managed.contracts import (
 from ..services.cron.managed.identity import CallerIdentity
 from ..services.cron.managed.repository import ManagedCronRepository
 
-router = APIRouter(prefix="/scheduler/cron/jobs", tags=["managed-cron"])
+from ..api_logging import LoggedAPIRoute
+
+router = APIRouter(
+    prefix="/scheduler/cron/jobs",
+    tags=["managed-cron"],
+    route_class=LoggedAPIRoute,
+)
 
 
 def caller_identity(request: Request) -> CallerIdentity:

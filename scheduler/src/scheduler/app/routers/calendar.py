@@ -15,7 +15,13 @@ from ..services.cron.calendar_schedule import (
 )
 from ..services.cron.workday_calendar import get_calendar_service
 
-router = APIRouter(prefix="/scheduler/cron/calendar", tags=["cron-calendar"])
+from ..api_logging import LoggedAPIRoute
+
+router = APIRouter(
+    prefix="/scheduler/cron/calendar",
+    tags=["cron-calendar"],
+    route_class=LoggedAPIRoute,
+)
 
 
 class CalendarRequest(BaseModel):

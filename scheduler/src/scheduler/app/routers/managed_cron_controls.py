@@ -34,7 +34,10 @@ from ..services.cron.managed.platform import (
 )
 from ..services.cron.managed.repository import ManagedCronRepository
 
+from ..api_logging import LoggedAPIRoute
+
 router = APIRouter(
+    route_class=LoggedAPIRoute,
     prefix="/scheduler/cron/jobs",
     tags=["managed-cron-controls"],
 )

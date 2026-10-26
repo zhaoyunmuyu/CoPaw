@@ -15,7 +15,10 @@ from ..services.cron.managed.batch_retry import (
 )
 from ..services.cron.managed.identity import CallerIdentity
 
+from ..api_logging import LoggedAPIRoute
+
 router = APIRouter(
+    route_class=LoggedAPIRoute,
     prefix="/scheduler/cron/managed-dispatch/batches",
     tags=["managed-batch-operations"],
 )

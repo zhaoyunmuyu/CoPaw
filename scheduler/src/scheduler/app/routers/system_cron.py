@@ -15,7 +15,13 @@ from ..services.cron.system.schema import (
     assert_system_schema_ready,
 )
 
-router = APIRouter(prefix="/scheduler/cron/system/jobs", tags=["system-cron"])
+from ..api_logging import LoggedAPIRoute
+
+router = APIRouter(
+    prefix="/scheduler/cron/system/jobs",
+    tags=["system-cron"],
+    route_class=LoggedAPIRoute,
+)
 
 
 class RefreshRequest(BaseModel):

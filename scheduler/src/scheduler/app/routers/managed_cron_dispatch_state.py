@@ -22,7 +22,10 @@ from ..services.cron.managed.platform import (
     platform_config,
 )
 
+from ..api_logging import LoggedAPIRoute
+
 router = APIRouter(
+    route_class=LoggedAPIRoute,
     prefix="/scheduler/cron/jobs",
     tags=["managed-cron-dispatch-state"],
 )

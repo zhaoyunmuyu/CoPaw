@@ -10,7 +10,10 @@ from .system_cron import _raise, system_database
 from ..services.cron.system.executions import SystemExecutionStore
 from ..services.cron.system.queries import SystemQueries, public_execution
 
+from ..api_logging import LoggedAPIRoute
+
 router = APIRouter(
+    route_class=LoggedAPIRoute,
     prefix="/scheduler/cron/system",
     tags=["system-cron-execution"],
 )

@@ -12,7 +12,13 @@ from ..services.cron.managed.contracts import ManagedCronNotFound
 from ..services.cron.managed.identity import CallerIdentity
 from ..services.cron.managed.scheduling import ManagedSchedulingService
 
-router = APIRouter(prefix="/scheduler/cron", tags=["managed-cron-callbacks"])
+from ..api_logging import LoggedAPIRoute
+
+router = APIRouter(
+    prefix="/scheduler/cron",
+    tags=["managed-cron-callbacks"],
+    route_class=LoggedAPIRoute,
+)
 
 
 def scheduling_service(db=Depends(management_database)):

@@ -9,7 +9,13 @@ from ..database import connection
 from ..services.cron.managed.external_query import ExternalManagedJobs
 from ..services.cron.managed.identity import encode_scope, identity_value
 
-router = APIRouter(prefix="/scheduler/external/cron", tags=["external-cron"])
+from ..api_logging import LoggedAPIRoute
+
+router = APIRouter(
+    prefix="/scheduler/external/cron",
+    tags=["external-cron"],
+    route_class=LoggedAPIRoute,
+)
 logger = logging.getLogger(__name__)
 
 

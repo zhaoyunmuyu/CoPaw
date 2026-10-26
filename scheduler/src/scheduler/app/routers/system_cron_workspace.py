@@ -9,7 +9,10 @@ from .system_cron import _raise, system_database
 from ..services.cron.system.management_store import SystemManagementStore
 from ..services.cron.system.queries import public_job
 
+from ..api_logging import LoggedAPIRoute
+
 router = APIRouter(
+    route_class=LoggedAPIRoute,
     prefix="/scheduler/internal/cron/system/workspaces",
     tags=["system-cron-internal"],
 )

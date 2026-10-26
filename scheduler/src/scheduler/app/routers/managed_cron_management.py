@@ -26,7 +26,10 @@ from ..services.cron.managed.platform import (
 )
 from ..services.cron.managed.swe_client import ManagedSweClient
 
+from ..api_logging import LoggedAPIRoute
+
 router = APIRouter(
+    route_class=LoggedAPIRoute,
     prefix="/scheduler/cron/jobs",
     tags=["managed-cron-management"],
 )

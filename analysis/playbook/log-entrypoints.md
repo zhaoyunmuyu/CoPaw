@@ -43,3 +43,15 @@ Scheduler 的 `swe_prepare_failed` 只表示资源准备步骤失败。若收到
 ERROR 日志中的 `stage` 区分 `begin_transaction`（进入事务）、`lock_job`（对新任务定义加行锁）、`validate_operation`（锁内复核操作）、`resource_action`（资源处理）和 `finish_transaction`（正常资源处理结束后的事务退出）。阶段表示最后进入的步骤；若回滚本身失败，仍须结合异常链定位，不能只靠阶段断言失败的是哪一条 SQL。
 
 诊断保留异常链类型、数据库错误号及固定类别、安全的缺失方法名与栈位置，不输出原始异常消息、SQL、任务正文、Header、源码行或局部变量。例如 `1205/lock_wait_timeout` 表示锁等待超时，`1213/deadlock` 表示死锁，`AttributeError` 配合 `missing_attribute=transaction` 可提示部署版本缺少事务方法。公共 HTTP 错误不会被改写为存储失败；此日志不覆盖所有资源准备异常。
+
+## Scheduler 新版接口失败
+
+在 Scheduler 容器标准输出中搜索 `Scheduler 接口失败`，日志名为 `scheduler.app.api_logging`。新版任务管理、查询、控制、分发、三态切换、平台回调、批调度操作、日历、对外查询及系统任务接口均接入公共路由日志；旧版接口原日志不变。
+
+- HTTP 5xx 记录 ERROR，4xx（包括参数校验、权限及版本冲突）记录 WARNING；正常成功不记录失败日志。无需新增配置，现有 `SCHEDULER_LOG_LEVEL` 应允许对应等级输出。
+- `method`、`route`（路由模板）、`http_status`、安全的 `error_code` 定位接口；`request_id` / `trace_id` 分别来自白名单 `X-Request-ID` / `X-B3-TraceId`。缺失或不符合短标识符格式的字段显示 `-`。
+- 路径中的 `job_id`、`operation_id`、`task_id`、`batch_id`、`execution_id` 可供关联。失败操作单还提取其 `operation_id`、`job_id`、`stage` 和安全错误码。为避免读取业务输入，不提取请求正文内的身份或任务 ID；回调没有路径 ID 和跟踪 Header 时，需结合调用时间及异常位置定位。
+- 原始异常转换为固定 HTTP 文案时仍保留脱敏异常链、数据库错误号和栈位置；不输出异常原文、SQL、认证 Header、完整 URL、源码行或局部变量。失败操作单自身没有异常栈时标记 `no_exception_receipt`，按同一操作 ID 查既有步骤日志，不伪造异常。
+- 接口边界只新增一条失败日志；原业务层步骤日志保留。未匹配路由、响应开始后的流式异常和后台任务不在此边界覆盖范围，仍查看各自运行日志。
+
+记录日志不会改变原状态码、响应 JSON 或业务处理。诊断输出自身失败也不会覆盖原异常或响应。
