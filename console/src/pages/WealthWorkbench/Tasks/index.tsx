@@ -397,7 +397,7 @@ export default function Tasks({ page }: { page: TaskPageKind }) {
   const contactStatusCustomers = buildList(false, true);
   const sceneOptions = [...new Set(pool.flatMap((c) => c.skillNames ?? []))]
     .filter(Boolean);
-  const columnCount = (isBiz ? 5 : 7) + Number(showContactStatus);
+  const columnCount = (isBiz ? 6 : 8) + Number(showContactStatus);
   const tableGroups = groups.length
     ? groups
     : [{ key: "empty", fields: [], customers: [] }];
@@ -942,6 +942,9 @@ export default function Tasks({ page }: { page: TaskPageKind }) {
                             />
                           </th>
                         )}
+                        <th scope="col" className={styles.recentContactCol}>
+                          最近接触时间
+                        </th>
                         <th className={styles.executionCol}>
                           {doneView ? "完成时间" : "执行"}
                         </th>
@@ -1014,6 +1017,12 @@ export default function Tasks({ page }: { page: TaskPageKind }) {
                                 </span>
                               </td>
                             )}
+                            <td
+                              className={styles.recentContactCol}
+                              title={c.time || undefined}
+                            >
+                              {c.time || "—"}
+                            </td>
                             <td className={styles.executionCol}>
                               {doneView ? (
                                 c.time

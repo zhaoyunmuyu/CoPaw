@@ -93,6 +93,24 @@ beforeEach(() => {
 });
 
 describe("WealthWorkbench api", () => {
+  it("名单技能对象保留客户数，未配置时省略字段，并按技能去重", async () => {
+    await api.fetchNameList([
+      { skillId: " limited ", custNum: 500 },
+      { skillId: "unlimited", custNum: undefined },
+      { skillId: "limited", custNum: 100 },
+      { skillId: " " },
+    ]);
+    const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]?.body));
+    expect(body.skillIds).toEqual([
+      { skillId: "limited", custNum: 500 },
+      { skillId: "unlimited" },
+    ]);
+    expect(body.skillIds[1]).not.toHaveProperty("custNum");
+    vi.mocked(fetch).mockClear();
+    await expect(api.fetchNameList([])).resolves.toEqual({ items: [] });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("名单直接 fetch 外部契约，保留上下文和统计，使用默认同源凭证策略", async () => {
     useIframeStore.setState({
       bbk: "755",
@@ -117,7 +135,11 @@ describe("WealthWorkbench api", () => {
         }),
       ),
     );
-    const result = await api.fetchNameList([" a ", "b", "a", " "], "10086", 1);
+    const result = await api.fetchNameList(
+      [" a ", "b", "a", " "].map((skillId) => ({ skillId })),
+      "10086",
+      1,
+    );
     const [path, options] = vi.mocked(fetch).mock.calls[0];
     expect(path).toBe("/api/agent/workspace/name-list");
     expect(options).not.toHaveProperty("credentials");
@@ -126,7 +148,7 @@ describe("WealthWorkbench api", () => {
       headers: { "Content-Type": "application/json" },
     });
     expect(JSON.parse(String(options?.body))).toEqual({
-      skillIds: ["a", "b"],
+      skillIds: [{ skillId: "a" }, { skillId: "b" }],
       sapId: "10086",
       touched: 1,
       bbkId: "755",
@@ -161,7 +183,9 @@ describe("WealthWorkbench api", () => {
             { status: failure === "http" ? 502 : 200 },
           ),
         );
-      await expect(api.fetchNameList([TASK.skillId])).resolves.toEqual({
+      await expect(
+        api.fetchNameList([{ skillId: TASK.skillId }]),
+      ).resolves.toEqual({
         items: [],
       });
       expect(request).not.toHaveBeenCalled();
@@ -178,7 +202,7 @@ describe("WealthWorkbench api", () => {
           );
         }),
     );
-    const pending = api.fetchNameList([TASK.skillId]);
+    const pending = api.fetchNameList([{ skillId: TASK.skillId }]);
     await vi.advanceTimersByTimeAsync(44999);
     expect(vi.mocked(fetch).mock.calls[0][1]?.signal?.aborted).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
@@ -231,7 +255,11 @@ describe("WealthWorkbench api", () => {
   });
 
   it("fetchNameList 传递去重后的 skillIds 数组，空数组不发起请求", async () => {
-    await api.fetchNameList(["skill-a", "skill-b", "skill-a"], "10086", 0);
+    await api.fetchNameList(
+      ["skill-a", "skill-b", "skill-a"].map((skillId) => ({ skillId })),
+      "10086",
+      0,
+    );
     expect(mockRequest).toHaveBeenCalledWith(
       "/api/agent/workspace/name-list",
       expect.objectContaining({
@@ -240,7 +268,7 @@ describe("WealthWorkbench api", () => {
       }),
     );
     expect(JSON.parse(String(mockRequest.mock.calls[0][1]?.body))).toEqual({
-      skillIds: ["skill-a", "skill-b"],
+      skillIds: [{ skillId: "skill-a" }, { skillId: "skill-b" }],
       bbkId: "",
       platformSource: "WP",
       pageSource: "WP_AGENT_WORKSPACE_TASK_LIST",
@@ -337,32 +365,43 @@ describe("WealthWorkbench api", () => {
 
   it("大量技能通过一次 POST 请求体传递，URL 保持固定", async () => {
     const ids = Array.from({ length: 2000 }, (_, index) => `skill-${index}`);
-    await api.fetchNameList(ids, "10086", 2);
+    await api.fetchNameList(
+      ids.map((skillId) => ({ skillId })),
+      "10086",
+      2,
+    );
     expect(mockRequest).toHaveBeenCalledTimes(1);
     const [path, options] = mockRequest.mock.calls[0];
     expect(path).toBe("/api/agent/workspace/name-list");
     expect(options?.method).toBe("POST");
-    expect(JSON.parse(String(options?.body)).skillIds).toEqual(ids);
+    expect(JSON.parse(String(options?.body)).skillIds).toEqual(
+      ids.map((skillId) => ({ skillId })),
+    );
   });
 
   it("fetchNameList 透传 skillId 与 sapId；接口失败返回空列表", async () => {
-    const list = await api.fetchNameList(["skill-loan-1"], "10086");
+    const list = await api.fetchNameList(
+      [{ skillId: "skill-loan-1" }],
+      "10086",
+    );
     expect(list.items).toHaveLength(2);
     expect(JSON.parse(String(mockRequest.mock.calls[0]?.[1]?.body))).toEqual({
-      skillIds: ["skill-loan-1"],
+      skillIds: [{ skillId: "skill-loan-1" }],
       sapId: "10086",
       bbkId: "",
       platformSource: "WP",
       pageSource: "WP_AGENT_WORKSPACE_TASK_LIST",
     });
 
-    await api.fetchNameList(["skill-loan-1"]);
+    await api.fetchNameList([{ skillId: "skill-loan-1" }]);
     expect(
       JSON.parse(String(mockRequest.mock.calls[1]?.[1]?.body)),
     ).not.toHaveProperty("sapId");
 
     mockRequest.mockRejectedValueOnce(new Error("boom"));
-    await expect(api.fetchNameList(["skill-loan-1"])).resolves.toEqual({
+    await expect(
+      api.fetchNameList([{ skillId: "skill-loan-1" }]),
+    ).resolves.toEqual({
       items: [],
     });
   });
@@ -667,7 +706,7 @@ describe("WealthWorkbench api", () => {
     );
     expect(nameListCalls).toHaveLength(1);
     expect(JSON.parse(String(nameListCalls[0]?.[1]?.body)).skillIds).toEqual([
-      TASK.skillId,
+      { skillId: TASK.skillId },
     ]);
     expect(JSON.parse(String(nameListCalls[0]?.[1]?.body)).sapId).toBe("10086");
     // 以 custUid 为页面 id；重点标签按规划创建角色映射，树外技能不产生标签
@@ -732,7 +771,7 @@ describe("WealthWorkbench api", () => {
     expect(calls[1].touched).toBe(1);
     // 两个口径都带当天技能数组和 sapId
     for (const c of calls) {
-      expect(c.skillIds).toEqual([TASK.skillId]);
+      expect(c.skillIds).toEqual([{ skillId: TASK.skillId }]);
       expect(c.sapId).toBe("10086");
     }
   });

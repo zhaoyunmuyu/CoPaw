@@ -66,3 +66,29 @@ it("成功后解除外部取消监听，不误取消已完成请求", async () =
   controller.abort();
   expect(signal.aborted).toBe(false);
 });
+
+it("旧内核缺少 throwIfAborted 时仍执行请求", async () => {
+  const controller = new AbortController();
+  Object.defineProperty(controller.signal, "throwIfAborted", {
+    value: undefined,
+  });
+  const request = vi.fn().mockResolvedValue(12);
+  await expect(
+    withBoardRequestTimeout(request, controller.signal),
+  ).resolves.toBe(12);
+  expect(request).toHaveBeenCalledTimes(1);
+});
+
+it("旧内核缺少取消原因和 throwIfAborted 时仍阻止已取消请求", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  Object.defineProperties(controller.signal, {
+    throwIfAborted: { value: undefined },
+    reason: { value: undefined },
+  });
+  const request = vi.fn();
+  await expect(
+    withBoardRequestTimeout(request, controller.signal),
+  ).rejects.toMatchObject({ name: "AbortError" });
+  expect(request).not.toHaveBeenCalled();
+});

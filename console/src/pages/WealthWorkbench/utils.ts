@@ -153,6 +153,11 @@ export function scheduleLabel(parts: CronParts | undefined): string {
   }
 }
 
+/** 推送客户数留空不限制，填写时必须为正整数。 */
+export function isValidCustNum(value: number | undefined): boolean {
+  return value === undefined || (Number.isSafeInteger(value) && value > 0);
+}
+
 /** 五字段 cron 表达式的最小校验（自定义排程用） */
 export function validCronExpr(value: string | undefined): boolean {
   if (!value) return false;
@@ -192,6 +197,7 @@ export function planScheduledOn(p: Plan, day: string): boolean {
 export interface TaskTreeNode {
   schedule: CronParts;
   sceneId: string;
+  custNum?: number;
   sceneName: string;
   /** 来源规划名（hover 提示用） */
   planName: string;
@@ -227,6 +233,7 @@ export function buildTaskTree(plans: Plan[], day: string): TaskTreeGroup[] {
       group.nodes.push({
         schedule: item.schedule,
         sceneId: item.id,
+        ...(item.custNum !== undefined ? { custNum: item.custNum } : {}),
         sceneName: item.sceneName,
         planName: p.name,
         source: p.source,

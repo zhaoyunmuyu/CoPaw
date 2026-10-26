@@ -53,6 +53,8 @@ export interface PlanItem {
   cronExample?: string | null;
   mcpRelations: string[];
   direction: string;
+  /** 选填的推送客户数；缺省不限制。 */
+  custNum?: number;
   /** 任务周期（有效期）：本月 / 本季 / 今日 / T+1日 / 自定义 */
   cycle: string;
   start?: string;

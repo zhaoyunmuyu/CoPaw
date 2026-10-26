@@ -1,3 +1,5 @@
+import { throwIfRequestAborted } from "../abortSignal";
+
 const BOARD_REQUEST_TIMEOUT_MS = 60_000;
 
 /** 超时或外部取消都中止底层请求；即使取消未及时响应，也释放等待。 */
@@ -5,7 +7,7 @@ export async function withBoardRequestTimeout<T>(
   request: (signal: AbortSignal) => Promise<T>,
   signal?: AbortSignal,
 ): Promise<T> {
-  signal?.throwIfAborted();
+  throwIfRequestAborted(signal);
   const controller = new AbortController();
   let rejectCancellation!: (reason: unknown) => void;
   const cancellation = new Promise<never>((_, reject) => {

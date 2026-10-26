@@ -10,6 +10,7 @@ import { DEFAULT_BBK_ID, DEFAULT_SOURCE_ID } from "../../constants/identity";
 import { getUserId } from "../../utils/identity";
 import { useAgentStore } from "../../stores/agentStore";
 import { resolveRole } from "./permissions";
+import { throwIfRequestAborted } from "./abortSignal";
 // import { Base64 } from "js-base64";
 import { SCENE_CATEGORIES } from "./mock/data";
 import { DEFAULT_SCHEDULE } from "./utils";
@@ -46,6 +47,7 @@ interface PlanSceneView {
   categoryLabel: string;
   itemId?: string | null;
   direction?: string | null;
+  custNum?: number | null;
   cycle?: string | null;
   startDate?: string | null;
   endDate?: string | null;
@@ -142,6 +144,7 @@ function mapSceneItem(scene: PlanSceneView): PlanItem {
     cronExample: scene.cronExample,
     mcpRelations: scene.mcpRelations ?? [],
     direction: scene.direction ?? "",
+    custNum: scene.custNum ?? undefined,
     cycle: scene.cycle ?? "自定义",
     start: scene.startDate ?? undefined,
     end: scene.endDate ?? undefined,
@@ -295,6 +298,11 @@ interface NameListSkillView {
   skillName: string;
 }
 
+export interface NameListSkillInput {
+  skillId: string;
+  custNum?: number;
+}
+
 interface NameListField {
   filedName: string;
   filedNameCn: string;
@@ -372,12 +380,20 @@ interface ExternalNameListResponse {
  * 经营视角传当前场景，其余口径传当天任务树全部技能；空范围不查询。
  */
 export async function fetchNameList(
-  skillIds: string[],
+  skills: NameListSkillInput[],
   sapId?: string,
   touched?: number,
 ): Promise<NameListResponse> {
-  const ids = [...new Set(skillIds.map((id) => id.trim()).filter(Boolean))];
-  if (!ids.length) return { items: [] };
+  const skillsById = new Map<string, NameListSkillInput>();
+  for (const skill of skills) {
+    const skillId = skill.skillId.trim();
+    if (!skillId || skillsById.has(skillId)) continue;
+    skillsById.set(skillId, {
+      skillId,
+      ...(skill.custNum !== undefined ? { custNum: skill.custNum } : {}),
+    });
+  }
+  if (!skillsById.size) return { items: [] };
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60000);
   try {
@@ -389,7 +405,7 @@ export async function fetchNameList(
         Authorization: getWPlusCookie("token") ?? "",
       },
       body: JSON.stringify({
-        skillIds: ids,
+        skillIds: [...skillsById.values()],
         bbkId: context.bbk || DEFAULT_BBK_ID,
         platformSource: "WP",
         pageSource: "WP_AGENT_WORKSPACE_TASK_LIST",
@@ -462,8 +478,7 @@ function customerFields(
 }
 
 /** 今日有排程的经营场景（客户名单查询的入参上下文） */
-export interface TodayTaskRef {
-  skillId: string;
+export interface TodayTaskRef extends NameListSkillInput {
   sceneName: string;
   category: string;
   /** 所属规划来源：我的关注 / 行长关注 / 分行关注 */
@@ -479,7 +494,7 @@ const CUSTOMER_LABEL_BY_PLAN_SOURCE: Record<string, string> = {
 /**
  * 拉取今日任务对应的客户经营清单。
  * 经营视角由调用方传入当前场景；客户视角传入当天任务树全部场景。
- * 两个口径都传技能 ID 数组和 sapId，客户视角直接使用外部聚合名单。
+ * 两个口径都传技能及可选客户数的对象数组和 sapId，客户视角使用外部聚合名单。
  */
 export async function fetchTodayCustomers(
   tasks: TodayTaskRef[],
@@ -495,7 +510,7 @@ export async function fetchTodayCustomers(
   const groups = await Promise.all(
     uniqueTasks.map(async (t) => ({
       task: t,
-      response: await fetchNameList([t.skillId], sapId, TOUCHED_ALL),
+      response: await fetchNameList([t], sapId, TOUCHED_ALL),
     })),
   );
   const seen = new Set<string>();
@@ -574,11 +589,7 @@ async function fetchCustomerViewCustomers(
   opts: { touched?: number; done?: boolean } = {},
 ): Promise<CustomerListResult> {
   const sceneBySkill = new Map(tasks.map((t) => [t.skillId, t]));
-  const response = await fetchNameList(
-    tasks.map((task) => task.skillId),
-    sapId,
-    opts.touched,
-  );
+  const response = await fetchNameList(tasks, sapId, opts.touched);
   const customers = response.items.map((item) => {
     const skillList = item.skillList ?? [];
     const skillIds = [...new Set(skillList.map((s) => s.skillId))];
@@ -645,10 +656,6 @@ function isDevEnv(): boolean {
     href.includes("localhost") ||
     href.includes("127.0.0.1")
   );
-}
-
-function signBaseUrl(): string {
-  return isDevEnv() ? "https://xxx.st.xxxx.cn" : "https://xxx.as.xxxx.cn";
 }
 
 function insightBaseUrl(): string {
@@ -753,7 +760,7 @@ async function requestPlan<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  options.signal?.throwIfAborted();
+  throwIfRequestAborted(options.signal);
   const response = await fetch(path, {
     ...options,
     headers: {
@@ -764,7 +771,7 @@ async function requestPlan<T>(
   const payload = (await response
     .json()
     .catch(() => null)) as PlanResult<T> | null;
-  options.signal?.throwIfAborted();
+  throwIfRequestAborted(options.signal);
   if (!payload) {
     throw Object.assign(
       new Error(`规划接口响应格式错误：HTTP ${response.status}`),
@@ -796,6 +803,7 @@ interface PlanScenePayload {
   category: string;
   itemId?: string | null;
   direction?: string;
+  custNum?: number;
   cycle?: string;
   startDate?: string;
   endDate?: string;
@@ -826,6 +834,7 @@ function buildScenePayload(item: PlanItem): PlanScenePayload {
     itemId: item.itemId ?? null,
     cronExample: item.cronExample ?? null,
     direction: item.direction,
+    ...(item.custNum !== undefined ? { custNum: item.custNum } : {}),
     cycle: item.cycle,
     startDate: item.start,
     endDate: item.end,

@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import type { CronParts } from "@/utils/parseCron";
 import { useIframeStore } from "../../stores/iframeStore";
 import * as api from "./api";
+import { throwIfRequestAborted } from "./abortSignal";
 import {
   canAccessPage,
   FALLBACK_ROLE,
@@ -26,6 +27,7 @@ import {
 } from "./distributeTargets";
 import {
   buildTaskTree,
+  isValidCustNum,
   CYCLE_LABELS,
   cycleRange,
   DEFAULT_SCHEDULE,
@@ -155,6 +157,7 @@ interface WealthState {
   setItemDates: (id: string, field: "start" | "end", value: string) => void;
   updateSchedule: (id: string, patch: Partial<CronParts>) => void;
   setItemDirection: (id: string, direction: string) => void;
+  setItemCustNum: (id: string, custNum: number | undefined) => void;
   normalizeDraft: () => void;
   saveDraft: () => Promise<void>;
 
@@ -208,6 +211,7 @@ function todayTaskRefs(plans: Plan[]): api.TodayTaskRef[] {
   return buildTaskTree(plans, todayKey()).flatMap((g) =>
     g.nodes.map((n) => ({
       skillId: n.sceneId,
+      custNum: n.custNum,
       sceneName: n.sceneName,
       category: g.category,
       source: n.source,
@@ -258,6 +262,8 @@ export function validateDraft(draft: Draft): string | null {
     return `请设置「${invalid.sceneName}」的正确任务时间区间`;
   }
   for (const item of normalized.items) {
+    if (!isValidCustNum(item.custNum))
+      return `请为「${item.sceneName}」填写正整数的推送客户数，或留空不限`;
     const error = validateSchedule(item);
     if (error) return error;
   }
@@ -327,7 +333,7 @@ export const useWealthStore = create<WealthState>()((set, get) => ({
 
   refreshPlans: async (throwOnError = false, signal) => {
     const plans = await api.fetchPlanList(throwOnError, signal);
-    signal?.throwIfAborted();
+    throwIfRequestAborted(signal);
     set({ plans });
   },
 
@@ -621,6 +627,17 @@ export const useWealthStore = create<WealthState>()((set, get) => ({
         items: draft.items.map((x) => (x.id === id ? { ...x, direction } : x)),
       },
     });
+  },
+
+  setItemCustNum: (id, custNum) => {
+    set((state) => ({
+      draft: {
+        ...state.draft,
+        items: state.draft.items.map((item) =>
+          item.id === id ? { ...item, custNum } : item,
+        ),
+      },
+    }));
   },
 
   normalizeDraft: () => {

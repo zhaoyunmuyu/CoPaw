@@ -2,6 +2,14 @@
 
 本文档只收录仓库中已经出现过、且有明确入口可追的高频报错。
 
+## 财富规划看板在旧内核浏览器点击刷新不发请求
+
+- 排查入口：`Board/index.tsx` → `useBoardRefresh.ts` → `requestTimeout.ts` 的 `withBoardRequestTimeout()` → `store.ts` 的 `refreshPlans()`。
+- 已验证的兼容性缺陷：`requestTimeout.ts` 在调用请求回调前执行 `signal?.throwIfAborted()`；可选链只判断 signal 是否存在，不检查方法是否存在。缺少该方法时抛出 `TypeError: signal?.throwIfAborted is not a function`，请求回调调用次数为 0。该方法从 Chromium 100 开始支持，`vite.config.ts` 的 `target: "chrome80"` 不会为原生 Web API 补 polyfill。
+- 页面没有明显提示的原因：`useBoardRefresh()` 捕获异常并返回失败状态，但 Board 未使用其 `failed` 状态；刷新失败也不会触发后续统计强制更新。
+- 现场确认：在问题浏览器控制台执行 `typeof AbortSignal.prototype.throwIfAborted`，若为 `"undefined"` 则符合此缺陷；仍需核实现场版本与部署代码，不能仅凭 360 品牌认定内核版本。
+- 修复：`abortSignal.ts` 的 `throwIfRequestAborted()` 使用 `signal.aborted` 检查并抛出 `signal.reason ?? new DOMException("请求已取消", "AbortError")`，统一替换 `requestTimeout.ts`、`api.ts` 的 `requestPlan()` 请求前后及 `store.ts` 请求完成后的四处原生方法调用。回归覆盖方法缺失时正常刷新、已取消不发请求、缺少 reason 时的 AbortError 兜底及取消后的晚响应不覆盖规划。
+
 ## 财富规划看板“全部”混入不适用岗位的关注来源
 
 - 可见范围：行长（含 RB0108 理财主管）查看本行“分行关注、行长关注”；中台只查看本行“分行关注”。客户经理仍按本行创建/分发关系查看规划。

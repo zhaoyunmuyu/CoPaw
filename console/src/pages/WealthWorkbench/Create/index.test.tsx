@@ -1,10 +1,17 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useIframeStore } from "../../../stores/iframeStore";
 import styles from "../index.module.less";
 import { useWealthStore } from "../store";
 import type { Plan, PlanItem, Scene } from "../types";
+import { cycleRange } from "../utils";
 import Create, {
   SceneDescription,
   ScheduleEditor,
@@ -15,6 +22,8 @@ import Create, {
 vi.mock("../../../api/request", () => ({
   request: vi.fn().mockResolvedValue({ items: [] }),
 }));
+
+afterEach(cleanup);
 
 describe("SceneDescription", () => {
   it("用两行截断样式展示描述，并保留完整文本供悬停查看", () => {
@@ -48,7 +57,43 @@ describe("StepIndicator", () => {
 });
 
 describe("ScheduleEditor", () => {
-  it("保留原执行频率按钮，只在自定义区展示可读规则", () => {
+  it.each([
+    ["daily", "0 9 * * *"],
+    ["weekly", "0 9 * * mon"],
+    ["monthly", "0 9 15 * *"],
+    ["yearly", "0 9 15 6 *"],
+  ])("自定义 %s 并排展示规则与时刻，不重复展示摘要", (mode, rawCron) => {
+    const item: PlanItem = {
+      id: "scene-compact",
+      sceneName: "紧凑排程场景",
+      categoryLabel: "理财",
+      categoryCode: "finance",
+      mcpRelations: [],
+      direction: "优先经营",
+      cycle: "本月",
+      schedule: { type: "custom", rawCron },
+    };
+    const { container, unmount } = render(
+      <ScheduleEditor item={item} sceneName={item.sceneName} />,
+    );
+    const repeatRule = screen.getByLabelText("紧凑排程场景自定义重复规则");
+    const time = screen.getByRole("button", {
+      name: "紧凑排程场景自定义执行时刻",
+    });
+    expect(repeatRule).toHaveValue(mode);
+    expect(repeatRule.closest(`.${styles.customScheduleRow}`)).toContainElement(
+      time,
+    );
+    expect(container.querySelector(`.${styles.taskRangeLabel}`)).toBeNull();
+    if (mode === "weekly")
+      expect(screen.getByRole("button", { name: "一" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+    unmount();
+  });
+
+  it("执行频率按钮提供全部频率，自定义区展示可读规则", () => {
     const item: PlanItem = {
       id: "scene-1",
       sceneName: "保障潜客经营",
@@ -64,13 +109,17 @@ describe("ScheduleEditor", () => {
 
     render(<ScheduleEditor item={item} sceneName={item.sceneName} />);
 
-    expect(screen.getByRole("button", { name: "每小时" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "每日" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "每周" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "自定义" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    const frequency = screen.getByRole("group", {
+      name: "保障潜客经营执行频率",
+    });
+    expect(
+      within(frequency)
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toEqual(["每小时", "每日", "每周", "自定义"]);
+    expect(
+      within(frequency).getByRole("button", { name: "自定义" }),
+    ).toHaveAttribute("aria-pressed", "true");
 
     const repeatRule = screen.getByLabelText("保障潜客经营自定义重复规则");
     expect(repeatRule).toHaveValue("frequency");
@@ -82,13 +131,66 @@ describe("ScheduleEditor", () => {
     expect(screen.getByLabelText("保障潜客经营自定义频率单位")).toHaveValue(
       "minutes",
     );
-    expect(screen.getByText("每隔 15 分钟")).toBeInTheDocument();
+    expect(screen.getByLabelText("保障潜客经营自定义频率间隔")).toHaveValue(15);
+    expect(screen.queryByText("每隔 15 分钟")).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/cron/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/cron/i)).not.toBeInTheDocument();
   });
 });
 
 describe("TaskSchedule", () => {
+  it.each(["本月", "本季", "今日", "T+1日", "自定义"])(
+    "点击当前周期 %s 会重新应用日期，自定义保留原值，初始渲染不更新",
+    (cycle) => {
+      const item: PlanItem = {
+        id: "repeat-cycle",
+        sceneName: "重选周期场景",
+        categoryLabel: "理财",
+        categoryCode: "finance",
+        mcpRelations: [],
+        direction: "保留经营方向",
+        custNum: 500,
+        cycle,
+        start: "2000-01-02",
+        end: "2000-01-03",
+        schedule: { type: "daily", hour: 14, minute: 35 },
+      };
+      const scene: Scene = {
+        id: item.id,
+        name: item.sceneName,
+        category: "理财",
+        categoryCode: "finance",
+        icon: "bank",
+        desc: "",
+        source: "总部预置",
+        mcpRelations: [],
+      };
+      const untouched = { ...item, id: "untouched" };
+      useWealthStore.setState({
+        draft: { name: "周期重选", items: [item, untouched] },
+      });
+      function LiveTaskSchedule() {
+        const current = useWealthStore((state) => state.draft.items[0]);
+        return <TaskSchedule item={current} scene={scene} />;
+      }
+      const { unmount } = render(<LiveTaskSchedule />);
+      const option = within(
+        screen.getByRole("group", { name: "重选周期场景任务周期" }),
+      ).getByRole("button", { name: cycle });
+      expect(option).toHaveAttribute("aria-pressed", "true");
+      expect(useWealthStore.getState().draft.items[0]).toEqual(item);
+      fireEvent.click(option);
+      const range = cycleRange(cycle) ?? [item.start, item.end];
+      expect(useWealthStore.getState().draft.items[0]).toEqual({
+        ...item,
+        start: range[0],
+        end: range[1],
+      });
+      expect(useWealthStore.getState().draft.items[1]).toEqual(untouched);
+      unmount();
+    },
+  );
+
   it("点击自定义周期的日期数字区域会打开统一样式的日期面板", () => {
     const item: PlanItem = {
       id: "scene-1",
@@ -123,6 +225,94 @@ describe("TaskSchedule", () => {
 });
 
 describe("Create", () => {
+  it("推送客户数支持输入、清除、非法值提示并在发布确认展示", () => {
+    const item: PlanItem = {
+      id: "scene-limit",
+      sceneName: "数量设置场景",
+      categoryLabel: "理财",
+      categoryCode: "finance",
+      mcpRelations: [],
+      direction: "优先经营",
+      cycle: "本月",
+      start: "2026-09-01",
+      end: "2026-09-30",
+      schedule: { type: "daily", hour: 9, minute: 0 },
+    };
+    useIframeStore.setState({ positionId: "RB0101", userId: "rm-1" });
+    useWealthStore.setState({
+      accountId: "rm",
+      plansLoaded: true,
+      plans: [],
+      draft: {
+        name: "客户数设置规划",
+        items: [item, { ...item, id: "unlimited", sceneName: "不限场景" }],
+      },
+      scenesByCategory: { "": [] },
+      scenesLoading: false,
+      editingId: null,
+      dialog: null,
+      acting: false,
+    });
+    render(
+      <MemoryRouter>
+        <Create />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("经营场景")).toBeInTheDocument();
+    expect(
+      screen.getByText("经营方向", {
+        exact: false,
+        selector: "." + styles.selectedListHeader + " > span",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("经营场景").parentElement).toHaveTextContent(
+      "执行频率",
+    );
+    expect(screen.getByText("推送客户数（选填）")).toBeInTheDocument();
+    expect(screen.queryByText("每日 09:00")).not.toBeInTheDocument();
+    const input = screen.getByRole("spinbutton", {
+      name: "数量设置场景的推送客户数",
+    });
+    expect(input).toHaveValue(null);
+    expect(input).toHaveAttribute("placeholder", "不限");
+    fireEvent.click(
+      within(
+        screen.getByRole("group", { name: "数量设置场景任务周期" }),
+      ).getByRole("button", { name: "今日" }),
+    );
+    expect(useWealthStore.getState().draft.items[0].cycle).toBe("今日");
+    fireEvent.click(
+      within(
+        screen.getByRole("group", { name: "数量设置场景执行频率" }),
+      ).getByRole("button", { name: "自定义" }),
+    );
+    expect(useWealthStore.getState().draft.items[0].schedule).toMatchObject({
+      type: "custom",
+      rawCron: "*/30 * * * *",
+    });
+    fireEvent.change(screen.getByLabelText("数量设置场景自定义重复规则"), {
+      target: { value: "weekly" },
+    });
+    expect(useWealthStore.getState().draft.items[0].schedule.rawCron).toBe(
+      "0 9 * * mon",
+    );
+    fireEvent.change(input, { target: { value: "500" } });
+    expect(useWealthStore.getState().draft.items[0].custNum).toBe(500);
+    fireEvent.change(input, { target: { value: "" } });
+    expect(useWealthStore.getState().draft.items[0].custNum).toBeUndefined();
+    fireEvent.change(input, { target: { value: "0" } });
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByText("请输入正整数")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "发布规划" })[0]);
+    expect(useWealthStore.getState().dialog).toBeNull();
+    expect(useWealthStore.getState().toastText).toContain("正整数的推送客户数");
+    fireEvent.change(input, { target: { value: "500" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "发布规划" })[0]);
+    const { container } = render(<>{useWealthStore.getState().dialog?.body}</>);
+    expect(container).toHaveTextContent("推送客户数：500 人");
+    expect(container).toHaveTextContent("推送客户数：不限");
+  });
+
   it("客户经理选择已被规划占用的场景时列出冲突并禁止发布", () => {
     const item: PlanItem = {
       id: "scene-1",

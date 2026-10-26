@@ -99,6 +99,40 @@ beforeEach(() => {
 });
 
 describe("经营分类独立表格", () => {
+  it.each(["business", "customer", "pending", "done"] as const)(
+    "%s 名单展示最近接触时间，缺失时保留占位",
+    (view) => {
+      state.customers[0].time = "2026-10-23 09:30:00";
+      state.customers.forEach((customer) => {
+        customer.groupFields = [];
+      });
+      state.pendingCustomers = state.doneCustomers = state.customers;
+      render(
+        <MemoryRouter>
+          <Tasks
+            page={view === "business" || view === "customer" ? "today" : view}
+          />
+        </MemoryRouter>,
+      );
+      if (view === "customer") {
+        fireEvent.click(screen.getByRole("button", { name: "客户视角" }));
+      }
+      const table = screen.getByRole("table");
+      const headers = within(table).getAllByRole("columnheader");
+      const columnIndex = headers.findIndex(
+        (header) => header.textContent === "最近接触时间",
+      );
+      expect(columnIndex).toBeGreaterThan(-1);
+      const rows = within(table).getAllByRole("row");
+      const timeCell = within(rows[1]).getAllByRole("cell")[columnIndex];
+      expect(timeCell).toHaveTextContent("2026-10-23 09:30:00");
+      expect(timeCell).toHaveAttribute("title", "2026-10-23 09:30:00");
+      expect(
+        within(rows[2]).getAllByRole("cell")[columnIndex],
+      ).toHaveTextContent("—");
+    },
+  );
+
   it.each(["today", "pending", "done"] as const)(
     "%s 经营场景筛选匹配任一场景，可叠加标签并清除，汇总保持不变",
     (page) => {
@@ -502,6 +536,7 @@ describe("经营分类独立表格", () => {
       "客户指标",
       "经营方案",
       "接触状态",
+      "最近接触时间",
       "执行",
     ]);
     const rows = within(table).getAllByRole("row");
@@ -517,7 +552,7 @@ describe("经营分类独立表格", () => {
     );
     expect(
       screen.getByText("暂无符合条件的客户").closest("td"),
-    ).toHaveAttribute("colspan", "8");
+    ).toHaveAttribute("colspan", "9");
   });
 
   it.each(["business", "customer"] as const)(
@@ -608,7 +643,7 @@ describe("经营分类独立表格", () => {
         "经营场景",
         page === "done" ? "客户指标" : "经营机会",
       ]);
-      expect(headers).toHaveLength(7);
+      expect(headers).toHaveLength(8);
       if (page === "done") {
         expect(headers.map((th) => th.textContent)).toEqual([
           "客户姓名",
@@ -616,6 +651,7 @@ describe("经营分类独立表格", () => {
           "经营场景",
           "客户指标",
           "触达方式",
+          "最近接触时间",
           "完成时间",
           "经营结果",
         ]);
@@ -635,7 +671,7 @@ describe("经营分类独立表格", () => {
           <Tasks page={page} />
         </MemoryRouter>,
       );
-      expect(screen.getByRole("cell")).toHaveAttribute("colspan", "7");
+      expect(screen.getByRole("cell")).toHaveAttribute("colspan", "8");
     },
   );
 

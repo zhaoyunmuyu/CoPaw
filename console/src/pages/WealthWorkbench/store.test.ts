@@ -4,7 +4,7 @@
  * 场景接口按 category 返回 SceneSkillItem 夹具，账户/草稿走真实实现。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resetMockDb } from "./api";
+import { resetMockDb, publishPlan as publishPlanApi } from "./api";
 import { request } from "../../api/request";
 import { useIframeStore } from "../../stores/iframeStore";
 import {
@@ -93,6 +93,7 @@ interface FixturePlanView {
     categoryLabel: string;
     itemId?: string | null;
     direction?: string | null;
+    custNum?: number | null;
     cycle?: string | null;
     startDate?: string | null;
     endDate?: string | null;
@@ -211,8 +212,16 @@ async function requestHandler(
     };
   }
   if (path.startsWith("/api/agent/workspace/name-list")) {
-    const skillIds = JSON.parse(String(options.body)).skillIds as string[];
-    return { items: skillIds.includes(LOAN) ? NAME_LIST_FIXTURE : [] };
+    const skillIds = JSON.parse(String(options.body)).skillIds as {
+      skillId: string;
+    }[];
+    return {
+      items: skillIds.some(
+        (skill: { skillId: string }) => skill.skillId === LOAN,
+      )
+        ? NAME_LIST_FIXTURE
+        : [],
+    };
   }
   if (path === "/zt/wealth/plans" && method === "GET") {
     return { items: planViews };
@@ -454,10 +463,12 @@ describe("WealthWorkbench store", () => {
     const calls = mockRequest.mock.calls.filter(([path]) =>
       String(path).startsWith("/api/agent/workspace/name-list"),
     );
-    expect(JSON.parse(String(calls[0][1]?.body)).skillIds).toEqual([FINANCE]);
+    expect(JSON.parse(String(calls[0][1]?.body)).skillIds).toEqual([
+      { skillId: FINANCE },
+    ]);
   });
 
-  it("经营视角只查询所选场景，其他模块和角标使用全部当天技能", async () => {
+  it("经营视角按所选场景查询，各名单与角标携带对应客户数，未配置则省略", async () => {
     useIframeStore.setState({ userId: "10086" });
     const plan = makeTodayPlan();
     useWealthStore.setState({
@@ -466,7 +477,12 @@ describe("WealthWorkbench store", () => {
           ...plan,
           items: [
             plan.items[0],
-            { ...plan.items[0], id: FINANCE, sceneName: "理财场景" },
+            {
+              ...plan.items[0],
+              id: FINANCE,
+              sceneName: "理财场景",
+              custNum: 500,
+            },
           ],
         },
       ],
@@ -480,15 +496,18 @@ describe("WealthWorkbench store", () => {
           String(path).startsWith("/api/agent/workspace/name-list"),
         )
         .map(([, options]) => JSON.parse(String(options?.body)).skillIds);
-    expect(skillArrays()).toEqual([[FINANCE], [LOAN, FINANCE]]);
+    expect(skillArrays()).toEqual([
+      [{ skillId: FINANCE, custNum: 500 }],
+      [{ skillId: LOAN }, { skillId: FINANCE, custNum: 500 }],
+    ]);
     mockRequest.mockClear();
     await state.loadTodayCustomers("customer");
     await state.loadPendingCustomers();
     await state.loadDoneCustomers();
     expect(skillArrays()).toEqual([
-      [LOAN, FINANCE],
-      [LOAN, FINANCE],
-      [LOAN, FINANCE],
+      [{ skillId: LOAN }, { skillId: FINANCE, custNum: 500 }],
+      [{ skillId: LOAN }, { skillId: FINANCE, custNum: 500 }],
+      [{ skillId: LOAN }, { skillId: FINANCE, custNum: 500 }],
     ]);
   });
 
@@ -628,6 +647,90 @@ describe("WealthWorkbench store", () => {
     ).toContain("请设置");
   });
 
+  it.each([undefined, 1, 500])("推送客户数 %s 可选且允许正整数", (custNum) => {
+    expect(
+      validateDraft({ name: "规划", items: [makeItem({ custNum })] }),
+    ).toBeNull();
+  });
+
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, NaN])(
+    "推送客户数 %s 非法时阻止发布",
+    (custNum) => {
+      expect(
+        validateDraft({ name: "规划", items: [makeItem({ custNum })] }),
+      ).toContain("正整数的推送客户数");
+    },
+  );
+
+  it("每个场景独立修改数量，清空后恢复不限", () => {
+    useWealthStore.setState({
+      draft: {
+        name: "规划",
+        items: [makeItem(), makeItem({ id: INSURANCE_2 })],
+      },
+    });
+    useWealthStore.getState().setItemCustNum(INSURANCE, 500);
+    expect(
+      useWealthStore.getState().draft.items.map((item) => item.custNum),
+    ).toEqual([500, undefined]);
+    useWealthStore.getState().setItemCustNum(INSURANCE, undefined);
+    expect(useWealthStore.getState().draft.items[0].custNum).toBeUndefined();
+  });
+
+  it.each([null, "existing-plan"])(
+    "发布/修改 %s 按场景传数值 custNum，未填字段省略",
+    async (editingId) => {
+      mockRequest.mockReset();
+      mockRequest
+        .mockResolvedValueOnce({ id: "saved", publishStatus: "publishing" })
+        .mockResolvedValueOnce({ items: [] });
+      await publishPlanApi(
+        selectCurrentAccount(useWealthStore.getState()),
+        {
+          name: "规划",
+          items: [makeItem({ custNum: 500 }), makeItem({ id: INSURANCE_2 })],
+        },
+        editingId,
+        [],
+      );
+      const [path, options] = mockRequest.mock.calls[0];
+      expect(path).toBe(
+        editingId ? `/zt/wealth/plans/${editingId}` : "/zt/wealth/plans",
+      );
+      expect(options?.method).toBe(editingId ? "PUT" : "POST");
+      const body = JSON.parse(String(options?.body));
+      expect(body.scenes[0].custNum).toBe(500);
+      expect(body.scenes[1]).not.toHaveProperty("custNum");
+      expect(body).not.toHaveProperty("custNum");
+    },
+  );
+
+  it("后端 custNum 回填到编辑草稿，缺失或 null 保持不限", async () => {
+    planViews = [
+      makeView({
+        id: "cust-num-plan",
+        editable: true,
+        scenes: [500, null, undefined].map((custNum, index) => ({
+          sceneId: `scene-${index}`,
+          sceneName: `场景${index}`,
+          category: "finance",
+          categoryLabel: "理财",
+          direction: "经营方向",
+          custNum,
+          startDate: "2026-09-01",
+          endDate: "2026-09-30",
+          cronExpr: "0 9 * * *",
+          mcpRelations: [],
+        })),
+      }),
+    ];
+    await useWealthStore.getState().refreshPlans();
+    useWealthStore.getState().editPlan("cust-num-plan");
+    expect(
+      useWealthStore.getState().draft.items.map((item) => item.custNum),
+    ).toEqual([500, undefined, undefined]);
+  });
+
   it("validateDraft 校验每周执行日与自定义执行规则", () => {
     expect(
       validateDraft({
@@ -752,7 +855,7 @@ describe("WealthWorkbench store", () => {
     await useWealthStore.getState().loadTodayCustomers("business");
     const bizCall = nameListCalls()[0];
     expect(bizCall.sapId).toBe("10086");
-    expect(bizCall.skillIds).toEqual([LOAN]);
+    expect(bizCall.skillIds).toEqual([{ skillId: LOAN }]);
     const bizCustomers = useWealthStore.getState().customers;
     expect(bizCustomers).toHaveLength(2);
     expect(useWealthStore.getState().todayCustomerCount).toBe(2);
@@ -767,7 +870,7 @@ describe("WealthWorkbench store", () => {
     await useWealthStore.getState().loadTodayCustomers("customer");
     const custCall = nameListCalls().slice(-1)[0];
     expect(custCall.sapId).toBe("10086");
-    expect(custCall.skillIds).toEqual([LOAN]);
+    expect(custCall.skillIds).toEqual([{ skillId: LOAN }]);
     const custCustomers = useWealthStore.getState().customers;
     expect(custCustomers).toHaveLength(2);
     expect(useWealthStore.getState().todayCustomerCount).toBe(
@@ -800,7 +903,13 @@ describe("WealthWorkbench store", () => {
     const paths = mockRequest.mock.calls.map(([, options]) =>
       JSON.parse(String(options?.body)),
     );
-    expect(paths.every((body) => body.skillIds.includes(LOAN))).toBe(true);
+    expect(
+      paths.every((body) =>
+        body.skillIds.some(
+          (skill: { skillId: string }) => skill.skillId === LOAN,
+        ),
+      ),
+    ).toBe(true);
     expect(paths.some((body) => body.touched === 2)).toBe(true);
     expect(useWealthStore.getState().todayCustomerCount).toBe(2);
     expect(useWealthStore.getState().customers).toBe(customers);
@@ -859,7 +968,7 @@ describe("WealthWorkbench store", () => {
     await refresh;
     expect(
       JSON.parse(String(mockRequest.mock.calls[1]?.[1]?.body)).skillIds,
-    ).toEqual([LOAN]);
+    ).toEqual([{ skillId: LOAN }]);
     expect(useWealthStore.getState().customers[0].task).toBe(
       "新发布的信贷任务",
     );
@@ -878,7 +987,7 @@ describe("WealthWorkbench store", () => {
     );
     expect(
       JSON.parse(String(mockRequest.mock.calls[1][1]?.body)).skillIds,
-    ).toEqual([LOAN]);
+    ).toEqual([{ skillId: LOAN }]);
     expect(useWealthStore.getState().customersLoading).toBe(false);
   });
 
@@ -938,7 +1047,13 @@ describe("WealthWorkbench store", () => {
     expect(lists).toHaveLength(3);
     expect(lists.map((body) => body.touched)).toEqual([2, 0, 1]);
     expect(lists.every((body) => body.sapId === "10086")).toBe(true);
-    expect(lists.every((body) => body.skillIds.includes(LOAN))).toBe(true);
+    expect(
+      lists.every((body) =>
+        body.skillIds.some(
+          (skill: { skillId: string }) => skill.skillId === LOAN,
+        ),
+      ),
+    ).toBe(true);
     expect(useWealthStore.getState().taskListsRefreshing).toBe(false);
   });
 
@@ -1088,6 +1203,9 @@ describe("WealthWorkbench store", () => {
       }),
     );
     const controller = new AbortController();
+    Object.defineProperty(controller.signal, "throwIfAborted", {
+      value: undefined,
+    });
     const refresh = useWealthStore
       .getState()
       .refreshPlans(true, controller.signal);
@@ -1104,5 +1222,19 @@ describe("WealthWorkbench store", () => {
         signal: controller.signal,
       }),
     );
+  });
+
+  it("旧内核缺少 throwIfAborted 时刷新能发出请求并更新规划", async () => {
+    const controller = new AbortController();
+    Object.defineProperty(controller.signal, "throwIfAborted", {
+      value: undefined,
+    });
+    mockRequest.mockResolvedValueOnce({ items: [] });
+    await useWealthStore.getState().refreshPlans(true, controller.signal);
+    expect(mockRequest).toHaveBeenCalledWith(
+      "/zt/wealth/plans",
+      expect.objectContaining({ signal: controller.signal }),
+    );
+    expect(useWealthStore.getState().plans).toEqual([]);
   });
 });
