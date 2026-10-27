@@ -172,29 +172,48 @@ export default function FailurePanel({
             rowKey="member_id"
             dataSource={preview.value?.items || []}
             pagination={{ pageSize: 5 }}
-            scroll={{ x: 700 }}
+            scroll={{ x: 1120 }}
             columns={[
               {
                 title: "失败分类 / 公开错误码",
-                render: (_, item) => (
-                  <span>
-                    {preview.value?.counts.find(
+                width: 200,
+                ellipsis: { showTitle: false },
+                render: (_, item) => {
+                  const label =
+                    preview.value?.counts.find(
                       (value) => value.failure_type === item.failure_type,
-                    )?.label || "其他错误"}
-                    <br />
-                    {item.settled_error_code || item.error_code || "-"}
-                  </span>
-                ),
+                    )?.label || "其他错误";
+                  const code =
+                    item.settled_error_code || item.error_code || "-";
+                  const text = `${label} · ${code}`;
+                  return (
+                    <Tooltip title={text}>
+                      <span>{text}</span>
+                    </Tooltip>
+                  );
+                },
               },
-              { title: "执行 ID", dataIndex: "execution_id", ellipsis: true },
-              { title: "用户", dataIndex: "tenant_id" },
+              {
+                title: "执行 ID",
+                dataIndex: "execution_id",
+                width: 150,
+                ellipsis: true,
+              },
+              {
+                title: "用户",
+                dataIndex: "tenant_id",
+                width: 120,
+                ellipsis: true,
+              },
               {
                 title: "重试次数",
+                width: 90,
                 render: (_, item) => Math.max(0, item.business_attempt - 1),
               },
               {
                 title: "原始失败原因",
-                width: 200,
+                width: 260,
+                ellipsis: { showTitle: false },
                 render: (_, item) => {
                   const message =
                     item.error_message ||
@@ -210,11 +229,15 @@ export default function FailurePanel({
               },
               {
                 title: "原 / 当前版本",
+                width: 120,
+                ellipsis: true,
                 render: (_, item) =>
                   `${item.execution_definition_version} / ${item.definition_version}`,
               },
               {
                 title: "类型",
+                width: 180,
+                ellipsis: true,
                 render: (_, item) =>
                   item.transport_only
                     ? "运输重投（保留快照）"

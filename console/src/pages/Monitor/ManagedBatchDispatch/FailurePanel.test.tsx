@@ -37,6 +37,39 @@ beforeEach(() => {
   });
 });
 afterEach(cleanup);
+it("长错误采用单行省略且悬停可查看完整内容，不撑高分页行", async () => {
+  const message = "子任务执行失败：" + "完整错误详情。".repeat(40);
+  api.failures.mockResolvedValue({
+    counts: [{ failure_type: "other", label: "其他错误", count: 1 }],
+    items: [
+      {
+        ...candidate,
+        execution_id: "execution",
+        tenant_id: "user",
+        failure_type: "other",
+        error_code: "cron_async_subtasks_failed",
+        error_message: message,
+      },
+    ],
+    has_more: false,
+    matched_count: 1,
+  });
+  render(
+    <FailurePanel
+      source="bank"
+      actor="manager"
+      batchId="batch"
+      onQueued={() => {}}
+    />,
+  );
+  const error = await screen.findByText(message);
+  expect(getComputedStyle(error.closest("td")!).whiteSpace).toBe("nowrap");
+  const kind = screen.getByText("业务重试（新快照）");
+  expect(getComputedStyle(kind.closest("td")!).whiteSpace).toBe("nowrap");
+  fireEvent.mouseOver(error);
+  expect(await screen.findByRole("tooltip")).toHaveTextContent(message);
+});
+
 it("响应丢失时保留并重提原始请求，不按新预览换请求ID", async () => {
   const key = `managed-batch-retry:${JSON.stringify([
     "bank",
