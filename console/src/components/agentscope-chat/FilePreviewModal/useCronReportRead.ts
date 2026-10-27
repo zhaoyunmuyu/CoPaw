@@ -12,7 +12,7 @@ interface Props {
   contentKey: string;
   knownTaskId?: string | null;
   knownOrigin?: CronTaskOrigin | null;
-  onFailure: (message: string) => void;
+  onFailure?: (message: string) => void;
 }
 
 /** 内容已确认后才标读；关闭/换报告/换身份时，迟到的归属查询不会继续写入。 */
@@ -53,7 +53,7 @@ export function useCronReportRead(props: Props): void {
     };
     void mark().catch(() => {
       if (active && cronAccessKey() === accessKey)
-        snapshot.onFailure(
+        snapshot.onFailure?.(
           "报告已展示，但任务已读处理失败；未读状态保留，可重新打开后重试",
         );
     });

@@ -431,6 +431,7 @@ vi.mock("./components/ChatSidebar", () => {
     tasks: Array<{ id: string; name?: string }>;
     selectedTaskId?: string;
     onTaskClick?: (task: { id: string; name?: string }) => void;
+    onTaskRun?: (task: { id: string; name?: string }) => void;
   }) {
     return (
       <div
@@ -438,13 +439,18 @@ vi.mock("./components/ChatSidebar", () => {
         data-selected-task-id={props.selectedTaskId || ""}
       >
         {props.tasks.map((task) => (
-          <button
-            key={task.id}
-            type="button"
-            onClick={() => props.onTaskClick?.(task)}
-          >
-            {`Open ${task.name || task.id}`}
-          </button>
+          <React.Fragment key={task.id}>
+            <button
+              key={task.id}
+              type="button"
+              onClick={() => props.onTaskClick?.(task)}
+            >
+              {`Open ${task.name || task.id}`}
+            </button>
+            <button type="button" onClick={() => props.onTaskRun?.(task)}>
+              {`Run ${task.name || task.id}`}
+            </button>
+          </React.Fragment>
         ))}
       </div>
     );
@@ -728,6 +734,49 @@ describe("ChatPage plan mode wiring", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it("新任务执行受理后不自动弹出操作进度，仍刷新任务列表", async () => {
+    mockManagedTasks([
+      {
+        id: "quiet-run",
+        name: "Quiet Run",
+        enabled: true,
+        schedule: {
+          type: "cron",
+          cron: "0 9 * * *",
+          timezone: "Asia/Shanghai",
+        },
+        task_type: "text",
+        text: "body",
+        state: { last_status: "idle" },
+        task: {
+          visible_in_my_tasks: true,
+          chat_id: "quiet-chat",
+          is_paused: false,
+        },
+      },
+    ]);
+    vi.spyOn(schedulerCronApi, "run").mockResolvedValue({
+      execution: {
+        execution_id: "quiet-execution",
+        job_id: "quiet-run",
+        status: "accepted",
+      },
+      reused: false,
+    });
+    render(<ChatPage />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Run Quiet Run" }),
+    );
+    await waitFor(() => expect(schedulerCronApi.run).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(mocks.taskInfo).toHaveBeenCalledWith("执行请求已受理"),
+    );
+    expect(screen.queryByText(/操作与执行进度/)).not.toBeInTheDocument();
+    expect(
+      vi.mocked(schedulerCronApi.listAll).mock.calls.length,
+    ).toBeGreaterThan(1);
   });
 
   it.each([true, false])(

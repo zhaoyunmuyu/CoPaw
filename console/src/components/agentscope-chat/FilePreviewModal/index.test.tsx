@@ -7,6 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import type { ReactNode } from "react";
+import { message } from "antd";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HtmlPreviewTrackingProvider } from "../HtmlPreviewTrackingContext";
 import FilePreviewDrawer from "../FilePreviewDrawer";
@@ -192,6 +193,38 @@ afterEach(() => {
 });
 
 describe("FilePreviewModal HTML preview recording", () => {
+  it("报告已读失败不弹提示，报告预览仍保持打开", async () => {
+    const origin = {
+      owner: "scheduler" as const,
+      context: currentCronContext(),
+      accessKey: cronAccessKey(),
+    };
+    vi.mocked(message.warning).mockClear();
+    markTaskReferenceReadMock.mockRejectedValue(new Error("read_failed"));
+    getRecordDataMock.mockResolvedValue({
+      code: "200",
+      data: { TRACE_ID: "quiet-trace", CRON_JOB_ID: "quiet-task" },
+    });
+    render(
+      <HtmlPreviewTrackingProvider
+        value={{ cronTaskId: "quiet-task", cronTaskOrigin: origin }}
+      >
+        <FilePreviewModal
+          open
+          onClose={() => {}}
+          fileUrl="https://example.test/report[auto-preview].html?resultId=quiet-result&templateId=1"
+          fileName="report.html"
+        />
+      </HtmlPreviewTrackingProvider>,
+    );
+    await waitFor(() =>
+      expect(markTaskReferenceReadMock).toHaveBeenCalledOnce(),
+    );
+    await act(async () => {});
+    expect(screen.getByTestId("preview-modal")).toBeInTheDocument();
+    expect(message.warning).not.toHaveBeenCalled();
+  });
+
   it("新任务报告真正渲染完成后才按会话来源标读", async () => {
     const origin = {
       owner: "scheduler" as const,

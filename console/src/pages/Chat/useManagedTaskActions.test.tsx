@@ -41,10 +41,11 @@ it("新任务执行只展示真实受理状态，不给列表伪造 running", as
   const { result } = renderHook(() =>
     useManagedTaskActions(cronAccessKey(), changed, notify),
   );
+  let receipt: Awaited<ReturnType<typeof result.current.perform>> = null;
   await act(async () => {
-    await result.current.perform(job(), "run");
+    receipt = await result.current.perform(job(), "run");
   });
-  expect(result.current.progress?.execution?.status).toBe("queued");
+  expect(receipt).toMatchObject({ execution: { status: "queued" } });
   expect(notify).toHaveBeenCalledWith(expect.stringContaining("已受理"), false);
   expect(changed).toHaveBeenCalledOnce();
 });
@@ -82,6 +83,7 @@ it("新工作区不显示旧执行迟到结果，旧动作不能重新发送", a
   );
   const task = job();
   let pending!: Promise<unknown>;
+  let receipt: unknown;
   act(() => {
     pending = result.current.perform(task, "run");
   });
@@ -91,9 +93,9 @@ it("新工作区不显示旧执行迟到结果，旧动作不能重新发送", a
     resolve({
       execution: { execution_id: "late", status: "running" },
     } as never);
-    await pending;
+    receipt = await pending;
   });
-  expect(result.current.progress).toBeNull();
+  expect(receipt).toBeNull();
   expect(notify).not.toHaveBeenCalled();
   await act(async () => {
     await result.current.perform(task, "run");
@@ -128,15 +130,18 @@ it("Agent 切走再切回后，旧动作也不能覆盖新一轮进度或解锁�
   rerender({ key: cronAccessKey() });
   useAgentStore.setState({ selectedAgent: "a" });
   rerender({ key: cronAccessKey() });
+  let current: unknown;
   await act(async () => {
-    await result.current.perform(job(), "run");
+    current = await result.current.perform(job(), "run");
   });
+  let late: unknown;
   await act(async () => {
     resolveOld({
       execution: { execution_id: "old", status: "running" },
     } as never);
-    await old;
+    late = await old;
   });
-  expect(result.current.progress?.execution?.execution_id).toBe("current");
+  expect(current).toMatchObject({ execution: { execution_id: "current" } });
+  expect(late).toBeNull();
   expect(changed).toHaveBeenCalledTimes(1);
 });

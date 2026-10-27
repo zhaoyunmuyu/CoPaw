@@ -192,9 +192,6 @@ function FilePreviewModal(props: FilePreviewModalProps) {
     effectiveResultId,
     effectiveTemplateId,
   ]);
-  const notifyReportReadFailure = useCallback((text: string) => {
-    message.warning(text);
-  }, []);
   useCronReportRead({
     open,
     taskId:
@@ -204,7 +201,6 @@ function FilePreviewModal(props: FilePreviewModalProps) {
     contentKey: `${reportContentKey}:${templateResult?.TRACE_ID || ""}`,
     knownTaskId: trackingContext.cronTaskId,
     knownOrigin: trackingContext.cronTaskOrigin,
-    onFailure: notifyReportReadFailure,
   });
   // 是否展示空状态：custUid 存在且接口失败/返回空，且 URL 中没有 templateId 和 resultId
   const showClawPlanEmpty =

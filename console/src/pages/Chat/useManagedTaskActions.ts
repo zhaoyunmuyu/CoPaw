@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { schedulerCronApi } from "@/api/modules/schedulerCron";
 import {
   applyManagedTaskAction,
@@ -17,18 +17,12 @@ import type {
 import { failureMessage } from "../Control/SchedulerCronJobs/helpers";
 import { RequestIdentity } from "@/api/requestIdentity";
 
-export interface ManagedTaskProgress extends ManagedTaskActionResult {
-  job: SourcedManagedTask;
-  scopeKey: string;
-}
-
 /** Chat 新任务操作不乐观伪造运行状态；未知结果复用原请求，失败保留操作 ID。 */
 export function useManagedTaskActions(
   scopeKey: string,
   onChanged: () => Promise<void>,
   notify: (message: string, failed: boolean) => void,
 ) {
-  const [progress, setProgress] = useState<ManagedTaskProgress | null>(null);
   const currentKey = useRef(scopeKey);
   currentKey.current = scopeKey;
   const alive = useRef(false);
@@ -71,20 +65,13 @@ export function useManagedTaskActions(
         const result = await send(request.for(body));
         request.reset();
         if (isCurrent()) {
-          setProgress({ ...result, job: task, scopeKey });
-          notify(
-            result.execution
-              ? "执行请求已受理，请查看实际执行进度"
-              : "操作已受理，请查看同步进度",
-            false,
-          );
+          notify(result.execution ? "执行请求已受理" : "操作已受理", false);
           await onChanged();
         }
         return isCurrent() ? result : null;
       } catch (error) {
         const operation = operationFromFailure(error);
         if (isCurrent()) {
-          if (operation) setProgress({ job: task, operation, scopeKey });
           notify(failureMessage(error), true);
           await onChanged();
         }
@@ -131,10 +118,7 @@ export function useManagedTaskActions(
     },
     [execute],
   );
-  const closeProgress = useCallback(() => setProgress(null), []);
   return {
-    progress: progress?.scopeKey === scopeKey ? progress : null,
-    closeProgress,
     perform,
     update,
   };

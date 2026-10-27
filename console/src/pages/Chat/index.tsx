@@ -52,7 +52,6 @@ import { cronAccessKey } from "@/api/cronTaskContext";
 import { useChatTaskSources } from "./useChatTaskSources";
 import { useManagedTaskActions } from "./useManagedTaskActions";
 import { useTaskReadOnOpen } from "./useTaskReadOnOpen";
-import { ManagedProgressModal } from "../Control/SchedulerCronJobs/ManagedProgressModal";
 import { detailToJob } from "../Control/SchedulerCronJobs/helpers";
 import { feedbackApi } from "../../api/modules/feedback";
 import { expertsApi, type Expert } from "../../api/modules/experts";
@@ -1171,8 +1170,6 @@ function ChatPageContent() {
   const {
     perform: performManagedTask,
     update: updateManagedTask,
-    progress: managedTaskProgress,
-    closeProgress: closeManagedProgress,
   } = useManagedTaskActions(taskScopeKey, refreshJobs, notifyManagedTask);
   const notifyReadFailure = useCallback(
     (text: string) => {
@@ -2899,17 +2896,6 @@ function ChatPageContent() {
           </HtmlPreviewTrackingProvider>
         </ChatFeedbackRenderProvider>
 
-        {managedTaskProgress && (
-          <ManagedProgressModal
-            key={taskIdentityKey(managedTaskProgress.job)}
-            context={taskOrigin(managedTaskProgress.job)!.context}
-            job={managedTaskProgress.job}
-            initialOperation={managedTaskProgress.operation}
-            initialExecution={managedTaskProgress.execution}
-            onClose={closeManagedProgress}
-            onChanged={() => void refreshJobs()}
-          />
-        )}
         <Modal
           open={Boolean(editingTask)}
           title="编辑任务"
